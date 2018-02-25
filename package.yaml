@@ -28,6 +28,10 @@ dependencies:
 - lens
 - servant-swagger
 - swagger2
+- http-media
+
+default-extensions:
+- OverloadedStrings
 
 library:
   source-dirs: src

@@ -57,7 +57,7 @@ data BinaryCache route = BinaryCache
       "nix-cache-info" :> Get '[XNixCacheInfo] NixCacheInfo
   -- Hydra: src/lib/Hydra/View/NixNAR.pm
   , nar :: route :-
-      Capture "nar" NarC :> Get '[XNixNar] Nar
+      "nar" :> Capture "nar" NarC :> Get '[XNixNar] Nar
       -- TODO: http://haskell-servant.readthedocs.io/en/stable/tutorial/Server.html#the-fromhttpapidata-tohttpapidata-classes
   -- Hydra: src/lib/Hydra/View/NarInfo.pm
   , narinfo :: route :-

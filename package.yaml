@@ -39,7 +39,7 @@ library:
 executables:
   cachix-gen-swagger:
     main:                Main.hs
-    source-dirs:         app
+    source-dirs:         cachix-gen-swagger
     ghc-options:
     - -threaded
     - -rtsopts

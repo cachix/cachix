@@ -70,7 +70,7 @@ type API = ToServant (BinaryCache AsApi)
 
 api :: Proxy API
 api = Proxy
-n
+
 swaggerDoc :: Swagger
 swaggerDoc = toSwagger (Proxy :: Proxy API)
     & info.title       .~ "cachix.org API"

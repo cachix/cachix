@@ -13,11 +13,14 @@ import GHC.Generics
 import Servant.API
 import Servant.Generic
 import Servant.Swagger (toSwagger)
+import Servant.Swagger.UI
 
 import Cachix.Types.ContentTypes (XNixCacheInfo, XNixNarInfo, XNixNar)
 
 
-newtype Nar = Nar ByteString
+newtype Nar = Nar
+  { unnar :: ByteString
+  } deriving (Generic, Show)
 
 instance ToSchema Nar where
   -- TODO: properly format the field
@@ -31,15 +34,27 @@ newtype NarInfoC = NarInfoC Text deriving Generic
 instance ToParamSchema NarC
 instance ToParamSchema NarInfoC
 
+instance FromHttpApiData NarC where
+  parseUrlPiece s =
+    if takeEnd 7 s == ".nar.xz"
+    then Right $ NarC (dropEnd 7 s)
+    else Left ""
+
+instance FromHttpApiData NarInfoC where
+  parseUrlPiece s =
+    if takeEnd 8 s == ".narinfo"
+    then Right $ NarInfoC (dropEnd 8 s)
+    else Left ""
+
 data NixCacheInfo = NixCacheInfo
   { storeDir :: Text
   , wantMassQuery :: Integer
   , priority :: Integer
-  } deriving Generic
+  } deriving (Generic, Show)
 
 data NarInfo = NarInfo
-  { url :: Text
-  , storePath :: Text
+  { storePath :: Text
+  , url :: Text
   , compression :: Text
   , fileHash :: Text
   , fileSize :: Integer
@@ -48,7 +63,7 @@ data NarInfo = NarInfo
   , references :: [Text]
   , deriver :: Text
   , sig :: Text
-  } deriving Generic
+  } deriving (Generic, Show)
 
 -- implement URLs for getFile function in Nix binary cache
 data BinaryCache route = BinaryCache
@@ -58,7 +73,6 @@ data BinaryCache route = BinaryCache
   -- Hydra: src/lib/Hydra/View/NixNAR.pm
   , nar :: route :-
       "nar" :> Capture "nar" NarC :> Get '[XNixNar] Nar
-      -- TODO: http://haskell-servant.readthedocs.io/en/stable/tutorial/Server.html#the-fromhttpapidata-tohttpapidata-classes
   -- Hydra: src/lib/Hydra/View/NarInfo.pm
   , narinfo :: route :-
       Capture "narinfo" NarInfoC :> Get '[XNixNarInfo] NarInfo

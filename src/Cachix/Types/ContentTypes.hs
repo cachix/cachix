@@ -1,4 +1,8 @@
-module Cachix.Types.ContentTypes (XNixNar, XNixNarInfo, XNixCacheInfo) where
+module Cachix.Types.ContentTypes (
+  XNixNar,
+  XNixNarInfo,
+  XNixCacheInfo
+) where
 
 import           Data.Typeable      (Typeable)
 import qualified Network.HTTP.Media as M

@@ -16,7 +16,7 @@ module Cachix.Api (
   ) where
 
 import Control.Lens
-import Data.ByteString (ByteString)
+import Data.ByteString.Lazy (ByteString)
 import Data.Proxy (Proxy(..))
 import Data.Swagger
 import Data.Text

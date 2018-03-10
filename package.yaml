@@ -29,6 +29,7 @@ dependencies:
 - servant-swagger
 - swagger2
 - http-media
+- http-api-data
 
 default-extensions:
 - OverloadedStrings

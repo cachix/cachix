@@ -27,6 +27,7 @@ dependencies:
 - bytestring
 - lens
 - servant-swagger
+- servant-swagger-ui
 - swagger2
 - http-media
 - http-api-data

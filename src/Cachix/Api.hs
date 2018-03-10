@@ -2,7 +2,18 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE TypeOperators #-}
 
-module Cachix.Api (api, swaggerDoc) where
+module Cachix.Api (
+  api,
+  servantApi,
+  swaggerDoc,
+  BinaryCache(..),
+  API,
+  NixCacheInfo(..),
+  NarInfoC(..),
+  NarC(..),
+  NarInfo(..),
+  Nar(..)
+  ) where
 
 import Control.Lens
 import Data.ByteString (ByteString)
@@ -80,13 +91,17 @@ data BinaryCache route = BinaryCache
   -- TODO: log files
   -- TODO: nar.ls json file
 
-type API = ToServant (BinaryCache AsApi)
+type ServantAPI = ToServant (BinaryCache AsApi)
+type API = ServantAPI :<|> SwaggerSchemaUI "docs" "swagger.json"
+
+servantApi :: Proxy ServantAPI
+servantApi = Proxy
 
 api :: Proxy API
 api = Proxy
 
 swaggerDoc :: Swagger
-swaggerDoc = toSwagger (Proxy :: Proxy API)
+swaggerDoc = toSwagger (Proxy :: Proxy ServantAPI)
     & info.title       .~ "cachix.org API"
     & info.version     .~ "1.0"
     & info.description ?~ "TODO"

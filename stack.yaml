@@ -1,5 +1,6 @@
-resolver: lts-10.5
+resolver: lts-11.2
 packages:
-- .
+- cachix-api
+- cachix
 nix:
     packages: [zlib]

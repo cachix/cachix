@@ -1,0 +1,76 @@
+-- This file has been generated from package.yaml by hpack version 0.21.2.
+--
+-- see: https://github.com/sol/hpack
+--
+-- hash: 2ddabbffefd53f668d584a15bf7241f33eb0306ac63037bcfe41ba2d41848fba
+
+name:           cachix
+version:        0.1.0.0
+description:    Please see the README on Github at <https://github.com/githubuser/cachix-api#readme>
+homepage:       https://github.com/githubuser/cachix#readme
+bug-reports:    https://github.com/githubuser/cachix/issues
+author:         Author name here
+maintainer:     example@example.com
+copyright:      2018 Author name here
+license:        BSD3
+license-file:   LICENSE
+build-type:     Simple
+cabal-version:  >= 1.10
+
+extra-source-files:
+    ChangeLog.md
+    README.md
+
+source-repository head
+  type: git
+  location: https://github.com/githubuser/cachix
+
+library
+  other-modules:
+      Paths_cachix
+  hs-source-dirs:
+      src
+  default-extensions: OverloadedStrings
+  ghc-options: -Wall -fwarn-tabs -fwarn-unused-imports -fwarn-missing-signatures -fwarn-name-shadowing -fwarn-incomplete-patterns
+  build-depends:
+      base >=4.7 && <5
+    , bytestring
+    , cachix-api
+    , servant
+    , text
+  default-language: Haskell2010
+
+executable cachix
+  main-is: Main.hs
+  other-modules:
+      Paths_cachix
+  hs-source-dirs:
+      cachix
+  default-extensions: OverloadedStrings
+  ghc-options: -Wall -fwarn-tabs -fwarn-unused-imports -fwarn-missing-signatures -fwarn-name-shadowing -fwarn-incomplete-patterns -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      base >=4.7 && <5
+    , bytestring
+    , cachix
+    , cachix-api
+    , servant
+    , text
+  default-language: Haskell2010
+
+test-suite cachix-api-test
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  other-modules:
+      Paths_cachix
+  hs-source-dirs:
+      test
+  default-extensions: OverloadedStrings
+  ghc-options: -Wall -fwarn-tabs -fwarn-unused-imports -fwarn-missing-signatures -fwarn-name-shadowing -fwarn-incomplete-patterns -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      base >=4.7 && <5
+    , bytestring
+    , cachix
+    , cachix-api
+    , servant
+    , text
+  default-language: Haskell2010

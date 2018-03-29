@@ -48,7 +48,7 @@ instance ToParamSchema NarInfoC
 instance FromHttpApiData NarC where
   parseUrlPiece s =
     if takeEnd 7 s == ".nar.xz"
-    then Right $ NarC (dropEnd 7 s)
+    then Right $ NarC s
     else Left ""
 
 instance FromHttpApiData NarInfoC where

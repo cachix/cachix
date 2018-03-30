@@ -2,7 +2,7 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 2ddabbffefd53f668d584a15bf7241f33eb0306ac63037bcfe41ba2d41848fba
+-- hash: 0459acc1240273779b526fe221f23fb08abcb087a7f310fda6d95f719431c0c5
 
 name:           cachix
 version:        0.1.0.0
@@ -57,10 +57,11 @@ executable cachix
     , text
   default-language: Haskell2010
 
-test-suite cachix-api-test
+test-suite cachix-test
   type: exitcode-stdio-1.0
-  main-is: Spec.hs
+  main-is: Main.hs
   other-modules:
+      Spec
       Paths_cachix
   hs-source-dirs:
       test
@@ -71,6 +72,8 @@ test-suite cachix-api-test
     , bytestring
     , cachix
     , cachix-api
+    , hspec
+    , protolude
     , servant
     , text
   default-language: Haskell2010

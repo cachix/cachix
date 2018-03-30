@@ -52,8 +52,8 @@ executables:
     - cachix
 
 tests:
-  cachix-api-test:
-    main:                Spec.hs
+  cachix-test:
+    main:                Main.hs
     source-dirs:         test
     ghc-options:
     - -threaded
@@ -61,3 +61,5 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - cachix
+    - hspec
+    - protolude

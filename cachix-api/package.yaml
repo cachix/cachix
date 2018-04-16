@@ -21,11 +21,16 @@ description:         Please see the README on Github at <https://github.com/gith
 
 dependencies:
 - base >= 4.7 && < 5
-- servant
-- servant-generic
+- aeson
+- cookie
 - text
 - bytestring
 - lens
+- servant
+- servant-generic
+- servant-auth
+- servant-auth-server
+- servant-auth-swagger
 - servant-swagger
 - servant-swagger-ui
 - swagger2
@@ -69,4 +74,4 @@ tests:
     dependencies:
     - cachix-api
     - hspec
-    - protolude 
+    - protolude

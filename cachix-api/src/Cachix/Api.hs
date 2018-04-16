@@ -18,16 +18,24 @@ module Cachix.Api (
 import Control.Lens
 import Data.ByteString.Lazy (ByteString)
 import Data.Proxy (Proxy(..))
-import Data.Swagger
+import Data.Swagger hiding (Header)
 import Data.Text
 import GHC.Generics
 import Servant.API
+import Servant.Auth
+import Servant.Auth.Swagger
 import Servant.Generic
-import Servant.Swagger (toSwagger)
+import Servant.Swagger
 import Servant.Swagger.UI
+import Web.Cookie                (SetCookie)
 
 import Cachix.Types.ContentTypes (XNixCacheInfo, XNixNarInfo, XNixNar)
+import Cachix.Types.Servant      (Get302)
+import Cachix.Types.Session      (Session)
 
+-- TODO: https://github.com/haskell-servant/servant-auth/pull/42#issuecomment-381279499
+instance ToParamSchema SetCookie where
+  toParamSchema _ = mempty -- TODO: cookie instances for swagger
 
 newtype Nar = Nar
   { unnar :: ByteString
@@ -87,6 +95,20 @@ data BinaryCache route = BinaryCache
   -- Hydra: src/lib/Hydra/View/NarInfo.pm
   , narinfo :: route :-
       Capture "narinfo" NarInfoC :> Get '[XNixNarInfo] NarInfo
+  , login :: route :-
+      "login" :>
+      Get302 '[PlainText] '[]
+  , loginCallback :: route :-
+      "login" :>
+      "callback" :>
+      QueryParam "code" Text :>
+      QueryParam "state" Text :>
+      Get302 '[PlainText] '[ Header "Set-Cookie" SetCookie
+                           , Header "Set-Cookie" SetCookie
+                           ]
+  , root :: route :-
+      Auth '[Cookie] Session :>
+      Get '[PlainText] Text
   } deriving Generic
   -- TODO: log files
   -- TODO: nar.ls json file

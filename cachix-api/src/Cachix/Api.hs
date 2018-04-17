@@ -1,21 +1,24 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE DeriveAnyClass #-}
 
-module Cachix.Api (
-  api,
-  servantApi,
-  swaggerDoc,
-  BinaryCache(..),
-  API,
-  NixCacheInfo(..),
-  NarInfoC(..),
-  NarC(..),
-  NarInfo(..),
-  Nar(..)
+module Cachix.Api
+  ( api
+  , servantApi
+  , swaggerDoc
+  , BinaryCacheAPI(..)
+  , API
+  , NixCacheInfo(..)
+  , NarInfoC(..)
+  , NarC(..)
+  , NarInfo(..)
+  , Nar(..)
+  , BinaryCache(..)
   ) where
 
 import Control.Lens
+import Data.Aeson (FromJSON, ToJSON)
 import Data.ByteString.Lazy (ByteString)
 import Data.Proxy (Proxy(..))
 import Data.Swagger hiding (Header)
@@ -85,7 +88,7 @@ data NarInfo = NarInfo
   } deriving (Generic, Show)
 
 -- implement URLs for getFile function in Nix binary cache
-data BinaryCache route = BinaryCache
+data BinaryCacheAPI route = BinaryCacheAPI
   { -- https://cache.nixos.org/nix-cache-info
     nixCacheInfo :: route :-
       "nix-cache-info" :> Get '[XNixCacheInfo] NixCacheInfo
@@ -107,13 +110,24 @@ data BinaryCache route = BinaryCache
                            , Header "Set-Cookie" SetCookie
                            ]
   , root :: route :-
-      Auth '[Cookie] Session :>
+      CachixAuth :>
       Get '[PlainText] Text
+  , rootPost :: route :-
+      CachixAuth :>
+      ReqBody '[JSON] BinaryCache :>
+      Post '[JSON] NoContent
   } deriving Generic
   -- TODO: log files
   -- TODO: nar.ls json file
 
-type ServantAPI = ToServant (BinaryCache AsApi)
+type CachixAuth = Auth '[Cookie] Session
+
+data BinaryCache = BinaryCache
+  { name :: Text
+  , publicSigningKey :: Text
+  } deriving (Show, Generic, FromJSON, ToJSON, ToSchema)
+
+type ServantAPI = ToServant (BinaryCacheAPI AsApi)
 type API = ServantAPI :<|> SwaggerSchemaUI "docs" "swagger.json"
 
 servantApi :: Proxy ServantAPI

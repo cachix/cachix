@@ -1,0 +1,19 @@
+resolver: nightly-2018-03-01
+
+name: cachix
+
+packages:
+- servant-0.13
+- servant-client-0.13
+- servant-client-core-0.13
+- http-types-0.12.1
+- http-api-data-0.3.8.1
+- servant-swagger-1.1.5
+- servant-server-0.13
+# https://github.com/haskell-servant/servant-auth/pull/92
+- git: https://github.com/domenkozar/servant-auth
+  commit: 64f2a2bde915595a30af22e0ffed113e2e31fd10
+  subdirs:
+    - servant-auth
+    - servant-auth-server
+    - servant-auth-swagger

@@ -6,8 +6,9 @@ module Cachix.Api
   ( api
   , servantApi
   , swaggerDoc
+  , CachixAPI(..)
   , BinaryCacheAPI(..)
-  , API
+  , CachixServantAPI
   , module Cachix.Api.Types
   ) where
 
@@ -44,37 +45,47 @@ data BinaryCacheAPI route = BinaryCacheAPI
   -- Hydra: src/lib/Hydra/View/NarInfo.pm
   , narinfo :: route :-
       Capture "narinfo" NarInfoC :> Get '[XNixNarInfo] NarInfo
-  , login :: route :-
-      "login" :>
-      Get302 '[PlainText] '[]
-  , loginCallback :: route :-
-      "login" :>
-      "callback" :>
-      QueryParam "code" Text :>
-      QueryParam "state" Text :>
-      Get302 '[PlainText] '[ Header "Set-Cookie" SetCookie
-                           , Header "Set-Cookie" SetCookie
-                           ]
-  , root :: route :-
-      CachixAuth :>
-      Get '[PlainText] Text
   , rootPost :: route :-
       CachixAuth :>
       ReqBody '[JSON] BinaryCache :>
       Post '[JSON] NoContent
   } deriving Generic
 
-type ServantAPI = ToServant (BinaryCacheAPI AsApi)
-type API = ServantAPI :<|> SwaggerSchemaUI "docs" "swagger.json"
+data CachixAPI route = CachixAPI
+   { root :: route :-
+       CachixAuth :>
+       Get '[PlainText] Text
+   , login :: route :-
+       "login" :>
+       Get302 '[PlainText] '[]
+   , loginCallback :: route :-
+       "login" :>
+       "callback" :>
+       QueryParam "code" Text :>
+       QueryParam "state" Text :>
+       Get302 '[PlainText] '[ Header "Set-Cookie" SetCookie
+                            , Header "Set-Cookie" SetCookie
+                            ]
+   , cache :: route :-
+       "cache" :>
+       Capture "name" Text :>
+       ToServant (BinaryCacheAPI AsApi)
+   } deriving Generic
 
-servantApi :: Proxy ServantAPI
+type CachixServantAPI = ToServant (CachixAPI AsApi)
+
+servantApi :: Proxy CachixServantAPI
 servantApi = Proxy
+
+type API = "api" :> "v1" :>
+   CachixServantAPI
+   :<|> SwaggerSchemaUI "" "swagger.json"
 
 api :: Proxy API
 api = Proxy
 
 swaggerDoc :: Swagger
-swaggerDoc = toSwagger (Proxy :: Proxy ServantAPI)
+swaggerDoc = toSwagger servantApi
     & info.title       .~ "cachix.org API"
     & info.version     .~ "1.0"
     & info.description ?~ "TODO"

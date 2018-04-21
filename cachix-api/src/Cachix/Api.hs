@@ -32,23 +32,28 @@ import Cachix.Types.Session      (Session)
 import Cachix.Api.Types
 
 
-type CachixAuth = Auth '[Cookie] Session
+type CachixAuth = Auth '[Cookie,JWT] Session
 
--- implement URLs for getFile function in Nix binary cache
 data BinaryCacheAPI route = BinaryCacheAPI
-  { -- https://cache.nixos.org/nix-cache-info
-    nixCacheInfo :: route :-
-      "nix-cache-info" :> Get '[XNixCacheInfo] NixCacheInfo
-  -- Hydra: src/lib/Hydra/View/NixNAR.pm
-  , nar :: route :-
-      "nar" :> Capture "nar" NarC :> Get '[XNixNar] Nar
-  -- Hydra: src/lib/Hydra/View/NarInfo.pm
-  , narinfo :: route :-
-      Capture "narinfo" NarInfoC :> Get '[XNixNarInfo] NarInfo
-  , rootPost :: route :-
+  { slash :: route :-
+      Get '[JSON] BinaryCache
+  , slashPost :: route :-
       CachixAuth :>
       ReqBody '[JSON] BinaryCache :>
       Post '[JSON] NoContent
+  -- https://cache.nixos.org/nix-cache-info
+  , nixCacheInfo :: route :-
+      "nix-cache-info" :>
+      Get '[XNixCacheInfo] NixCacheInfo
+  -- Hydra: src/lib/Hydra/View/NixNAR.pm
+  , nar :: route :-
+      "nar" :>
+      Capture "nar" NarC :>
+      Get '[XNixNar] Nar
+  -- Hydra: src/lib/Hydra/View/NarInfo.pm
+  , narinfo :: route :-
+      Capture "narinfo" NarInfoC :>
+      Get '[XNixNarInfo] NarInfo
   } deriving Generic
 
 data CachixAPI route = CachixAPI
@@ -72,14 +77,13 @@ data CachixAPI route = CachixAPI
        ToServant (BinaryCacheAPI AsApi)
    } deriving Generic
 
-type CachixServantAPI = ToServant (CachixAPI AsApi)
+type CachixServantAPI = "api" :> "v1" :> ToServant (CachixAPI AsApi)
 
 servantApi :: Proxy CachixServantAPI
 servantApi = Proxy
 
-type API = "api" :> "v1" :>
-   CachixServantAPI
-   :<|> SwaggerSchemaUI "" "swagger.json"
+type API = CachixServantAPI
+   :<|> "api" :> "v1" :> SwaggerSchemaUI "" "swagger.json"
 
 api :: Proxy API
 api = Proxy

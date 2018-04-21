@@ -1,88 +1,62 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE QuasiQuotes #-}
-{-# LANGUAGE GADTs #-}
 module Cachix.Client
   ( main
-  , go
-  --, client
   ) where
 
-import Data.String.Here
 import Protolude
-import Network.HTTP.Client (newManager, defaultManagerSettings)
-import qualified URI.ByteString as UBS
-import URI.ByteString hiding (Scheme)
-import URI.ByteString.QQ
-import Servant.API hiding (BaseUrl, URI)
+import Network.HTTP.Client         (newManager, defaultManagerSettings)
+import Servant.API
 import Servant.Client
+import Servant.Auth
+import Servant.Auth.Client
+import URI.ByteString.QQ
+import Web.Cookie (SetCookie)
 
-import Cachix.Api (api)
+import qualified Cachix.Api                  as Api
 import Cachix.Client.OptionsParser (CachixCommand(..), getOpts)
-import Cachix.Client.Config        (Config(..), readConfig, writeConfig, mkConfig)
+import Cachix.Client.Config        (readConfig)
+import Cachix.Client.Commands      as Commands
+import Cachix.Client.URI           (getBaseUrl)
+import Cachix.Client.Servant       (AsClient)
 
--- | TODO: move to Internal module
-getBaseUrl :: URIRef Absolute -> BaseUrl
-getBaseUrl uri@URI{..} =
-  case uriAuthority of
-    Nothing -> panic "missing host in url"
-    Just authority ->
-      BaseUrl
-        getScheme
-        (toS (hostBS (authorityHost authority)))
-        getPort
-        (toS uriPath)
-      where
-        getScheme :: Scheme
-        getScheme = case uriScheme of
-          UBS.Scheme "http" -> Http
-          UBS.Scheme "https" -> Https
-          _ -> panic "uri can only be http/https"
-
-        getPort :: Int
-        getPort = maybe defaultPort portNumber $ authorityPort authority
-
-        defaultPort :: Int
-        defaultPort = case getScheme of
-          Http -> 80
-          Https -> 443
 
 main :: IO ()
 main = do
   opts <- getOpts
   config <- readConfig
-  go () config opts
+  manager <- newManager defaultManagerSettings
+  let env = mkClientEnv manager $ getBaseUrl [uri|http://localhost:8081|] -- TODO: global cli arg
+  -- return $ runClientM (login cachixClient) env
+  case opts of -- TODO: we might want readert here with client, config and env
+    AuthToken token -> Commands.authtoken env config token
+    Create name -> Commands.create env config name
+    Sync maybeName -> Commands.sync env config maybeName
+    Use name -> Commands.use env config name
 
-go :: CachixClient -> Maybe Config -> CachixCommand -> IO ()
-go cclient maybeConfig (AuthToken token) = do
-  -- TODO: check that token actually authenticates!
-  writeConfig $ case maybeConfig of
-    Just config -> config { authToken = token }
-    Nothing -> mkConfig token
-  putStrLn authTokenNext
-go cclient config (Create name) = undefined
-go cclient config (Sync maybeName) = undefined
-go cclient config (Use name) = undefined
 
-authTokenNext :: Text
-authTokenNext = [hereLit|
-Continue by creating a binary cache with:
-
-    $ cachix create <name>
-|]
-type CachixClient = ()
+root :: Token
+     -> ClientM Text
+login :: ClientM (Headers '[Header "Location" Text] NoContent)
+loginCallback :: Maybe Text
+              -> Maybe Text
+              -> ClientM (Headers
+                           '[Header "Location" Text,
+                             Header "Set-Cookie" SetCookie,
+                             Header "Set-Cookie" SetCookie]
+                           NoContent)
+type Slash = ClientM Api.BinaryCache
+type SlashPost = Token -> Api.BinaryCache -> ClientM NoContent
+type NixCacheInfo = ClientM Api.NixCacheInfo
+type Nar = Api.NarC -> ClientM Api.Nar
+type NarInfo = Api.NarInfoC -> ClientM Api.NarInfo
+bcApi :: Text -> (Slash :<|> SlashPost) :<|> NixCacheInfo :<|> Nar :<|> NarInfo
+(root :<|> login) :<|> loginCallback :<|> bcApi = client Api.servantApi
 
 {-
-getAllBooks :: ClientM Text
-postNewBook :: ClientM Text
-(getAllBooks :<|> postNewBook) = client api
-
-env :: IO ()
-env = do
-  manager <- newManager defaultManagerSettings
-  let env = mkClientEnv manager $ getBaseUrl [uri|http://localhost:8081|]
-  res <- runClientM getAllBooks env
-  case res of
-    Left err -> putStrLn $ "Error: " ++ show err
-    Right books -> print books
+TODO: once servant-generic handles subrecords
+cachixClient :: CachixAPI AsClient
+cachixClient = client servantApi
 -}

@@ -21,8 +21,12 @@ description:         Please see the README on Github at <https://github.com/cach
 
 dependencies:
 - base >= 4.7 && < 5
+- cookie
 - servant
 - servant-client
+- servant-generic
+- servant-auth
+- servant-auth-client
 - directory
 - dhall
 - here

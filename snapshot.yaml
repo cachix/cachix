@@ -16,4 +16,5 @@ packages:
   subdirs:
     - servant-auth
     - servant-auth-server
+    - servant-auth-client
     - servant-auth-swagger

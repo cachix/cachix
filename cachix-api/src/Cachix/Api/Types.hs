@@ -4,6 +4,7 @@ module Cachix.Api.Types where
 
 import Data.Aeson           (FromJSON, ToJSON)
 import Data.ByteString.Lazy (ByteString)
+import Data.Monoid          ((<>))
 import Data.Swagger
 import Data.Text
 import GHC.Generics         (Generic)
@@ -59,11 +60,17 @@ instance FromHttpApiData NarC where
     then Right $ NarC s
     else Left ""
 
+instance ToHttpApiData NarC where
+  toUrlPiece (NarC n) = n <> ".nar.xz"
+
 instance FromHttpApiData NarInfoC where
   parseUrlPiece s =
     if takeEnd 8 s == ".narinfo"
     then Right $ NarInfoC (dropEnd 8 s)
     else Left ""
+
+instance ToHttpApiData NarInfoC where
+  toUrlPiece (NarInfoC n) = n <> ".narinfo"
 
 -- TODO: https://github.com/haskell-servant/servant-auth/pull/42#issuecomment-381279499
 instance ToParamSchema SetCookie where

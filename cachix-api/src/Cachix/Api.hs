@@ -20,7 +20,6 @@ import Data.Text
 import GHC.Generics (Generic)
 import Servant.API
 import Servant.Auth
-import Servant.Auth.Swagger
 import Servant.Generic
 import Servant.Swagger
 import Servant.Swagger.UI
@@ -30,16 +29,18 @@ import Cachix.Types.ContentTypes (XNixCacheInfo, XNixNarInfo, XNixNar)
 import Cachix.Types.Servant      (Get302)
 import Cachix.Types.Session      (Session)
 import Cachix.Api.Types
+import Cachix.Api.Swagger        ()
+
 
 
 type CachixAuth = Auth '[Cookie,JWT] Session
 
 data BinaryCacheAPI route = BinaryCacheAPI
-  { slash :: route :-
+  { get :: route :-
       Get '[JSON] BinaryCache
-  , slashPost :: route :-
+  , create :: route :-
       CachixAuth :>
-      ReqBody '[JSON] BinaryCache :>
+      ReqBody '[JSON] BinaryCacheCreate :>
       Post '[JSON] NoContent
   -- https://cache.nixos.org/nix-cache-info
   , nixCacheInfo :: route :-

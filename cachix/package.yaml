@@ -21,7 +21,9 @@ description:         Please see the README on Github at <https://github.com/cach
 
 dependencies:
 - base >= 4.7 && < 5
+- base64-bytestring
 - cookie
+- ed25519
 - servant
 - servant-client
 - servant-generic
@@ -35,6 +37,9 @@ dependencies:
 - uri-bytestring
 - cachix-api
 - text
+- versions
+- process
+- megaparsec
 - bytestring
 - protolude
 
@@ -45,6 +50,10 @@ default-extensions:
 
 ghc-options:
   -Wall
+  -Wcompat
+  -Wincomplete-record-updates
+  -Wincomplete-uni-patterns
+  -Wredundant-constraints
   -fwarn-tabs
   -fwarn-unused-imports
   -fwarn-missing-signatures

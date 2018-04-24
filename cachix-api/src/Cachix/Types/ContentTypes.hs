@@ -25,10 +25,10 @@ instance Accept XNixNar where
   contentType _ = "application" M.// "x-nix-nar"
 
 instance MimeUnrender XNixCacheInfo NixCacheInfo where
-  mimeUnrender _ bs = Left "TODO"
+  mimeUnrender _ _ = Left "TODO"
 
 instance MimeUnrender XNixNarInfo NarInfo where
-  mimeUnrender _ bs = Left "TODO"
+  mimeUnrender _ _ = Left "TODO"
 
 instance MimeUnrender XNixNar Nar where
   mimeUnrender _ bs = Right (Nar bs)

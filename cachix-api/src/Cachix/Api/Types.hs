@@ -5,11 +5,9 @@ module Cachix.Api.Types where
 import Data.Aeson           (FromJSON, ToJSON)
 import Data.ByteString.Lazy (ByteString)
 import Data.Monoid          ((<>))
-import Data.Swagger
-import Data.Text
+import Data.Text            (Text, takeEnd, dropEnd)
 import GHC.Generics         (Generic)
 import Servant.API
-import Web.Cookie           (SetCookie)
 
 
 newtype Nar = Nar
@@ -33,26 +31,19 @@ data NarInfo = NarInfo
   , references :: [Text]
   , deriver :: Text
   , sig :: Text
-  } deriving (Generic, Show)
+  } deriving (Generic, Show, FromJSON, ToJSON)
 
 
 data BinaryCache = BinaryCache
-  { name :: Text
-  , publicSigningKey :: Text
-  } deriving (Show, Generic, FromJSON, ToJSON, ToSchema)
+  { publicSigningKeys :: [Text]
+  } deriving (Show, Generic, FromJSON, ToJSON)
 
-
-instance ToSchema Nar where
-  -- TODO: properly format the field
-  declareNamedSchema _ = return $ NamedSchema (Just "Nar") binarySchema
-instance ToSchema NixCacheInfo
-instance ToSchema NarInfo
+data BinaryCacheCreate = BinaryCacheCreate
+  { publicSigningKey :: Text
+  } deriving (Show, Generic, FromJSON, ToJSON)
 
 newtype NarC = NarC Text deriving Generic
 newtype NarInfoC = NarInfoC Text deriving Generic
-
-instance ToParamSchema NarC
-instance ToParamSchema NarInfoC
 
 instance FromHttpApiData NarC where
   parseUrlPiece s =
@@ -71,7 +62,3 @@ instance FromHttpApiData NarInfoC where
 
 instance ToHttpApiData NarInfoC where
   toUrlPiece (NarInfoC n) = n <> ".narinfo"
-
--- TODO: https://github.com/haskell-servant/servant-auth/pull/42#issuecomment-381279499
-instance ToParamSchema SetCookie where
-  toParamSchema _ = mempty -- TODO: cookie instances for swagger

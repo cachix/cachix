@@ -3,16 +3,12 @@
 module Cachix.Api.Types where
 
 import Data.Aeson           (FromJSON, ToJSON)
-import Data.ByteString.Lazy (ByteString)
+import Data.ByteString      (ByteString)
 import Data.Monoid          ((<>))
 import Data.Text            (Text, takeEnd, dropEnd)
 import GHC.Generics         (Generic)
 import Servant.API
 
-
-newtype Nar = Nar
-  { unnar :: ByteString
-  } deriving (Generic, Show)
 
 data NixCacheInfo = NixCacheInfo
   { storeDir :: Text
@@ -20,19 +16,45 @@ data NixCacheInfo = NixCacheInfo
   , priority :: Integer
   } deriving (Generic, Show)
 
+-- narinfo url includes storePath hash and .narinfo suffix
 data NarInfo = NarInfo
   { storePath :: Text
+    -- ^ absolute path of the derivation in nix store
   , url :: Text
+    -- ^ relative url (to current domain) to download nar file
   , compression :: Text
+    -- ^ name of the compression algorithm, eg. xz
   , fileHash :: Text
+    -- ^ sha256 hash of the compressed nar file
+    -- NOTE: to compute use "nix-hash --type sha256 --flat --base32"
   , fileSize :: Integer
+    -- ^ file size of compressed nar file
+    -- NOTE: du -b
   , narHash :: Text
+    -- ^ sha256 hash of the decompressed nar file
+    -- NOTE: to compute use "nix-hash --type sha256 --flat --base32"
   , narSize :: Integer
+    -- ^ file size of decompressed nar file
+    -- NOTE: du -b
   , references :: [Text]
+    -- ^ immediate dependencies of the storePath
+    -- NOTE: nix-store -q --references
   , deriver :: Text
+    -- ^ relative store path (to nix store root) of the deriver
+    -- NOTE: nix-store -q --deriver
   , sig :: Text
+    -- ^ signature of fields: storePath, narHash, narSize, refs
   } deriving (Generic, Show, FromJSON, ToJSON)
 
+-- | Client create type
+data NarInfoCreate = NarInfoCreate
+  { cStorePath :: Text
+  , cNarHash :: Text
+  , cNarSize :: Int
+  , cReferences :: [Text]
+  , cDeriver :: Text
+  , cSig :: Text
+  } deriving (Generic, Show, FromJSON, ToJSON)
 
 data BinaryCache = BinaryCache
   { publicSigningKeys :: [Text]
@@ -62,3 +84,8 @@ instance FromHttpApiData NarInfoC where
 
 instance ToHttpApiData NarInfoC where
   toUrlPiece (NarInfoC n) = n <> ".narinfo"
+
+
+data BinaryCacheError = BinaryCacheError
+  { error :: Text
+  } deriving (Generic, ToJSON)

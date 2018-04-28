@@ -10,6 +10,7 @@ module Cachix.Api
   , BinaryCacheAPI(..)
   , CachixServantAPI
   , module Cachix.Api.Types
+  , module Cachix.Types.ContentTypes
   ) where
 
 import Control.Lens
@@ -18,19 +19,20 @@ import Data.Proxy (Proxy(..))
 import Data.Swagger hiding (Header)
 import Data.Text
 import GHC.Generics (Generic)
+import Network.AWS (AWS)
 import Servant.API
 import Servant.Auth
 import Servant.Generic
+import Servant.Streaming
 import Servant.Swagger
 import Servant.Swagger.UI
 import Web.Cookie                (SetCookie)
 
-import Cachix.Types.ContentTypes (XNixCacheInfo, XNixNarInfo, XNixNar)
+import Cachix.Types.ContentTypes
 import Cachix.Types.Servant      (Get302)
 import Cachix.Types.Session      (Session)
 import Cachix.Api.Types
 import Cachix.Api.Swagger        ()
-
 
 
 type CachixAuth = Auth '[Cookie,JWT] Session
@@ -50,18 +52,24 @@ data BinaryCacheAPI route = BinaryCacheAPI
   , nar :: route :-
       "nar" :>
       Capture "nar" NarC :>
-      Get '[XNixNar] Nar
-  -- Hydra: src/lib/Hydra/View/NarInfo.pm
+      StreamResponseGet '[XNixNar]
+  , createNar :: route :-
+      "nar" :>
+      Capture "nar" NarC :>
+      StreamBodyMonad '[XNixNar] AWS :>
+      Post '[JSON] NoContent
+  -- Hydra: src/lib/Hydra/View/NARInfo.pm
   , narinfo :: route :-
       Capture "narinfo" NarInfoC :>
       Get '[XNixNarInfo] NarInfo
+  , createNarinfo :: route :-
+      Capture "narinfo" NarInfoC :>
+      ReqBody '[JSON] NarInfo :>
+      Post '[JSON] NoContent
   } deriving Generic
 
 data CachixAPI route = CachixAPI
-   { root :: route :-
-       CachixAuth :>
-       Get '[PlainText] Text
-   , login :: route :-
+   { login :: route :-
        "login" :>
        Get302 '[PlainText] '[]
    , loginCallback :: route :-
@@ -84,7 +92,7 @@ servantApi :: Proxy CachixServantAPI
 servantApi = Proxy
 
 type API = CachixServantAPI
-   :<|> "api" :> "v1" :> SwaggerSchemaUI "" "swagger.json"
+   :<|> "api" :> SwaggerSchemaUI "v1" "swagger.json"
 
 api :: Proxy API
 api = Proxy

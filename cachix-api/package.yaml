@@ -20,6 +20,7 @@ extra-source-files:
 description:         Please see the README on Github at <https://github.com/githubuser/cachix-api#readme>
 
 dependencies:
+- amazonka
 - base >= 4.7 && < 5
 - aeson
 - cookie
@@ -31,6 +32,7 @@ dependencies:
 - servant-auth
 - servant-auth-server
 - servant-auth-swagger
+- servant-streaming
 - servant-swagger
 - servant-swagger-ui
 - swagger2

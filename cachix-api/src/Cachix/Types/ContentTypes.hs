@@ -29,6 +29,3 @@ instance MimeUnrender XNixCacheInfo NixCacheInfo where
 
 instance MimeUnrender XNixNarInfo NarInfo where
   mimeUnrender _ _ = Left "TODO"
-
-instance MimeUnrender XNixNar Nar where
-  mimeUnrender _ bs = Right (Nar bs)

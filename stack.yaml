@@ -3,4 +3,4 @@ packages:
 - cachix-api
 - cachix
 nix:
-    packages: [zlib]
+    packages: [zlib,lzma]

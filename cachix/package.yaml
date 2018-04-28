@@ -20,28 +20,41 @@ extra-source-files:
 description:         Please see the README on Github at <https://github.com/cachix/cachix#readme>
 
 dependencies:
+- async
 - base >= 4.7 && < 5
+- base16-bytestring
 - base64-bytestring
+- bytestring
+- cachix-api
+- conduit
+- conduit-extra
+- conduit-combinators
 - cookie
+- cryptonite
+- dhall
+- directory
 - ed25519
+- here
+- http-client-tls
+- lzma-conduit
+- megaparsec
+- memory
+- mmorph
+- optparse-applicative
+- process
+- protolude
+- resourcet
+- SafeSemaphore
 - servant
-- servant-client
-- servant-generic
 - servant-auth
 - servant-auth-client
-- directory
-- dhall
-- here
-- http-client
-- optparse-applicative
-- uri-bytestring
-- cachix-api
+- servant-client
+- servant-generic
+- servant-streaming-client
+- streaming
 - text
+- uri-bytestring
 - versions
-- process
-- megaparsec
-- bytestring
-- protolude
 
 default-extensions:
 - OverloadedStrings

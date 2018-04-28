@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -17,9 +18,6 @@ import Web.Cookie           (SetCookie)
 import Cachix.Api.Types
 
 
-instance ToSchema Nar where
-  -- TODO: properly format the field
-  declareNamedSchema _ = return $ NamedSchema (Just "Nar") binarySchema
 instance ToSchema NixCacheInfo
 instance ToSchema NarInfo
 
@@ -36,8 +34,9 @@ instance ToParamSchema SetCookie where
 
 -- https://github.com/plow-technologies/servant-streaming/blob/master/servant-streaming-docs/src/Servant/Streaming/Docs/Internal.hs
 -- TODO: these should define the body/response content
-instance (HasSwagger api) => HasSwagger (StreamBody contentTypes :> api) where
+instance (HasSwagger api) => HasSwagger (StreamBodyMonad contentTypes m :> api) where
+--instance (HasSwagger api) => HasSwagger (StreamBody contentTypes :> api) where
   toSwagger _ = toSwagger (Proxy :: Proxy api)
 
-instance (HasSwagger api) => HasSwagger (StreamResponse contentTypes :> api) where
-  toSwagger _ = toSwagger (Proxy :: Proxy api)
+instance HasSwagger (StreamResponseGet contentTypes) where
+  toSwagger _ = mempty -- TODO mkEndpointNoContent

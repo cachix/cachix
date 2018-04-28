@@ -3,13 +3,21 @@ resolver: nightly-2018-03-01
 name: cachix
 
 packages:
-- servant-0.13
-- servant-client-0.13
-- servant-client-core-0.13
 - http-types-0.12.1
 - http-api-data-0.3.8.1
+- streaming-wai-0.1.1
 - servant-swagger-1.1.5
-- servant-server-0.13
+- bits-extras-0.1.3
+- free-5.0.1
+- lens-4.16.1
+# servant-streaming is using some unreleased combinators
+- git: https://github.com/haskell-servant/servant
+  commit: 63253f09df9b3f946d9bbe1004573019aab67ddf
+  subdirs:
+    - servant
+    - servant-server
+    - servant-client
+    - servant-client-core
 # https://github.com/haskell-servant/servant-auth/pull/92
 - git: https://github.com/domenkozar/servant-auth
   commit: 64f2a2bde915595a30af22e0ffed113e2e31fd10
@@ -18,3 +26,13 @@ packages:
     - servant-auth-server
     - servant-auth-client
     - servant-auth-swagger
+# Waiting on a release and https://github.com/plow-technologies/servant-streaming/pull/7
+- git: https://github.com/domenkozar/servant-streaming.git
+  commit: f98d474580a4e39f76aa67f75c83c7c2545afa8e
+  subdirs:
+    - servant-streaming
+    - servant-streaming-server
+    - servant-streaming-client
+# https://github.com/pxqr/base32-bytestring/pull/5
+#- git: https://github.com/FilWisher/base32-bytestring.git
+#  commit: 0c4790ba150a35f7d0d56fe7262ccbe8407c2471

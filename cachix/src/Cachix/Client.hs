@@ -4,7 +4,7 @@ module Cachix.Client
   ) where
 
 import Protolude
-import Network.HTTP.Client         (newManager, defaultManagerSettings)
+import Network.HTTP.Client.TLS     (newTlsManager)
 import URI.ByteString.QQ
 import Servant.Client              (mkClientEnv)
 
@@ -18,8 +18,8 @@ main :: IO ()
 main = do
   opts <- getOpts
   config <- readConfig
-  manager <- newManager defaultManagerSettings
-  let env = mkClientEnv manager $ getBaseUrl [uri|http://localhost:8081|] -- TODO: global cli arg
+  manager <- newTlsManager
+  let env = mkClientEnv manager $ getBaseUrl [uri|http://localhost:8090|] -- TODO: global cli arg
   case opts of -- TODO: we might want readerT here with client, config and env
     AuthToken token -> Commands.authtoken env config token
     Create name -> Commands.create env config name

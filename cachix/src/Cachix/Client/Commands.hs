@@ -16,7 +16,8 @@ import           Control.Monad.Morph (hoist)
 import           Control.Monad.Trans.Resource (ResourceT)
 import qualified Data.ByteString               as BS
 import qualified Data.ByteArray                as BA
-import qualified Data.ByteArray.Encoding       as BAE
+-- TODO: use cryptonite encoding instead
+-- import qualified Data.ByteArray.Encoding       as BAE
 import qualified Data.ByteString.Base64        as B64
 import qualified Data.ByteString.Base16        as B16
 import           Data.Conduit

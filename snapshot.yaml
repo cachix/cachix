@@ -33,6 +33,3 @@ packages:
     - servant-streaming
     - servant-streaming-server
     - servant-streaming-client
-# https://github.com/pxqr/base32-bytestring/pull/5
-#- git: https://github.com/FilWisher/base32-bytestring.git
-#  commit: 0c4790ba150a35f7d0d56fe7262ccbe8407c2471

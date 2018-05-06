@@ -1,14 +1,15 @@
-{-# LANGUAGE QuasiQuotes #-}
 module Cachix.Client
   ( main
   ) where
 
 import Protolude
-import Network.HTTP.Client.TLS     (newTlsManager)
-import URI.ByteString.QQ
+import Network.HTTP.Client.TLS     (newTlsManagerWith)
+import Network.HTTP.Client         (defaultManagerSettings, managerResponseTimeout
+                                   , responseTimeoutNone, ManagerSettings)
+
 import Servant.Client              (mkClientEnv)
 
-import Cachix.Client.OptionsParser (CachixCommand(..), getOpts)
+import Cachix.Client.OptionsParser (CachixCommand(..), CachixOptions(..), getOpts)
 import Cachix.Client.Config        (readConfig)
 import Cachix.Client.Commands      as Commands
 import Cachix.Client.URI           (getBaseUrl)
@@ -16,12 +17,17 @@ import Cachix.Client.URI           (getBaseUrl)
 
 main :: IO ()
 main = do
-  opts <- getOpts
+  (CachixOptions{..}, command) <- getOpts
   config <- readConfig
-  manager <- newTlsManager
-  let env = mkClientEnv manager $ getBaseUrl [uri|http://localhost:8090|] -- TODO: global cli arg
-  case opts of -- TODO: we might want readerT here with client, config and env
+  manager <- newTlsManagerWith customManagerSettings
+  let env = mkClientEnv manager $ getBaseUrl host
+  case command of -- TODO: might want readerT here with client, config and env and opts
     AuthToken token -> Commands.authtoken env config token
     Create name -> Commands.create env config name
     Sync maybeName -> Commands.sync env config maybeName
     Use name -> Commands.use env config name
+
+customManagerSettings :: ManagerSettings
+customManagerSettings = defaultManagerSettings
+  { managerResponseTimeout = responseTimeoutNone
+  }

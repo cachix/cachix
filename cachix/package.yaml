@@ -24,6 +24,7 @@ dependencies:
 - base >= 4.7 && < 5
 - base16-bytestring
 - base64-bytestring
+- bifunctors
 - bytestring
 - cachix-api
 - conduit
@@ -36,6 +37,7 @@ dependencies:
 - ed25519
 - here
 - http-client-tls
+- http-client
 - lzma-conduit
 - megaparsec
 - memory

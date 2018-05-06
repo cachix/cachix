@@ -36,11 +36,12 @@ parserCachixCommand = subparser $
     sync = Sync <$> optional (strArgument (metavar "NAME"))
     use = Use <$> strArgument (metavar "NAME")
 
-getOpts :: IO CachixCommand
+getOpts :: IO (CachixOptions, CachixCommand)
 getOpts = customExecParser (prefs showHelpOnEmpty) opts
 
-opts :: ParserInfo CachixCommand
-opts = infoH parserCachixCommand desc
+opts :: ParserInfo (CachixOptions, CachixCommand)
+opts = infoH parser desc
+  where parser = (,) <$> parserCachixOptions <*> parserCachixCommand
 
 desc :: InfoMod a
 desc = fullDesc

@@ -79,6 +79,10 @@ data CachixAPI route = CachixAPI
        Get302 '[PlainText] '[ Header "Set-Cookie" SetCookie
                             , Header "Set-Cookie" SetCookie
                             ]
+   , createToken :: route :-
+      CachixAuth :>
+      "token" :>
+       Post '[JSON] Text
    , cache :: route :-
        "cache" :>
        Capture "name" Text :>

@@ -55,7 +55,6 @@ data BinaryCacheAPI route = BinaryCacheAPI
       StreamResponseGet '[XNixNar]
   , createNar :: route :-
       "nar" :>
-      Capture "nar" NarC :>
       StreamBodyMonad '[XNixNar] AWS :>
       Post '[JSON] NoContent
   -- Hydra: src/lib/Hydra/View/NARInfo.pm
@@ -64,7 +63,7 @@ data BinaryCacheAPI route = BinaryCacheAPI
       Get '[XNixNarInfo] NarInfo
   , createNarinfo :: route :-
       Capture "narinfo" NarInfoC :>
-      ReqBody '[JSON] NarInfo :>
+      ReqBody '[JSON] NarInfoCreate :>
       Post '[JSON] NoContent
   } deriving Generic
 

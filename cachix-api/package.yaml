@@ -23,10 +23,16 @@ dependencies:
 - amazonka
 - base >= 4.7 && < 5
 - aeson
-- cookie
-- text
 - bytestring
+- base16-bytestring
+- cryptonite
+- cookie
+- conduit
+- conduit-combinators
+- http-media
+- http-api-data
 - lens
+- memory
 - servant
 - servant-generic
 - servant-auth
@@ -36,8 +42,10 @@ dependencies:
 - servant-swagger
 - servant-swagger-ui
 - swagger2
-- http-media
-- http-api-data
+- string-conv
+- text
+- transformers
+
 
 default-extensions:
 - OverloadedStrings

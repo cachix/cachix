@@ -48,9 +48,12 @@ data NarInfo = NarInfo
 
 -- | Client create type
 data NarInfoCreate = NarInfoCreate
-  { cStorePath :: Text
+  { cStoreHash :: Text -- ^ $storePrefix / $storeHash - $storeSuffix
+  , cStoreSuffix :: Text -- ^ $storePrefix / $storeHash - $storeSuffix
   , cNarHash :: Text
   , cNarSize :: Int
+  , cFileHash :: Text
+  , cFileSize :: Int
   , cReferences :: [Text]
   , cDeriver :: Text
   , cSig :: Text
@@ -64,7 +67,10 @@ data BinaryCacheCreate = BinaryCacheCreate
   { publicSigningKey :: Text
   } deriving (Show, Generic, FromJSON, ToJSON)
 
+-- | checksum of nar.xz file
 newtype NarC = NarC Text deriving Generic
+
+-- | Store path hash
 newtype NarInfoC = NarInfoC Text deriving Generic
 
 instance FromHttpApiData NarC where

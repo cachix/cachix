@@ -1,28 +1,50 @@
+{-# LANGUAGE QuasiQuotes #-}
 module Cachix.Client.OptionsParser
   ( CachixCommand(..)
+  , CachixOptions(..)
   , BinaryCacheName
   , getOpts
   ) where
 
-import Protolude
+import Data.Bifunctor            (first)
+import Protolude hiding          (option)
+import URI.ByteString            (URIRef, Absolute, parseURI, strictURIParserOptions
+                                 , serializeURIRef')
+import URI.ByteString.QQ
 import Options.Applicative
 
-{-
+
 data CachixOptions = CachixOptions
-  {
-  } deriving (Show)
+  { host :: URIRef Absolute
+  , verbose :: Bool
+  } deriving Show
 
 parserCachixOptions :: Parser CachixOptions
-parserCachixOptions = return $ CachixOptions
--}
+parserCachixOptions = CachixOptions
+  <$> option uriOption ( long "host"
+                       <> short 'h'
+                       <> value [uri|https://cachix.org|]
+                       <> metavar "URI"
+                       <> showDefaultWith (toS . serializeURIRef')
+                       <> help "Host to connect to"
+                       )
+  <*> switch ( long "verbose"
+            <> short 'v'
+            <> help "Verbose mode"
+             )
+
+uriOption :: ReadM (URIRef Absolute)
+uriOption = eitherReader $ \s ->
+  (first show $ parseURI strictURIParserOptions $ toS s)
+
 type BinaryCacheName = Text
 
 data CachixCommand
   = AuthToken Text
   | Create BinaryCacheName
-  | Sync (Maybe BinaryCacheName)
+  | Sync BinaryCacheName
   | Use BinaryCacheName
-  deriving (Show)
+  deriving Show
 
 parserCachixCommand :: Parser CachixCommand
 parserCachixCommand = subparser $
@@ -33,7 +55,7 @@ parserCachixCommand = subparser $
   where
     authtoken = AuthToken <$> strArgument (metavar "TOKEN")
     create = Create <$> strArgument (metavar "NAME")
-    sync = Sync <$> optional (strArgument (metavar "NAME"))
+    sync = Sync <$> strArgument (metavar "NAME")
     use = Use <$> strArgument (metavar "NAME")
 
 getOpts :: IO (CachixOptions, CachixCommand)

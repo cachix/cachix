@@ -4,3 +4,4 @@ packages:
 - cachix
 nix:
     packages: [zlib,lzma]
+    pure: false

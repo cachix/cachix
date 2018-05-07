@@ -9,7 +9,7 @@ import Cachix.Client.NixConf as NixConf
 
 
 property :: Text -> Expectation
-property x = NixConf.render <$> (parse x) `shouldBe` Just x
+property x = NixConf.render <$> parse x `shouldBe` Just x
 
 spec :: Spec
 spec = do

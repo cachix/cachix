@@ -35,7 +35,7 @@ parserCachixOptions = CachixOptions
 
 uriOption :: ReadM (URIRef Absolute)
 uriOption = eitherReader $ \s ->
-  (first show $ parseURI strictURIParserOptions $ toS s)
+  first show $ parseURI strictURIParserOptions $ toS s
 
 type BinaryCacheName = Text
 

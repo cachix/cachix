@@ -1,4 +1,3 @@
-{-# LANGUAGE QuasiQuotes #-}
 module NixVersionSpec where
 
 import Protolude

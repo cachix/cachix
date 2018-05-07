@@ -19,17 +19,18 @@ import           Data.Text (Text)
 
 
 -- perl/lib/Nix/Manifest.pm:fingerprintPath
+-- TODO: Either Text ByteString: assert values
 fingerprint :: Text -> Text -> Int -> [Text] -> ByteString
-fingerprint storePath narHash narSize references = toS $ T.intercalate ";" $
-  "1" : storePath : narHash : T.pack (show narSize) : (T.intercalate "," references) : []
+fingerprint storePath narHash narSize references = toS $ T.intercalate ";"
+  ["1", storePath, narHash, T.pack (show narSize), T.intercalate "," references]
 
 -- Useful sinks for streaming nars
 
 sizeSink :: MonadIO m => Consumer ByteString m Int
-sizeSink = CC.foldM (\p -> \n -> return (p + BS.length n)) 0
+sizeSink = CC.foldM (\p n -> return (p + BS.length n)) 0
 
 hashSink :: MonadIO m => Consumer ByteString m (Context SHA256)
-hashSink = CC.foldM (\p -> \n -> return (hashUpdate p n)) hashInit
+hashSink = CC.foldM (\p n -> return (hashUpdate p n)) hashInit
 
 passthroughSizeSink :: MonadIO m => IORef Int -> Conduit ByteString m ByteString
 passthroughSizeSink ioref = passthroughSink sizeSink (liftIO . writeIORef ioref)

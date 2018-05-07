@@ -183,9 +183,12 @@ sync env (Just Config{..}) name = do
       Left err -> panic $ show err
       Right NoContent -> do
         narSize <- readIORef narSizeRef
-        narHash <- readIORef narHashRef
+        narHashB16 <- readIORef narHashRef
         fileHash <- readIORef fileHashRef
         fileSize <- readIORef fileSizeRef
+
+        -- TODO: #3: implement using pure haskell
+        narHash <- ("sha256:" <>) . T.strip . toS <$> readProcess "nix-hash" ["--type", "sha256", "--to-base32", toS narHashB16] mempty
 
         -- TODO: handle case if there is no deriver
         (exitcode, out, err) <- readProcessWithExitCode "nix-store" ["-q", "--deriver", toS storePath] mempty
@@ -194,9 +197,9 @@ sync env (Just Config{..}) name = do
         (exitcode, out, err) <- readProcessWithExitCode "nix-store" ["-q", "--references", toS storePath] mempty
 
         let (storeHash, storeSuffix) = splitStorePath $ toS storePath
-            references = fmap (T.drop 11) $ T.lines $ toS out
+            references = T.lines $ toS out
             fp = fingerprint storePath narHash narSize references
-            sig = dsign sk $ fp
+            sig = dsign sk fp
             nic = Api.NarInfoCreate
               { cStoreHash = storeHash
               , cStoreSuffix = storeSuffix
@@ -204,7 +207,7 @@ sync env (Just Config{..}) name = do
               , cNarSize = narSize
               , cFileSize = fileSize
               , cFileHash = fileHash
-              , cReferences = references
+              , cReferences = fmap (T.drop 11) references
               , cDeriver = deriver
               , cSig = toS $ B64.encode $ unSignature sig
               }

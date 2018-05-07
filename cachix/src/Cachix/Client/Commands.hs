@@ -33,7 +33,7 @@ import           Servant.Auth
 import           Servant.Auth.Client
 import           Servant.Streaming.Client
 import           Servant.Generic
-import           System.IO                      (stdin, hReady)
+import           System.IO                      (stdin, hIsTerminalDevice)
 import           System.Process                 ( readProcessWithExitCode, readProcess )
 import           System.Environment             ( lookupEnv )
 import qualified Streaming.Prelude             as S
@@ -127,11 +127,11 @@ use env _ name = do
 -- TODO: lots of room for perfomance improvements
 sync :: ClientEnv -> Maybe Config -> Text -> IO ()
 sync env (Just Config{..}) name = do
-  hasStdin <- hReady stdin
+  hasNoStdin <- hIsTerminalDevice stdin
   inputStorePaths <-
-    if hasStdin
-    then T.lines <$> getContents
-    else return ["TODO PATH"]
+    if hasNoStdin
+    then return ["TODO PATH"] -- TODO: support paths as arg(s)
+    else T.lines <$> getContents
 
   -- use secret key from config or env
   maybeEnvSK <- lookupEnv "CACHIX_SIGNING_KEY"

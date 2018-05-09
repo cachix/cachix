@@ -14,7 +14,7 @@ data NixCacheInfo = NixCacheInfo
   { storeDir :: Text
   , wantMassQuery :: Integer
   , priority :: Integer
-  } deriving (Generic, Show)
+  } deriving (Generic, Show, FromJSON, ToJSON)
 
 -- narinfo url includes storePath hash and .narinfo suffix
 data NarInfo = NarInfo
@@ -94,4 +94,4 @@ instance ToHttpApiData NarInfoC where
 
 data BinaryCacheError = BinaryCacheError
   { error :: Text
-  } deriving (Generic, ToJSON)
+  } deriving (Generic, FromJSON, ToJSON)

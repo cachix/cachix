@@ -47,20 +47,20 @@ data BinaryCacheAPI route = BinaryCacheAPI
   -- https://cache.nixos.org/nix-cache-info
   , nixCacheInfo :: route :-
       "nix-cache-info" :>
-      Get '[XNixCacheInfo] NixCacheInfo
+      Get '[XNixCacheInfo, JSON] NixCacheInfo
   -- Hydra: src/lib/Hydra/View/NixNAR.pm
   , nar :: route :-
       "nar" :>
       Capture "nar" NarC :>
-      StreamResponseGet '[XNixNar]
+      StreamResponseGet '[XNixNar, JSON]
   , createNar :: route :-
       "nar" :>
-      StreamBodyMonad '[XNixNar] AWS :>
+      StreamBodyMonad '[XNixNar, JSON] AWS :>
       Post '[JSON] NoContent
   -- Hydra: src/lib/Hydra/View/NARInfo.pm
   , narinfo :: route :-
       Capture "narinfo" NarInfoC :>
-      Get '[XNixNarInfo] NarInfo
+      Get '[XNixNarInfo, JSON] NarInfo
   , createNarinfo :: route :-
       Capture "narinfo" NarInfoC :>
       ReqBody '[JSON] NarInfoCreate :>
@@ -70,15 +70,15 @@ data BinaryCacheAPI route = BinaryCacheAPI
 data CachixAPI route = CachixAPI
    { login :: route :-
        "login" :>
-       Get302 '[PlainText] '[]
+       Get302 '[JSON] '[]
    , loginCallback :: route :-
        "login" :>
        "callback" :>
        QueryParam "code" Text :>
        QueryParam "state" Text :>
-       Get302 '[PlainText] '[ Header "Set-Cookie" SetCookie
-                            , Header "Set-Cookie" SetCookie
-                            ]
+       Get302 '[JSON] '[ Header "Set-Cookie" SetCookie
+                       , Header "Set-Cookie" SetCookie
+                       ]
    , createToken :: route :-
       CachixAuth :>
       "token" :>

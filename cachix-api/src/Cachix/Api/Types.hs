@@ -95,3 +95,8 @@ instance ToHttpApiData NarInfoC where
 data BinaryCacheError = BinaryCacheError
   { error :: Text
   } deriving (Generic, FromJSON, ToJSON)
+
+data User = User
+  { name :: Text
+  , username :: Text
+  } deriving (Generic, FromJSON, ToJSON)

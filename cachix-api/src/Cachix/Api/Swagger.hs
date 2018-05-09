@@ -24,6 +24,8 @@ instance ToSchema NarInfoCreate
 instance ToSchema BinaryCache
 instance ToSchema BinaryCacheCreate
 
+instance ToSchema User
+
 instance ToParamSchema NarC
 instance ToParamSchema NarInfoC
 

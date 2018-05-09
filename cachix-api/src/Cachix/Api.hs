@@ -87,6 +87,10 @@ data CachixAPI route = CachixAPI
       CachixAuth :>
       "token" :>
        Post '[JSON] Text
+   , caches :: route :-
+       CachixAuth :>
+       "cache" :>
+       Get '[JSON] [BinaryCache]
    , cache :: route :-
        "cache" :>
        Capture "name" Text :>

@@ -60,7 +60,8 @@ data NarInfoCreate = NarInfoCreate
   } deriving (Generic, Show, FromJSON, ToJSON)
 
 data BinaryCache = BinaryCache
-  { publicSigningKeys :: [Text]
+  { name :: Text
+  , publicSigningKeys :: [Text]
   } deriving (Show, Generic, FromJSON, ToJSON)
 
 data BinaryCacheCreate = BinaryCacheCreate
@@ -97,6 +98,6 @@ data BinaryCacheError = BinaryCacheError
   } deriving (Generic, FromJSON, ToJSON)
 
 data User = User
-  { name :: Text
+  { fullname :: Text
   , username :: Text
   } deriving (Generic, FromJSON, ToJSON)

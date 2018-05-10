@@ -1,39 +1,93 @@
+{- (Very limited) parser, rendered and modifier of nix.conf
+-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE DeriveFunctor #-}
 module Cachix.Client.NixConf
-  ( NixConf(..)
+  ( NixConf
+  , NixConfG(..)
   , NixConfLine(..)
   , NixConfLoc(..)
   , render
   , add
+  , addIO
   , read
   , update
   , parser
   , parse
+  , defaultPublicURI
+  , defaultSigningKey
   ) where
 
+import Data.Text (unwords, unlines)
+import Data.List (nub)
 import Protolude hiding (some, many)
 import Text.Megaparsec hiding (parse)
 import Text.Megaparsec.Char
-import Data.Text
-import Data.List (nub)
 import System.Directory ( doesFileExist, createDirectoryIfMissing
                         , getXdgDirectory, XdgDirectory(..)
                         )
+import Cachix.Api (BinaryCache(..))
 
 
 data NixConfLine
   = Substituters [Text]
   | TrustedUsers [Text]
   | TrustedPublicKeys [Text]
+  | BinaryCachePublicKeys [Text]
+  | BinaryCaches [Text]
   | Other Text
   deriving (Show, Eq)
 
-newtype NixConf = NixConf [NixConfLine] deriving (Show, Eq)
+newtype NixConfG a = NixConf a
+  deriving (Show, Eq, Functor)
 
+type NixConf = NixConfG [NixConfLine]
 
-add :: NixConfLine -> Text -> NixConfLine
-add (Substituters xs) x = Substituters $ nub (x : xs)
-add (TrustedPublicKeys xs) x = TrustedPublicKeys $ nub (x : xs)
-add rest _ = rest
+readLines :: [NixConf] -> (NixConfLine -> Maybe [Text]) -> [Text]
+readLines nixconfs predicate = concat $ fmap f nixconfs
+  where
+    f (NixConf xs) = foldl foldIt [] xs
+
+    foldIt :: [Text] -> NixConfLine -> [Text]
+    foldIt prev new = prev <> (fromMaybe [] $ predicate new)
+
+writeLines :: (NixConfLine -> Maybe [Text]) -> NixConfLine -> NixConf -> NixConf
+writeLines predicate addition nixconf = fmap f nixconf
+  where
+    f x = filter (isNothing . predicate) x <> [addition]
+
+isSubstituter (Substituters xs) = Just xs
+isSubstituter (BinaryCaches xs) = Just xs
+isSubstituter _ = Nothing
+
+isPublicKey (TrustedPublicKeys xs) = Just xs
+isPublicKey (BinaryCachePublicKeys xs) = Just xs
+isPublicKey _ = Nothing
+
+-- | Add a Binary cache to nix.conf
+addIO :: BinaryCache -> NixConfLoc -> IO ()
+addIO bc ncl = do
+  -- TODO: might need locking one day
+  gnc <- read Global
+  lnc <- read Local
+  let final = if ncl == Global then gnc else lnc
+      input = if ncl == Global then [gnc, lnc] else [gnc]
+  write ncl $ add bc (catMaybes input) (fromMaybe (NixConf []) final)
+
+-- | Pure version of addIO
+add :: BinaryCache -> [NixConf] -> NixConf -> NixConf
+add BinaryCache{..} toRead toWrite =
+  writeLines isPublicKey (TrustedPublicKeys $ nub publicKeys) $
+    writeLines isSubstituter (Substituters $ nub substituters) toWrite
+  where
+    -- Note: some defaults are always appended since overriding some setttings in nix.conf overrides defaults otherwise
+    substituters = (defaultPublicURI : readLines toRead isSubstituter) <> [uri]
+    publicKeys = (defaultSigningKey : readLines toRead isPublicKey) <> publicSigningKeys
+
+defaultPublicURI :: Text
+defaultPublicURI = "https://cache.nixos.org"
+defaultSigningKey :: Text
+defaultSigningKey = "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
 
 render :: NixConf -> Text
 render (NixConf nixconflines) = unlines $ fmap go nixconflines
@@ -63,6 +117,7 @@ update ncl f = do
   write ncl nc
 
 data NixConfLoc = Global | Local
+  deriving (Show, Eq)
 
 getFilename :: NixConfLoc -> IO FilePath
 getFilename ncl = do
@@ -96,6 +151,8 @@ parseAltLine =
       parseLine Substituters "substituters"
   <|> parseLine TrustedPublicKeys "trusted-public-keys"
   <|> parseLine TrustedUsers "trusted-users"
+  <|> parseLine BinaryCachePublicKeys "binary-cache-public-keys"
+  <|> parseLine BinaryCaches "binary-caches"
   <|> parseOther
 
 parser :: Parser NixConf

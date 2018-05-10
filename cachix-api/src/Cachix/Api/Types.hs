@@ -61,6 +61,7 @@ data NarInfoCreate = NarInfoCreate
 
 data BinaryCache = BinaryCache
   { name :: Text
+  , uri :: Text
   , publicSigningKeys :: [Text]
   } deriving (Show, Generic, FromJSON, ToJSON)
 

@@ -3,8 +3,8 @@ module Cachix.Client
   ) where
 
 import Protolude
-import Network.HTTP.Client.TLS     (newTlsManagerWith)
-import Network.HTTP.Client         (defaultManagerSettings, managerResponseTimeout
+import Network.HTTP.Client.TLS     (newTlsManagerWith, tlsManagerSettings)
+import Network.HTTP.Client         (managerResponseTimeout
                                    , responseTimeoutNone, ManagerSettings)
 
 import Servant.Client              (mkClientEnv)
@@ -28,6 +28,6 @@ main = do
     Use name -> Commands.use env config name
 
 customManagerSettings :: ManagerSettings
-customManagerSettings = defaultManagerSettings
+customManagerSettings = tlsManagerSettings
   { managerResponseTimeout = responseTimeoutNone
   }

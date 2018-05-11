@@ -14,7 +14,6 @@ import           Control.Concurrent.Async
 import           Control.Monad.Morph          (hoist)
 import           Control.Monad.Trans.Resource (ResourceT)
 import qualified Data.ByteString               as BS
-
 -- TODO: use cryptonite encoding instead
 -- import qualified Data.ByteArray.Encoding       as BAE
 import qualified Data.ByteString.Base64        as B64

@@ -122,6 +122,8 @@ spec = do
       parse "substituters = a\n" `shouldBe` (Just $ NixConf [Substituters ["a"]])
     it "parses substituters with multiple values" $
       parse "substituters = a b c\n" `shouldBe` (Just $ NixConf [Substituters ["a", "b", "c"]])
+    it "parses equal sign after the first key as literal" $
+      parse "substituters = a b c= d\n" `shouldBe` (Just $ NixConf [Substituters ["a", "b", "c=", "d"]])
     it "parses a complex example" $
       parse realExample `shouldBe` (Just $ NixConf  [ Other ""
                                                     , Substituters ["a","b","c"]

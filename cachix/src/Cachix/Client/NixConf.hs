@@ -18,6 +18,7 @@ module Cachix.Client.NixConf
   , defaultSigningKey
   ) where
 
+import Data.Char (isSpace)
 import Data.Text (unwords, unlines)
 import Data.List (nub)
 import Protolude hiding (some, many)
@@ -139,7 +140,7 @@ parseLine constr name = do
     _ <- many (char ' ')
     _ <- char '='
     _ <- many (char ' ')
-    values <- sepBy1 (many alphaNumChar) (some (char ' '))
+    values <- sepBy1 (many (satisfy (not . isSpace))) (some (char ' '))
     _ <- many spaceChar
     return $ constr (fmap toS values)
 

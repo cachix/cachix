@@ -9,11 +9,14 @@ module Cachix.Client.NixConf
   , NixConfLoc(..)
   , render
   , add
-  , addIO
   , read
   , update
+  , write
   , parser
   , parse
+  , readLines
+  , writeLines
+  , isTrustedUsers
   , defaultPublicURI
   , defaultSigningKey
   ) where
@@ -65,15 +68,8 @@ isPublicKey (TrustedPublicKeys xs) = Just xs
 isPublicKey (BinaryCachePublicKeys xs) = Just xs
 isPublicKey _ = Nothing
 
--- | Add a Binary cache to nix.conf
-addIO :: BinaryCache -> NixConfLoc -> IO ()
-addIO bc ncl = do
-  -- TODO: might need locking one day
-  gnc <- read Global
-  lnc <- read Local
-  let final = if ncl == Global then gnc else lnc
-      input = if ncl == Global then [gnc, lnc] else [gnc]
-  write ncl $ add bc (catMaybes input) (fromMaybe (NixConf []) final)
+isTrustedUsers (TrustedUsers xs) = Just xs
+isTrustedUsers _ = Nothing
 
 -- | Pure version of addIO
 add :: BinaryCache -> [NixConf] -> NixConf -> NixConf

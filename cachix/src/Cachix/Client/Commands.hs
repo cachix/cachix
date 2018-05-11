@@ -25,6 +25,7 @@ import           Data.IORef
 import           Data.Maybe                     ( fromJust )
 import           Data.String.Here
 import qualified Data.Text                      as T
+import           Data.Typeable                  ( Typeable )
 import           Protolude
 import           Servant.API
 import           Servant.Client
@@ -32,6 +33,7 @@ import           Servant.Auth
 import           Servant.Auth.Client
 import           Servant.Streaming.Client
 import           Servant.Generic
+import           System.Directory ( doesFileExist )
 import           System.IO                      (stdin, hIsTerminalDevice)
 import           System.Process                 ( readProcessWithExitCode, readProcess )
 import           System.Environment             ( lookupEnv )
@@ -59,6 +61,15 @@ cachixClient = fromServant $ client Api.servantApi
 
 cachixBCClient :: Text -> Api.BinaryCacheAPI AsClient
 cachixBCClient name = fromServant $ Api.cache cachixClient name
+
+data CachixException
+  = UnsupportedNixVersion Text
+  | UserEnvNotSet Text
+  | MustBeRoot Text
+  | NixOSInstructions Text
+  deriving (Show, Typeable)
+
+instance Exception CachixException
 
 authtoken :: ClientEnv -> Maybe Config -> Text -> IO ()
 authtoken _ maybeConfig token = do
@@ -98,30 +109,27 @@ use env _ name = do
   case res of
     -- TODO: handle 404
     Left err -> putStrLn $ "API Error: " ++ show err
-    Right Api.BinaryCache{..} -> do
+    Right binaryCache -> do
       -- 2. Detect Nix version
       nixMode <- getNixMode
       case nixMode of
         Left err -> panic err
-        Right Nix1XX -> panic "Please upgrade to Nix 2.0.1"
-         -- TODO: require sudo, use old naming
-        Right Nix20 -> panic "Please upgrade to Nix 2.0.1"
-         -- TODO: If Nix 2.0, skip trusted user check, require sudo
-         -- TODO: NixOS, abort :(
-         {-
-         maybeUser <- lookupEnv "USER"
-         if isRoot (toS <$> maybeUser)
-         then return ()
-         else return ()
-         -}
+        -- TODO: require sudo, use old naming?
+        Right Nix1XX -> throwIO $ UnsupportedNixVersion "Nix 1.x is not supported, please upgrade to Nix 2.0"
+        Right Nix20 -> do
+          -- If Nix 2.0, skip trusted user check, require sudo
+          addBinaryCache binaryCache NixConf.Global
         Right Nix201 -> do
            -- 2. Detect if is a trusted user (or running single mode?)
            nc <- NixConf.read NixConf.Global
-           if isTrustedUser nc
-           -- If is a trusted user, populate user nix.conf
-           then NixConf.update NixConf.Local $ addSubstituters name publicSigningKeys
-           -- if not, tell user what to do (TODO: require sudo to do it)
-           else panic "TODO"
+           isTrusted <- isTrustedUser $ NixConf.readLines (catMaybes [nc]) NixConf.isTrustedUsers
+           if isTrusted
+           -- If is a trusted user, populate ~/.config/nix/nix.conf
+           then addBinaryCache binaryCache NixConf.Local
+           -- if not, require sudo to populate /etc/nix/nix.conf
+           else do
+             putText $ "warn: $USER is not in trusted-users, requiring sudo."
+             addBinaryCache binaryCache NixConf.Global
 
 -- TODO: lots of room for perfomance improvements
 sync :: ClientEnv -> Maybe Config -> Text -> IO ()
@@ -222,24 +230,54 @@ sync env (Just Config{..}) name = do
 
 -- Utils
 
--- TODO: url should come from the binary cache
-fqdn :: Text -> Text
-fqdn name = name <> ".cachix.org"
 
-addSubstituters :: Text -> [Text] -> Maybe NixConf.NixConf -> NixConf.NixConf
-addSubstituters name pks (Just nixconf) = undefined -- TODO
-addSubstituters name pks Nothing =
-  NixConf.NixConf
-    [ NixConf.Substituters ["https://" <> fqdn name]
-    , NixConf.TrustedPublicKeys (fmap (\pk-> fqdn name <> "-1:" <> pk) pks)
-    ]
+-- | Add a Binary cache to nix.conf
+addBinaryCache :: Api.BinaryCache -> NixConf.NixConfLoc -> IO ()
+addBinaryCache bc@Api.BinaryCache{..} ncl = do
+  -- TODO: might need locking one day
+  gnc <- NixConf.read NixConf.Global
+  lnc <- NixConf.read NixConf.Local
+  when (ncl == NixConf.Global) $ do
+    user <- getUser
+    if user == "root"
+    then do
+      isNixOS <- doesFileExist "/run/current-system"
+      if isNixOS
+      then throwIO $ NixOSInstructions [hereLit|
+Add following lines to your NixOS configuration file:
 
--- TODO: well, define this one
-isTrustedUser x = True
+nix = {
+  binaryCaches = [
+    "${uri}"
+  ];
+  binaryCachePublicKeys = [
+    "${T.head publicSigningKeys}"
+  ];
+};
+      |]
+      else return ()
+    else throwIO $ MustBeRoot "Run command as 'sudo' or upgrade to Nix 2.0.1 or newer."
+  let final = if ncl == NixConf.Global then gnc else lnc
+      input = if ncl == NixConf.Global then [gnc, lnc] else [gnc]
+  NixConf.write ncl $ NixConf.add bc (catMaybes input) (fromMaybe (NixConf.NixConf []) final)
 
-isRoot :: Maybe Text -> Bool
-isRoot Nothing = panic "$USER is not set"
-isRoot (Just user) = user == "root"
+isTrustedUser :: [Text] -> IO Bool
+isTrustedUser users = do
+  user <- getUser
+  unless (groups == []) $ do
+    -- TODO: support Nix group syntax
+    putText "Warn: cachix doesn't yet support checking if user is trusted via groups, so it will recommend sudo"
+    putStrLn $ "Warn: groups found " <> T.intercalate "," groups
+  return $ user `elem` users
+  where
+    groups = filter (\u -> T.head u == '@') users
+
+getUser :: IO Text
+getUser = do
+  maybeUser <- lookupEnv "USER"
+  case maybeUser of
+    Nothing -> throwIO $ UserEnvNotSet "$USER must be set"
+    Just user -> return $ toS user
 
 mapPool :: Traversable t => Int -> t a -> (a -> IO b) -> IO (t b)
 mapPool max xs f = do

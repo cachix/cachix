@@ -67,6 +67,7 @@ data CachixException
   | UserEnvNotSet Text
   | MustBeRoot Text
   | NixOSInstructions Text
+  | AmbiguousInput Text
   deriving (Show, Typeable)
 
 instance Exception CachixException
@@ -132,12 +133,13 @@ use env _ name = do
              addBinaryCache binaryCache NixConf.Global
 
 -- TODO: lots of room for perfomance improvements
-sync :: ClientEnv -> Maybe Config -> Text -> IO ()
-sync env (Just Config{..}) name = do
+sync :: ClientEnv -> Maybe Config -> Text -> [Text] -> IO ()
+sync env (Just Config{..}) name rawPaths = do
   hasNoStdin <- hIsTerminalDevice stdin
+  when (not hasNoStdin && not (null rawPaths)) $ throwIO $ AmbiguousInput "You provided both stdin and store path arguments, pick only one to proceed."
   inputStorePaths <-
     if hasNoStdin
-    then return ["TODO PATH"] -- TODO: support paths as arg(s)
+    then return rawPaths -- TODO: if empty, take whole nix store and warn: nix store-path --all
     else T.lines <$> getContents
 
   -- use secret key from config or env

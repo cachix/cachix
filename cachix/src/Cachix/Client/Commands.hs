@@ -202,9 +202,11 @@ sync env (Just Config{..}) name rawPaths = do
         -- TODO: #3: implement using pure haskell
         narHash <- ("sha256:" <>) . T.strip . toS <$> readProcess "nix-hash" ["--type", "sha256", "--to-base32", toS narHashB16] mempty
 
-        -- TODO: handle case if there is no deriver
         (exitcode, out, err) <- readProcessWithExitCode "nix-store" ["-q", "--deriver", toS storePath] mempty
-        let deriver = T.drop 11 $ T.strip $ toS out
+        let deriverRaw = T.strip $ toS out
+            deriver = if deriverRaw == "unknown-deriver"
+                      then deriverRaw
+                      else T.drop 11 deriverRaw
 
         (exitcode, out, err) <- readProcessWithExitCode "nix-store" ["-q", "--references", toS storePath] mempty
 

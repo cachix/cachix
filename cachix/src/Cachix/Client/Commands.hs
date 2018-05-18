@@ -211,7 +211,7 @@ sync env (Just Config{..}) name rawPaths = do
         (exitcode, out, err) <- readProcessWithExitCode "nix-store" ["-q", "--references", toS storePath] mempty
 
         let (storeHash, storeSuffix) = splitStorePath $ toS storePath
-            references = T.lines $ toS out
+            references = T.lines $ T.strip $ toS out
             fp = fingerprint storePath narHash narSize references
             sig = dsign sk fp
             nic = Api.NarInfoCreate

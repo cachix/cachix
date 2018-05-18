@@ -94,7 +94,7 @@ create env (Just config@Config{..}) name = do
   res <- (`runClientM` env) $ Api.create (cachixBCClient name) (Token (toS authToken)) bc
   case res of
     -- TODO: handle all kinds of errors
-    Left err -> putStrLn $ "API Error: " ++ show err
+    Left err -> panic $ show err
     Right _ -> do
       -- write signing key to config
       let bcc = BinaryCacheConfig name $ toS $ B64.encode sk
@@ -110,7 +110,7 @@ use env _ name = do
   res <- (`runClientM` env) $ Api.get (cachixBCClient name)
   case res of
     -- TODO: handle 404
-    Left err -> putStrLn $ "API Error: " ++ show err
+    Left err -> panic $ show err
     Right binaryCache -> do
       -- 2. Detect Nix version
       nixMode <- getNixMode

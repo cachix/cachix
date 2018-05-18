@@ -56,7 +56,7 @@ parserCachixCommand = subparser $
     authtoken = AuthToken <$> strArgument (metavar "TOKEN")
     create = Create <$> strArgument (metavar "NAME")
     sync = Sync <$> strArgument (metavar "NAME")
-                <*> some (strArgument (metavar "PATHS..."))
+                <*> many (strArgument (metavar "PATHS..."))
     use = Use <$> strArgument (metavar "NAME")
 
 getOpts :: IO (CachixOptions, CachixCommand)

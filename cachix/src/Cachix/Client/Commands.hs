@@ -68,6 +68,7 @@ data CachixException
   | MustBeRoot Text
   | NixOSInstructions Text
   | AmbiguousInput Text
+  | NoInput Text
   deriving (Show, Typeable)
 
 instance Exception CachixException
@@ -141,6 +142,8 @@ sync env (Just Config{..}) name rawPaths = do
     if hasNoStdin
     then return rawPaths -- TODO: if empty, take whole nix store and warn: nix store-path --all
     else T.lines <$> getContents
+
+  when (null inputStorePaths) $ throwIO $ NoInput "You need to specify store paths either as stdin or as a cli argument"
 
   -- use secret key from config or env
   maybeEnvSK <- lookupEnv "CACHIX_SIGNING_KEY"

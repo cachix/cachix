@@ -265,7 +265,7 @@ nix = {
       else return ()
     else throwIO $ MustBeRoot "Run command as 'sudo' or upgrade to Nix 2.0.1 or newer."
   let final = if ncl == NixConf.Global then gnc else lnc
-      input = if ncl == NixConf.Global then [gnc, lnc] else [gnc]
+      input = if ncl == NixConf.Global then [gnc] else [gnc, lnc]
   NixConf.write ncl $ NixConf.add bc (catMaybes input) (fromMaybe (NixConf.NixConf []) final)
 
 isTrustedUser :: [Text] -> IO Bool

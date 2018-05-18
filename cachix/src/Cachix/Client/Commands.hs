@@ -248,7 +248,7 @@ addBinaryCache bc@Api.BinaryCache{..} ncl = do
     user <- getUser
     if user == "root"
     then do
-      isNixOS <- doesFileExist "/run/current-system"
+      isNixOS <- doesFileExist "/etc/NIXOS"
       if isNixOS
       then throwIO $ NixOSInstructions [hereLit|
 Add following lines to your NixOS configuration file:

@@ -185,8 +185,12 @@ sync env (Just Config{..}) name rawPaths = do
 
         conduitToStreaming :: S.Stream (S.Of ByteString) (ResourceT IO) ()
         conduitToStreaming = hoist lift stream' $$ CL.mapM_ S.yield
+    -- for now we need to use letsencrypt domain instead of cloudflare due to its upload limits
+    let newEnv = env {
+          baseUrl = (baseUrl env) { baseUrlHost = toS name <> "." <> baseUrlHost (baseUrl env)}
+        }
     -- TODO: http retry: retry package?
-    res <- (`runClientM` env) $ Api.createNar
+    res <- (`runClientM` newEnv) $ Api.createNar
       (cachixBCClient name)
       (contentType (Proxy :: Proxy Api.XNixNar), conduitToStreaming)
     close

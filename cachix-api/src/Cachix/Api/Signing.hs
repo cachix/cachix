@@ -20,6 +20,7 @@ import           Data.Text (Text)
 
 -- perl/lib/Nix/Manifest.pm:fingerprintPath
 -- TODO: Either Text ByteString: assert values
+-- NB: references must be sorted
 fingerprint :: Text -> Text -> Int -> [Text] -> ByteString
 fingerprint storePath narHash narSize references = toS $ T.intercalate ";"
   ["1", storePath, narHash, T.pack (show narSize), T.intercalate "," references]

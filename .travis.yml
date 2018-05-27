@@ -1,0 +1,11 @@
+language: nix
+sudo: required
+before_script:
+- sudo mount -o remount,exec,size=4G,mode=755 /run/user || true
+env:
+  global:
+    - secure: "LWfVXkoJlIHBY3yF1ylD+sX3YiHPTdNZJaopxdBpct+QCaBYEQJaJjT3qIYSjubZ9gHMLktWjLWdYSjAAQPCrlKOD8LBYPtMhg7GMzuOnBS/rSv+VhdVIH4PJ0KISZyba7QAPsDnNGm4xHlw/NeUONuNacnEBllC6+fiiEEtqtzYlRkNI71GCiSRO899uvp3/Ff+LYoY9XIgrGoRHioftoQ0GZs2K8GxhWo/UzshjqS6bV3nuiZQZH8iWC8gAAZPTK6z3dyk2xi6LFvpcOPu5wCIdjSQy0bPjCWIuQkYcJF+ql8oCfyVlkD4vAyMOb7mj+6SyhKZZ0WFhRT0tWc8Gv5PXDQ8hWrDQTtI9dPXfoB19t8BRrxRMd3vUFf/AfItcAHBX9LI8OkkSvX9MGn2hLk8f4Rz4EFJJbQDn7GIwj3pesk5hQsUizSq5jtF+MDAda0ojMGSGV8nlfBxDuYat4IdiKsi1bJTnhfZ5m1cD1yWgkOGxi77z8b8ItiWslCD7f233m5jk9464jE+BKrHOwRaEdx3Au5e7JZmJx2AtxdKcagMX6kLmmorML3odaDvkWiMYcd+ztmFDvjiebW0D96Z2IQzsTlfGb3M6PP5+vMPCw5cpYBm3O69DEGU2PI6jpvTSxrdN6lVTJL00Od9Hn9KffDNVgFZ5ijoJnTO/8A="
+script:
+ - nix-env -if https://github.com/cachix/cachix/tarball/master -j2
+ - cachix use cachix
+ - nix-build -j2 | cachix sync cachix

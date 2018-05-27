@@ -80,9 +80,11 @@ authtoken _ maybeConfig token = do
     Just config -> config { authToken = token }
     Nothing -> mkConfig token
   putStrLn ([hereLit|
-  Continue by creating a binary cache with:
+Continue by creating a binary cache with:
 
-      $ cachix create <name>
+    $ cachix create <name>
+
+and share it with others over https://<name>.cachix.org
   |] :: Text)
 
 create :: ClientEnv -> Maybe Config -> Text -> IO ()
@@ -97,11 +99,25 @@ create env (Just config@Config{..}) name = do
     Left err -> panic $ show err
     Right _ -> do
       -- write signing key to config
-      let bcc = BinaryCacheConfig name $ toS $ B64.encode sk
+      let signingKey = toS $ B64.encode sk
+          bcc = BinaryCacheConfig name signingKey
       writeConfig $ config { binaryCaches = binaryCaches <> [bcc] }
 
       putStrLn ([hereLit|
-      -- TODO: tell how to use signing key and public cache
+Signing key has been saved on your local machine. To populate
+your binary cache:
+
+    $ nix-build | cachix sync ${name}
+
+Or if you'd like to use the signing key on another machine or CI:
+
+    $ export CACHIX_SIGNING_KEY=${signingKey}
+    $ nix-build | cachix sync ${name}
+
+To instruct Nix to use the binary cache:
+
+    $ cachix use ${name}
+
       |] :: Text)
 
 use :: ClientEnv -> Maybe Config -> Text -> IO ()
@@ -140,9 +156,10 @@ sync env (Just Config{..}) name rawPaths = do
   when (not hasNoStdin && not (null rawPaths)) $ throwIO $ AmbiguousInput "You provided both stdin and store path arguments, pick only one to proceed."
   inputStorePaths <-
     if hasNoStdin
-    then return rawPaths -- TODO: if empty, take whole nix store and warn: nix store-path --all
+    then return rawPaths
     else T.lines <$> getContents
 
+  -- TODO: if empty, take whole nix store and warn: nix store-path --all
   when (null inputStorePaths) $ throwIO $ NoInput "You need to specify store paths either as stdin or as a cli argument"
 
   -- use secret key from config or env
@@ -271,6 +288,8 @@ nix = {
   let final = if ncl == NixConf.Global then gnc else lnc
       input = if ncl == NixConf.Global then [gnc] else [gnc, lnc]
   NixConf.write ncl $ NixConf.add bc (catMaybes input) (fromMaybe (NixConf.NixConf []) final)
+  filename <- NixConf.getFilename ncl
+  putStrLn $ "Configured " <> uri <> " binary cache in " <> toS filename
 
 isTrustedUser :: [Text] -> IO Bool
 isTrustedUser users = do

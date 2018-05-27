@@ -48,10 +48,10 @@ data CachixCommand
 
 parserCachixCommand :: Parser CachixCommand
 parserCachixCommand = subparser $
-  command "authtoken" (infoH authtoken (progDesc "Print greeting")) <>
-  command "create" (infoH create (progDesc "Say goodbye")) <>
-  command "sync" (infoH sync (progDesc "Say goodbye")) <>
-  command "use" (infoH use (progDesc "Say goodbye"))
+  command "authtoken" (infoH authtoken (progDesc "Configure token for authentication to cachix.org")) <>
+  command "create" (infoH create (progDesc "Create a new binary cache")) <>
+  command "sync" (infoH sync (progDesc "Upload Nix store paths to the binary cache")) <>
+  command "use" (infoH use (progDesc "Configure nix.conf to enable binary cache during builds"))
   where
     authtoken = AuthToken <$> strArgument (metavar "TOKEN")
     create = Create <$> strArgument (metavar "NAME")
@@ -68,7 +68,7 @@ opts = infoH parser desc
 
 desc :: InfoMod a
 desc = fullDesc
-    <> progDesc "TODO"
+    <> progDesc "Sign into https://cachix.org to get started."
     <> header "cachix.org command interface"
     -- TODO: usage footer
 

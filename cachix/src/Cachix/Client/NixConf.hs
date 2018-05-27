@@ -12,6 +12,7 @@ module Cachix.Client.NixConf
   , read
   , update
   , write
+  , getFilename
   , parser
   , parse
   , readLines

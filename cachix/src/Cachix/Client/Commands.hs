@@ -103,7 +103,7 @@ create env (Just config@Config{..}) name = do
           bcc = BinaryCacheConfig name signingKey
       writeConfig $ config { binaryCaches = binaryCaches <> [bcc] }
 
-      putStrLn ([hereLit|
+      putStrLn ([iTrim|
 Signing key has been saved on your local machine. To populate
 your binary cache:
 
@@ -271,7 +271,7 @@ addBinaryCache bc@Api.BinaryCache{..} ncl = do
     then do
       isNixOS <- doesFileExist "/etc/NIXOS"
       if isNixOS
-      then throwIO $ NixOSInstructions [hereLit|
+      then throwIO $ NixOSInstructions [iTrim|
 Add following lines to your NixOS configuration file:
 
 nix = {
@@ -279,7 +279,7 @@ nix = {
     "${uri}"
   ];
   binaryCachePublicKeys = [
-    "${T.head publicSigningKeys}"
+    "${headMay publicSigningKeys}"
   ];
 };
       |]

@@ -220,6 +220,8 @@ let
            pname = "Chart";
            version = "1.8.3";
            sha256 = "c1c749007245f016d421793b62868651e2222c7bebcd557a6db35eb1a023468f";
+           revision = "1";
+           editedCabalFile = "1z4vpzdhphd6qdab73ar7a7yn3x6z4602ffgai2mccc02w5412fl";
            libraryHaskellDepends = [
              array base colour data-default-class lens mtl old-locale
              operational time vector
@@ -964,6 +966,8 @@ inherit (pkgs) zlib;};
            pname = "HaXml";
            version = "1.25.4";
            sha256 = "d77467b8c855ba85d900b5d1a9b771aa498c80d570f9ac60a9f10803cfc01db5";
+           revision = "1";
+           editedCabalFile = "1vnil3xdyhr48f0nxcaljbl1k5ibg5g5gghvrhykg447b0jvp922";
            isLibrary = true;
            isExecutable = true;
            libraryHaskellDepends = [
@@ -2541,8 +2545,8 @@ inherit (pkgs.xorg) libXrender;};
            pname = "active";
            version = "0.2.0.13";
            sha256 = "5d9a141d58bcefbf699ed233a22309ded671c25ed64bcee11a663d00731280fb";
-           revision = "4";
-           editedCabalFile = "1p2gaazj7r98v45d57hshgv6nxam5l47dl6y9iq65z5zqylmz7q2";
+           revision = "5";
+           editedCabalFile = "0hwla9xz275qzgn9n07311ksl3j40izidki1nbhmrmmmfjin57cv";
            libraryHaskellDepends = [
              base lens linear semigroupoids semigroups vector
            ];
@@ -5076,8 +5080,8 @@ inherit (pkgs.xorg) libXrender;};
            pname = "avers";
            version = "0.0.17.1";
            sha256 = "1b45d8aa036b3c2ec7ea180327ff3cdce28dc1e1ef319c062be79f0ffa7626f5";
-           revision = "16";
-           editedCabalFile = "0dv8lrnnb643fh1rsi10rq99nnb5a98akdl26lfxxjmmdmy238vd";
+           revision = "22";
+           editedCabalFile = "040kvq16wknnjq0kr5j6y17xvjfh87y22hska3whs3ci6zw1fr30";
            libraryHaskellDepends = [
              aeson attoparsec base bytestring clock containers cryptonite
              filepath inflections memory MonadRandom mtl network network-uri
@@ -9496,6 +9500,8 @@ inherit (pkgs) mesa;};
            pname = "crypt-sha512";
            version = "0";
            sha256 = "c2be6252bf12f38c74950eb778039426c730e9a7cd7f034a4cc3e6965d5255f3";
+           revision = "1";
+           editedCabalFile = "0wi8d12i2v76irrv0f16y4sfcn2a9sg92l11499djidmdq50vji9";
            libraryHaskellDepends = [
              attoparsec base bytestring cryptohash-sha512
            ];
@@ -9774,6 +9780,8 @@ inherit (pkgs) mesa;};
            pname = "cryptonite-conduit";
            version = "0.2.2";
            sha256 = "705d69ab3f79b7b8810c7b9e7da81a1c6686b6a4323b1e78150576a25a658dae";
+           revision = "1";
+           editedCabalFile = "1hh2nzfz4qpxgivfilgk4ll416lph8b2fdkzpzrmqfjglivydfmz";
            libraryHaskellDepends = [
              base bytestring conduit conduit-extra cryptonite exceptions memory
              resourcet transformers
@@ -9820,8 +9828,8 @@ inherit (pkgs) mesa;};
            pname = "css-syntax";
            version = "0.0.5";
            sha256 = "3969e0bf83c81dd970cdde9bb07386071264f0f390215078eb86a5cfa1e50b9e";
-           revision = "1";
-           editedCabalFile = "15s7q21kahh1gmm7i3jd937d5pq5khn9a6sq8kdhs6bx11cfa5ap";
+           revision = "3";
+           editedCabalFile = "0p32287dxngmz6bk2xpvj8vh0kawjcrdxxdnczmay6pa1bzyhrik";
            libraryHaskellDepends = [
              attoparsec base bytestring scientific text
            ];
@@ -14763,8 +14771,8 @@ inherit (pkgs) libjpeg; inherit (pkgs) libpng; inherit (pkgs) zlib;};
            pname = "generic-xmlpickler";
            version = "0.1.0.5";
            sha256 = "d51760f5650051eebe561f2b18670657e8398014fa2a623c0e0169bfeca336af";
-           revision = "7";
-           editedCabalFile = "0v4sqm0m8vr2i6hinx0mpax3mz73mvf21bdbga0vdgx7dac2nvkb";
+           revision = "8";
+           editedCabalFile = "1hpcglml4b5yv192syxazminr5v7qjrgqwb2wk0cf7f0sjpm5d0q";
            libraryHaskellDepends = [ base generic-deriving hxt text ];
            doHaddock = false;
            doCheck = false;
@@ -15289,6 +15297,8 @@ inherit (pkgs) libjpeg; inherit (pkgs) libpng; inherit (pkgs) zlib;};
            pname = "ghc-typelits-extra";
            version = "0.2.4";
            sha256 = "afdd095ff413a40bc060c132bf298f967a393100b790d4f232040540cc39d246";
+           revision = "1";
+           editedCabalFile = "1ysf5mr85877a995951wjdg633ylrbpqhpqnn27yb6ayimky5z7a";
            libraryHaskellDepends = [
              base ghc ghc-prim ghc-tcplugins-extra ghc-typelits-knownnat
              ghc-typelits-natnormalise integer-gmp transformers
@@ -18258,6 +18268,8 @@ inherit (pkgs) which;};
            pname = "hashable-time";
            version = "0.2.0.1";
            sha256 = "b5752bb9b91d7cb98b01aa68c27d6a9338e1af39763c0157ef8322d0bc15234d";
+           revision = "1";
+           editedCabalFile = "0rv40xkg3gj8jnqsry1gq3f5s5la6d5arg8fzkirnwdpcgha1as6";
            libraryHaskellDepends = [ base hashable time ];
            doHaddock = false;
            doCheck = false;
@@ -19195,6 +19207,8 @@ inherit (pkgs) which;};
            pname = "hedgehog-quickcheck";
            version = "0.1";
            sha256 = "610a5ccdfcdb4d657f5b25da622ad62562d1854ddb2e7381328e0b63a66f8412";
+           revision = "1";
+           editedCabalFile = "1l6gpzhi56mj4a4nqmqhndhly3pdffkpbxinypk5ra77nxqns6n5";
            libraryHaskellDepends = [ base hedgehog QuickCheck transformers ];
            doHaddock = false;
            doCheck = false;
@@ -23726,8 +23740,8 @@ inherit (pkgs) which;};
            pname = "json-schema";
            version = "0.7.4.1";
            sha256 = "560d6a17d6eab734f43d329e51967e3ed62f8df2a6fea4a92d06359fe77d7c96";
-           revision = "13";
-           editedCabalFile = "07r9sdkhhp7wp7zyrw8mnr9dk1z83drm3jfcayv9gz28jnr3gpv1";
+           revision = "14";
+           editedCabalFile = "0pf2j8v62mfh6dk0v4a93l75by6i6jsfangbsabksdbzhh64hyrr";
            libraryHaskellDepends = [
              aeson base containers generic-aeson generic-deriving mtl scientific
              text time unordered-containers vector
@@ -24116,6 +24130,8 @@ inherit (pkgs) which;};
            pname = "kraken";
            version = "0.1.0";
            sha256 = "335ce7cb85f7d3ed71eb067ad9642d13d2ca1d62ce8670596c8b69aacc27828a";
+           revision = "1";
+           editedCabalFile = "0ycdikk0mwy1ys9v29ybiws4fr59arwkpibdx62p9vpdv9f0p9k6";
            libraryHaskellDepends = [
              aeson base bytestring http-client http-client-tls mtl
            ];
@@ -28375,8 +28391,8 @@ inherit (pkgs) which;};
            pname = "natural-transformation";
            version = "0.4";
            sha256 = "aac28e2c1147ed77c1ec0f0eb607a577fa26d0fd67474293ba860ec124efc8af";
-           revision = "4";
-           editedCabalFile = "1zppa1fcc7pl7ak0hs3w3pkx34398nrfiiwa3w689ib08kqkdpby";
+           revision = "5";
+           editedCabalFile = "1wlmkq9k9aym4wig9rn5w6sygq2fg9kd02d18pfzgxw70icqjlq3";
            libraryHaskellDepends = [ base ];
            doHaddock = false;
            doCheck = false;
@@ -34251,6 +34267,8 @@ inherit (pkgs) which;};
            pname = "rethinkdb-client-driver";
            version = "0.0.25";
            sha256 = "0f9dc156cd61b866b847b1b1a60a2345b4b5556b8b75a9e8499b0514e7f98996";
+           revision = "1";
+           editedCabalFile = "1hblwarlxjxq2lp52bjlqwdjsqlwm8ffqi2pj1n8zpidjv6m8330";
            libraryHaskellDepends = [
              aeson base binary bytestring containers hashable mtl network
              old-locale scientific stm template-haskell text time
@@ -35290,9 +35308,9 @@ inherit (pkgs) which;};
            pname = "servant-auth";
            version = "0.3.1.0";
            src = fetchgit {
-             url = "https://github.com/domenkozar/servant-auth";
-             sha256 = "1zf61abadcbfzvm6llfwrd6wbr79fgqa8lz0vinf1py70llw5dlj";
-             rev = "0da66662ce01c4a9b3a1ea6edf151bd2e208373f";
+             url = "https://github.com/haskell-servant/servant-auth";
+             sha256 = "15nwsvdjhidrzyp0xqvayp396z94sq06sw0h0qqxym92pgyarg2g";
+             rev = "d03dc77ddc3e93163693cf9c851d0508805b3378";
            };
            postUnpack = "sourceRoot+=/servant-auth; echo source root reset to $sourceRoot";
            libraryHaskellDepends = [ base ];
@@ -35310,9 +35328,9 @@ inherit (pkgs) which;};
            pname = "servant-auth-client";
            version = "0.3.2.0";
            src = fetchgit {
-             url = "https://github.com/domenkozar/servant-auth";
-             sha256 = "1zf61abadcbfzvm6llfwrd6wbr79fgqa8lz0vinf1py70llw5dlj";
-             rev = "0da66662ce01c4a9b3a1ea6edf151bd2e208373f";
+             url = "https://github.com/haskell-servant/servant-auth";
+             sha256 = "15nwsvdjhidrzyp0xqvayp396z94sq06sw0h0qqxym92pgyarg2g";
+             rev = "d03dc77ddc3e93163693cf9c851d0508805b3378";
            };
            postUnpack = "sourceRoot+=/servant-auth-client; echo source root reset to $sourceRoot";
            libraryHaskellDepends = [
@@ -35359,9 +35377,9 @@ inherit (pkgs) which;};
            pname = "servant-auth-server";
            version = "0.3.3.0";
            src = fetchgit {
-             url = "https://github.com/domenkozar/servant-auth";
-             sha256 = "1zf61abadcbfzvm6llfwrd6wbr79fgqa8lz0vinf1py70llw5dlj";
-             rev = "0da66662ce01c4a9b3a1ea6edf151bd2e208373f";
+             url = "https://github.com/haskell-servant/servant-auth";
+             sha256 = "15nwsvdjhidrzyp0xqvayp396z94sq06sw0h0qqxym92pgyarg2g";
+             rev = "d03dc77ddc3e93163693cf9c851d0508805b3378";
            };
            postUnpack = "sourceRoot+=/servant-auth-server; echo source root reset to $sourceRoot";
            isLibrary = true;
@@ -35391,9 +35409,9 @@ inherit (pkgs) which;};
            pname = "servant-auth-swagger";
            version = "0.2.9.0";
            src = fetchgit {
-             url = "https://github.com/domenkozar/servant-auth";
-             sha256 = "1zf61abadcbfzvm6llfwrd6wbr79fgqa8lz0vinf1py70llw5dlj";
-             rev = "0da66662ce01c4a9b3a1ea6edf151bd2e208373f";
+             url = "https://github.com/haskell-servant/servant-auth";
+             sha256 = "15nwsvdjhidrzyp0xqvayp396z94sq06sw0h0qqxym92pgyarg2g";
+             rev = "d03dc77ddc3e93163693cf9c851d0508805b3378";
            };
            postUnpack = "sourceRoot+=/servant-auth-swagger; echo source root reset to $sourceRoot";
            libraryHaskellDepends = [
@@ -35807,74 +35825,52 @@ inherit (pkgs) which;};
            license = stdenv.lib.licenses.bsd3;
          }) {};
       "servant-streaming" = callPackage
-        ({ mkDerivation, base, fetchgit, hpack, http-types, servant, stdenv
-         }:
+        ({ mkDerivation, base, http-types, servant, stdenv }:
          mkDerivation {
            pname = "servant-streaming";
-           version = "0.1.0.0";
-           src = fetchgit {
-             url = "https://github.com/domenkozar/servant-streaming.git";
-             sha256 = "1i579ly7vmlb8bsm58dx0nc75avh5x053vn5i5983z1qs7yiwps7";
-             rev = "f98d474580a4e39f76aa67f75c83c7c2545afa8e";
-           };
-           postUnpack = "sourceRoot+=/servant-streaming; echo source root reset to $sourceRoot";
+           version = "0.2.0.0";
+           sha256 = "2485a0037c58bccb5b926b8b10909895576cd9031cb726f747bc1cffb3379a81";
            libraryHaskellDepends = [ base http-types servant ];
-           libraryToolDepends = [ hpack ];
            doHaddock = false;
            doCheck = false;
-           preConfigure = "hpack";
            homepage = "http://github.com/plow-technologies/servant-streaming#readme";
            description = "Servant combinators for the 'streaming' package";
            license = stdenv.lib.licenses.bsd3;
          }) {};
       "servant-streaming-client" = callPackage
-        ({ mkDerivation, base, bytestring, fetchgit, hpack, http-media
-         , http-types, resourcet, servant, servant-client-core
-         , servant-streaming, stdenv, streaming
+        ({ mkDerivation, base, bytestring, http-media, http-types
+         , resourcet, servant, servant-client-core, servant-streaming
+         , stdenv, streaming
          }:
          mkDerivation {
            pname = "servant-streaming-client";
-           version = "0.1.0.0";
-           src = fetchgit {
-             url = "https://github.com/domenkozar/servant-streaming.git";
-             sha256 = "1i579ly7vmlb8bsm58dx0nc75avh5x053vn5i5983z1qs7yiwps7";
-             rev = "f98d474580a4e39f76aa67f75c83c7c2545afa8e";
-           };
-           postUnpack = "sourceRoot+=/servant-streaming-client; echo source root reset to $sourceRoot";
+           version = "0.2.0.0";
+           sha256 = "7ddc70e2420009c6edd7b9b13c8de0d995a2ad339a9e9e962ac744abb447d314";
            libraryHaskellDepends = [
              base bytestring http-media http-types resourcet servant
              servant-client-core servant-streaming streaming
            ];
-           libraryToolDepends = [ hpack ];
            doHaddock = false;
            doCheck = false;
-           preConfigure = "hpack";
            homepage = "http://github.com/plow-technologies/servant-streaming#readme";
            description = "Client instances for the 'servant-streaming' package";
            license = stdenv.lib.licenses.bsd3;
          }) {};
       "servant-streaming-server" = callPackage
-        ({ mkDerivation, base, bytestring, fetchgit, hpack, http-media
-         , http-types, resourcet, servant, servant-server, servant-streaming
-         , stdenv, streaming, streaming-wai, wai
+        ({ mkDerivation, base, bytestring, http-media, http-types
+         , resourcet, servant, servant-server, servant-streaming, stdenv
+         , streaming, streaming-wai, wai
          }:
          mkDerivation {
            pname = "servant-streaming-server";
-           version = "0.1.0.0";
-           src = fetchgit {
-             url = "https://github.com/domenkozar/servant-streaming.git";
-             sha256 = "1i579ly7vmlb8bsm58dx0nc75avh5x053vn5i5983z1qs7yiwps7";
-             rev = "f98d474580a4e39f76aa67f75c83c7c2545afa8e";
-           };
-           postUnpack = "sourceRoot+=/servant-streaming-server; echo source root reset to $sourceRoot";
+           version = "0.2.0.0";
+           sha256 = "2d9e98163a7b6935a0eaedeec66f0269bf3fc49cc394061308a1c4c9f68725a9";
            libraryHaskellDepends = [
              base bytestring http-media http-types resourcet servant
              servant-server servant-streaming streaming streaming-wai wai
            ];
-           libraryToolDepends = [ hpack ];
            doHaddock = false;
            doCheck = false;
-           preConfigure = "hpack";
            homepage = "http://github.com/plow-technologies/servant-streaming-server#readme";
            description = "Server instances for the 'servant-streaming' package";
            license = stdenv.lib.licenses.bsd3;
@@ -35988,8 +35984,8 @@ inherit (pkgs) which;};
            pname = "servant-yaml";
            version = "0.1.0.0";
            sha256 = "c917d9b046b06a9c4386f743a78142c27cf7f0ec1ad8562770ab9828f2ee3204";
-           revision = "18";
-           editedCabalFile = "038paj9z77rx6jc06vg5f4f9gvwaq73ggw7ppgrw6vwhsl4nd84q";
+           revision = "19";
+           editedCabalFile = "1hlfly2j0c3c4sbzbkbzvwgvfnngkmx0r67ddv4ccg2if6pc5nqv";
            libraryHaskellDepends = [
              base bytestring http-media servant yaml
            ];

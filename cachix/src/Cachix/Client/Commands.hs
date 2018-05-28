@@ -69,6 +69,7 @@ data CachixException
   | NixOSInstructions Text
   | AmbiguousInput Text
   | NoInput Text
+  | NoConfig Text
   deriving (Show, Typeable)
 
 instance Exception CachixException
@@ -88,7 +89,7 @@ and share it with others over https://<name>.cachix.org
   |] :: Text)
 
 create :: ClientEnv -> Maybe Config -> Text -> IO ()
-create _ Nothing _ = panic "well, you need to authtoken first."
+create _ Nothing _ = throwIO $ NoConfig "start with: $ cachix authtoken <token>"
 create env (Just config@Config{..}) name = do
   (PublicKey pk, SecretKey sk) <- createKeypair
 

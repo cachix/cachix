@@ -152,7 +152,7 @@ use env _ name = do
 
 -- TODO: lots of room for perfomance improvements
 sync :: ClientEnv -> Maybe Config -> Text -> [Text] -> IO ()
-sync env (Just Config{..}) name rawPaths = do
+sync env config name rawPaths = do
   hasNoStdin <- hIsTerminalDevice stdin
   when (not hasNoStdin && not (null rawPaths)) $ throwIO $ AmbiguousInput "You provided both stdin and store path arguments, pick only one to proceed."
   inputStorePaths <-
@@ -165,8 +165,10 @@ sync env (Just Config{..}) name rawPaths = do
 
   -- use secret key from config or env
   maybeEnvSK <- lookupEnv "CACHIX_SIGNING_KEY"
-  let matches = filter (\bc -> Config.name bc == name) binaryCaches
-      maybeBCSK = Config.secretKey <$> head matches
+  let matches Config{..} = filter (\bc -> Config.name bc == name) binaryCaches
+      maybeBCSK = case config of
+        Nothing -> Nothing
+        Just c -> Config.secretKey <$> head (matches c)
       -- TODO: better error msg
       sk = SecretKey $ toS $ B64.decodeLenient $ toS $ fromJust $ maybeBCSK <|> toS <$> maybeEnvSK <|> panic "You need to: export CACHIX_SIGNING_KEY=XXX"
 

@@ -1,0 +1,185 @@
+-- This file has been generated from package.yaml by hpack version 0.21.2.
+--
+-- see: https://github.com/sol/hpack
+--
+-- hash: 193ddd3c47e8bd08bfe383e2e3dea9a6187c0c64093ffcd7a14d74c3f9920166
+
+name:           cachix
+version:        0.1.0.0
+description:    Please see the README on Github at <https://github.com/cachix/cachix#readme>
+homepage:       https://github.com/cachix/cachix#readme
+bug-reports:    https://github.com/cachix/cachix/issues
+author:         Domen Kožar
+maintainer:     domen@enlambda.com
+copyright:      2018 Domen Kožar
+license:        BSD3
+license-file:   LICENSE
+build-type:     Simple
+cabal-version:  >= 1.10
+
+extra-source-files:
+    ChangeLog.md
+    README.md
+
+source-repository head
+  type: git
+  location: https://github.com/cachix/cachix
+
+library
+  exposed-modules:
+      Cachix.Client
+      Cachix.Client.Commands
+      Cachix.Client.Config
+      Cachix.Client.NixConf
+      Cachix.Client.NixVersion
+      Cachix.Client.OptionsParser
+      Cachix.Client.Servant
+      Cachix.Client.URI
+  other-modules:
+      Paths_cachix
+  hs-source-dirs:
+      src
+  default-extensions: OverloadedStrings NoImplicitPrelude RecordWildCards
+  ghc-options: -Wall -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -fwarn-tabs -fwarn-unused-imports -fwarn-missing-signatures -fwarn-name-shadowing -fwarn-incomplete-patterns
+  build-depends:
+      SafeSemaphore
+    , async
+    , base >=4.7 && <5
+    , base16-bytestring
+    , base64-bytestring
+    , bifunctors
+    , bytestring
+    , cachix-api
+    , conduit
+    , conduit-combinators
+    , conduit-extra
+    , cookie
+    , cryptonite
+    , dhall
+    , directory
+    , ed25519
+    , here
+    , http-client
+    , http-client-tls
+    , lzma-conduit
+    , megaparsec
+    , memory
+    , mmorph
+    , optparse-applicative
+    , process
+    , protolude
+    , resourcet
+    , servant
+    , servant-auth
+    , servant-auth-client
+    , servant-client
+    , servant-generic
+    , servant-streaming-client
+    , streaming
+    , text
+    , uri-bytestring
+    , versions
+  default-language: Haskell2010
+
+executable cachix
+  main-is: Main.hs
+  other-modules:
+      Paths_cachix
+  hs-source-dirs:
+      cachix
+  default-extensions: OverloadedStrings NoImplicitPrelude RecordWildCards
+  ghc-options: -Wall -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -fwarn-tabs -fwarn-unused-imports -fwarn-missing-signatures -fwarn-name-shadowing -fwarn-incomplete-patterns -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      SafeSemaphore
+    , async
+    , base >=4.7 && <5
+    , base16-bytestring
+    , base64-bytestring
+    , bifunctors
+    , bytestring
+    , cachix
+    , cachix-api
+    , conduit
+    , conduit-combinators
+    , conduit-extra
+    , cookie
+    , cryptonite
+    , dhall
+    , directory
+    , ed25519
+    , here
+    , http-client
+    , http-client-tls
+    , lzma-conduit
+    , megaparsec
+    , memory
+    , mmorph
+    , optparse-applicative
+    , process
+    , protolude
+    , resourcet
+    , servant
+    , servant-auth
+    , servant-auth-client
+    , servant-client
+    , servant-generic
+    , servant-streaming-client
+    , streaming
+    , text
+    , uri-bytestring
+    , versions
+  default-language: Haskell2010
+
+test-suite cachix-test
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  other-modules:
+      NixConfSpec
+      NixVersionSpec
+      Spec
+      Paths_cachix
+  hs-source-dirs:
+      test
+  default-extensions: OverloadedStrings NoImplicitPrelude RecordWildCards
+  ghc-options: -Wall -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -fwarn-tabs -fwarn-unused-imports -fwarn-missing-signatures -fwarn-name-shadowing -fwarn-incomplete-patterns -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      SafeSemaphore
+    , async
+    , base >=4.7 && <5
+    , base16-bytestring
+    , base64-bytestring
+    , bifunctors
+    , bytestring
+    , cachix
+    , cachix-api
+    , conduit
+    , conduit-combinators
+    , conduit-extra
+    , cookie
+    , cryptonite
+    , dhall
+    , directory
+    , ed25519
+    , here
+    , hspec
+    , http-client
+    , http-client-tls
+    , lzma-conduit
+    , megaparsec
+    , memory
+    , mmorph
+    , optparse-applicative
+    , process
+    , protolude
+    , resourcet
+    , servant
+    , servant-auth
+    , servant-auth-client
+    , servant-client
+    , servant-generic
+    , servant-streaming-client
+    , streaming
+    , text
+    , uri-bytestring
+    , versions
+  default-language: Haskell2010

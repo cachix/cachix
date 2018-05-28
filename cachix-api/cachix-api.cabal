@@ -1,0 +1,147 @@
+-- This file has been generated from package.yaml by hpack version 0.21.2.
+--
+-- see: https://github.com/sol/hpack
+--
+-- hash: d52235623df2ac0e89e26a69ec6970d5b9c63e0a13f5fbeb10af6d261b540d30
+
+name:           cachix-api
+version:        0.1.0.0
+description:    Please see the README on Github at <https://github.com/githubuser/cachix-api#readme>
+homepage:       https://github.com/githubuser/cachix-api#readme
+bug-reports:    https://github.com/githubuser/cachix-api/issues
+author:         Author name here
+maintainer:     example@example.com
+copyright:      2018 Author name here
+license:        BSD3
+license-file:   LICENSE
+build-type:     Simple
+cabal-version:  >= 1.10
+
+extra-source-files:
+    ChangeLog.md
+    README.md
+
+source-repository head
+  type: git
+  location: https://github.com/githubuser/cachix-api
+
+library
+  exposed-modules:
+      Cachix.Api
+      Cachix.Api.Signing
+      Cachix.Api.Swagger
+      Cachix.Api.Types
+      Cachix.Types.ContentTypes
+      Cachix.Types.Servant
+      Cachix.Types.Session
+  other-modules:
+      Paths_cachix_api
+  hs-source-dirs:
+      src
+  default-extensions: OverloadedStrings
+  ghc-options: -Wall -fwarn-tabs -fwarn-unused-imports -fwarn-missing-signatures -fwarn-name-shadowing -fwarn-incomplete-patterns
+  build-depends:
+      aeson
+    , amazonka
+    , base >=4.7 && <5
+    , base16-bytestring
+    , bytestring
+    , conduit
+    , conduit-combinators
+    , cookie
+    , cryptonite
+    , http-api-data
+    , http-media
+    , lens
+    , memory
+    , servant
+    , servant-auth
+    , servant-auth-server
+    , servant-auth-swagger
+    , servant-generic
+    , servant-streaming
+    , servant-swagger
+    , servant-swagger-ui
+    , string-conv
+    , swagger2
+    , text
+    , transformers
+  default-language: Haskell2010
+
+executable cachix-gen-swagger
+  main-is: Main.hs
+  other-modules:
+      Paths_cachix_api
+  hs-source-dirs:
+      cachix-gen-swagger
+  default-extensions: OverloadedStrings
+  ghc-options: -Wall -fwarn-tabs -fwarn-unused-imports -fwarn-missing-signatures -fwarn-name-shadowing -fwarn-incomplete-patterns -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      aeson
+    , amazonka
+    , base >=4.7 && <5
+    , base16-bytestring
+    , bytestring
+    , cachix-api
+    , conduit
+    , conduit-combinators
+    , cookie
+    , cryptonite
+    , http-api-data
+    , http-media
+    , lens
+    , memory
+    , servant
+    , servant-auth
+    , servant-auth-server
+    , servant-auth-swagger
+    , servant-generic
+    , servant-streaming
+    , servant-swagger
+    , servant-swagger-ui
+    , string-conv
+    , swagger2
+    , text
+    , transformers
+  default-language: Haskell2010
+
+test-suite cachix-api-test
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  other-modules:
+      Spec
+      Paths_cachix_api
+  hs-source-dirs:
+      test
+  default-extensions: OverloadedStrings
+  ghc-options: -Wall -fwarn-tabs -fwarn-unused-imports -fwarn-missing-signatures -fwarn-name-shadowing -fwarn-incomplete-patterns -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      aeson
+    , amazonka
+    , base >=4.7 && <5
+    , base16-bytestring
+    , bytestring
+    , cachix-api
+    , conduit
+    , conduit-combinators
+    , cookie
+    , cryptonite
+    , hspec
+    , http-api-data
+    , http-media
+    , lens
+    , memory
+    , protolude
+    , servant
+    , servant-auth
+    , servant-auth-server
+    , servant-auth-swagger
+    , servant-generic
+    , servant-streaming
+    , servant-swagger
+    , servant-swagger-ui
+    , string-conv
+    , swagger2
+    , text
+    , transformers
+  default-language: Haskell2010

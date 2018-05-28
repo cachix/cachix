@@ -1,4 +1,19 @@
 { pkgs ? import ./nixpkgs.nix
 }:
 
-pkgs.haskell.lib.justStaticExecutables (import ./stack2nix.nix { inherit pkgs; }).cachix
+with pkgs.haskell.lib;
+
+let
+  filterStack = drv: overrideCabal drv (super: {
+     src = builtins.filterSource
+      (path: type: baseNameOf path != ".stack-work")
+      super.src;
+    }
+  );
+  hsPkgs = (import ./stack2nix.nix { inherit pkgs; }).override {
+    overrides = self: super: {
+      cachix = justStaticExecutables (filterStack super.cachix);
+      cachix-api = filterStack super.cachix-api;
+    };
+  };
+in hsPkgs.cachix

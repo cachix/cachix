@@ -33,8 +33,8 @@ import           Servant.Auth
 import           Servant.Auth.Client
 import           Servant.Streaming.Client
 import           Servant.Generic
-import           System.Directory ( doesFileExist )
-import           System.IO                      (stdin, hIsTerminalDevice)
+import           System.Directory               ( doesFileExist, getPermissions, writable )
+import           System.IO                      ( stdin, hIsTerminalDevice )
 import           System.Process                 ( readProcessWithExitCode, readProcess )
 import           System.Environment             ( lookupEnv )
 import qualified Streaming.Prelude             as S
@@ -297,11 +297,13 @@ nix = {
 isTrustedUser :: [Text] -> IO Bool
 isTrustedUser users = do
   user <- getUser
+  -- to detect single user installations
+  permissions <- getPermissions "/nix/store"
   unless (groups == []) $ do
     -- TODO: support Nix group syntax
     putText "Warn: cachix doesn't yet support checking if user is trusted via groups, so it will recommend sudo"
     putStrLn $ "Warn: groups found " <> T.intercalate "," groups
-  return $ user `elem` users
+  return $ (writable permissions) || (user `elem` users)
   where
     groups = filter (\u -> T.head u == '@') users
 

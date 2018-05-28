@@ -22,6 +22,7 @@ module Cachix.Client.NixConf
   , defaultSigningKey
   ) where
 
+import Control.Exception (catch)
 import Data.Char (isSpace)
 import Data.Text (unwords, unlines)
 import Data.List (nub)
@@ -122,7 +123,8 @@ getFilename ncl = do
   dir <- case ncl of
     Global -> return "/etc/nix"
     Local -> getXdgDirectory XdgConfig "nix"
-  createDirectoryIfMissing True dir
+  _ <- catch (createDirectoryIfMissing True dir) $ \e ->
+    hPutStr stderr ("Warning: Couldn't create " <> dir <> " :" <> show (e :: IOException))
   return $ dir <> "/nix.conf"
 
 -- nix.conf Parser

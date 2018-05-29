@@ -4,7 +4,7 @@
 module Cachix.Client.Commands
   ( authtoken
   , create
-  , sync
+  , push
   , use
   ) where
 
@@ -108,12 +108,12 @@ create env (Just config@Config{..}) name = do
 Signing key has been saved on your local machine. To populate
 your binary cache:
 
-    $ nix-build | cachix sync ${name}
+    $ nix-build | cachix push ${name}
 
 Or if you'd like to use the signing key on another machine or CI:
 
     $ export CACHIX_SIGNING_KEY=${signingKey}
-    $ nix-build | cachix sync ${name}
+    $ nix-build | cachix push ${name}
 
 To instruct Nix to use the binary cache:
 
@@ -151,8 +151,8 @@ use env _ name = do
              addBinaryCache binaryCache NixConf.Global
 
 -- TODO: lots of room for perfomance improvements
-sync :: ClientEnv -> Maybe Config -> Text -> [Text] -> IO ()
-sync env config name rawPaths = do
+push :: ClientEnv -> Maybe Config -> Text -> [Text] -> IO ()
+push env config name rawPaths = do
   hasNoStdin <- hIsTerminalDevice stdin
   when (not hasNoStdin && not (null rawPaths)) $ throwIO $ AmbiguousInput "You provided both stdin and store path arguments, pick only one to proceed."
   inputStorePaths <-
@@ -186,7 +186,7 @@ sync env config name rawPaths = do
 
   -- TODO: make pool size configurable, on beefier machines this could be doubled
   successes <- mapPool 4 storePaths $ \storePath -> do
-    putStrLn $ "syncing " <> storePath
+    putStrLn $ "pushing " <> storePath
 
     narSizeRef <- liftIO $ newIORef 0
     fileSizeRef <- liftIO $ newIORef 0

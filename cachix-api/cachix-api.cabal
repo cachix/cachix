@@ -2,17 +2,17 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: d52235623df2ac0e89e26a69ec6970d5b9c63e0a13f5fbeb10af6d261b540d30
+-- hash: 18a1e85f2cf9417969674fdd0f507e016a895aa1a082525096344217e8ef17fb
 
 name:           cachix-api
 version:        0.1.0.0
-description:    Please see the README on Github at <https://github.com/githubuser/cachix-api#readme>
+description:    Please see the README on Github at <https://github.com/cachix/cachix-api#readme>
 homepage:       https://github.com/githubuser/cachix-api#readme
 bug-reports:    https://github.com/githubuser/cachix-api/issues
-author:         Author name here
-maintainer:     example@example.com
-copyright:      2018 Author name here
-license:        BSD3
+author:         Domen Kožar
+maintainer:     domen@enlambda.com
+copyright:      2018 Domen Kožar
+license:        Apache-2.0
 license-file:   LICENSE
 build-type:     Simple
 cabal-version:  >= 1.10

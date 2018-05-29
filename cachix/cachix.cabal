@@ -2,7 +2,7 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 193ddd3c47e8bd08bfe383e2e3dea9a6187c0c64093ffcd7a14d74c3f9920166
+-- hash: 496f0647f3eec8890c309091a0200c2e7047661ebc29a95a330e8e41ddbf02fc
 
 name:           cachix
 version:        0.1.0.0
@@ -12,7 +12,7 @@ bug-reports:    https://github.com/cachix/cachix/issues
 author:         Domen Kožar
 maintainer:     domen@enlambda.com
 copyright:      2018 Domen Kožar
-license:        BSD3
+license:        Apache-2.0
 license-file:   LICENSE
 build-type:     Simple
 cabal-version:  >= 1.10

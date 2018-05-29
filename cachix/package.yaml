@@ -1,7 +1,7 @@
 name:                cachix
 version:             0.1.0.0
 github:              "cachix/cachix"
-license:             BSD3
+license:             Apache-2.0
 author:              "Domen Kožar"
 maintainer:          "domen@enlambda.com"
 copyright:           "2018 Domen Kožar"

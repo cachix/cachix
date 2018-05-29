@@ -42,7 +42,7 @@ type BinaryCacheName = Text
 data CachixCommand
   = AuthToken Text
   | Create BinaryCacheName
-  | Sync BinaryCacheName [Text]
+  | Push BinaryCacheName [Text]
   | Use BinaryCacheName
   deriving Show
 
@@ -50,12 +50,12 @@ parserCachixCommand :: Parser CachixCommand
 parserCachixCommand = subparser $
   command "authtoken" (infoH authtoken (progDesc "Configure token for authentication to cachix.org")) <>
   command "create" (infoH create (progDesc "Create a new binary cache")) <>
-  command "sync" (infoH sync (progDesc "Upload Nix store paths to the binary cache")) <>
+  command "push" (infoH push (progDesc "Upload Nix store paths to the binary cache")) <>
   command "use" (infoH use (progDesc "Configure nix.conf to enable binary cache during builds"))
   where
     authtoken = AuthToken <$> strArgument (metavar "TOKEN")
     create = Create <$> strArgument (metavar "NAME")
-    sync = Sync <$> strArgument (metavar "NAME")
+    push = Push <$> strArgument (metavar "NAME")
                 <*> many (strArgument (metavar "PATHS..."))
     use = Use <$> strArgument (metavar "NAME")
 

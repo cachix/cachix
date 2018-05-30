@@ -8,7 +8,7 @@ Binary Cache as a Service - Build Nix packages once and share them for good.
 
 ## Installation
 
-1. Install Cachix client
+1. Install Cachix client using Nix 2.0 or greater:
 
 ```
     $ nix-env -if https://github.com/cachix/cachix/tarball/master --substituters https://cachix.cachix.org --trusted-public-keys cachix.cachix.org-1:eWNHQldwUO7G2VkjpnjDbWwy4KQ/HNxht7H4SSoMckM=

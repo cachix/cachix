@@ -1,4 +1,6 @@
-# https://cachix.org api and client
+![](https://cachix.org/images/logo.png)
+
+# https://cachix.org api and cli interface
 
 [![Build Status](https://travis-ci.org/cachix/cachix.svg?branch=master)](https://travis-ci.org/cachix/cachix)
 [![Hackage](https://img.shields.io/hackage/v/cachix.svg)](https://hackage.haskell.org/package/cachix)

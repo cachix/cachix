@@ -29,7 +29,7 @@ import Servant.Swagger.UI
 import Web.Cookie                (SetCookie)
 
 import Cachix.Types.ContentTypes
-import Cachix.Types.Servant      (Get302)
+import Cachix.Types.Servant      (Get302, Post302)
 import Cachix.Types.Session      (Session)
 import Cachix.Api.Types
 import Cachix.Api.Swagger        ()
@@ -68,7 +68,13 @@ data BinaryCacheAPI route = BinaryCacheAPI
   } deriving Generic
 
 data CachixAPI route = CachixAPI
-   { login :: route :-
+   { logout :: route :-
+       "logout" :>
+       CachixAuth :>
+       Post302 '[JSON] '[ Header "Set-Cookie" SetCookie
+                        , Header "Set-Cookie" SetCookie
+                        ]
+   , login :: route :-
        "login" :>
        Get302 '[JSON] '[]
    , loginCallback :: route :-

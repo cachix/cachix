@@ -26,6 +26,7 @@ import           Data.Maybe                     ( fromJust )
 import           Data.String.Here
 import qualified Data.Text                      as T
 import           Data.Typeable                  ( Typeable )
+import           Network.HTTP.Types (status404)
 import           Protolude
 import           Servant.API
 import           Servant.Client
@@ -180,84 +181,96 @@ push env config name rawPaths = do
       storePaths = T.lines $ toS out
       numStorePaths = show (length storePaths) :: Text
   --putStrLn $ "Asking upstream how many of " <> numStorePaths <> " are already cached."
-  -- TODO: mass query cachix if narinfo already exist
   -- TODO: query also cache.nixos.org? server-side?
   -- TODO: print how many will be uploaded
 
   -- TODO: make pool size configurable, on beefier machines this could be doubled
   successes <- mapPool 4 storePaths $ \storePath -> do
-    putStrLn $ "pushing " <> storePath
-
-    narSizeRef <- liftIO $ newIORef 0
-    fileSizeRef <- liftIO $ newIORef 0
-    narHashRef <- liftIO $ newIORef ("" :: Text)
-    fileHashRef <- liftIO $ newIORef ("" :: Text)
-
-    -- stream store path as xz compressed nar file
-    (ClosedStream, (source, close), ClosedStream, cph) <- streamingProcess $ shell ("nix-store --dump " <> toS storePath)
-    let stream'
-          = source
-         .| passthroughSizeSink narSizeRef
-         .| passthroughHashSink narHashRef
-         .| compress Nothing
-         .| passthroughSizeSink fileSizeRef
-         .| passthroughHashSink fileHashRef
-
-        conduitToStreaming :: S.Stream (S.Of ByteString) (ResourceT IO) ()
-        conduitToStreaming = hoist lift stream' $$ CL.mapM_ S.yield
-    -- for now we need to use letsencrypt domain instead of cloudflare due to its upload limits
-    let newEnv = env {
-          baseUrl = (baseUrl env) { baseUrlHost = toS name <> "." <> baseUrlHost (baseUrl env)}
-        }
-    -- TODO: http retry: retry package?
-    res <- (`runClientM` newEnv) $ Api.createNar
+    let (storeHash, storeSuffix) = splitStorePath $ toS storePath
+    -- Check if narinfo already exists
+    res <- (`runClientM` env) $ Api.narinfoHead
       (cachixBCClient name)
-      (contentType (Proxy :: Proxy Api.XNixNar), conduitToStreaming)
-    close
-    ec <- waitForStreamingProcess cph
+      (Api.NarInfoC storeHash)
     case res of
-      Left err -> panic $ show err
-      Right NoContent -> do
-        narSize <- readIORef narSizeRef
-        narHashB16 <- readIORef narHashRef
-        fileHash <- readIORef fileHashRef
-        fileSize <- readIORef fileSizeRef
-
-        -- TODO: #3: implement using pure haskell
-        narHash <- ("sha256:" <>) . T.strip . toS <$> readProcess "nix-hash" ["--type", "sha256", "--to-base32", toS narHashB16] mempty
-
-        (exitcode, out, err) <- readProcessWithExitCode "nix-store" ["-q", "--deriver", toS storePath] mempty
-        let deriverRaw = T.strip $ toS out
-            deriver = if deriverRaw == "unknown-deriver"
-                      then deriverRaw
-                      else T.drop 11 deriverRaw
-
-        (exitcode, out, err) <- readProcessWithExitCode "nix-store" ["-q", "--references", toS storePath] mempty
-
-        let (storeHash, storeSuffix) = splitStorePath $ toS storePath
-            references = sort $ T.lines $ T.strip $ toS out
-            fp = fingerprint storePath narHash narSize references
-            sig = dsign sk fp
-            nic = Api.NarInfoCreate
-              { cStoreHash = storeHash
-              , cStoreSuffix = storeSuffix
-              , cNarHash = narHash
-              , cNarSize = narSize
-              , cFileSize = fileSize
-              , cFileHash = fileHash
-              , cReferences = fmap (T.drop 11) references
-              , cDeriver = deriver
-              , cSig = toS $ B64.encode $ unSignature sig
-              }
-        -- Upload narinfo with signature
-        res <- (`runClientM` env) $ Api.createNarinfo
-          (cachixBCClient name)
-          (Api.NarInfoC storeHash)
-          nic
-        case res of
-          Left err -> panic $ show err -- TODO: handle json errors
-          Right NoContent -> return ()
+      Left err | isErr err status404 -> go sk storePath
+               | otherwise -> panic $ show err -- TODO: retry
+      Right NoContent -> return ()
   putText "All done."
+    where
+      go sk storePath = do
+        let (storeHash, storeSuffix) = splitStorePath $ toS storePath
+        putStrLn $ "pushing " <> storePath
+
+        narSizeRef <- liftIO $ newIORef 0
+        fileSizeRef <- liftIO $ newIORef 0
+        narHashRef <- liftIO $ newIORef ("" :: Text)
+        fileHashRef <- liftIO $ newIORef ("" :: Text)
+
+        -- stream store path as xz compressed nar file
+        (ClosedStream, (source, close), ClosedStream, cph) <- streamingProcess $ shell ("nix-store --dump " <> toS storePath)
+        let stream'
+              = source
+             .| passthroughSizeSink narSizeRef
+             .| passthroughHashSink narHashRef
+             .| compress Nothing
+             .| passthroughSizeSink fileSizeRef
+             .| passthroughHashSink fileHashRef
+
+            conduitToStreaming :: S.Stream (S.Of ByteString) (ResourceT IO) ()
+            conduitToStreaming = hoist lift stream' $$ CL.mapM_ S.yield
+        -- for now we need to use letsencrypt domain instead of cloudflare due to its upload limits
+        let newEnv = env {
+              baseUrl = (baseUrl env) { baseUrlHost = toS name <> "." <> baseUrlHost (baseUrl env)}
+            }
+        -- TODO: http retry: retry package?
+        res <- (`runClientM` newEnv) $ Api.createNar
+          (cachixBCClient name)
+          (contentType (Proxy :: Proxy Api.XNixNar), conduitToStreaming)
+        close
+        ec <- waitForStreamingProcess cph
+        case res of
+          Left err -> panic $ show err
+          Right NoContent -> do
+            narSize <- readIORef narSizeRef
+            narHashB16 <- readIORef narHashRef
+            fileHash <- readIORef fileHashRef
+            fileSize <- readIORef fileSizeRef
+
+            -- TODO: #3: implement using pure haskell
+            narHash <- ("sha256:" <>) . T.strip . toS <$> readProcess "nix-hash" ["--type", "sha256", "--to-base32", toS narHashB16] mempty
+
+            (exitcode, out, err) <- readProcessWithExitCode "nix-store" ["-q", "--deriver", toS storePath] mempty
+            let deriverRaw = T.strip $ toS out
+                deriver = if deriverRaw == "unknown-deriver"
+                          then deriverRaw
+                          else T.drop 11 deriverRaw
+
+            (exitcode, out, err) <- readProcessWithExitCode "nix-store" ["-q", "--references", toS storePath] mempty
+
+            let
+                references = sort $ T.lines $ T.strip $ toS out
+                fp = fingerprint storePath narHash narSize references
+                sig = dsign sk fp
+                nic = Api.NarInfoCreate
+                  { cStoreHash = storeHash
+                  , cStoreSuffix = storeSuffix
+                  , cNarHash = narHash
+                  , cNarSize = narSize
+                  , cFileSize = fileSize
+                  , cFileHash = fileHash
+                  , cReferences = fmap (T.drop 11) references
+                  , cDeriver = deriver
+                  , cSig = toS $ B64.encode $ unSignature sig
+                  }
+            -- Upload narinfo with signature
+            res <- (`runClientM` env) $ Api.createNarinfo
+              (cachixBCClient name)
+              (Api.NarInfoC storeHash)
+              nic
+            case res of
+              Left err -> panic $ show err -- TODO: handle json errors
+              Right NoContent -> return ()
+
 
 -- Utils
 

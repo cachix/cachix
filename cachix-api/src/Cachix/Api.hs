@@ -29,7 +29,7 @@ import Servant.Swagger.UI
 import Web.Cookie                (SetCookie)
 
 import Cachix.Types.ContentTypes
-import Cachix.Types.Servant      (Get302, Post302)
+import Cachix.Types.Servant      (Get302, Post302, Head)
 import Cachix.Types.Session      (Session)
 import Cachix.Api.Types
 import Cachix.Api.Swagger        ()
@@ -61,6 +61,9 @@ data BinaryCacheAPI route = BinaryCacheAPI
   , narinfo :: route :-
       Capture "narinfo" NarInfoC :>
       Get '[XNixNarInfo, JSON] NarInfo
+  , narinfoHead :: route :-
+      Capture "narinfo" NarInfoC :>
+      Head
   , createNarinfo :: route :-
       Capture "narinfo" NarInfoC :>
       ReqBody '[JSON] NarInfoCreate :>

@@ -1264,6 +1264,8 @@ inherit (pkgs) zlib;};
            pname = "List";
            version = "0.6.2";
            sha256 = "c4b92be1202fc59112018f76d5b17cd3a659ebc36384a46e000ab2fbaf99b878";
+           revision = "1";
+           editedCabalFile = "11ws93cdzz7k4nvcld2d74155mdgcvyi6f6an7gpf9z4k523c11n";
            libraryHaskellDepends = [ base transformers ];
            doHaddock = false;
            doCheck = false;
@@ -7253,12 +7255,12 @@ inherit (pkgs) mesa;};
         ({ mkDerivation, async, base, base16-bytestring, base64-bytestring
          , bifunctors, bytestring, cachix-api, conduit, conduit-combinators
          , conduit-extra, cookie, cryptonite, dhall, directory, ed25519
-         , here, http-client, http-client-tls, lzma-conduit, megaparsec
-         , memory, mmorph, optparse-applicative, process, protolude
-         , resourcet, SafeSemaphore, servant, servant-auth
-         , servant-auth-client, servant-client, servant-generic
-         , servant-streaming-client, stdenv, streaming, text, uri-bytestring
-         , versions
+         , fsnotify, here, http-client, http-client-tls, http-types
+         , lzma-conduit, megaparsec, memory, mmorph, optparse-applicative
+         , process, protolude, resourcet, SafeSemaphore, servant
+         , servant-auth, servant-auth-client, servant-client
+         , servant-generic, servant-streaming-client, stdenv, streaming
+         , text, uri-bytestring, versions
          }:
          mkDerivation {
            pname = "cachix";
@@ -7269,8 +7271,8 @@ inherit (pkgs) mesa;};
            libraryHaskellDepends = [
              async base base16-bytestring base64-bytestring bifunctors
              bytestring cachix-api conduit conduit-combinators conduit-extra
-             cookie cryptonite dhall directory ed25519 here http-client
-             http-client-tls lzma-conduit megaparsec memory mmorph
+             cookie cryptonite dhall directory ed25519 fsnotify here http-client
+             http-client-tls http-types lzma-conduit megaparsec memory mmorph
              optparse-applicative process protolude resourcet SafeSemaphore
              servant servant-auth servant-auth-client servant-client
              servant-generic servant-streaming-client streaming text
@@ -7279,8 +7281,8 @@ inherit (pkgs) mesa;};
            executableHaskellDepends = [
              async base base16-bytestring base64-bytestring bifunctors
              bytestring cachix-api conduit conduit-combinators conduit-extra
-             cookie cryptonite dhall directory ed25519 here http-client
-             http-client-tls lzma-conduit megaparsec memory mmorph
+             cookie cryptonite dhall directory ed25519 fsnotify here http-client
+             http-client-tls http-types lzma-conduit megaparsec memory mmorph
              optparse-applicative process protolude resourcet SafeSemaphore
              servant servant-auth servant-auth-client servant-client
              servant-generic servant-streaming-client streaming text
@@ -7289,7 +7291,7 @@ inherit (pkgs) mesa;};
            doHaddock = false;
            doCheck = false;
            homepage = "https://github.com/cachix/cachix#readme";
-           license = stdenv.lib.licenses.bsd3;
+           license = stdenv.lib.licenses.asl20;
          }) {};
       "cachix-api" = callPackage
         ({ mkDerivation, aeson, amazonka, base, base16-bytestring
@@ -7324,7 +7326,7 @@ inherit (pkgs) mesa;};
            doHaddock = false;
            doCheck = false;
            homepage = "https://github.com/githubuser/cachix-api#readme";
-           license = stdenv.lib.licenses.bsd3;
+           license = stdenv.lib.licenses.asl20;
          }) {};
       "cairo" = callPackage
         ({ mkDerivation, array, base, bytestring, Cabal, cairo
@@ -8150,6 +8152,8 @@ inherit (pkgs) mesa;};
            pname = "clay";
            version = "0.12.2";
            sha256 = "ea8b95a24568c8a37e2f8deda7f24c5c15a84886ad19f255d6d637e06786e98a";
+           revision = "1";
+           editedCabalFile = "1db2rc6q4a1699n43xmq31mv24b7ayc4ivc3n748zkzhs6ff4nbg";
            libraryHaskellDepends = [ base mtl text ];
            doHaddock = false;
            doCheck = false;
@@ -8537,6 +8541,8 @@ inherit (pkgs) mesa;};
            pname = "compact";
            version = "0.1.0.1";
            sha256 = "ee8533e16b94bbbf3519ccad26f3e569d60d33a5a9d2e3636e0764aff7b2d653";
+           revision = "1";
+           editedCabalFile = "0bdp226gx3gr1hg68xydxhkfr0h469ay60h0s1ywar19y3m8dn1p";
            libraryHaskellDepends = [ base binary bytestring ghc-compact ];
            doHaddock = false;
            doCheck = false;
@@ -21741,6 +21747,8 @@ inherit (pkgs) which;};
            pname = "hw-bits";
            version = "0.7.0.2";
            sha256 = "38621e0166bac49c1f68f85122c3fbfcadc6a3c447dd7f48ff1020151ad10ae8";
+           revision = "1";
+           editedCabalFile = "1gvv5ryx1lrgb3hk362fkqz98rggdxfmjp7fy0id7mqvdz6lk2av";
            libraryHaskellDepends = [
              base bytestring hw-int hw-prim hw-string-parse safe vector
            ];
@@ -21815,6 +21823,8 @@ inherit (pkgs) which;};
            pname = "hw-fingertree-strict";
            version = "0.1.0.0";
            sha256 = "1da40ee5b007e525186fb005cf8555b73c2ad75a0a148a6d69ff762825c36f09";
+           revision = "1";
+           editedCabalFile = "12y4gz7x9slxgvzaamr23zz9snninjlyf536f515a7pv0ysdxlb1";
            libraryHaskellDepends = [ base ];
            doHaddock = false;
            doCheck = false;
@@ -21842,6 +21852,8 @@ inherit (pkgs) which;};
            pname = "hw-hspec-hedgehog";
            version = "0.1.0.2";
            sha256 = "c77c2586fb7e43485e494412d31b6cf28e604bf1e958b58161f890a1fdcd4ee5";
+           revision = "1";
+           editedCabalFile = "15chrv8xmihzminpn5167m68n0zh956169mmdly331dl7wby3r57";
            libraryHaskellDepends = [ base call-stack hedgehog hspec HUnit ];
            doHaddock = false;
            doCheck = false;
@@ -21932,6 +21944,8 @@ inherit (pkgs) which;};
            pname = "hw-prim";
            version = "0.5.0.0";
            sha256 = "32dddccbe58eedf215bc4544d05720883b47f5eb5a048faf530a9e1782df5103";
+           revision = "1";
+           editedCabalFile = "0x8yhb1b393iidvq9w89pbra7j2691r7iry13s2kcp821sqhr7xn";
            libraryHaskellDepends = [ base bytestring vector ];
            doHaddock = false;
            doCheck = false;
@@ -21947,6 +21961,8 @@ inherit (pkgs) which;};
            pname = "hw-rankselect";
            version = "0.10.0.3";
            sha256 = "aa1d079f56064c649bc820219b55ae16d723faed663283ab73760db4f2f514cb";
+           revision = "1";
+           editedCabalFile = "1rkni89h3sq02y03phb2bgx4yrx4gly9mzan6r4ziph0qayf09wf";
            isLibrary = true;
            isExecutable = true;
            libraryHaskellDepends = [
@@ -22661,6 +22677,8 @@ inherit (pkgs) which;};
            pname = "ini";
            version = "0.3.5";
            sha256 = "bfd3836dfe38440987ce53f7eeffee00b54e3b7e4c0cd81ba315932cd7562cc6";
+           revision = "1";
+           editedCabalFile = "0imgz9a8wz20zngy6c4w61k1n6cmqpklr0kj4k7dk2j16l4hd8g6";
            libraryHaskellDepends = [
              attoparsec base text unordered-containers
            ];
@@ -23249,8 +23267,8 @@ inherit (pkgs) which;};
            pname = "irc-dcc";
            version = "2.0.1";
            sha256 = "6408a28733743d3463664677c5e3ad72e46c168799dad458988067039f25d2df";
-           revision = "7";
-           editedCabalFile = "01mvdqabbxa68abq49s2kwpl0y8gb6lf258jjg7w098f5v0p4m36";
+           revision = "8";
+           editedCabalFile = "1ya1bl8pdzbs3gxkq7hsyvkaajf8prrdhr1lx5hm9pi1nqsi879z";
            libraryHaskellDepends = [
              attoparsec base binary bytestring io-streams iproute irc-ctcp mtl
              network path safe-exceptions transformers utf8-string
@@ -29930,6 +29948,8 @@ inherit (pkgs) which;};
            pname = "pandoc";
            version = "2.1.1";
            sha256 = "eafc00c8768a5d342fef3179046d2198d5489e48d106385708b8e2454e3be9b5";
+           revision = "1";
+           editedCabalFile = "1f5gxpnbcq3af4w109c0n1862avbvqlm2xjjckcdrnw4hwz6ca6j";
            isLibrary = true;
            isExecutable = true;
            enableSeparateDataOutput = true;
@@ -39025,8 +39045,8 @@ inherit (pkgs) which;};
            pname = "tasty-hedgehog";
            version = "0.1.0.2";
            sha256 = "1dc1ffb73bae9c6ccefb050a5489faae9b3144e987f8d054a9645d7e27884d32";
-           revision = "1";
-           editedCabalFile = "1kmmry6zawyhxgi20v3j62m58lqjcjzvap0qp6b35yj31vbzl727";
+           revision = "2";
+           editedCabalFile = "0kcsky6xnqpg2hpvpw50sdmjg50z1s57wbvxqmcjrd7wx8hpapdq";
            libraryHaskellDepends = [ base hedgehog tagged tasty ];
            doHaddock = false;
            doCheck = false;
@@ -44895,8 +44915,8 @@ inherit (pkgs) which;};
            pname = "yaml";
            version = "0.8.28";
            sha256 = "f702b6a489ad94cda3c0cb15db34a30356d7b2cdc86a4d0f5340f2ece69f8f6b";
-           revision = "1";
-           editedCabalFile = "0f8vb5v0xfpsc02zqh9pzgv4fir93sgijk342lz5k872gscfjn62";
+           revision = "2";
+           editedCabalFile = "0ham29nvmgfakwpq7hlikmyiiv4zh8lgdyprqxj6mggypg394h02";
            isLibrary = true;
            isExecutable = true;
            libraryHaskellDepends = [
@@ -45153,6 +45173,8 @@ inherit (pkgs) which;};
            pname = "yesod-core";
            version = "1.4.37.3";
            sha256 = "e06997fdf9314c8f1140c19e922e0ccbd83b8c4cef77f8faf132e972051881cb";
+           revision = "2";
+           editedCabalFile = "0hgrp8i33zssjlvkbvlnrr5ppblvn1vzhxlax2m5qyjjg60cqjsp";
            libraryHaskellDepends = [
              aeson auto-update base blaze-builder blaze-html blaze-markup
              byteable bytestring case-insensitive cereal clientsession conduit

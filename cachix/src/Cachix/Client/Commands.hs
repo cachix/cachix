@@ -9,8 +9,10 @@ module Cachix.Client.Commands
   ) where
 
 import           Crypto.Sign.Ed25519
+import           Control.Concurrent           (threadDelay)
 import           Control.Concurrent.MSem
 import           Control.Concurrent.Async
+import           Control.Monad                (forever)
 import           Control.Monad.Morph          (hoist)
 import           Control.Monad.Trans.Resource (ResourceT)
 import qualified Data.ByteString               as BS
@@ -22,6 +24,7 @@ import           Data.Conduit.Process
 import qualified Data.Conduit.List             as CL
 import           Data.Conduit.Lzma              ( compress )
 import           Data.IORef
+import           Data.List                      ( isSuffixOf )
 import           Data.Maybe                     ( fromJust )
 import           Data.String.Here
 import qualified Data.Text                      as T
@@ -35,12 +38,12 @@ import           Servant.Auth.Client
 import           Servant.Streaming.Client
 import           Servant.Generic
 import           System.Directory               ( doesFileExist, getPermissions, writable )
+import           System.FSNotify
 import           System.IO                      ( stdin, hIsTerminalDevice )
 import           System.Process                 ( readProcessWithExitCode, readProcess )
 import           System.Environment             ( lookupEnv )
 import qualified Streaming.Prelude             as S
 import           Web.Cookie                     ( SetCookie )
-
 
 import qualified Cachix.Api                    as Api
 import           Cachix.Api.Signing             (fingerprint, passthroughSizeSink, passthroughHashSink)
@@ -152,8 +155,8 @@ use env _ name = do
              addBinaryCache binaryCache NixConf.Global
 
 -- TODO: lots of room for perfomance improvements
-push :: ClientEnv -> Maybe Config -> Text -> [Text] -> IO ()
-push env config name rawPaths = do
+push :: ClientEnv -> Maybe Config -> Text -> [Text] -> Bool -> IO ()
+push env config name rawPaths False = do
   hasNoStdin <- hIsTerminalDevice stdin
   when (not hasNoStdin && not (null rawPaths)) $ throwIO $ AmbiguousInput "You provided both stdin and store path arguments, pick only one to proceed."
   inputStorePaths <-
@@ -164,6 +167,30 @@ push env config name rawPaths = do
   -- TODO: if empty, take whole nix store and warn: nix store-path --all
   when (null inputStorePaths) $ throwIO $ NoInput "You need to specify store paths either as stdin or as a cli argument"
 
+  -- Query list of paths
+  -- TODO: split args if too big
+  (exitcode, out, err) <- readProcessWithExitCode "nix-store" (fmap toS (["-qR"] <> inputStorePaths)) mempty
+
+  -- TODO: make pool size configurable, on beefier machines this could be doubled
+  successes <- mapPool 4 (T.lines (toS out)) $ pushStorePath env config name
+  putText "All done."
+push env config name rawPaths True = withManager $ \mgr -> do
+  _ <- watchDir mgr "/nix/store" filterF action
+  putText "Watching /nix/store for new builds ..."
+  forever $ threadDelay 1000000
+  where
+    action :: Action
+    action (Removed fp _) = pushStorePath env config name $ toS $ dropEnd 5 fp
+    action _ = return ()
+
+    filterF :: ActionPredicate
+    filterF (Removed fp _) | ".lock" `isSuffixOf` fp = True
+    filterF _ = False
+
+    dropEnd :: Int -> [a] -> [a]
+    dropEnd i l = take (length l - i) l
+
+pushStorePath env config name storePath = do
   -- use secret key from config or env
   maybeEnvSK <- lookupEnv "CACHIX_SIGNING_KEY"
   let matches Config{..} = filter (\bc -> Config.name bc == name) binaryCaches
@@ -172,30 +199,16 @@ push env config name rawPaths = do
         Just c -> Config.secretKey <$> head (matches c)
       -- TODO: better error msg
       sk = SecretKey $ toS $ B64.decodeLenient $ toS $ fromJust $ maybeBCSK <|> toS <$> maybeEnvSK <|> panic "You need to: export CACHIX_SIGNING_KEY=XXX"
-
-  -- Query list of paths
-  -- TODO: split args if too big
-  (exitcode, out, err) <- readProcessWithExitCode "nix-store" (fmap toS (["-qR"] <> inputStorePaths)) mempty
-
-  let storePaths :: [Text]
-      storePaths = T.lines $ toS out
-      numStorePaths = show (length storePaths) :: Text
-  --putStrLn $ "Asking upstream how many of " <> numStorePaths <> " are already cached."
+      (storeHash, storeSuffix) = splitStorePath $ toS storePath
+  -- Check if narinfo already exists
   -- TODO: query also cache.nixos.org? server-side?
-  -- TODO: print how many will be uploaded
-
-  -- TODO: make pool size configurable, on beefier machines this could be doubled
-  successes <- mapPool 4 storePaths $ \storePath -> do
-    let (storeHash, storeSuffix) = splitStorePath $ toS storePath
-    -- Check if narinfo already exists
-    res <- (`runClientM` env) $ Api.narinfoHead
-      (cachixBCClient name)
-      (Api.NarInfoC storeHash)
-    case res of
-      Left err | isErr err status404 -> go sk storePath
-               | otherwise -> panic $ show err -- TODO: retry
-      Right NoContent -> return ()
-  putText "All done."
+  res <- (`runClientM` env) $ Api.narinfoHead
+    (cachixBCClient name)
+    (Api.NarInfoC storeHash)
+  case res of
+    Left err | isErr err status404 -> go sk storePath
+             | otherwise -> panic $ show err -- TODO: retry
+    Right NoContent -> return ()
     where
       go sk storePath = do
         let (storeHash, storeSuffix) = splitStorePath $ toS storePath

@@ -43,6 +43,7 @@ dependencies:
 - megaparsec
 - memory
 - mmorph
+- fsnotify
 - optparse-applicative
 - process
 - protolude

@@ -24,7 +24,7 @@ main = do
   case command of -- TODO: might want readerT here with client, config and env and opts
     AuthToken token -> Commands.authtoken env config token
     Create name -> Commands.create env config name
-    Push name paths -> Commands.push env config name paths
+    Push name paths watchStore -> Commands.push env config name paths watchStore
     Use name -> Commands.use env config name
 
 customManagerSettings :: ManagerSettings

@@ -42,7 +42,7 @@ type BinaryCacheName = Text
 data CachixCommand
   = AuthToken Text
   | Create BinaryCacheName
-  | Push BinaryCacheName [Text]
+  | Push BinaryCacheName [Text] Bool -- TODO: refactor to a record
   | Use BinaryCacheName
   deriving Show
 
@@ -57,6 +57,7 @@ parserCachixCommand = subparser $
     create = Create <$> strArgument (metavar "NAME")
     push = Push <$> strArgument (metavar "NAME")
                 <*> many (strArgument (metavar "PATHS..."))
+                <*> switch (long "watch-store" <> short 'w' <> help "Run in daemon mode and push store paths as they are added to /nix/store")
     use = Use <$> strArgument (metavar "NAME")
 
 getOpts :: IO (CachixOptions, CachixCommand)

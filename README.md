@@ -1,4 +1,4 @@
-![](https://cachix.org/images/logo.png)
+<img src="https://cachix.org/images/logo.png" width="500">
 
 # https://cachix.org api and cli interface
 

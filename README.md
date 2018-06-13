@@ -2,7 +2,7 @@
 
 # https://cachix.org api and cli interface
 
-[![Build Status](https://travis-ci.org/cachix/cachix.svg?branch=master)](https://travis-ci.org/cachix/cachix)
+[![Build Status](https://travis-ci.com/cachix/cachix.svg?branch=master)](https://travis-ci.com/cachix/cachix)
 [![Hackage](https://img.shields.io/hackage/v/cachix.svg)](https://hackage.haskell.org/package/cachix)
 
 Binary Cache as a Service - Build Nix packages once and share them for good.

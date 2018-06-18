@@ -1,34 +1,25 @@
-resolver: nightly-2018-03-01
+resolver: lts-11.14
 
 name: cachix
 
 packages:
-- http-types-0.12.1
 - http-api-data-0.3.8.1
 - streaming-wai-0.1.1
-- servant-swagger-1.1.5
 - servant-elm-0.5.0.0
 - bits-extras-0.1.3
-- free-5.0.1
-- lens-4.16.1
 - servant-streaming-0.2.0.0
 - servant-streaming-server-0.2.0.0
 - servant-streaming-client-0.2.0.0
-
-# servant-streaming is using some unreleased combinators
+- servant-auth-0.3.2.0
+- servant-auth-server-0.4.0.0
+- servant-auth-client-0.3.3.0
+- servant-auth-swagger-0.2.10.0
+# waiting on servant-0.14 release
 - git: https://github.com/haskell-servant/servant
-  commit: 63253f09df9b3f946d9bbe1004573019aab67ddf
+  commit: dbbe9b73217022696b5066c0374c04a3ca670b04
   subdirs:
     - servant
     - servant-server
     - servant-client
     - servant-client-core
     - servant-foreign
-# https://github.com/haskell-servant/servant-auth/pull/95
-- git: https://github.com/haskell-servant/servant-auth
-  commit: d03dc77ddc3e93163693cf9c851d0508805b3378
-  subdirs:
-    - servant-auth
-    - servant-auth-server
-    - servant-auth-client
-    - servant-auth-swagger

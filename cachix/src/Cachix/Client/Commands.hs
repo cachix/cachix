@@ -230,7 +230,7 @@ pushStorePath env config name storePath = do
              .| passthroughHashSink fileHashRef
 
             conduitToStreaming :: S.Stream (S.Of ByteString) (ResourceT IO) ()
-            conduitToStreaming = hoist lift stream' $$ CL.mapM_ S.yield
+            conduitToStreaming = transPipe lift stream' $$ CL.mapM_ S.yield
         -- for now we need to use letsencrypt domain instead of cloudflare due to its upload limits
         let newEnv = env {
               baseUrl = (baseUrl env) { baseUrlHost = toS name <> "." <> baseUrlHost (baseUrl env)}

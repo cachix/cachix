@@ -49,12 +49,12 @@ dependencies:
 - process
 - protolude
 - resourcet
-- servant
+- servant >= 0.14
 - servant-auth
 - servant-auth-client >= 0.3.3.0
-- servant-client
+- servant-client >= 0.14
 - servant-generic
-- servant-streaming-client
+- servant-streaming-client >= 0.3.0.0
 - streaming
 - text
 - uri-bytestring

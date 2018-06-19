@@ -40,7 +40,7 @@ dependencies:
 - servant-auth-swagger
 - servant-streaming
 - servant-swagger
-- servant-swagger-ui
+- servant-swagger-ui-core
 - swagger2
 - string-conv
 - text

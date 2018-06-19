@@ -25,7 +25,7 @@ import Servant.Auth
 import Servant.Generic
 import Servant.Streaming
 import Servant.Swagger
-import Servant.Swagger.UI
+import Servant.Swagger.UI.Core   (SwaggerSchemaUI)
 import Web.Cookie                (SetCookie)
 
 import Cachix.Types.ContentTypes

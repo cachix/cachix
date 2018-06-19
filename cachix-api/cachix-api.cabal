@@ -2,7 +2,7 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 18a1e85f2cf9417969674fdd0f507e016a895aa1a082525096344217e8ef17fb
+-- hash: e8db970407465738fc6d366b754b2cf51d5a5e123461ea5b89db16236ecbd3ee
 
 name:           cachix-api
 version:        0.1.0.0
@@ -61,7 +61,7 @@ library
     , servant-generic
     , servant-streaming
     , servant-swagger
-    , servant-swagger-ui
+    , servant-swagger-ui-core
     , string-conv
     , swagger2
     , text
@@ -98,7 +98,7 @@ executable cachix-gen-swagger
     , servant-generic
     , servant-streaming
     , servant-swagger
-    , servant-swagger-ui
+    , servant-swagger-ui-core
     , string-conv
     , swagger2
     , text
@@ -139,7 +139,7 @@ test-suite cachix-api-test
     , servant-generic
     , servant-streaming
     , servant-swagger
-    , servant-swagger-ui
+    , servant-swagger-ui-core
     , string-conv
     , swagger2
     , text

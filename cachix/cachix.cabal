@@ -2,7 +2,7 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: b3d4d48cace3b50ee1f5f7d4c1bfaf070e31f7beea13e5327cc0bb3072d91391
+-- hash: 4ecd761e07cb906fa23f7c69e728be19cfd4d7d067f5860ff640827b44f5dfaf
 
 name:           cachix
 version:        0.1.0.0
@@ -72,12 +72,12 @@ library
     , process
     , protolude
     , resourcet
-    , servant
+    , servant >=0.14
     , servant-auth
     , servant-auth-client >=0.3.3.0
-    , servant-client
+    , servant-client >=0.14
     , servant-generic
-    , servant-streaming-client
+    , servant-streaming-client >=0.3.0.0
     , streaming
     , text
     , unix
@@ -124,12 +124,12 @@ executable cachix
     , process
     , protolude
     , resourcet
-    , servant
+    , servant >=0.14
     , servant-auth
     , servant-auth-client >=0.3.3.0
-    , servant-client
+    , servant-client >=0.14
     , servant-generic
-    , servant-streaming-client
+    , servant-streaming-client >=0.3.0.0
     , streaming
     , text
     , unix
@@ -182,12 +182,12 @@ test-suite cachix-test
     , process
     , protolude
     , resourcet
-    , servant
+    , servant >=0.14
     , servant-auth
     , servant-auth-client >=0.3.3.0
-    , servant-client
+    , servant-client >=0.14
     , servant-generic
-    , servant-streaming-client
+    , servant-streaming-client >=0.3.0.0
     , streaming
     , text
     , unix

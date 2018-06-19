@@ -38,6 +38,7 @@ dependencies:
 - here
 - http-client-tls
 - http-client
+- http-conduit
 - http-types
 - lzma-conduit
 - megaparsec

@@ -62,14 +62,17 @@ writeLines predicate addition nixconf = fmap f nixconf
   where
     f x = filter (isNothing . predicate) x <> [addition]
 
+isSubstituter :: NixConfLine -> Maybe [Text]
 isSubstituter (Substituters xs) = Just xs
 isSubstituter (BinaryCaches xs) = Just xs
 isSubstituter _ = Nothing
 
+isPublicKey :: NixConfLine -> Maybe [Text]
 isPublicKey (TrustedPublicKeys xs) = Just xs
 isPublicKey (BinaryCachePublicKeys xs) = Just xs
 isPublicKey _ = Nothing
 
+isTrustedUsers :: NixConfLine -> Maybe [Text]
 isTrustedUsers (TrustedUsers xs) = Just xs
 isTrustedUsers _ = Nothing
 
@@ -93,8 +96,10 @@ render (NixConf nixconflines) = unlines $ fmap go nixconflines
   where
     go :: NixConfLine -> Text
     go (Substituters xs) = "substituters = " <> unwords xs
+    go (BinaryCaches xs) = "substituters = " <> unwords xs
     go (TrustedUsers xs) = "trusted-users = " <> unwords xs
     go (TrustedPublicKeys xs) = "trusted-public-keys = " <> unwords xs
+    go (BinaryCachePublicKeys xs) = "trusted-public-keys = " <> unwords xs
     go (Other line) = line
 
 write :: NixConfLoc -> NixConf -> IO ()

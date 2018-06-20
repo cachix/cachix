@@ -13,11 +13,7 @@ import           Control.Concurrent           (threadDelay)
 import           Control.Concurrent.MSem
 import           Control.Concurrent.Async
 import           Control.Monad                (forever)
-import           Control.Monad.Morph          (hoist)
 import           Control.Monad.Trans.Resource (ResourceT)
-import qualified Data.ByteString               as BS
--- TODO: use cryptonite encoding instead
--- import qualified Data.ByteArray.Encoding       as BAE
 import qualified Data.ByteString.Base64        as B64
 import           Data.Conduit
 import           Data.Conduit.Process
@@ -33,9 +29,9 @@ import           Network.HTTP.Types (status404)
 import           Protolude
 import           Servant.API
 import           Servant.Client
-import           Servant.Auth
+import           Servant.Auth                   ()
 import           Servant.Auth.Client
-import           Servant.Streaming.Client
+import           Servant.Streaming.Client       ()
 import           Servant.Generic
 import           System.Directory               ( doesFileExist, getPermissions, writable )
 import           System.FSNotify
@@ -43,7 +39,6 @@ import           System.IO                      ( stdin, hIsTerminalDevice )
 import           System.Process                 ( readProcessWithExitCode, readProcess )
 import           System.Environment             ( lookupEnv )
 import qualified Streaming.Prelude             as S
-import           Web.Cookie                     ( SetCookie )
 
 import qualified Cachix.Api                    as Api
 import           Cachix.Api.Signing             (fingerprint, passthroughSizeSink, passthroughHashSink)
@@ -172,9 +167,9 @@ push env config name rawPaths False = do
   (exitcode, out, err) <- readProcessWithExitCode "nix-store" (fmap toS (["-qR"] <> inputStorePaths)) mempty
 
   -- TODO: make pool size configurable, on beefier machines this could be doubled
-  successes <- mapPool 4 (T.lines (toS out)) $ pushStorePath env config name
+  _ <- mapPool 4 (T.lines (toS out)) $ pushStorePath env config name
   putText "All done."
-push env config name rawPaths True = withManager $ \mgr -> do
+push env config name _ True = withManager $ \mgr -> do
   _ <- watchDir mgr "/nix/store" filterF action
   putText "Watching /nix/store for new builds ..."
   forever $ threadDelay 1000000
@@ -188,8 +183,9 @@ push env config name rawPaths True = withManager $ \mgr -> do
     filterF _ = False
 
     dropEnd :: Int -> [a] -> [a]
-    dropEnd i l = take (length l - i) l
+    dropEnd index xs = take (length xs - index) xs
 
+pushStorePath :: ClientEnv -> Maybe Config -> Text -> Text -> IO ()
 pushStorePath env config name storePath = do
   -- use secret key from config or env
   maybeEnvSK <- lookupEnv "CACHIX_SIGNING_KEY"
@@ -199,18 +195,18 @@ pushStorePath env config name storePath = do
         Just c -> Config.secretKey <$> head (matches c)
       -- TODO: better error msg
       sk = SecretKey $ toS $ B64.decodeLenient $ toS $ fromJust $ maybeBCSK <|> toS <$> maybeEnvSK <|> panic "You need to: export CACHIX_SIGNING_KEY=XXX"
-      (storeHash, storeSuffix) = splitStorePath $ toS storePath
+      (storeHash, _) = splitStorePath $ toS storePath
   -- Check if narinfo already exists
   -- TODO: query also cache.nixos.org? server-side?
   res <- (`runClientM` env) $ Api.narinfoHead
     (cachixBCClient name)
     (Api.NarInfoC storeHash)
   case res of
-    Left err | isErr err status404 -> go sk storePath
-             | otherwise -> panic $ show err -- TODO: retry
     Right NoContent -> return ()
+    Left err | isErr err status404 -> go sk
+             | otherwise -> panic $ show err -- TODO: retry
     where
-      go sk storePath = do
+      go sk = do
         let (storeHash, storeSuffix) = splitStorePath $ toS storePath
         putStrLn $ "pushing " <> storePath
 
@@ -230,7 +226,7 @@ pushStorePath env config name storePath = do
              .| passthroughHashSink fileHashRef
 
             conduitToStreaming :: S.Stream (S.Of ByteString) (ResourceT IO) ()
-            conduitToStreaming = transPipe lift stream' $$ CL.mapM_ S.yield
+            conduitToStreaming = runConduit (transPipe lift stream' .| CL.mapM_ S.yield)
         -- for now we need to use letsencrypt domain instead of cloudflare due to its upload limits
         let newEnv = env {
               baseUrl = (baseUrl env) { baseUrlHost = toS name <> "." <> baseUrlHost (baseUrl env)}
@@ -240,7 +236,7 @@ pushStorePath env config name storePath = do
           (cachixBCClient name)
           (contentType (Proxy :: Proxy Api.XNixNar), conduitToStreaming)
         close
-        ec <- waitForStreamingProcess cph
+        exitcode <- waitForStreamingProcess cph
         case res of
           Left err -> panic $ show err
           Right NoContent -> do
@@ -341,8 +337,8 @@ getUser = do
     Just user -> return $ toS user
 
 mapPool :: Traversable t => Int -> t a -> (a -> IO b) -> IO (t b)
-mapPool max xs f = do
-    sem <- new max
+mapPool limit xs f = do
+    sem <- new limit
     mapConcurrently (with sem . f) xs
 
 splitStorePath :: Text -> (Text, Text)

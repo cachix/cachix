@@ -2,7 +2,7 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 51717c5e67bc27c34166efbaf6939fb3a4ab2acb970abd6265a031ab21554a93
+-- hash: 9ff390e2a4ecd4b2f255c4b3653dbdf685a49097bf800ba7c7ac7df02ccc3507
 
 name:           cachix
 version:        0.1.0.0
@@ -62,6 +62,7 @@ library
     , here
     , http-client
     , http-client-tls
+    , http-conduit
     , http-types
     , lzma-conduit
     , megaparsec
@@ -113,6 +114,7 @@ executable cachix
     , here
     , http-client
     , http-client-tls
+    , http-conduit
     , http-types
     , lzma-conduit
     , megaparsec
@@ -169,6 +171,7 @@ test-suite cachix-test
     , hspec
     , http-client
     , http-client-tls
+    , http-conduit
     , http-types
     , lzma-conduit
     , megaparsec

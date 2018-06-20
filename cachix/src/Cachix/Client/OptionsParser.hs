@@ -29,8 +29,8 @@ parserCachixOptions = CachixOptions
                        <> help "Host to connect to"
                        )
   <*> switch ( long "verbose"
-            <> short 'v'
-            <> help "Verbose mode"
+             <> short 'v'
+             <> help "Verbose mode"
              )
 
 uriOption :: ReadM (URIRef Absolute)
@@ -44,6 +44,7 @@ data CachixCommand
   | Create BinaryCacheName
   | Push BinaryCacheName [Text] Bool -- TODO: refactor to a record
   | Use BinaryCacheName
+  | Version
   deriving Show
 
 parserCachixCommand :: Parser CachixCommand
@@ -65,7 +66,12 @@ getOpts = customExecParser (prefs showHelpOnEmpty) opts
 
 opts :: ParserInfo (CachixOptions, CachixCommand)
 opts = infoH parser desc
-  where parser = (,) <$> parserCachixOptions <*> parserCachixCommand
+  where parser = (,) <$> parserCachixOptions <*> (parserCachixCommand <|> versionParser)
+        versionParser :: Parser CachixCommand
+        versionParser = flag' Version ( long "version"
+                     <> short 'V'
+                     <> help "Show cachix version"
+                     )
 
 desc :: InfoMod a
 desc = fullDesc

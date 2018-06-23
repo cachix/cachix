@@ -2,7 +2,7 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 9ff390e2a4ecd4b2f255c4b3653dbdf685a49097bf800ba7c7ac7df02ccc3507
+-- hash: b5b6a039ff791358d7df788ce6dae79c4efec079bec41489073cdda7912a3d4a
 
 name:           cachix
 version:        0.1.0.0
@@ -30,6 +30,7 @@ library
       Cachix.Client
       Cachix.Client.Commands
       Cachix.Client.Config
+      Cachix.Client.InstallationMode
       Cachix.Client.NixConf
       Cachix.Client.NixVersion
       Cachix.Client.OptionsParser
@@ -140,6 +141,7 @@ test-suite cachix-test
   type: exitcode-stdio-1.0
   main-is: Main.hs
   other-modules:
+      InstallationModeSpec
       NixConfSpec
       NixVersionSpec
       Spec

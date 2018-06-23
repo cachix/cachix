@@ -14,6 +14,8 @@ spec = do
       parseNixMode "nix-env (Nix) 2.0.1" `shouldBe` Right Nix201
     it "parses 'nix-env (Nix) 1.11.13' as Nix1XX" $
       parseNixMode "nix-env (Nix) 1.11.13" `shouldBe` Right Nix1XX
+    it "parses 'nix-env (Nix) 2.0.5' as Nix201" $
+      parseNixMode "nix-env (Nix) 2.0.5" `shouldBe` Right Nix201
     it "parses 'nix-env (Nix) 2.0.1pre6053_444b921' as Nix201" $
       parseNixMode "nix-env (Nix) 2.0.1pre6053_444b921" `shouldBe` Right Nix201
     it "fails with unknown string 'foobar'" $

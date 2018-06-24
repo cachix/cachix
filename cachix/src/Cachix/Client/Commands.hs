@@ -141,7 +141,7 @@ push env config name rawPaths False = do
   inputStorePaths <-
     if hasNoStdin
     then return rawPaths
-    else T.lines <$> getContents
+    else T.words <$> getContents
 
   -- TODO: if empty, take whole nix store and warn: nix store-path --all
   when (null inputStorePaths) $ throwIO $ NoInput "You need to specify store paths either as stdin or as a cli argument"

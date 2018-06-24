@@ -27,7 +27,7 @@ main = do
     AuthToken token -> Commands.authtoken env config token
     Create name -> Commands.create env config name
     Push name paths watchStore -> Commands.push env config name paths watchStore
-    Use name -> Commands.use env config name
+    Use name shouldEchoNixOS -> Commands.use env config name shouldEchoNixOS
     Version -> putText cachixVersion
 
 customManagerSettings :: ManagerSettings

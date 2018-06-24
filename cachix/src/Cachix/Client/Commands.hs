@@ -108,8 +108,8 @@ To instruct Nix to use the binary cache:
 
       |] :: Text)
 
-use :: ClientEnv -> Maybe Config -> Text -> IO ()
-use env _ name = do
+use :: ClientEnv -> Maybe Config -> Text -> Bool -> IO ()
+use env _ name shouldEchoNixOS = do
   -- 1. get cache public key
   res <- (`runClientM` env) $ Api.get (cachixBCClient name)
   case res of
@@ -130,7 +130,10 @@ use env _ name = do
                 , isTrusted = isTrusted
                 , isNixOS = isNixOS
                 }
-          addBinaryCache binaryCache $ getInstallationMode nixEnv
+          addBinaryCache binaryCache $
+            if shouldEchoNixOS
+            then EchoNixOS
+            else getInstallationMode nixEnv
 
 
 -- TODO: lots of room for perfomance improvements
@@ -141,7 +144,7 @@ push env config name rawPaths False = do
   inputStorePaths <-
     if hasNoStdin
     then return rawPaths
-    else T.lines <$> getContents
+    else T.words <$> getContents
 
   -- TODO: if empty, take whole nix store and warn: nix store-path --all
   when (null inputStorePaths) $ throwIO $ NoInput "You need to specify store paths either as stdin or as a cli argument"

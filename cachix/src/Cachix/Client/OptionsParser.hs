@@ -43,9 +43,10 @@ data CachixCommand
   = AuthToken Text
   | Create BinaryCacheName
   | Push BinaryCacheName [Text] Bool -- TODO: refactor to a record
-  | Use BinaryCacheName
+  | Use BinaryCacheName Bool --- TODO: refactor to a record
   | Version
   deriving Show
+
 
 parserCachixCommand :: Parser CachixCommand
 parserCachixCommand = subparser $
@@ -60,6 +61,7 @@ parserCachixCommand = subparser $
                 <*> many (strArgument (metavar "PATHS..."))
                 <*> switch (long "watch-store" <> short 'w' <> help "Run in daemon mode and push store paths as they are added to /nix/store")
     use = Use <$> strArgument (metavar "NAME")
+              <*> switch (long "nixos" <> short 'n' <> help "Output NixOS configuration lines")
 
 getOpts :: IO (CachixOptions, CachixCommand)
 getOpts = customExecParser (prefs showHelpOnEmpty) opts

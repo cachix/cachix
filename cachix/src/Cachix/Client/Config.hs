@@ -14,6 +14,8 @@ import GHC.Generics     ( Generic )
 import System.Directory ( doesFileExist, createDirectoryIfMissing
                         , getXdgDirectory, XdgDirectory(..)
                         )
+import System.Posix.Files ( setFileMode, unionFileModes, ownerReadMode
+                          , ownerWriteMode )
 import Protolude
 
 
@@ -53,4 +55,10 @@ writeConfig config = do
   filename <- getFilename
   let doc = prettyExpr $ embed inject config
   writeFile filename $ show doc
+  assureFilePermissions filename
   putStrLn $ "Written to " <> filename
+
+-- Does: chmod rw file
+assureFilePermissions :: FilePath -> IO ()
+assureFilePermissions fp =
+  setFileMode fp $ unionFileModes ownerReadMode ownerWriteMode

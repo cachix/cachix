@@ -59,6 +59,7 @@ dependencies:
 - streaming
 - text
 - uri-bytestring
+- unix
 - versions
 
 default-extensions:

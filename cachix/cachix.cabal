@@ -2,7 +2,7 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: b5b6a039ff791358d7df788ce6dae79c4efec079bec41489073cdda7912a3d4a
+-- hash: d0a53c6d5a2e14ff4531325e41533e8350c400ecb7a00a3d4eb59c35cbc7a4bf
 
 name:           cachix
 version:        0.1.0.0
@@ -81,6 +81,7 @@ library
     , servant-streaming-client
     , streaming
     , text
+    , unix
     , uri-bytestring
     , versions
   default-language: Haskell2010
@@ -133,6 +134,7 @@ executable cachix
     , servant-streaming-client
     , streaming
     , text
+    , unix
     , uri-bytestring
     , versions
   default-language: Haskell2010
@@ -191,6 +193,7 @@ test-suite cachix-test
     , servant-streaming-client
     , streaming
     , text
+    , unix
     , uri-bytestring
     , versions
   default-language: Haskell2010

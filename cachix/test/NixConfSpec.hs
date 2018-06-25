@@ -10,7 +10,7 @@ import Cachix.Api (BinaryCache(..))
 
 
 property :: Text -> Expectation
-property x = NixConf.render <$> parse x `shouldBe` Just x
+property x = NixConf.render <$> parse x `shouldBe` Right x
 
 bc = BinaryCache
  { name = "name"
@@ -119,13 +119,15 @@ spec = do
       in add bc [globalConf, localConf] localConf `shouldBe` result
   describe "parse" $ do
     it "parses substituters" $
-      parse "substituters = a\n" `shouldBe` (Just $ NixConf [Substituters ["a"]])
+      parse "substituters = a\n" `shouldBe` (Right $ NixConf [Substituters ["a"]])
+    it "parses long key" $
+      parse "binary-caches-parallel-connections = 40\n" `shouldBe` (Right $ NixConf [Other "binary-caches-parallel-connections = 40"])
     it "parses substituters with multiple values" $
-      parse "substituters = a b c\n" `shouldBe` (Just $ NixConf [Substituters ["a", "b", "c"]])
+      parse "substituters = a b c\n" `shouldBe` (Right $ NixConf [Substituters ["a", "b", "c"]])
     it "parses equal sign after the first key as literal" $
-      parse "substituters = a b c= d\n" `shouldBe` (Just $ NixConf [Substituters ["a", "b", "c=", "d"]])
+      parse "substituters = a b c= d\n" `shouldBe` (Right $ NixConf [Substituters ["a", "b", "c=", "d"]])
     it "parses a complex example" $
-      parse realExample `shouldBe` (Just $ NixConf  [ Other ""
+      parse realExample `shouldBe` (Right $ NixConf [ Other ""
                                                     , Substituters ["a","b","c"]
                                                     , TrustedUsers ["him","me"]
                                                     , TrustedPublicKeys ["a"]

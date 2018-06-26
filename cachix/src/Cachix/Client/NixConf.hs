@@ -26,8 +26,8 @@ import Control.Exception (catch)
 import Data.Char (isSpace)
 import Data.Text (unwords, unlines)
 import Data.List (nub)
-import Protolude hiding (some, many)
-import Text.Megaparsec hiding (parse)
+import Protolude
+import qualified Text.Megaparsec as Mega
 import Text.Megaparsec.Char
 import System.Directory ( doesFileExist, createDirectoryIfMissing
                         , getXdgDirectory, XdgDirectory(..)
@@ -111,9 +111,15 @@ read :: NixConfLoc -> IO (Maybe NixConf)
 read ncl = do
   filename <- getFilename ncl
   doesExist <- doesFileExist filename
-  if doesExist
-  then parse <$> readFile filename
-  else return Nothing
+  if not doesExist
+  then return Nothing
+  else do
+    result <- parse <$> readFile filename
+    case result of
+      Left err -> do
+        putStrLn (Mega.parseErrorPretty err)
+        panic $ toS filename <> " failed to parse, please copy the above error and contents of nix.conf and open an issue at https://github.com/cachix/cachix"
+      Right conf -> return $ Just conf
 
 update :: NixConfLoc -> (Maybe NixConf -> NixConf) -> IO ()
 update ncl f = do
@@ -134,22 +140,22 @@ getFilename ncl = do
 
 -- nix.conf Parser
 
-type Parser = Parsec Void Text
+type Parser = Mega.Parsec Void Text
 
 -- TODO: handle comments
 parseLine :: ([Text] -> NixConfLine) -> Text -> Parser NixConfLine
-parseLine constr name = do
+parseLine constr name = Mega.try $ do
     _ <- optional (some (char ' '))
     _ <- string name
     _ <- many (char ' ')
     _ <- char '='
     _ <- many (char ' ')
-    values <- sepBy1 (many (satisfy (not . isSpace))) (some (char ' '))
+    values <- Mega.sepBy1 (many (satisfy (not . isSpace))) (some (char ' '))
     _ <- many spaceChar
     return $ constr (fmap toS values)
 
 parseOther :: Parser NixConfLine
-parseOther = Other . toS <$> manyTill anyChar eol
+parseOther = Other . toS <$> Mega.manyTill anyChar eol
 
 parseAltLine :: Parser NixConfLine
 parseAltLine =
@@ -163,5 +169,5 @@ parseAltLine =
 parser :: Parser NixConf
 parser = NixConf <$> many parseAltLine
 
-parse :: Text -> Maybe NixConf
-parse = parseMaybe parser
+parse :: Text -> Either (Mega.ParseError (Mega.Token Text) Void) NixConf
+parse = Mega.parse parser "nix.conf"

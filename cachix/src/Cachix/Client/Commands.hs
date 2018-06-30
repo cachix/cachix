@@ -10,8 +10,8 @@ module Cachix.Client.Commands
 
 import           Crypto.Sign.Ed25519
 import           Control.Concurrent           (threadDelay)
-import           Control.Concurrent.MSem
-import           Control.Concurrent.Async
+import qualified Control.Concurrent.QSem       as QSem
+import           Control.Concurrent.Async     (mapConcurrently)
 import           Control.Monad                (forever)
 import           Control.Monad.Trans.Resource (ResourceT)
 import qualified Data.ByteString.Base64        as B64
@@ -154,7 +154,7 @@ push env config name rawPaths False = do
   (exitcode, out, err) <- readProcessWithExitCode "nix-store" (fmap toS (["-qR"] <> inputStorePaths)) mempty
 
   -- TODO: make pool size configurable, on beefier machines this could be doubled
-  _ <- mapPool 4 (T.lines (toS out)) $ pushStorePath env config name
+  _ <- mapConcurrentlyBounded 4 (pushStorePath env config name) (T.lines (toS out))
   putText "All done."
 push env config name _ True = withManager $ \mgr -> do
   _ <- watchDir mgr "/nix/store" filterF action
@@ -271,10 +271,11 @@ pushStorePath env config name storePath = do
 -- Utils
 
 
-mapPool :: Traversable t => Int -> t a -> (a -> IO b) -> IO (t b)
-mapPool limit xs f = do
-    sem <- new limit
-    mapConcurrently (with sem . f) xs
+mapConcurrentlyBounded :: Traversable t => Int -> (a -> IO b) -> t a -> IO (t b)
+mapConcurrentlyBounded bound action items = do
+  qs <- QSem.newQSem bound
+  let wrapped x = bracket_ (QSem.waitQSem qs) (QSem.signalQSem qs) (action x)
+  mapConcurrently wrapped items
 
 splitStorePath :: Text -> (Text, Text)
 splitStorePath storePath =

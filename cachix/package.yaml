@@ -49,10 +49,9 @@ dependencies:
 - process
 - protolude
 - resourcet
-- SafeSemaphore
 - servant
 - servant-auth
-- servant-auth-client
+- servant-auth-client >= 0.3.3.0
 - servant-client
 - servant-generic
 - servant-streaming-client

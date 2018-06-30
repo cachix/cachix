@@ -2,7 +2,7 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: d0a53c6d5a2e14ff4531325e41533e8350c400ecb7a00a3d4eb59c35cbc7a4bf
+-- hash: b3d4d48cace3b50ee1f5f7d4c1bfaf070e31f7beea13e5327cc0bb3072d91391
 
 name:           cachix
 version:        0.1.0.0
@@ -43,8 +43,7 @@ library
   default-extensions: OverloadedStrings NoImplicitPrelude RecordWildCards
   ghc-options: -Wall -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -fwarn-tabs -fwarn-unused-imports -fwarn-missing-signatures -fwarn-name-shadowing -fwarn-incomplete-patterns
   build-depends:
-      SafeSemaphore
-    , async
+      async
     , base >=4.7 && <5
     , base16-bytestring
     , base64-bytestring
@@ -75,7 +74,7 @@ library
     , resourcet
     , servant
     , servant-auth
-    , servant-auth-client
+    , servant-auth-client >=0.3.3.0
     , servant-client
     , servant-generic
     , servant-streaming-client
@@ -95,8 +94,7 @@ executable cachix
   default-extensions: OverloadedStrings NoImplicitPrelude RecordWildCards
   ghc-options: -Wall -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -fwarn-tabs -fwarn-unused-imports -fwarn-missing-signatures -fwarn-name-shadowing -fwarn-incomplete-patterns -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      SafeSemaphore
-    , async
+      async
     , base >=4.7 && <5
     , base16-bytestring
     , base64-bytestring
@@ -128,7 +126,7 @@ executable cachix
     , resourcet
     , servant
     , servant-auth
-    , servant-auth-client
+    , servant-auth-client >=0.3.3.0
     , servant-client
     , servant-generic
     , servant-streaming-client
@@ -153,8 +151,7 @@ test-suite cachix-test
   default-extensions: OverloadedStrings NoImplicitPrelude RecordWildCards
   ghc-options: -Wall -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -fwarn-tabs -fwarn-unused-imports -fwarn-missing-signatures -fwarn-name-shadowing -fwarn-incomplete-patterns -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      SafeSemaphore
-    , async
+      async
     , base >=4.7 && <5
     , base16-bytestring
     , base64-bytestring
@@ -187,7 +184,7 @@ test-suite cachix-test
     , resourcet
     , servant
     , servant-auth
-    , servant-auth-client
+    , servant-auth-client >=0.3.3.0
     , servant-client
     , servant-generic
     , servant-streaming-client

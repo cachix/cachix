@@ -1,7 +1,15 @@
-resolver: snapshot.yaml
+resolver: nightly-2018-06-29
 packages:
 - cachix-api
 - cachix
 nix:
     packages: [zlib,lzma]
     pure: false
+extra-deps:
+- servant-0.14
+- servant-server-0.14
+- servant-client-0.14
+- servant-client-core-0.14
+- servant-streaming-0.3.0.0
+- servant-streaming-client-0.3.0.0
+- servant-streaming-server-0.3.0.0

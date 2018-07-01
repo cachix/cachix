@@ -29,7 +29,7 @@ parseNixMode output =
   let
     verStr = T.drop 14 $ T.strip output
     err = "Couldn't parse 'nix-env --version' output: " <> output
-  in case parseV verStr of
+  in case versioning verStr of
     Left _ -> Left err
     Right ver | verStr == "" -> Left err
               | ver < Ideal (SemVer 1 99 0 [] []) -> Right Nix1XX

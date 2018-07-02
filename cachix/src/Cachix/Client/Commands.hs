@@ -1,4 +1,5 @@
 {-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeOperators #-}
 module Cachix.Client.Commands
@@ -162,11 +163,21 @@ push env config name _ True = withManager $ \mgr -> do
   forever $ threadDelay 1000000
   where
     action :: Action
-    action (Removed fp _) = pushStorePath env config name $ toS $ dropEnd 5 fp
+#if MIN_VERSION_fsnotify(0,3,0)
+    action (Removed fp _ _) =
+#else
+    action (Removed fp _) =
+#endif
+      pushStorePath env config name $ toS $ dropEnd 5 fp
     action _ = return ()
 
     filterF :: ActionPredicate
-    filterF (Removed fp _) | ".lock" `isSuffixOf` fp = True
+#if MIN_VERSION_fsnotify(0,3,0)
+    filterF (Removed fp _ _)
+#else
+    filterF (Removed fp _)
+#endif
+      | ".lock" `isSuffixOf` fp = True
     filterF _ = False
 
     dropEnd :: Int -> [a] -> [a]

@@ -1,6 +1,6 @@
 name:                cachix-api
 version:             0.1.0.0
-github:              "githubuser/cachix-api"
+github:              "cachix/cachix"
 license:             Apache-2.0
 author:              "Domen Kožar"
 maintainer:          "domen@enlambda.com"
@@ -11,13 +11,7 @@ extra-source-files:
 - ChangeLog.md
 
 # Metadata used when publishing your package
-# synopsis:            Short description of your package
-# category:            Web
-
-# To avoid duplicated efforts in documentation and dealing with the
-# complications of embedding Haddock markup inside cabal files, it is
-# common to point users to the README.md file.
-description:         Please see the README on Github at <https://github.com/cachix/cachix-api#readme>
+synopsis: Servant HTTP API specification for https://cachix.org
 
 dependencies:
 - amazonka

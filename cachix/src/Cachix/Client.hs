@@ -34,7 +34,7 @@ customManagerSettings :: ManagerSettings
 customManagerSettings = tlsManagerSettings
   { managerResponseTimeout = responseTimeoutNone
   -- managerModifyRequest :: Request -> IO Request
-  , managerModifyRequest = \request -> return $ setRequestHeader "User-Agent" [toS cachixVersion] request
+  , managerModifyRequest = return . setRequestHeader "User-Agent" [toS cachixVersion]
   }
 
 cachixVersion :: Text

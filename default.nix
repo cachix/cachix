@@ -26,4 +26,6 @@ in if builtins.compareVersions "2.0" builtins.nixVersion == 1
         it is safe to upgrade by running it again:
             curl https://nixos.org/nix/install | sh
    ''
-  else hsPkgs.cachix
+  else hsPkgs.cachix // { 
+    hlint = pkgs.hlint; 
+  }

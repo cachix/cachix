@@ -17,3 +17,7 @@ script:
 - cachix use cachix
 - cachix push cachix --watch-store&
 - nix-build -j2 | cachix push cachix
+matrix:
+  include:
+    - script: $(nix-build -A hlint)/bin/hlint .
+      env: NAME=hlint

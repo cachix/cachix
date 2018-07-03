@@ -50,8 +50,8 @@ getInstallationMode :: NixEnv -> InstallationMode
 getInstallationMode NixEnv{..}
   | nixMode == Nix1XX = UnsupportedNix1X
   | isNixOS && isRoot = EchoNixOS
-  | isNixOS && (not isTrusted) = EchoNixOSWithTrustedUser
-  | (not isNixOS) && isRoot = Install NixConf.Global
+  | isNixOS && not isTrusted = EchoNixOSWithTrustedUser
+  | not isNixOS && isRoot = Install NixConf.Global
   | nixMode == Nix20 = Nix20RequiresSudo
   | isTrusted = Install NixConf.Local
   | not isTrusted = UntrustedRequiresSudo
@@ -107,11 +107,11 @@ isTrustedUser users = do
   user <- getUser
   -- to detect single user installations
   permissions <- getPermissions "/nix/store"
-  unless (groups == []) $ do
+  unless (null groups) $ do
     -- TODO: support Nix group syntax
     putText "Warn: cachix doesn't yet support checking if user is trusted via groups, so it will recommend sudo"
     putStrLn $ "Warn: groups found " <> T.intercalate "," groups
-  return $ (writable permissions) || (user `elem` users)
+  return $ writable permissions || user `elem` users
   where
     groups = filter (\u -> T.head u == '@') users
 

@@ -65,7 +65,7 @@ data BinaryCache = BinaryCache
   , publicSigningKeys :: [Text]
   } deriving (Show, Generic, FromJSON, ToJSON)
 
-data BinaryCacheCreate = BinaryCacheCreate
+newtype BinaryCacheCreate = BinaryCacheCreate
   { publicSigningKey :: Text
   } deriving (Show, Generic, FromJSON, ToJSON)
 
@@ -94,7 +94,7 @@ instance ToHttpApiData NarInfoC where
   toUrlPiece (NarInfoC n) = n <> ".narinfo"
 
 
-data BinaryCacheError = BinaryCacheError
+newtype BinaryCacheError = BinaryCacheError
   { error :: Text
   } deriving (Generic, FromJSON, ToJSON)
 

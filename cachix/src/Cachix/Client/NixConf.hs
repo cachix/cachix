@@ -50,15 +50,15 @@ newtype NixConfG a = NixConf a
 type NixConf = NixConfG [NixConfLine]
 
 readLines :: [NixConf] -> (NixConfLine -> Maybe [Text]) -> [Text]
-readLines nixconfs predicate = concat $ fmap f nixconfs
+readLines nixconfs predicate = concatMap f nixconfs
   where
     f (NixConf xs) = foldl foldIt [] xs
 
     foldIt :: [Text] -> NixConfLine -> [Text]
-    foldIt prev new = prev <> (fromMaybe [] $ predicate new)
+    foldIt prev new = prev <> fromMaybe [] (predicate new)
 
 writeLines :: (NixConfLine -> Maybe [Text]) -> NixConfLine -> NixConf -> NixConf
-writeLines predicate addition nixconf = fmap f nixconf
+writeLines predicate addition = fmap f
   where
     f x = filter (isNothing . predicate) x <> [addition]
 

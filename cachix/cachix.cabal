@@ -1,8 +1,8 @@
--- This file has been generated from package.yaml by hpack version 0.21.2.
+-- This file has been generated from package.yaml by hpack version 0.28.2.
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: d2f110b3ad4088e9e76334b8284cdd0be95095ac29cdfb29d9e837753bad5d8e
+-- hash: ea42ac5f5e1d470d78623c1a238d08b546941391a3370848754a93cb34ebced7
 
 name:           cachix
 version:        0.1.0.0
@@ -16,7 +16,6 @@ license:        Apache-2.0
 license-file:   LICENSE
 build-type:     Simple
 cabal-version:  >= 1.10
-
 extra-source-files:
     ChangeLog.md
     README.md
@@ -136,6 +135,7 @@ executable cachix
     , uri-bytestring
     , versions
   default-language: Haskell2010
+  build-tool-depends: hspec-discover:hspec-discover
 
 test-suite cachix-test
   type: exitcode-stdio-1.0

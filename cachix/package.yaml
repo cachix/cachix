@@ -85,6 +85,8 @@ executables:
     - -with-rtsopts=-N
     dependencies:
     - cachix
+    verbatim:
+      build-tool-depends: hspec-discover:hspec-discover
 
 tests:
   cachix-test:

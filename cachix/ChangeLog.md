@@ -7,9 +7,17 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
-- #86 Support fsnotify 0.3.x @domenkozar
+## [0.1.0.1] - 2018-07-05
+
+### Changed
+
+- #92 Add build-tool-depends where needed @domenkozar
+- #90 HLint fixes @domenkozar
+- #86 Improve Cabal description and synopsis @domenkozar
+- #87 Support fsnotify 0.3.x @domenkozar
 
 ## [0.1.0.0] - 2018-07-01
 
 ### Added
+
 - Initial release @domenkozar

@@ -2,10 +2,10 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: ea42ac5f5e1d470d78623c1a238d08b546941391a3370848754a93cb34ebced7
+-- hash: 5225259f70e6c6df5a7ffab92dc1a70e87f7bd25284107c3f5009f1659d4a466
 
 name:           cachix
-version:        0.1.0.0
+version:        0.1.0.1
 synopsis:       Command line client for Nix binary cache hosting https://cachix.org
 homepage:       https://github.com/cachix/cachix#readme
 bug-reports:    https://github.com/cachix/cachix/issues

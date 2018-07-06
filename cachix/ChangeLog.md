@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ### Changed
 
-- #94 Upgrade to servant-0.14.1 @domenkozar
+- #95 Upgrade to servant-0.14.1 @domenkozar
 
 ## [0.1.0.1] - 2018-07-05
 

@@ -2,7 +2,7 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 05e8f385e046597d3f1a60672d96f3ec5d0562b6eff316c8142b34c3b6d1226f
+-- hash: 938610821482300a69144277b34a66d50fb4ae6f6932925652e48fc78be54770
 
 name:           cachix-api
 version:        0.1.0.0
@@ -53,11 +53,10 @@ library
     , http-media
     , lens
     , memory
-    , servant
+    , servant >=0.14.1
     , servant-auth
     , servant-auth-server
     , servant-auth-swagger
-    , servant-generic
     , servant-streaming
     , servant-swagger
     , servant-swagger-ui-core
@@ -90,11 +89,10 @@ executable cachix-gen-swagger
     , http-media
     , lens
     , memory
-    , servant
+    , servant >=0.14.1
     , servant-auth
     , servant-auth-server
     , servant-auth-swagger
-    , servant-generic
     , servant-streaming
     , servant-swagger
     , servant-swagger-ui-core
@@ -131,11 +129,10 @@ test-suite cachix-api-test
     , lens
     , memory
     , protolude
-    , servant
+    , servant >=0.14.1
     , servant-auth
     , servant-auth-server
     , servant-auth-swagger
-    , servant-generic
     , servant-streaming
     , servant-swagger
     , servant-swagger-ui-core

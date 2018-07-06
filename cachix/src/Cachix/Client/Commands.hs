@@ -32,7 +32,8 @@ import           Servant.Client
 import           Servant.Auth                   ()
 import           Servant.Auth.Client
 import           Servant.Streaming.Client       ()
-import           Servant.Generic
+import           Servant.API.Generic
+import           Servant.Client.Generic
 import           System.Directory               ( doesFileExist )
 import           System.FSNotify
 import           System.IO                      ( stdin, hIsTerminalDevice )
@@ -56,10 +57,10 @@ import qualified Cachix.Client.NixConf         as NixConf
 import           Cachix.Client.Servant
 
 
-cachixClient :: Api.CachixAPI AsClient
+cachixClient :: Api.CachixAPI (AsClientT ClientM)
 cachixClient = fromServant $ client Api.servantApi
 
-cachixBCClient :: Text -> Api.BinaryCacheAPI AsClient
+cachixBCClient :: Text -> Api.BinaryCacheAPI (AsClientT ClientM)
 cachixBCClient name = fromServant $ Api.cache cachixClient name
 
 authtoken :: ClientEnv -> Maybe Config -> Text -> IO ()

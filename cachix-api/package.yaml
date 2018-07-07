@@ -1,5 +1,5 @@
 name:                cachix-api
-version:             0.1.0.0
+version:             0.1.0.1
 github:              "cachix/cachix"
 license:             Apache-2.0
 author:              "Domen Kožar"
@@ -27,8 +27,7 @@ dependencies:
 - http-api-data
 - lens
 - memory
-- servant
-- servant-generic
+- servant >= 0.14.1
 - servant-auth
 - servant-auth-server
 - servant-auth-swagger

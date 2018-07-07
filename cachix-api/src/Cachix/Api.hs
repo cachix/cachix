@@ -22,7 +22,7 @@ import GHC.Generics (Generic)
 import Network.AWS (AWS)
 import Servant.API
 import Servant.Auth
-import Servant.Generic
+import Servant.API.Generic
 import Servant.Streaming
 import Servant.Swagger
 import Servant.Swagger.UI.Core   (SwaggerSchemaUI)
@@ -103,10 +103,10 @@ data CachixAPI route = CachixAPI
    , cache :: route :-
        "cache" :>
        Capture "name" Text :>
-       ToServant (BinaryCacheAPI AsApi)
+       ToServantApi BinaryCacheAPI
    } deriving Generic
 
-type CachixServantAPI = "api" :> "v1" :> ToServant (CachixAPI AsApi)
+type CachixServantAPI = "api" :> "v1" :> ToServantApi CachixAPI
 
 servantApi :: Proxy CachixServantAPI
 servantApi = Proxy

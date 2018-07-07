@@ -1,5 +1,5 @@
 name:                cachix
-version:             0.1.0.1
+version:             0.1.0.2
 github:              "cachix/cachix"
 license:             Apache-2.0
 author:              "Domen Kožar"
@@ -43,11 +43,11 @@ dependencies:
 - process
 - protolude
 - resourcet
-- servant >= 0.14
+- servant >= 0.14.1
 - servant-auth
 - servant-auth-client >= 0.3.3.0
 - servant-client >= 0.14
-- servant-generic
+- servant-client-core >= 0.14.1
 - servant-streaming-client >= 0.3.0.0
 - streaming
 - text

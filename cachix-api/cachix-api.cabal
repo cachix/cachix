@@ -2,7 +2,7 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 622e58e514481a3a8c55a6b379423676d4d2157334db4c29b45ef8c0954e3bb0
+-- hash: ca0c7f1d6f2d869c6eacfc180528c5059db60f43ff71be3bfacde9a1fe8a2f98
 
 name:           cachix-api
 version:        0.1.0.1
@@ -45,8 +45,7 @@ library
     , base >=4.7 && <5
     , base16-bytestring
     , bytestring
-    , conduit
-    , conduit-combinators
+    , conduit >=1.3.0
     , cookie
     , cryptonite
     , http-api-data
@@ -81,8 +80,7 @@ executable cachix-gen-swagger
     , base16-bytestring
     , bytestring
     , cachix-api
-    , conduit
-    , conduit-combinators
+    , conduit >=1.3.0
     , cookie
     , cryptonite
     , http-api-data
@@ -119,8 +117,7 @@ test-suite cachix-api-test
     , base16-bytestring
     , bytestring
     , cachix-api
-    , conduit
-    , conduit-combinators
+    , conduit >=1.3.0
     , cookie
     , cryptonite
     , hspec

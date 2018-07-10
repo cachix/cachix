@@ -1,10 +1,7 @@
-resolver: nightly-2018-07-05
+resolver: lts-12.0
 packages:
 - cachix-api
 - cachix
 nix:
     packages: [zlib,lzma]
     pure: false
-extra-deps:
-- servant-0.14.1
-- servant-client-core-0.14.1

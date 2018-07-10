@@ -2,10 +2,10 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 938610821482300a69144277b34a66d50fb4ae6f6932925652e48fc78be54770
+-- hash: 622e58e514481a3a8c55a6b379423676d4d2157334db4c29b45ef8c0954e3bb0
 
 name:           cachix-api
-version:        0.1.0.0
+version:        0.1.0.1
 synopsis:       Servant HTTP API specification for https://cachix.org
 homepage:       https://github.com/cachix/cachix#readme
 bug-reports:    https://github.com/cachix/cachix/issues

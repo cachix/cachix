@@ -21,8 +21,7 @@ dependencies:
 - base16-bytestring
 - cryptonite
 - cookie
-- conduit
-- conduit-combinators
+- conduit >= 1.3.0
 - http-media
 - http-api-data
 - lens
@@ -38,7 +37,6 @@ dependencies:
 - string-conv
 - text
 - transformers
-
 
 default-extensions:
 - OverloadedStrings

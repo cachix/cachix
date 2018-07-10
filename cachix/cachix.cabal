@@ -2,7 +2,7 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: b62b5e1ccb861524ee1650a2bfa91671a9de1a99b3b66115ef89704165e5b069
+-- hash: 330f064c6dff0f10cd9fd3dfaab6d8cc5fb42bcb1945429ca84bfbbdf6968ce0
 
 name:           cachix
 version:        0.1.0.2
@@ -49,8 +49,7 @@ library
     , bifunctors
     , bytestring
     , cachix-api
-    , conduit
-    , conduit-combinators
+    , conduit >=1.3.0
     , conduit-extra
     , cookie
     , cryptonite
@@ -101,8 +100,7 @@ executable cachix
     , bytestring
     , cachix
     , cachix-api
-    , conduit
-    , conduit-combinators
+    , conduit >=1.3.0
     , conduit-extra
     , cookie
     , cryptonite
@@ -159,8 +157,7 @@ test-suite cachix-test
     , bytestring
     , cachix
     , cachix-api
-    , conduit
-    , conduit-combinators
+    , conduit >=1.3.0
     , conduit-extra
     , cookie
     , cryptonite

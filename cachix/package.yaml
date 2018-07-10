@@ -21,9 +21,8 @@ dependencies:
 - bifunctors
 - bytestring
 - cachix-api
-- conduit
+- conduit >= 1.3.0
 - conduit-extra
-- conduit-combinators
 - cookie
 - cryptonite
 - dhall

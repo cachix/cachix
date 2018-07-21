@@ -50,8 +50,8 @@ import           Cachix.Client.Config           ( Config(..)
                                                 )
 import qualified Cachix.Client.Config          as Config
 import           Cachix.Client.InstallationMode
-import           Cachix.Client.NixVersion       ( getNixMode
-                                                , NixMode
+import           Cachix.Client.NixVersion       ( getNixVersion
+                                                , NixVersion
                                                 )
 import qualified Cachix.Client.NixConf         as NixConf
 import           Cachix.Client.Servant
@@ -118,23 +118,23 @@ use env _ name shouldEchoNixOS = do
     -- TODO: handle 404
     Left err -> panic $ show err
     Right binaryCache -> do
-      eitherNixMode <- getNixMode
-      case eitherNixMode of
+      eitherNixVersion <- getNixVersion
+      case eitherNixVersion of
         Left err -> panic err
-        Right nixMode -> do
+        Right nixVersion -> do
           user <- getUser
           nc <- NixConf.read NixConf.Global
           isTrusted <- isTrustedUser $ NixConf.readLines (catMaybes [nc]) NixConf.isTrustedUsers
           isNixOS <- doesFileExist "/etc/NIXOS"
           let nixEnv = NixEnv
-                { nixMode = nixMode
+                { nixVersion = nixVersion
                 , isRoot = user == "root"
                 , isTrusted = isTrusted
                 , isNixOS = isNixOS
                 }
           addBinaryCache binaryCache $
             if shouldEchoNixOS
-            then EchoNixOS
+            then EchoNixOS nixVersion
             else getInstallationMode nixEnv
 
 

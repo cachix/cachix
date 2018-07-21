@@ -1,7 +1,7 @@
 module Cachix.Client.NixVersion
-  ( getNixMode
-  , parseNixMode
-  , NixMode(..)
+  ( getNixVersion
+  , parseNixVersion
+  , NixVersion(..)
   ) where
 
 import Protolude
@@ -10,22 +10,22 @@ import Data.Versions
 import Data.Text as T
 
 
-data NixMode
+data NixVersion
   = Nix20
   | Nix201
   | Nix1XX
   deriving (Show, Eq)
 
-getNixMode :: IO (Either Text NixMode)
-getNixMode = do
+getNixVersion :: IO (Either Text NixVersion)
+getNixVersion = do
   (exitcode, out, err) <- readProcessWithExitCode "nix-env" ["--version"] mempty
   unless (err == "") $ putStrLn $ "nix-env stderr: " <> err
   return $ case exitcode of
     ExitFailure i -> Left $ "'nix-env --version' exited with " <> show i
-    ExitSuccess -> parseNixMode $ toS out
+    ExitSuccess -> parseNixVersion $ toS out
 
-parseNixMode :: Text -> Either Text NixMode
-parseNixMode output =
+parseNixVersion :: Text -> Either Text NixVersion
+parseNixVersion output =
   let
     verStr = T.drop 14 $ T.strip output
     err = "Couldn't parse 'nix-env --version' output: " <> output

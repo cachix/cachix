@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+- #102 Nix 1.0 support @domenkozar
+
 ## [0.1.0.2] - 2018-07-06
 
 ### Changed

@@ -6,11 +6,15 @@ import Data.String.Here
 import Test.Hspec
 
 import Cachix.Client.NixConf as NixConf
+import Cachix.Client.NixVersion (NixVersion(..))
 import Cachix.Api (BinaryCache(..))
 
 
 property :: Text -> Expectation
-property x = NixConf.render <$> parse x `shouldBe` Right x
+property x = NixConf.render Nix20 <$> parse x `shouldBe` Right x
+
+propertyNix1 :: Text -> Expectation
+propertyNix1 x = NixConf.render Nix1XX <$> parse x `shouldBe` Right x
 
 bc = BinaryCache
  { name = "name"
@@ -27,6 +31,8 @@ spec = do
       property "substituters = a b c\n"
     it "handles all known keys" $
       property "substituters = a b c\ntrusted-users = him me\ntrusted-public-keys = a\n"
+    it "handles all known keys for Nix 1.0" $
+      propertyNix1 "binary-caches = a b c\ntrusted-users = him me\nbinary-cache-public-keys = a\n"
     it "random content" $
       property "blabla = foobar\nfoo = bar\n"
   describe "add" $ do
@@ -79,29 +85,12 @@ spec = do
     it "removed duplicates" $
       let
         globalConf = NixConf
-          [ Substituters ["bc1"]
-          , BinaryCaches ["bc1"]
-          , TrustedPublicKeys ["pub1"]
-          , BinaryCachePublicKeys ["pub1"]
+          [ Substituters ["bc1", "bc1"]
+          , TrustedPublicKeys ["pub1", "pub1"]
           ]
         localConf = NixConf
           [ Substituters ["bc2", "bc2"]
           , TrustedPublicKeys ["pub2", "pub2"]
-          ]
-        result = NixConf
-          [ Substituters [defaultPublicURI, "bc1", "bc2", "https://name.cachix.org"]
-          , TrustedPublicKeys [defaultSigningKey, "pub1", "pub2", "pub"]
-          ]
-      in add bc [globalConf, localConf] localConf `shouldBe` result
-    it "can mix and match old and new names" $
-      let
-        globalConf = NixConf
-          [ BinaryCaches ["bc1"]
-          , BinaryCachePublicKeys ["pub1"]
-          ]
-        localConf = NixConf
-          [ Substituters ["bc2"]
-          , TrustedPublicKeys ["pub2"]
           ]
         result = NixConf
           [ Substituters [defaultPublicURI, "bc1", "bc2", "https://name.cachix.org"]

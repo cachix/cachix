@@ -1,4 +1,11 @@
 {- (Very limited) parser, rendered and modifier of nix.conf
+
+Supports subset of nix.conf given Nix 2.0 or Nix 1.0
+
+When reading config files, it normalizes Nix 1.0/2.0 names to unified naming,
+then when it writes the config back, it uses naming depending what given Nix
+version considers as recommended.
+
 -}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveFunctor #-}
@@ -20,6 +27,8 @@ module Cachix.Client.NixConf
   , isTrustedUsers
   , defaultPublicURI
   , defaultSigningKey
+  , substitutersKey
+  , trustedPublicKeysKey
   ) where
 
 import Control.Exception (catch)
@@ -33,14 +42,13 @@ import System.Directory ( doesFileExist, createDirectoryIfMissing
                         , getXdgDirectory, XdgDirectory(..)
                         )
 import Cachix.Api (BinaryCache(..))
+import Cachix.Client.NixVersion (NixVersion(..))
 
 
 data NixConfLine
   = Substituters [Text]
   | TrustedUsers [Text]
   | TrustedPublicKeys [Text]
-  | BinaryCachePublicKeys [Text]
-  | BinaryCaches [Text]
   | Other Text
   deriving (Show, Eq)
 
@@ -64,12 +72,10 @@ writeLines predicate addition = fmap f
 
 isSubstituter :: NixConfLine -> Maybe [Text]
 isSubstituter (Substituters xs) = Just xs
-isSubstituter (BinaryCaches xs) = Just xs
 isSubstituter _ = Nothing
 
 isPublicKey :: NixConfLine -> Maybe [Text]
 isPublicKey (TrustedPublicKeys xs) = Just xs
-isPublicKey (BinaryCachePublicKeys xs) = Just xs
 isPublicKey _ = Nothing
 
 isTrustedUsers :: NixConfLine -> Maybe [Text]
@@ -91,21 +97,29 @@ defaultPublicURI = "https://cache.nixos.org"
 defaultSigningKey :: Text
 defaultSigningKey = "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
 
-render :: NixConf -> Text
-render (NixConf nixconflines) = unlines $ fmap go nixconflines
+render :: NixVersion -> NixConf -> Text
+render nixversion (NixConf nixconflines) = unlines $ fmap go nixconflines
   where
     go :: NixConfLine -> Text
-    go (Substituters xs) = "substituters = " <> unwords xs
-    go (BinaryCaches xs) = "substituters = " <> unwords xs
+    go (Substituters xs) = substitutersKey nixversion <> " = " <> unwords xs
     go (TrustedUsers xs) = "trusted-users = " <> unwords xs
-    go (TrustedPublicKeys xs) = "trusted-public-keys = " <> unwords xs
-    go (BinaryCachePublicKeys xs) = "trusted-public-keys = " <> unwords xs
+    go (TrustedPublicKeys xs) = trustedPublicKeysKey nixversion <> " = " <> unwords xs
     go (Other line) = line
 
-write :: NixConfLoc -> NixConf -> IO ()
-write ncl nc = do
+substitutersKey :: NixVersion -> Text
+substitutersKey Nix1XX = "binary-caches"
+substitutersKey Nix20 = "substituters"
+substitutersKey Nix201 = "substituters"
+
+trustedPublicKeysKey :: NixVersion -> Text
+trustedPublicKeysKey Nix1XX = "binary-cache-public-keys"
+trustedPublicKeysKey Nix20 = "trusted-public-keys"
+trustedPublicKeysKey Nix201 = "trusted-public-keys"
+
+write :: NixVersion -> NixConfLoc -> NixConf -> IO ()
+write nixversion ncl nc = do
   filename <- getFilename ncl
-  writeFile filename $ render nc
+  writeFile filename $ render nixversion nc
 
 read :: NixConfLoc -> IO (Maybe NixConf)
 read ncl = do
@@ -121,10 +135,10 @@ read ncl = do
         panic $ toS filename <> " failed to parse, please copy the above error and contents of nix.conf and open an issue at https://github.com/cachix/cachix"
       Right conf -> return $ Just conf
 
-update :: NixConfLoc -> (Maybe NixConf -> NixConf) -> IO ()
-update ncl f = do
+update :: NixVersion -> NixConfLoc -> (Maybe NixConf -> NixConf) -> IO ()
+update nixversion ncl f = do
   nc <- f <$> read ncl
-  write ncl nc
+  write nixversion ncl nc
 
 data NixConfLoc = Global | Local
   deriving (Show, Eq)
@@ -162,8 +176,8 @@ parseAltLine =
       parseLine Substituters "substituters"
   <|> parseLine TrustedPublicKeys "trusted-public-keys"
   <|> parseLine TrustedUsers "trusted-users"
-  <|> parseLine BinaryCachePublicKeys "binary-cache-public-keys"
-  <|> parseLine BinaryCaches "binary-caches"
+  <|> parseLine TrustedPublicKeys "binary-cache-public-keys"
+  <|> parseLine Substituters "binary-caches"
   <|> parseOther
 
 parser :: Parser NixConf

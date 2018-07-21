@@ -1,4 +1,4 @@
-<img src="https://cachix.org/images/logo.png" width="500">
+<img src="https://cachix.org/images/logo.png" width="400">
 
 # https://cachix.org api and cli interface
 

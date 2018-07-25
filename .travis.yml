@@ -5,15 +5,11 @@ language: nix
 sudo: required
 before_script:
 - sudo mount -o remount,exec,size=4G,mode=755 /run/user || true
-- sudo mkdir -p /etc/nix
-- echo "trusted-users = root $USER" | sudo tee -a /etc/nix/nix.conf
-- sudo launchctl kickstart -k system/org.nixos.nix-daemon || true
 env:
   global:
     - secure: UoWenzebCSlLgz7O23Ick+lSSJn2reH1vLRLom71CDb/LAhcbHDl+Mke5P0T8SZynYTnt9g1Iy9fnR3GwAMjzHI5bf/WnIC2ljNuizJvlljjgqLd8LeYC+ec9gI2PBHr+CChD4sWrypLvM4NYhVZJR9Pjme8/3nMnzluFbPLGG9aLDltkzQA3/qd9LEzsmhHqCUj88ZUvLwiUM/Hk6PZEi4KZE7zx+kZpe0uzyyBj1F5rBkh2f1rlXgNg3xUyu+AdXFhRotXIfsXYCIuj6Kuo/JKGSkN0N8HS8XCcQGzAxOctAB8AmnUkg7vGqyA5pt9f5w0FTF3Y14IRcJ35aEjOniCSB8JVep7p4nB8Fod8vSq0vaInEtjZBY5AP0Yv1t56DFrhPOLXzKol+0qBhlqHiWON8MsCMnDhFqrJnihXaXmkjO0CWt5Bj6y5xHNYHMpQFr3vtgVJB6gj9q6j2AE82zD0PTmkpfPM7UpgVSsuje6klxNmIpW/luGiPAFoyiP/kYMxuwJVRAs1NPVOrndePK0+FAe0BZRzvYxFIjuBP4kD/QMUYSkQmuRu4SviPKzKvL3f5acm1G9QEp3vzvLTuL+MdwOjy9K6eFThjpGt9mzQot5nT6LUcueqjsgty0dba7cyvg1L7AeAJwAaFJxAUUCzhvVQRAm+05ihHF/+3U=
 script:
-- nix-env -if https://github.com/cachix/cachix/tarball/master --extra-substituters https://cachix.cachix.org --trusted-public-keys 'cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
-  cachix.cachix.org-1:eWNHQldwUO7G2VkjpnjDbWwy4KQ/HNxht7H4SSoMckM='
+- nix-env -iA cachix -f https://github.com/NixOS/nixpkgs/tarball/db557aab7b690f5e0e3348459f2e4dc8fd0d9298
 - cachix use cachix
 - cachix push cachix --watch-store&
 - nix-build -j2 | cachix push cachix

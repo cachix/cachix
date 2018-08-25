@@ -101,4 +101,5 @@ newtype BinaryCacheError = BinaryCacheError
 data User = User
   { fullname :: Text
   , username :: Text
+  , email :: Maybe Text
   } deriving (Generic, FromJSON, ToJSON)

@@ -30,6 +30,7 @@ library
       Cachix.Api.Signing
       Cachix.Api.Swagger
       Cachix.Api.Types
+      Cachix.Types.BinaryCacheProtected
       Cachix.Types.ContentTypes
       Cachix.Types.Servant
       Cachix.Types.Session

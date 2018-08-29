@@ -1,7 +1,6 @@
 module Cachix.Api.Types where
 
 import Data.Aeson           (FromJSON, ToJSON)
-import Data.ByteString      (ByteString)
 import Data.Monoid          ((<>))
 import Data.Text            (Text, takeEnd, dropEnd)
 import GHC.Generics         (Generic)

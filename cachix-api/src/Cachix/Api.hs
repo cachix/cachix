@@ -28,6 +28,7 @@ import Servant.Swagger
 import Servant.Swagger.UI.Core   (SwaggerSchemaUI)
 import Web.Cookie                (SetCookie)
 
+import Cachix.Types.BinaryCacheProtected as BinaryCacheProtected
 import Cachix.Types.ContentTypes
 import Cachix.Types.Servant      (Get302, Post302, Head)
 import Cachix.Types.Session      (Session)
@@ -99,7 +100,7 @@ data CachixAPI route = CachixAPI
    , caches :: route :-
        CachixAuth :>
        "cache" :>
-       Get '[JSON] [BinaryCache]
+       Get '[JSON] [BinaryCacheProtected.BinaryCacheProtected]
    , cache :: route :-
        "cache" :>
        Capture "name" Text :>

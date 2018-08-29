@@ -2,7 +2,7 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: ca0c7f1d6f2d869c6eacfc180528c5059db60f43ff71be3bfacde9a1fe8a2f98
+-- hash: ca59c5d1a836554f15122b7ecacf84748ed1aaa443c4da83e0639aa26d7ab519
 
 name:           cachix-api
 version:        0.1.0.1
@@ -37,7 +37,7 @@ library
       Paths_cachix_api
   hs-source-dirs:
       src
-  default-extensions: OverloadedStrings
+  default-extensions: OverloadedStrings DeriveGeneric DeriveAnyClass
   ghc-options: -Wall -fwarn-tabs -fwarn-unused-imports -fwarn-missing-signatures -fwarn-name-shadowing -fwarn-incomplete-patterns
   build-depends:
       aeson
@@ -71,7 +71,7 @@ executable cachix-gen-swagger
       Paths_cachix_api
   hs-source-dirs:
       cachix-gen-swagger
-  default-extensions: OverloadedStrings
+  default-extensions: OverloadedStrings DeriveGeneric DeriveAnyClass
   ghc-options: -Wall -fwarn-tabs -fwarn-unused-imports -fwarn-missing-signatures -fwarn-name-shadowing -fwarn-incomplete-patterns -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       aeson
@@ -108,7 +108,7 @@ test-suite cachix-api-test
       Paths_cachix_api
   hs-source-dirs:
       test
-  default-extensions: OverloadedStrings
+  default-extensions: OverloadedStrings DeriveGeneric DeriveAnyClass
   ghc-options: -Wall -fwarn-tabs -fwarn-unused-imports -fwarn-missing-signatures -fwarn-name-shadowing -fwarn-incomplete-patterns -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       aeson

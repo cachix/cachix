@@ -40,6 +40,8 @@ dependencies:
 
 default-extensions:
 - OverloadedStrings
+- DeriveGeneric
+- DeriveAnyClass
 
 ghc-options:
   -Wall

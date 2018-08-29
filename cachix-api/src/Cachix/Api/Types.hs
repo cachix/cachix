@@ -1,5 +1,3 @@
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DeriveAnyClass #-}
 module Cachix.Api.Types where
 
 import Data.Aeson           (FromJSON, ToJSON)

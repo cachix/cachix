@@ -1,5 +1,5 @@
-module Cachix.Types.BinaryCacheProtected
-  ( BinaryCacheProtected(..)
+module Cachix.Types.BinaryCacheAuthenticated
+  ( BinaryCacheAuthenticated(..)
   ) where
 
 import           Data.Aeson                     ( FromJSON
@@ -10,7 +10,7 @@ import           Data.Text                      ( Text )
 import           GHC.Generics                   ( Generic )
 
 
-data BinaryCacheProtected = BinaryCacheProtected
+data BinaryCacheAuthenticated = BinaryCacheAuthenticated
   { name :: Text
   , uri :: Text
   , publicSigningKeys :: [Text]

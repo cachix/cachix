@@ -19,7 +19,6 @@ import Cachix.Api.Types
 
 instance ToSchema NixCacheInfo
 instance ToSchema NarInfo
-instance ToSchema NarInfoCreate
 
 instance ToSchema BinaryCache
 instance ToSchema BinaryCacheCreate

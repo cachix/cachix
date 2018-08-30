@@ -2,7 +2,7 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 5965191fdc7e2aa9d4ad69ab264b05bb74bc13c42e9dfc241d27082db712c024
+-- hash: 8c412b80cb64a1364a4005215ec2b54bf0bea505d964af00162a95c9a409901e
 
 name:           cachix-api
 version:        0.1.0.1
@@ -32,6 +32,7 @@ library
       Cachix.Api.Types
       Cachix.Types.BinaryCacheAuthenticated
       Cachix.Types.ContentTypes
+      Cachix.Types.NarInfoCreate
       Cachix.Types.Servant
       Cachix.Types.Session
   other-modules:

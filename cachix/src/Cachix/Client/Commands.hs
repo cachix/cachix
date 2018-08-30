@@ -43,6 +43,7 @@ import qualified Streaming.Prelude             as S
 
 import qualified Cachix.Api                    as Api
 import           Cachix.Api.Signing             (fingerprint, passthroughSizeSink, passthroughHashSink)
+import qualified Cachix.Types.NarInfoCreate    as Api
 import           Cachix.Client.Config           ( Config(..)
                                                 , BinaryCacheConfig(..)
                                                 , writeConfig
@@ -270,6 +271,9 @@ pushStorePath env config name storePath = do
                   , cDeriver = deriver
                   , cSig = toS $ B64.encode $ unSignature sig
                   }
+
+            eitherToThrowIO $ Api.isNarInfoCreateValid nic
+
             -- Upload narinfo with signature
             res <- (`runClientM` env) $ Api.createNarinfo
               (cachixBCClient name)
@@ -279,6 +283,11 @@ pushStorePath env config name storePath = do
               Left err -> panic $ show err -- TODO: handle json errors
               Right NoContent -> return ()
 
+
+-- TODO: should one error abort the whole pushing process? Or do a retry? Or keep going and then fail?
+eitherToThrowIO :: Exception err => Either err () -> IO ()
+eitherToThrowIO (Left err) = throwIO err
+eitherToThrowIO (Right ()) = return ()
 
 -- Utils
 

@@ -43,18 +43,6 @@ data NarInfo = NarInfo
     -- ^ signature of fields: storePath, narHash, narSize, refs
   } deriving (Generic, Show, FromJSON, ToJSON)
 
--- | Client create type
-data NarInfoCreate = NarInfoCreate
-  { cStoreHash :: Text -- ^ $storePrefix / $storeHash - $storeSuffix
-  , cStoreSuffix :: Text -- ^ $storePrefix / $storeHash - $storeSuffix
-  , cNarHash :: Text
-  , cNarSize :: Int
-  , cFileHash :: Text
-  , cFileSize :: Int
-  , cReferences :: [Text]
-  , cDeriver :: Text
-  , cSig :: Text
-  } deriving (Generic, Show, FromJSON, ToJSON)
 
 data BinaryCache = BinaryCache
   { name :: Text
@@ -66,11 +54,12 @@ newtype BinaryCacheCreate = BinaryCacheCreate
   { publicSigningKey :: Text
   } deriving (Show, Generic, FromJSON, ToJSON)
 
--- | checksum of nar.xz file
-newtype NarC = NarC Text deriving Generic
+newtype BinaryCacheError = BinaryCacheError
+  { error :: Text
+  } deriving (Generic, FromJSON, ToJSON)
 
--- | Store path hash
-newtype NarInfoC = NarInfoC Text deriving Generic
+-- | Hash of nar.xz file
+newtype NarC = NarC Text deriving Generic
 
 instance FromHttpApiData NarC where
   parseUrlPiece s =
@@ -81,6 +70,9 @@ instance FromHttpApiData NarC where
 instance ToHttpApiData NarC where
   toUrlPiece (NarC n) = n <> ".nar.xz"
 
+-- | Store path hash
+newtype NarInfoC = NarInfoC Text deriving Generic
+
 instance FromHttpApiData NarInfoC where
   parseUrlPiece s =
     if takeEnd 8 s == ".narinfo"
@@ -89,11 +81,6 @@ instance FromHttpApiData NarInfoC where
 
 instance ToHttpApiData NarInfoC where
   toUrlPiece (NarInfoC n) = n <> ".narinfo"
-
-
-newtype BinaryCacheError = BinaryCacheError
-  { error :: Text
-  } deriving (Generic, FromJSON, ToJSON)
 
 data User = User
   { fullname :: Text

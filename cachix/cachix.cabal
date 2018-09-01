@@ -2,7 +2,7 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: ab3acbad7328ef095ad03032f8457a46c65d54e21216423686c3a91d85a7b79a
+-- hash: 633f92c60f438d35c1ab90c2b5711d7ad2edaad1dcda6eedeaaaa8a2499503ab
 
 name:           cachix
 version:        0.1.1
@@ -29,6 +29,7 @@ library
       Cachix.Client
       Cachix.Client.Commands
       Cachix.Client.Config
+      Cachix.Client.Env
       Cachix.Client.InstallationMode
       Cachix.Client.NixConf
       Cachix.Client.NixVersion
@@ -39,7 +40,7 @@ library
       Paths_cachix
   hs-source-dirs:
       src
-  default-extensions: OverloadedStrings NoImplicitPrelude RecordWildCards
+  default-extensions: OverloadedStrings NoImplicitPrelude RecordWildCards DeriveGeneric
   ghc-options: -Wall -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -fwarn-tabs -fwarn-unused-imports -fwarn-missing-signatures -fwarn-name-shadowing -fwarn-incomplete-patterns
   build-depends:
       async
@@ -89,7 +90,7 @@ executable cachix
       Paths_cachix
   hs-source-dirs:
       cachix
-  default-extensions: OverloadedStrings NoImplicitPrelude RecordWildCards
+  default-extensions: OverloadedStrings NoImplicitPrelude RecordWildCards DeriveGeneric
   ghc-options: -Wall -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -fwarn-tabs -fwarn-unused-imports -fwarn-missing-signatures -fwarn-name-shadowing -fwarn-incomplete-patterns -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       async
@@ -146,7 +147,7 @@ test-suite cachix-test
       Paths_cachix
   hs-source-dirs:
       test
-  default-extensions: OverloadedStrings NoImplicitPrelude RecordWildCards
+  default-extensions: OverloadedStrings NoImplicitPrelude RecordWildCards DeriveGeneric
   ghc-options: -Wall -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -fwarn-tabs -fwarn-unused-imports -fwarn-missing-signatures -fwarn-name-shadowing -fwarn-incomplete-patterns -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       async

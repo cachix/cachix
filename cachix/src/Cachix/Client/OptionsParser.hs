@@ -13,14 +13,16 @@ import URI.ByteString            (URIRef, Absolute, parseURI, strictURIParserOpt
 import URI.ByteString.QQ
 import Options.Applicative
 
+import qualified Cachix.Client.Config as Config
 
 data CachixOptions = CachixOptions
   { host :: URIRef Absolute
+  , configPath :: Config.ConfigPath
   , verbose :: Bool
   } deriving Show
 
-parserCachixOptions :: Parser CachixOptions
-parserCachixOptions = CachixOptions
+parserCachixOptions :: Config.ConfigPath -> Parser CachixOptions
+parserCachixOptions configpath = CachixOptions
   <$> option uriOption ( long "host"
                        <> short 'h'
                        <> value [uri|https://cachix.org|]
@@ -28,6 +30,13 @@ parserCachixOptions = CachixOptions
                        <> showDefaultWith (toS . serializeURIRef')
                        <> help "Host to connect to"
                        )
+ <*> strOption ( long "config"
+              <> short 'c'
+              <> value configpath
+              <> metavar "CONFIGPATH"
+              <> showDefault
+              <> help "Cachix configuration file"
+              )
   <*> switch ( long "verbose"
              <> short 'v'
              <> help "Verbose mode"
@@ -64,11 +73,13 @@ parserCachixCommand = subparser $
               <*> switch (long "nixos" <> short 'n' <> help "Output NixOS configuration lines")
 
 getOpts :: IO (CachixOptions, CachixCommand)
-getOpts = customExecParser (prefs showHelpOnEmpty) opts
+getOpts = do
+  configpath <- Config.getDefaultFilename
+  customExecParser (prefs showHelpOnEmpty) (opts configpath)
 
-opts :: ParserInfo (CachixOptions, CachixCommand)
-opts = infoH parser desc
-  where parser = (,) <$> parserCachixOptions <*> (parserCachixCommand <|> versionParser)
+opts :: Config.ConfigPath -> ParserInfo (CachixOptions, CachixCommand)
+opts configpath = infoH parser desc
+  where parser = (,) <$> parserCachixOptions configpath <*> (parserCachixCommand <|> versionParser)
         versionParser :: Parser CachixCommand
         versionParser = flag' Version ( long "version"
                      <> short 'V'

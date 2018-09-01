@@ -58,6 +58,7 @@ default-extensions:
 - OverloadedStrings
 - NoImplicitPrelude
 - RecordWildCards
+- DeriveGeneric
 
 ghc-options:
   -Wall

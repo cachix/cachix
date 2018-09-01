@@ -50,6 +50,8 @@ import           Cachix.Client.Config           ( Config(..)
                                                 , mkConfig
                                                 )
 import qualified Cachix.Client.Config          as Config
+import           Cachix.Client.Env              ( Env(..) )
+import           Cachix.Client.OptionsParser    ( CachixOptions(..) )
 import           Cachix.Client.InstallationMode
 import           Cachix.Client.NixVersion       ( getNixVersion
                                                 , NixVersion
@@ -64,10 +66,10 @@ cachixClient = fromServant $ client Api.servantApi
 cachixBCClient :: Text -> Api.BinaryCacheAPI (AsClientT ClientM)
 cachixBCClient name = fromServant $ Api.cache cachixClient name
 
-authtoken :: ClientEnv -> Maybe Config -> Text -> IO ()
-authtoken _ maybeConfig token = do
+authtoken :: Env -> Text -> IO ()
+authtoken env token = do
   -- TODO: check that token actually authenticates!
-  writeConfig $ case maybeConfig of
+  writeConfig (configPath (cachixoptions env)) $ case config env of
     Just config -> config { authToken = token }
     Nothing -> mkConfig token
   putStrLn ([hereLit|
@@ -78,13 +80,13 @@ Continue by creating a binary cache with:
 and share it with others over https://<name>.cachix.org
   |] :: Text)
 
-create :: ClientEnv -> Maybe Config -> Text -> IO ()
-create _ Nothing _ = throwIO $ NoConfig "start with: $ cachix authtoken <token>"
-create env (Just config@Config{..}) name = do
+create :: Env -> Text -> IO ()
+create (Env Nothing _ _) _ = throwIO $ NoConfig "start with: $ cachix authtoken <token>"
+create (Env (Just config@Config{..}) clientenv cachixoptions) name = do
   (PublicKey pk, SecretKey sk) <- createKeypair
 
   let bc = Api.BinaryCacheCreate $ toS $ B64.encode pk
-  res <- (`runClientM` env) $ Api.create (cachixBCClient name) (Token (toS authToken)) bc
+  res <- (`runClientM` clientenv) $ Api.create (cachixBCClient name) (Token (toS authToken)) bc
   case res of
     -- TODO: handle all kinds of errors
     Left err -> panic $ show err
@@ -92,7 +94,7 @@ create env (Just config@Config{..}) name = do
       -- write signing key to config
       let signingKey = toS $ B64.encode sk
           bcc = BinaryCacheConfig name signingKey
-      writeConfig $ config { binaryCaches = binaryCaches <> [bcc] }
+      writeConfig (configPath cachixoptions) $ config { binaryCaches = binaryCaches <> [bcc] }
 
       putStrLn ([iTrim|
 Signing key has been saved on your local machine. To populate
@@ -111,10 +113,10 @@ To instruct Nix to use the binary cache:
 
       |] :: Text)
 
-use :: ClientEnv -> Maybe Config -> Text -> Bool -> IO ()
-use env _ name shouldEchoNixOS = do
+use :: Env -> Text -> Bool -> IO ()
+use Env{..} name shouldEchoNixOS = do
   -- 1. get cache public key
-  res <- (`runClientM` env) $ Api.get (cachixBCClient name)
+  res <- (`runClientM` clientenv) $ Api.get (cachixBCClient name)
   case res of
     -- TODO: handle 404
     Left err -> panic $ show err
@@ -140,8 +142,8 @@ use env _ name shouldEchoNixOS = do
 
 
 -- TODO: lots of room for perfomance improvements
-push :: ClientEnv -> Maybe Config -> Text -> [Text] -> Bool -> IO ()
-push env config name rawPaths False = do
+push :: Env -> Text -> [Text] -> Bool -> IO ()
+push env name rawPaths False = do
   hasNoStdin <- hIsTerminalDevice stdin
   when (not hasNoStdin && not (null rawPaths)) $ throwIO $ AmbiguousInput "You provided both stdin and store path arguments, pick only one to proceed."
   inputStorePaths <-
@@ -157,9 +159,9 @@ push env config name rawPaths False = do
   (exitcode, out, err) <- readProcessWithExitCode "nix-store" (fmap toS (["-qR"] <> inputStorePaths)) mempty
 
   -- TODO: make pool size configurable, on beefier machines this could be doubled
-  _ <- mapConcurrentlyBounded 4 (pushStorePath env config name) (T.lines (toS out))
+  _ <- mapConcurrentlyBounded 4 (pushStorePath env name) (T.lines (toS out))
   putText "All done."
-push env config name _ True = withManager $ \mgr -> do
+push env name _ True = withManager $ \mgr -> do
   _ <- watchDir mgr "/nix/store" filterF action
   putText "Watching /nix/store for new builds ..."
   forever $ threadDelay 1000000
@@ -170,7 +172,7 @@ push env config name _ True = withManager $ \mgr -> do
 #else
     action (Removed fp _) =
 #endif
-      pushStorePath env config name $ toS $ dropEnd 5 fp
+      pushStorePath env name $ toS $ dropEnd 5 fp
     action _ = return ()
 
     filterF :: ActionPredicate
@@ -185,8 +187,8 @@ push env config name _ True = withManager $ \mgr -> do
     dropEnd :: Int -> [a] -> [a]
     dropEnd index xs = take (length xs - index) xs
 
-pushStorePath :: ClientEnv -> Maybe Config -> Text -> Text -> IO ()
-pushStorePath env config name storePath = do
+pushStorePath :: Env -> Text -> Text -> IO ()
+pushStorePath Env{..} name storePath = do
   -- use secret key from config or env
   maybeEnvSK <- lookupEnv "CACHIX_SIGNING_KEY"
   let matches Config{..} = filter (\bc -> Config.name bc == name) binaryCaches
@@ -198,7 +200,7 @@ pushStorePath env config name storePath = do
       (storeHash, _) = splitStorePath $ toS storePath
   -- Check if narinfo already exists
   -- TODO: query also cache.nixos.org? server-side?
-  res <- (`runClientM` env) $ Api.narinfoHead
+  res <- (`runClientM` clientenv) $ Api.narinfoHead
     (cachixBCClient name)
     (Api.NarInfoC storeHash)
   case res of
@@ -228,11 +230,11 @@ pushStorePath env config name storePath = do
             conduitToStreaming :: S.Stream (S.Of ByteString) (ResourceT IO) ()
             conduitToStreaming = runConduit (transPipe lift stream' .| CL.mapM_ S.yield)
         -- for now we need to use letsencrypt domain instead of cloudflare due to its upload limits
-        let newEnv = env {
-              baseUrl = (baseUrl env) { baseUrlHost = toS name <> "." <> baseUrlHost (baseUrl env)}
+        let newClientEnv = clientenv {
+              baseUrl = (baseUrl clientenv) { baseUrlHost = toS name <> "." <> baseUrlHost (baseUrl clientenv)}
             }
         -- TODO: http retry: retry package?
-        res <- (`runClientM` newEnv) $ Api.createNar
+        res <- (`runClientM` newClientEnv) $ Api.createNar
           (cachixBCClient name)
           (contentType (Proxy :: Proxy Api.XNixNar), conduitToStreaming)
         close
@@ -275,7 +277,7 @@ pushStorePath env config name storePath = do
             eitherToThrowIO $ Api.isNarInfoCreateValid nic
 
             -- Upload narinfo with signature
-            res <- (`runClientM` env) $ Api.createNarinfo
+            res <- (`runClientM` clientenv) $ Api.createNarinfo
               (cachixBCClient name)
               (Api.NarInfoC storeHash)
               nic

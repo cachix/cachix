@@ -1,10 +1,11 @@
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveAnyClass #-}
 module Cachix.Client.Config
   ( Config(..)
   , BinaryCacheConfig(..)
   , readConfig
   , writeConfig
+  , getDefaultFilename
+  , ConfigPath
   , mkConfig
   ) where
 
@@ -35,24 +36,23 @@ mkConfig authtoken = Config
   , binaryCaches = []
   }
 
-readConfig :: IO (Maybe Config)
-readConfig = do
-  filename <- getFilename
+type ConfigPath = FilePath
+
+readConfig :: ConfigPath -> IO (Maybe Config)
+readConfig filename = do
   doesExist <- doesFileExist filename
   if doesExist
   then Just <$> input auto (toS filename)
   else return Nothing
 
-
-getFilename :: IO FilePath
-getFilename = do
+getDefaultFilename :: IO FilePath
+getDefaultFilename = do
   dir <- getXdgDirectory XdgConfig "cachix"
   createDirectoryIfMissing True dir
   return $ dir <> "/cachix.dhall"
 
-writeConfig :: Config -> IO ()
-writeConfig config = do
-  filename <- getFilename
+writeConfig :: ConfigPath -> Config -> IO ()
+writeConfig filename config = do
   let doc = prettyExpr $ embed inject config
   writeFile filename $ show doc
   assureFilePermissions filename

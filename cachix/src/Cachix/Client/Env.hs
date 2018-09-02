@@ -14,6 +14,7 @@ import Network.HTTP.Client.TLS     ( newTlsManagerWith, tlsManagerSettings )
 import Network.HTTP.Client         ( managerResponseTimeout, managerModifyRequest
                                    , responseTimeoutNone, ManagerSettings)
 import Servant.Client              ( mkClientEnv, ClientEnv )
+import System.Directory            ( canonicalizePath )
 
 import Cachix.Client.Config        ( readConfig, Config )
 import Cachix.Client.OptionsParser ( CachixOptions(..) )
@@ -28,7 +29,10 @@ data Env = Env
 
 
 mkEnv :: CachixOptions -> IO Env
-mkEnv cachixoptions = do
+mkEnv rawcachixoptions = do
+  -- make sure path to the config is passed as absolute to dhall logic
+  canonicalConfigPath <- canonicalizePath (configPath rawcachixoptions)
+  let cachixoptions = rawcachixoptions { configPath = canonicalConfigPath }
   config <- readConfig $ configPath cachixoptions
   manager <- newTlsManagerWith customManagerSettings
   let clientenv = mkClientEnv manager $ getBaseUrl (host cachixoptions)

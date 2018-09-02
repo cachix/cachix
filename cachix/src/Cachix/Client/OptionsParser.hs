@@ -22,7 +22,7 @@ data CachixOptions = CachixOptions
   } deriving Show
 
 parserCachixOptions :: Config.ConfigPath -> Parser CachixOptions
-parserCachixOptions configpath = CachixOptions
+parserCachixOptions defaultConfigPath = CachixOptions
   <$> option uriOption ( long "host"
                        <> short 'h'
                        <> value [uri|https://cachix.org|]
@@ -32,7 +32,7 @@ parserCachixOptions configpath = CachixOptions
                        )
  <*> strOption ( long "config"
               <> short 'c'
-              <> value configpath
+              <> value defaultConfigPath
               <> metavar "CONFIGPATH"
               <> showDefault
               <> help "Cachix configuration file"

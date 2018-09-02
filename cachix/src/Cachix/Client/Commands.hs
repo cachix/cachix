@@ -81,12 +81,12 @@ and share it with others over https://<name>.cachix.org
   |] :: Text)
 
 create :: Env -> Text -> IO ()
-create (Env Nothing _ _) _ = throwIO $ NoConfig "start with: $ cachix authtoken <token>"
-create (Env (Just config@Config{..}) clientenv cachixoptions) name = do
+create Env { config = Nothing } _ = throwIO $ NoConfig "start with: $ cachix authtoken <token>"
+create env@Env { config = Just config } name = do
   (PublicKey pk, SecretKey sk) <- createKeypair
 
   let bc = Api.BinaryCacheCreate $ toS $ B64.encode pk
-  res <- (`runClientM` clientenv) $ Api.create (cachixBCClient name) (Token (toS authToken)) bc
+  res <- (`runClientM` clientenv env) $ Api.create (cachixBCClient name) (Token (toS (authToken config))) bc
   case res of
     -- TODO: handle all kinds of errors
     Left err -> panic $ show err
@@ -94,7 +94,9 @@ create (Env (Just config@Config{..}) clientenv cachixoptions) name = do
       -- write signing key to config
       let signingKey = toS $ B64.encode sk
           bcc = BinaryCacheConfig name signingKey
-      writeConfig (configPath cachixoptions) $ config { binaryCaches = binaryCaches <> [bcc] }
+
+      writeConfig (configPath (cachixoptions env)) $
+        config { binaryCaches = binaryCaches config <> [bcc] }
 
       putStrLn ([iTrim|
 Signing key has been saved on your local machine. To populate
@@ -114,9 +116,9 @@ To instruct Nix to use the binary cache:
       |] :: Text)
 
 use :: Env -> Text -> Bool -> IO ()
-use Env{..} name shouldEchoNixOS = do
+use env name shouldEchoNixOS = do
   -- 1. get cache public key
-  res <- (`runClientM` clientenv) $ Api.get (cachixBCClient name)
+  res <- (`runClientM` clientenv env) $ Api.get (cachixBCClient name)
   case res of
     -- TODO: handle 404
     Left err -> panic $ show err
@@ -188,11 +190,11 @@ push env name _ True = withManager $ \mgr -> do
     dropEnd index xs = take (length xs - index) xs
 
 pushStorePath :: Env -> Text -> Text -> IO ()
-pushStorePath Env{..} name storePath = do
+pushStorePath env name storePath = do
   -- use secret key from config or env
   maybeEnvSK <- lookupEnv "CACHIX_SIGNING_KEY"
   let matches Config{..} = filter (\bc -> Config.name bc == name) binaryCaches
-      maybeBCSK = case config of
+      maybeBCSK = case config env of
         Nothing -> Nothing
         Just c -> Config.secretKey <$> head (matches c)
       -- TODO: better error msg
@@ -200,7 +202,7 @@ pushStorePath Env{..} name storePath = do
       (storeHash, _) = splitStorePath $ toS storePath
   -- Check if narinfo already exists
   -- TODO: query also cache.nixos.org? server-side?
-  res <- (`runClientM` clientenv) $ Api.narinfoHead
+  res <- (`runClientM` clientenv env) $ Api.narinfoHead
     (cachixBCClient name)
     (Api.NarInfoC storeHash)
   case res of
@@ -230,8 +232,8 @@ pushStorePath Env{..} name storePath = do
             conduitToStreaming :: S.Stream (S.Of ByteString) (ResourceT IO) ()
             conduitToStreaming = runConduit (transPipe lift stream' .| CL.mapM_ S.yield)
         -- for now we need to use letsencrypt domain instead of cloudflare due to its upload limits
-        let newClientEnv = clientenv {
-              baseUrl = (baseUrl clientenv) { baseUrlHost = toS name <> "." <> baseUrlHost (baseUrl clientenv)}
+        let newClientEnv = (clientenv env) {
+              baseUrl = (baseUrl (clientenv env)) { baseUrlHost = toS name <> "." <> baseUrlHost (baseUrl (clientenv env))}
             }
         -- TODO: http retry: retry package?
         res <- (`runClientM` newClientEnv) $ Api.createNar
@@ -277,7 +279,7 @@ pushStorePath Env{..} name storePath = do
             eitherToThrowIO $ Api.isNarInfoCreateValid nic
 
             -- Upload narinfo with signature
-            res <- (`runClientM` clientenv) $ Api.createNarinfo
+            res <- (`runClientM` clientenv env) $ Api.createNarinfo
               (cachixBCClient name)
               (Api.NarInfoC storeHash)
               nic

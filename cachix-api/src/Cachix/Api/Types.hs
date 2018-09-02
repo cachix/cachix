@@ -64,7 +64,7 @@ newtype NarC = NarC Text deriving Generic
 instance FromHttpApiData NarC where
   parseUrlPiece s =
     if takeEnd 7 s == ".nar.xz"
-    then Right $ NarC s
+    then Right $ NarC (dropEnd 7 s)
     else Left ""
 
 instance ToHttpApiData NarC where

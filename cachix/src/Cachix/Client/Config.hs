@@ -17,6 +17,7 @@ import System.Directory ( doesFileExist, createDirectoryIfMissing
                         )
 import System.Posix.Files ( setFileMode, unionFileModes, ownerReadMode
                           , ownerWriteMode )
+import System.FilePath.Posix ( takeDirectory )
 import Protolude
 
 
@@ -48,17 +49,17 @@ readConfig filename = do
 getDefaultFilename :: IO FilePath
 getDefaultFilename = do
   dir <- getXdgDirectory XdgConfig "cachix"
-  createDirectoryIfMissing True dir
   return $ dir <> "/cachix.dhall"
 
 writeConfig :: ConfigPath -> Config -> IO ()
 writeConfig filename config = do
   let doc = prettyExpr $ embed inject config
+  createDirectoryIfMissing True (takeDirectory filename)
   writeFile filename $ show doc
   assureFilePermissions filename
   putStrLn $ "Written to " <> filename
 
--- Does: chmod rw file
+-- chmod rw filepath
 assureFilePermissions :: FilePath -> IO ()
 assureFilePermissions fp =
   setFileMode fp $ unionFileModes ownerReadMode ownerWriteMode

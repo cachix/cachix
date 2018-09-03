@@ -28,6 +28,7 @@ dependencies:
 - dhall
 - directory
 - ed25519
+- filepath
 - here
 - http-client-tls
 - http-client

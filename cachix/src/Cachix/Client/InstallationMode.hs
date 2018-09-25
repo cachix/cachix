@@ -105,11 +105,12 @@ isTrustedUser users = do
   user <- getUser
   -- to detect single user installations
   permissions <- getPermissions "/nix/store"
-  unless (null groups) $ do
+  let isTrusted = writable permissions || user `elem` users
+  unless (null groups && not isTrusted) $ do
     -- TODO: support Nix group syntax
     putText "Warn: cachix doesn't yet support checking if user is trusted via groups, so it will recommend sudo"
     putStrLn $ "Warn: groups found " <> T.intercalate "," groups
-  return $ writable permissions || user `elem` users
+  return isTrusted
   where
     groups = filter (\u -> T.head u == '@') users
 

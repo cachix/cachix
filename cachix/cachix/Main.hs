@@ -21,5 +21,6 @@ handleExceptions = handle handler
     handler :: SomeException -> IO a
     handler e = do
       hPutStrLn stderr ""
+      -- TODO: pretty print the record once fixed https://github.com/haskell-servant/servant/issues/807
       hPrint stderr e
       exitFailure

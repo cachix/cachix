@@ -6127,7 +6127,7 @@ inherit (pkgs) mesa;};
          , fsnotify, here, hspec, hspec-discover, http-client
          , http-client-tls, http-conduit, http-types, lzma-conduit
          , megaparsec, memory, mmorph, optparse-applicative, process
-         , protolude, resourcet, servant, servant-auth, servant-auth-client
+         , protolude, resourcet, safe-exceptions, servant, servant-auth, servant-auth-client
          , servant-client, servant-client-core, servant-streaming-client
          , stdenv, streaming, text, unix, uri-bytestring, versions
          }:
@@ -6143,7 +6143,7 @@ inherit (pkgs) mesa;};
              cookie cryptonite dhall directory ed25519 fsnotify here http-client
              http-client-tls http-conduit http-types lzma-conduit megaparsec
              memory mmorph optparse-applicative process protolude resourcet
-             servant servant-auth servant-auth-client servant-client
+             servant servant-auth safe-exceptions servant-auth-client servant-client
              servant-client-core servant-streaming-client streaming text unix
              uri-bytestring versions
            ];
@@ -6151,7 +6151,7 @@ inherit (pkgs) mesa;};
              async base base16-bytestring base64-bytestring bifunctors
              bytestring cachix-api conduit conduit-combinators conduit-extra
              cookie cryptonite dhall directory ed25519 fsnotify here http-client
-             http-client-tls http-conduit http-types lzma-conduit megaparsec
+             http-client-tls safe-exceptions http-conduit http-types lzma-conduit megaparsec
              memory mmorph optparse-applicative process protolude resourcet
              servant servant-auth servant-auth-client servant-client
              servant-client-core servant-streaming-client streaming text unix
@@ -6166,7 +6166,7 @@ inherit (pkgs) mesa;};
              megaparsec memory mmorph optparse-applicative process protolude
              resourcet servant servant-auth servant-auth-client servant-client
              servant-client-core servant-streaming-client streaming text unix
-             uri-bytestring versions
+             uri-bytestring versions safe-exceptions
            ];
            doHaddock = false;
            homepage = "https://github.com/cachix/cachix#readme";

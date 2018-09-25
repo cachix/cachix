@@ -160,7 +160,7 @@ push env name rawPaths False = do
   paths <- T.lines . toS <$> readProcess "nix-store" (fmap toS (["-qR"] <> inputStorePaths)) mempty
 
   -- TODO: make pool size configurable, on beefier machines this could be doubled
-  mapConcurrentlyBounded 4 (pushStorePath env name) paths
+  _ <- mapConcurrentlyBounded 4 (pushStorePath env name) paths
   putText "All done."
 push env name _ True = withManager $ \mgr -> do
   _ <- watchDir mgr "/nix/store" filterF action
@@ -219,8 +219,8 @@ pushStorePath env name storePath = do
         fileHashRef <- liftIO $ newIORef ("" :: Text)
 
         -- stream store path as xz compressed nar file
-        let cmd = "nix-store --dump " <> toS storePath
-        (ClosedStream, (stdoutStream, closeStdout), ClosedStream, cph) <- streamingProcess $ shell cmd
+        let cmd = proc "nix-store" ["--dump", toS storePath]
+        (ClosedStream, (stdoutStream, closeStdout), ClosedStream, cph) <- streamingProcess cmd
         let stream'
               = stdoutStream
              .| passthroughSizeSink narSizeRef
@@ -243,7 +243,7 @@ pushStorePath env name storePath = do
         exitcode <- waitForStreamingProcess cph
         -- TODO: print process stderr?
         when (exitcode /= ExitSuccess) $
-          panic $ "Failed with " <> show exitcode <> ": " <> toS cmd
+          panic $ "Failed with " <> show exitcode <> ": " <> show cmd
 
         narSize <- readIORef narSizeRef
         narHashB16 <- readIORef narHashRef

@@ -43,6 +43,7 @@ dependencies:
 - process
 - protolude
 - resourcet
+- safe-exceptions
 - servant >= 0.14.1
 - servant-auth
 - servant-auth-client >= 0.3.3.0

@@ -4,7 +4,7 @@ module Cachix.Client
 
 import Protolude
 
-import Cachix.Client.OptionsParser ( CachixCommand(..), CachixOptions(..), getOpts )
+import Cachix.Client.OptionsParser ( CachixCommand(..), getOpts )
 import Cachix.Client.Commands      as Commands
 import Cachix.Client.Env           ( mkEnv, cachixVersion )
 

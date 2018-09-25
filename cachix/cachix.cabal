@@ -2,7 +2,7 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 26145016cbf12eb1cebf78e7a9569d3fb438178e7ab29e889d81b62b6f10b109
+-- hash: 91bda550a8159f1c500a75a04b121db730fda20c595781df669cd01fefd1bd61
 
 name:           cachix
 version:        0.1.1
@@ -72,6 +72,7 @@ library
     , process
     , protolude
     , resourcet
+    , safe-exceptions
     , servant >=0.14.1
     , servant-auth
     , servant-auth-client >=0.3.3.0
@@ -124,6 +125,7 @@ executable cachix
     , process
     , protolude
     , resourcet
+    , safe-exceptions
     , servant >=0.14.1
     , servant-auth
     , servant-auth-client >=0.3.3.0
@@ -183,6 +185,7 @@ test-suite cachix-test
     , process
     , protolude
     , resourcet
+    , safe-exceptions
     , servant >=0.14.1
     , servant-auth
     , servant-auth-client >=0.3.3.0

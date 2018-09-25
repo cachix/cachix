@@ -14,6 +14,7 @@ import           Control.Concurrent           (threadDelay)
 import qualified Control.Concurrent.QSem       as QSem
 import           Control.Concurrent.Async     (mapConcurrently)
 import           Control.Monad                (forever)
+import           Control.Exception.Safe       (MonadThrow, throwM)
 import           Control.Monad.Trans.Resource (ResourceT)
 import qualified Data.ByteString.Base64        as B64
 import           Data.Conduit
@@ -37,7 +38,7 @@ import           Servant.Client.Generic
 import           System.Directory               ( doesFileExist )
 import           System.FSNotify
 import           System.IO                      ( stdin, hIsTerminalDevice )
-import           System.Process                 ( readProcessWithExitCode, readProcess )
+import           System.Process                 ( readProcess )
 import           System.Environment             ( lookupEnv )
 import qualified Streaming.Prelude             as S
 
@@ -53,9 +54,7 @@ import qualified Cachix.Client.Config          as Config
 import           Cachix.Client.Env              ( Env(..) )
 import           Cachix.Client.OptionsParser    ( CachixOptions(..) )
 import           Cachix.Client.InstallationMode
-import           Cachix.Client.NixVersion       ( getNixVersion
-                                                , NixVersion
-                                                )
+import           Cachix.Client.NixVersion       ( getNixVersion )
 import qualified Cachix.Client.NixConf         as NixConf
 import           Cachix.Client.Servant
 
@@ -158,10 +157,10 @@ push env name rawPaths False = do
 
   -- Query list of paths
   -- TODO: split args if too big
-  (exitcode, out, err) <- readProcessWithExitCode "nix-store" (fmap toS (["-qR"] <> inputStorePaths)) mempty
+  paths <- T.lines . toS <$> readProcess "nix-store" (fmap toS (["-qR"] <> inputStorePaths)) mempty
 
   -- TODO: make pool size configurable, on beefier machines this could be doubled
-  _ <- mapConcurrentlyBounded 4 (pushStorePath env name) (T.lines (toS out))
+  mapConcurrentlyBounded 4 (pushStorePath env name) paths
   putText "All done."
 push env name _ True = withManager $ \mgr -> do
   _ <- watchDir mgr "/nix/store" filterF action
@@ -220,9 +219,10 @@ pushStorePath env name storePath = do
         fileHashRef <- liftIO $ newIORef ("" :: Text)
 
         -- stream store path as xz compressed nar file
-        (ClosedStream, (source, close), ClosedStream, cph) <- streamingProcess $ shell ("nix-store --dump " <> toS storePath)
+        let cmd = "nix-store --dump " <> toS storePath
+        (ClosedStream, (stdoutStream, closeStdout), ClosedStream, cph) <- streamingProcess $ shell cmd
         let stream'
-              = source
+              = stdoutStream
              .| passthroughSizeSink narSizeRef
              .| passthroughHashSink narHashRef
              .| compress Nothing
@@ -236,65 +236,63 @@ pushStorePath env name storePath = do
               baseUrl = (baseUrl (clientenv env)) { baseUrlHost = toS name <> "." <> baseUrlHost (baseUrl (clientenv env))}
             }
         -- TODO: http retry: retry package?
-        res <- (`runClientM` newClientEnv) $ Api.createNar
+        NoContent <- escalate <=< (`runClientM` newClientEnv) $ Api.createNar
           (cachixBCClient name)
           (contentType (Proxy :: Proxy Api.XNixNar), conduitToStreaming)
-        close
+        closeStdout
         exitcode <- waitForStreamingProcess cph
-        case res of
-          Left err -> panic $ show err
-          Right NoContent -> do
-            narSize <- readIORef narSizeRef
-            narHashB16 <- readIORef narHashRef
-            fileHash <- readIORef fileHashRef
-            fileSize <- readIORef fileSizeRef
+        -- TODO: print process stderr?
+        when (exitcode /= ExitSuccess) $
+          panic $ "Failed with " <> show exitcode <> ": " <> toS cmd
 
-            -- TODO: #3: implement using pure haskell
-            narHash <- ("sha256:" <>) . T.strip . toS <$> readProcess "nix-hash" ["--type", "sha256", "--to-base32", toS narHashB16] mempty
+        narSize <- readIORef narSizeRef
+        narHashB16 <- readIORef narHashRef
+        fileHash <- readIORef fileHashRef
+        fileSize <- readIORef fileSizeRef
 
-            (exitcode, out, err) <- readProcessWithExitCode "nix-store" ["-q", "--deriver", toS storePath] mempty
-            let deriverRaw = T.strip $ toS out
-                deriver = if deriverRaw == "unknown-deriver"
-                          then deriverRaw
-                          else T.drop 11 deriverRaw
+        -- TODO: #3: implement using pure haskell
+        narHash <- ("sha256:" <>) . T.strip . toS <$> readProcess "nix-hash" ["--type", "sha256", "--to-base32", toS narHashB16] mempty
 
-            (exitcode, out, err) <- readProcessWithExitCode "nix-store" ["-q", "--references", toS storePath] mempty
+        deriverRaw <- T.strip . toS <$> readProcess "nix-store" ["-q", "--deriver", toS storePath] mempty
+        let deriver = if deriverRaw == "unknown-deriver"
+                      then deriverRaw
+                      else T.drop 11 deriverRaw
 
-            let
-                references = sort $ T.lines $ T.strip $ toS out
-                fp = fingerprint storePath narHash narSize references
-                sig = dsign sk fp
-                nic = Api.NarInfoCreate
-                  { cStoreHash = storeHash
-                  , cStoreSuffix = storeSuffix
-                  , cNarHash = narHash
-                  , cNarSize = narSize
-                  , cFileSize = fileSize
-                  , cFileHash = fileHash
-                  , cReferences = fmap (T.drop 11) references
-                  , cDeriver = deriver
-                  , cSig = toS $ B64.encode $ unSignature sig
-                  }
+        references <- sort . T.lines . T.strip . toS <$> readProcess "nix-store" ["-q", "--references", toS storePath] mempty
 
-            eitherToThrowIO $ Api.isNarInfoCreateValid nic
+        let
+            fp = fingerprint storePath narHash narSize references
+            sig = dsign sk fp
+            nic = Api.NarInfoCreate
+              { cStoreHash = storeHash
+              , cStoreSuffix = storeSuffix
+              , cNarHash = narHash
+              , cNarSize = narSize
+              , cFileSize = fileSize
+              , cFileHash = fileHash
+              , cReferences = fmap (T.drop 11) references
+              , cDeriver = deriver
+              , cSig = toS $ B64.encode $ unSignature sig
+              }
 
-            -- Upload narinfo with signature
-            res <- (`runClientM` clientenv env) $ Api.createNarinfo
-              (cachixBCClient name)
-              (Api.NarInfoC storeHash)
-              nic
-            case res of
-              Left err -> panic $ show err -- TODO: handle json errors
-              Right NoContent -> return ()
+        escalate $ Api.isNarInfoCreateValid nic
 
+        -- Upload narinfo with signature
+        NoContent <- escalate <=< (`runClientM` clientenv env) $ Api.createNarinfo
+          (cachixBCClient name)
+          (Api.NarInfoC storeHash)
+          nic
+        return ()
 
--- TODO: should one error abort the whole pushing process? Or do a retry? Or keep going and then fail?
-eitherToThrowIO :: Exception err => Either err () -> IO ()
-eitherToThrowIO (Left err) = throwIO err
-eitherToThrowIO (Right ()) = return ()
 
 -- Utils
 
+-- TODO: should one error abort the whole pushing process? Or do a retry? Or keep going and then fail?
+escalate :: (Exception exc, MonadThrow m) => Either exc a -> m a
+escalate = escalateAs identity
+
+escalateAs :: (Exception exc, MonadThrow m) => (l -> exc) -> Either l a -> m a
+escalateAs f = either (throwM . f) pure
 
 mapConcurrentlyBounded :: Traversable t => Int -> (a -> IO b) -> t a -> IO (t b)
 mapConcurrentlyBounded bound action items = do

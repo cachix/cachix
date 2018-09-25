@@ -52,7 +52,7 @@ getInstallationMode NixEnv{..}
   | not isNixOS && isRoot = Install nixVersion NixConf.Global
   | nixVersion /= Nix201 = Nix20RequiresSudo
   | isTrusted = Install nixVersion NixConf.Local
-  | not isTrusted = UntrustedRequiresSudo
+  | otherwise = UntrustedRequiresSudo
 
 
 -- | Add a Binary cache to nix.conf, print nixos config or fail

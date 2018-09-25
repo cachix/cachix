@@ -21,3 +21,5 @@ matrix:
   include:
     - script: $(nix-build -A hlint)/bin/hlint .
       env: NAME=hlint
+    - script: ./scripts/stack2nix
+      env: NAME=stack2nix

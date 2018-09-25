@@ -61,6 +61,7 @@ addBinaryCache Api.BinaryCache{..} (EchoNixOS _) = do
   putText [iTrim|
 nix = {
   binaryCaches = [
+    "https://cache.nixos.org/"
     "${uri}"
   ];
   binaryCachePublicKeys = [

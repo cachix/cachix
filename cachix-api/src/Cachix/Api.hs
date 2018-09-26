@@ -33,8 +33,8 @@ import Cachix.Types.NarInfoCreate
 import Cachix.Types.ContentTypes
 import Cachix.Types.Servant      (Get302, Post302, Head)
 import Cachix.Types.Session      (Session)
+import Cachix.Types.SwaggerOrphans ()
 import Cachix.Api.Types
-import Cachix.Api.Swagger        ()
 
 
 type CachixAuth = Auth '[Cookie,JWT] Session

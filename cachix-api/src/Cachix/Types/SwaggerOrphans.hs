@@ -4,7 +4,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module Cachix.Api.Swagger
+module Cachix.Types.SwaggerOrphans
   () where
 
 import Data.Proxy

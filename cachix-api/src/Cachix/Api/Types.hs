@@ -2,6 +2,7 @@ module Cachix.Api.Types where
 
 import Data.Aeson           (FromJSON, ToJSON)
 import Data.Monoid          ((<>))
+import Data.Swagger         (ToSchema, ToParamSchema)
 import Data.Text            (Text, takeEnd, dropEnd)
 import GHC.Generics         (Generic)
 import Servant.API
@@ -11,7 +12,7 @@ data NixCacheInfo = NixCacheInfo
   { storeDir :: Text
   , wantMassQuery :: Integer
   , priority :: Integer
-  } deriving (Generic, Show, FromJSON, ToJSON)
+  } deriving (Generic, Show, FromJSON, ToJSON, ToSchema)
 
 -- narinfo url includes storePath hash and .narinfo suffix
 data NarInfo = NarInfo
@@ -41,25 +42,25 @@ data NarInfo = NarInfo
     -- NOTE: nix-store -q --deriver
   , sig :: Text
     -- ^ signature of fields: storePath, narHash, narSize, refs
-  } deriving (Generic, Show, FromJSON, ToJSON)
+  } deriving (Generic, Show, FromJSON, ToJSON, ToSchema)
 
 
 data BinaryCache = BinaryCache
   { name :: Text
   , uri :: Text
   , publicSigningKeys :: [Text]
-  } deriving (Show, Generic, FromJSON, ToJSON)
+  } deriving (Show, Generic, FromJSON, ToJSON, ToSchema)
 
 newtype BinaryCacheCreate = BinaryCacheCreate
   { publicSigningKey :: Text
-  } deriving (Show, Generic, FromJSON, ToJSON)
+  } deriving (Show, Generic, FromJSON, ToJSON, ToSchema)
 
 newtype BinaryCacheError = BinaryCacheError
   { error :: Text
   } deriving (Generic, FromJSON, ToJSON)
 
 -- | Hash of nar.xz file
-newtype NarC = NarC Text deriving Generic
+newtype NarC = NarC Text deriving (Generic, ToSchema, ToParamSchema)
 
 instance FromHttpApiData NarC where
   parseUrlPiece s =
@@ -71,7 +72,7 @@ instance ToHttpApiData NarC where
   toUrlPiece (NarC n) = n <> ".nar.xz"
 
 -- | Store path hash
-newtype NarInfoC = NarInfoC Text deriving Generic
+newtype NarInfoC = NarInfoC Text deriving (Generic, ToSchema, ToParamSchema)
 
 instance FromHttpApiData NarInfoC where
   parseUrlPiece s =
@@ -86,4 +87,4 @@ data User = User
   { fullname :: Text
   , username :: Text
   , email :: Maybe Text
-  } deriving (Generic, FromJSON, ToJSON)
+  } deriving (Generic, FromJSON, ToJSON, ToSchema)

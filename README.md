@@ -1,25 +1,26 @@
+## Binary Cache as a Service - Build Nix packages once and share them for good
 
-# https://cachix.org api and cli interface
+# https://cachix.org HTTP and CLI interface
 
 [![Build Status](https://travis-ci.com/cachix/cachix.svg?branch=master)](https://travis-ci.com/cachix/cachix)
 [![Hackage](https://img.shields.io/hackage/v/cachix.svg)](https://hackage.haskell.org/package/cachix)
 [![Cachix](https://img.shields.io/badge/cachix-cachix-blue.svg)](https://cachix.cachix.org)
 
-
-<img src="https://cachix.org/images/logo.png" width="400">
-
-Binary Cache as a Service - Build Nix packages once and share them for good.
+<img src="https://cachix.org/images/logo.png" width="200">
 
 ```
 $ cachix --help
 cachix.org command interface
 
-Usage: cachix [-h|--host URI] [-v|--verbose] (COMMAND | (-V|--version))
+Usage: cachix [-h|--host URI] [-c|--config CONFIGPATH] [-v|--verbose] (COMMAND |
+              (-V|--version))
   Sign into https://cachix.org to get started.
 
 Available options:
   -h,--help                Show this help text
   -h,--host URI            Host to connect to (default: https://cachix.org)
+  -c,--config CONFIGPATH   Cachix configuration
+                           file (default: "/home/ielectric/.config/cachix/cachix.dhall")
   -v,--verbose             Verbose mode
   -V,--version             Show cachix version
 
@@ -29,6 +30,7 @@ Available commands:
   push                     Upload Nix store paths to the binary cache
   use                      Configure nix.conf to enable binary cache during
                            builds
+
 ```
 
 
@@ -54,4 +56,4 @@ Install Cachix from master:
 
 - [#cachix@freenode](https://webchat.freenode.net/?channels=cachix) IRC
 - [domen@enlambda.com](mailto:domen@enlambda.com)
-- https://github.com/cachix/feedback for open discussion about the service
+- [Gitter](https://gitter.im/cachix/Lobby)

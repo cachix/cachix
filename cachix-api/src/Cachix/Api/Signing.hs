@@ -26,16 +26,16 @@ fingerprint storePath narHash narSize references = toS $ T.intercalate ";"
 
 -- Useful sinks for streaming nars
 
-sizeSink :: MonadIO m => Consumer ByteString m Integer
+sizeSink :: MonadIO m => ConduitT ByteString o m Integer
 sizeSink = CC.foldM (\p n -> return (p + fromIntegral (BS.length n))) 0
 
-hashSink :: MonadIO m => Consumer ByteString m (Context SHA256)
+hashSink :: MonadIO m => ConduitT ByteString o m (Context SHA256)
 hashSink = CC.foldM (\p n -> return (hashUpdate p n)) hashInit
 
-passthroughSizeSink :: MonadIO m => IORef Integer -> Conduit ByteString m ByteString
+passthroughSizeSink :: MonadIO m => IORef Integer -> ConduitT ByteString ByteString m ()
 passthroughSizeSink ioref = passthroughSink sizeSink (liftIO . writeIORef ioref)
 
-passthroughHashSink :: MonadIO m => IORef Text -> Conduit ByteString m ByteString
+passthroughHashSink :: MonadIO m => IORef Text -> ConduitT ByteString ByteString m ()
 passthroughHashSink ioref = passthroughSink hashSink (liftIO . writeIORef ioref . transf)
   where
     -- TODO: use cryptonite B16 to get rid of extra dep and simplify

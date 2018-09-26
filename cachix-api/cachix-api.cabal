@@ -1,10 +1,8 @@
-cabal-version: 1.12
-
--- This file has been generated from package.yaml by hpack version 0.31.0.
+-- This file has been generated from package.yaml by hpack version 0.28.2.
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 9612f2ac8a286e5e41fd6400f5b2448e64e5c697811c0f2f7bf3a1b75d056ff7
+-- hash: 8c412b80cb64a1364a4005215ec2b54bf0bea505d964af00162a95c9a409901e
 
 name:           cachix-api
 version:        0.1.0.1
@@ -17,9 +15,10 @@ copyright:      2018 Domen Kožar
 license:        Apache-2.0
 license-file:   LICENSE
 build-type:     Simple
+cabal-version:  >= 1.10
 extra-source-files:
-    README.md
     ChangeLog.md
+    README.md
 
 source-repository head
   type: git

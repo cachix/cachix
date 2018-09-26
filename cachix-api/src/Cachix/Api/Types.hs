@@ -23,7 +23,7 @@ data NarInfo = NarInfo
     -- ^ name of the compression algorithm, eg. xz
   , fileHash :: Text
     -- ^ sha256 hash of the compressed nar file
-    -- NOTE: to compute use "nix-hash --type sha256 --flat --base32"
+    -- NOTE: to compute use "nix-hash --type sha256 --flat"
   , fileSize :: Integer
     -- ^ file size of compressed nar file
     -- NOTE: du -b

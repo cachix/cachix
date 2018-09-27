@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
+## [0.1.2] - 2018-09-27
+
+### Changed
+
+- #132 error handling for readProcess invocations @domenkozar
+- #130 only warn about not supporting groups if user is not trusted @domenkozar
+- #128 Generate https://cache.nixos.org when run as root on NixOS @yegortimoschenko
+- #121 bail out if narSize is 0 @domenkozar
+- #123 support passing --config @domenkozar
+- #123 no more spurious warning messages when using "cachix use" @domenkozar
+- #105 pass https://cache.nixos.org explicitly @domenkozar
+
 ## [0.1.1] - 2018-08-03
 
 ### Added

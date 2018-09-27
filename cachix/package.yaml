@@ -1,5 +1,5 @@
 name:                cachix
-version:             0.1.1
+version:             0.1.2
 github:              "cachix/cachix"
 license:             Apache-2.0
 author:              "Domen Kožar"

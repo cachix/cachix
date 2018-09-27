@@ -1,7 +1,8 @@
 - git checkout -B v0.X.X
 - bump version in package.yaml
+- ./scripts/stack2nix
 - update changelog
-- stack sdist cachix
-- git tag v0.1.1
+- stack sdist cachix{,-api}
+- git tag v0.X.X
 - git push --tags origin HEAD
-- stack upload cachix
+- stack upload cachix{,-api}

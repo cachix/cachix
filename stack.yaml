@@ -1,7 +1,11 @@
-resolver: lts-12.0
+resolver: lts-12.11
 packages:
 - cachix-api
 - cachix
 nix:
     packages: [zlib,lzma]
     pure: false
+extra-deps:
+# TODO: remove ater lts-12.12
+- http-api-data-0.3.10
+- servant-auth-server-0.4.1.0

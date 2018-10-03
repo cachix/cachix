@@ -115,6 +115,8 @@ spec = do
       parse "substituters = a b c\n" `shouldBe` (Right $ NixConf [Substituters ["a", "b", "c"]])
     it "parses equal sign after the first key as literal" $
       parse "substituters = a b c= d\n" `shouldBe` (Right $ NixConf [Substituters ["a", "b", "c=", "d"]])
+    it "parses with missing endline" $
+      parse "allowed-users = *"  `shouldBe` (Right $ NixConf [Other "allowed-users = *"])
     it "parses a complex example" $
       parse realExample `shouldBe` (Right $ NixConf [ Other ""
                                                     , Substituters ["a","b","c"]

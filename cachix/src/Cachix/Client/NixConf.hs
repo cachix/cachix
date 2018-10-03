@@ -169,11 +169,12 @@ parseLine constr name = Mega.try $ do
     return $ constr (fmap toS values)
 
 parseOther :: Parser NixConfLine
-parseOther = Other . toS <$> Mega.manyTill anyChar eol
+parseOther = Mega.try $ Other . toS <$> Mega.someTill anyChar (void eol <|> Mega.eof)
 
 parseAltLine :: Parser NixConfLine
 parseAltLine =
-      parseLine Substituters "substituters"
+      (const (Other "")  <$> eol)
+  <|> parseLine Substituters "substituters"
   <|> parseLine TrustedPublicKeys "trusted-public-keys"
   <|> parseLine TrustedUsers "trusted-users"
   <|> parseLine TrustedPublicKeys "binary-cache-public-keys"

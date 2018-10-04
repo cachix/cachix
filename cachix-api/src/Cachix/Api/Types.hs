@@ -49,6 +49,7 @@ data BinaryCache = BinaryCache
   { name :: Text
   , uri :: Text
   , publicSigningKeys :: [Text]
+  , githubUsername :: Text
   } deriving (Show, Generic, FromJSON, ToJSON, ToSchema)
 
 newtype BinaryCacheCreate = BinaryCacheCreate

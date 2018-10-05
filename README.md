@@ -39,7 +39,7 @@ Available commands:
 1. Install Cachix client using Nix:
 
 ```
-    $ nix-env -iA cachix -f https://github.com/NixOS/nixpkgs/tarball/1d4de0d552ae9aa66a5b8dee5fb0650a4372d148
+    $ nix-env -iA cachix -f https://github.com/NixOS/nixpkgs/tarball/889c72032f8595fcd7542c6032c208f6b8033db6
 ```
 
 2. Login via https://www.cachix.org/api/v1/login to start using the service

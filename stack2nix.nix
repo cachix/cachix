@@ -6152,9 +6152,9 @@ inherit (pkgs.xorg) libXfixes;};
         ({ mkDerivation, async, base, base16-bytestring, base64-bytestring
          , bifunctors, bytestring, cachix-api, conduit, conduit-extra
          , cookie, cryptonite, dhall, directory, ed25519, filepath, fsnotify
-         , here, hpack, hspec-discover, http-client, http-client-tls
-         , http-conduit, http-types, lzma-conduit, megaparsec, memory
-         , mmorph, optparse-applicative, process, protolude, resourcet
+         , here, hspec-discover, http-client, http-client-tls, http-conduit
+         , http-types, lzma-conduit, megaparsec, memory, mmorph
+         , optparse-applicative, process, protolude, resourcet
          , safe-exceptions, servant, servant-auth, servant-auth-client
          , servant-client, servant-client-core, servant-streaming-client
          , stdenv, streaming, text, unix, uri-bytestring, versions
@@ -6175,28 +6175,17 @@ inherit (pkgs.xorg) libXfixes;};
              servant-client servant-client-core servant-streaming-client
              streaming text unix uri-bytestring versions
            ];
-           libraryToolDepends = [ hpack ];
-           executableHaskellDepends = [
-             async base base16-bytestring base64-bytestring bifunctors
-             bytestring cachix-api conduit conduit-extra cookie cryptonite dhall
-             directory ed25519 filepath fsnotify here http-client
-             http-client-tls http-conduit http-types lzma-conduit megaparsec
-             memory mmorph optparse-applicative process protolude resourcet
-             safe-exceptions servant servant-auth servant-auth-client
-             servant-client servant-client-core servant-streaming-client
-             streaming text unix uri-bytestring versions
-           ];
+           executableHaskellDepends = [ base cachix-api ];
            executableToolDepends = [ hspec-discover ];
            doHaddock = false;
            doCheck = false;
-           preConfigure = "hpack";
            homepage = "https://github.com/cachix/cachix#readme";
            description = "Command line client for Nix binary cache hosting https://cachix.org";
            license = stdenv.lib.licenses.asl20;
          }) {};
       "cachix-api" = callPackage
         ({ mkDerivation, aeson, amazonka, base, base16-bytestring
-         , bytestring, conduit, cookie, cryptonite, hpack, http-api-data
+         , bytestring, conduit, cookie, cryptonite, http-api-data
          , http-media, lens, memory, servant, servant-auth
          , servant-auth-server, servant-auth-swagger, servant-streaming
          , servant-swagger, servant-swagger-ui-core, stdenv, string-conv
@@ -6215,17 +6204,9 @@ inherit (pkgs.xorg) libXfixes;};
              servant-streaming servant-swagger servant-swagger-ui-core
              string-conv swagger2 text transformers
            ];
-           libraryToolDepends = [ hpack ];
-           executableHaskellDepends = [
-             aeson amazonka base base16-bytestring bytestring conduit cookie
-             cryptonite http-api-data http-media lens memory servant
-             servant-auth servant-auth-server servant-auth-swagger
-             servant-streaming servant-swagger servant-swagger-ui-core
-             string-conv swagger2 text transformers
-           ];
+           executableHaskellDepends = [ aeson base ];
            doHaddock = false;
            doCheck = false;
-           preConfigure = "hpack";
            homepage = "https://github.com/cachix/cachix#readme";
            description = "Servant HTTP API specification for https://cachix.org";
            license = stdenv.lib.licenses.asl20;

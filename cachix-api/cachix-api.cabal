@@ -31,6 +31,7 @@ library
       Cachix.Api.Signing
       Cachix.Api.Types
       Cachix.Types.BinaryCacheAuthenticated
+      Cachix.Types.BinaryCacheCreate
       Cachix.Types.ContentTypes
       Cachix.Types.NarInfoCreate
       Cachix.Types.Servant

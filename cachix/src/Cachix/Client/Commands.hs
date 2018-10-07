@@ -47,6 +47,7 @@ import qualified Streaming.Prelude             as S
 import qualified Cachix.Api                    as Api
 import           Cachix.Api.Signing             (fingerprint, passthroughSizeSink, passthroughHashSink)
 import qualified Cachix.Types.NarInfoCreate    as Api
+import qualified Cachix.Types.BinaryCacheCreate as Api
 import           Cachix.Client.Config           ( Config(..)
                                                 , BinaryCacheConfig(..)
                                                 , writeConfig
@@ -86,7 +87,10 @@ create Env { config = Nothing } _ = throwIO $ NoConfig "start with: $ cachix aut
 create env@Env { config = Just config } name = do
   (PublicKey pk, SecretKey sk) <- createKeypair
 
-  let bc = Api.BinaryCacheCreate $ toS $ B64.encode pk
+  let bc = Api.BinaryCacheCreate
+        { publicSigningKey = toS $ B64.encode pk
+        , isPublic = True
+        }
   res <- (`runClientM` clientenv env) $ Api.create (cachixBCClient name) (Token (toS (authToken config))) bc
   case res of
     -- TODO: handle all kinds of errors

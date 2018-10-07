@@ -48,12 +48,9 @@ data NarInfo = NarInfo
 data BinaryCache = BinaryCache
   { name :: Text
   , uri :: Text
+  , isPublic :: Bool
   , publicSigningKeys :: [Text]
   , githubUsername :: Text
-  } deriving (Show, Generic, FromJSON, ToJSON, ToSchema)
-
-newtype BinaryCacheCreate = BinaryCacheCreate
-  { publicSigningKey :: Text
   } deriving (Show, Generic, FromJSON, ToJSON, ToSchema)
 
 newtype BinaryCacheError = BinaryCacheError

@@ -29,14 +29,15 @@ import Servant.Swagger
 import Servant.Swagger.UI.Core   (SwaggerSchemaUI)
 import Web.Cookie                (SetCookie)
 
-import Cachix.Types.BinaryCacheAuthenticated as BinaryCacheAuthenticated
-import Cachix.Types.NarInfoCreate
 import Cachix.Types.ContentTypes
 import Cachix.Types.Servant      (Get302, Post302, Head)
 import Cachix.Types.Session      (Session)
 import Cachix.Types.SwaggerOrphans ()
 import Cachix.Api.Types
 
+import qualified Cachix.Types.BinaryCacheCreate as BinaryCacheCreate
+import qualified Cachix.Types.BinaryCacheAuthenticated as BinaryCacheAuthenticated
+import qualified Cachix.Types.NarInfoCreate as NarInfoCreate
 
 type CachixAuth = Auth '[Cookie,JWT] Session
 
@@ -45,7 +46,7 @@ data BinaryCacheAPI route = BinaryCacheAPI
       Get '[JSON] BinaryCache
   , create :: route :-
       CachixAuth :>
-      ReqBody '[JSON] BinaryCacheCreate :>
+      ReqBody '[JSON] BinaryCacheCreate.BinaryCacheCreate :>
       Post '[JSON] NoContent
   -- https://cache.nixos.org/nix-cache-info
   , nixCacheInfo :: route :-
@@ -69,7 +70,7 @@ data BinaryCacheAPI route = BinaryCacheAPI
       Head
   , createNarinfo :: route :-
       Capture "narinfo" NarInfoC :>
-      ReqBody '[JSON] NarInfoCreate :>
+      ReqBody '[JSON] NarInfoCreate.NarInfoCreate :>
       Post '[JSON] NoContent
   } deriving Generic
 

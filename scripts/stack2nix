@@ -4,7 +4,7 @@ set -xe
 scriptDir="$(dirname -- "$(readlink -f -- "$0")")"
 NIX_PATH="nixpkgs=$(nix-instantiate nixpkgs.nix -A path --eval)"
 
-export cmd="stack2nix --platform x86_64-linux --hackage-snapshot 2018-09-25T10:00:00Z --test . > ./stack2nix.nix"
+export cmd="stack2nix --platform x86_64-linux --hackage-snapshot 2018-11-01T10:00:00Z --test . > ./stack2nix.nix"
 
 pushd $scriptDir/../
   # avoid using $LANG and glibcLocales: commitBuffer: invalid argument (invalid character)

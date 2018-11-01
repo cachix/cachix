@@ -41,7 +41,7 @@ instance Interpret Token where
 
 instance Inject Token where
   injectWith _ = InputType
-    { embed = \text -> TextLit (Chunks [] (show text))
+    { embed = TextLit . Chunks [] . show
     , declared = Text
     }
 

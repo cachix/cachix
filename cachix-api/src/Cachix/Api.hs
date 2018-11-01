@@ -21,7 +21,7 @@ import Data.Swagger hiding (Header)
 import Data.Text
 import GHC.Generics (Generic)
 import Network.AWS (AWS)
-import Servant.API
+import Servant.API hiding (BasicAuth)
 import Servant.Auth
 import Servant.API.Generic
 import Servant.Streaming
@@ -39,10 +39,11 @@ import qualified Cachix.Types.BinaryCacheCreate as BinaryCacheCreate
 import qualified Cachix.Types.BinaryCacheAuthenticated as BinaryCacheAuthenticated
 import qualified Cachix.Types.NarInfoCreate as NarInfoCreate
 
-type CachixAuth = Auth '[Cookie,JWT] Session
+type CachixAuth = Auth '[Cookie, JWT, BasicAuth] Session
 
 data BinaryCacheAPI route = BinaryCacheAPI
   { get :: route :-
+      CachixAuth :>
       Get '[JSON] BinaryCache
   , create :: route :-
       CachixAuth :>
@@ -50,10 +51,12 @@ data BinaryCacheAPI route = BinaryCacheAPI
       Post '[JSON] NoContent
   -- https://cache.nixos.org/nix-cache-info
   , nixCacheInfo :: route :-
+      CachixAuth :>
       "nix-cache-info" :>
       Get '[XNixCacheInfo, JSON] NixCacheInfo
   -- Hydra: src/lib/Hydra/View/NixNAR.pm
   , nar :: route :-
+      CachixAuth :>
       "nar" :>
       Capture "nar" NarC :>
       StreamResponseGet '[XNixNar, JSON]
@@ -63,9 +66,11 @@ data BinaryCacheAPI route = BinaryCacheAPI
       Post '[JSON] NoContent
   -- Hydra: src/lib/Hydra/View/NARInfo.pm
   , narinfo :: route :-
+      CachixAuth :>
       Capture "narinfo" NarInfoC :>
       Get '[XNixNarInfo, JSON] NarInfo
   , narinfoHead :: route :-
+      CachixAuth :>
       Capture "narinfo" NarInfoC :>
       Head
   , createNarinfo :: route :-

@@ -72,7 +72,7 @@ authtoken :: Env -> Text -> IO ()
 authtoken env token = do
   -- TODO: check that token actually authenticates!
   writeConfig (configPath (cachixoptions env)) $ case config env of
-    Just config -> config { authToken = token }
+    Just config -> config { authToken = Token (toS token) }
     Nothing -> mkConfig token
   putStrLn ([hereLit|
 Continue by creating a binary cache with:
@@ -91,7 +91,7 @@ create env@Env { config = Just config } name = do
         { publicSigningKey = toS $ B64.encode pk
         , isPublic = True
         }
-  res <- (`runClientM` clientenv env) $ Api.create (cachixBCClient name) (Token (toS (authToken config))) bc
+  res <- (`runClientM` clientenv env) $ Api.create (cachixBCClient name) (authToken config) bc
   case res of
     -- TODO: handle all kinds of errors
     Left err -> panic $ show err
@@ -120,10 +120,14 @@ To instruct Nix to use the binary cache:
 
       |] :: Text)
 
+envToToken :: Env -> Token
+envToToken env =
+  maybe (Token "") authToken (config env)
+
 use :: Env -> Text -> Bool -> IO ()
 use env name shouldEchoNixOS = do
   -- 1. get cache public key
-  res <- (`runClientM` clientenv env) $ Api.get (cachixBCClient name)
+  res <- (`runClientM` clientenv env) $ Api.get (cachixBCClient name) (envToToken env)
   case res of
     -- TODO: handle 404
     Left err -> panic $ show err
@@ -210,9 +214,11 @@ pushStorePath env name storePath = retryPath $ \retrystatus -> do
   -- TODO: query also cache.nixos.org? server-side?
   res <- (`runClientM` clientenv env) $ Api.narinfoHead
     (cachixBCClient name)
+    (envToToken env)
     (Api.NarInfoC storeHash)
   case res of
     Right NoContent -> pass -- we're done as store path is already in the cache
+    -- TODO: 401
     Left err | isErr err status404 -> go sk retrystatus
              | otherwise -> escalate $ void res
     where

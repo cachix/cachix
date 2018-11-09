@@ -5,6 +5,7 @@ import Data.Monoid          ((<>))
 import Data.Swagger         (ToSchema, ToParamSchema)
 import Data.Text            (Text, takeEnd, dropEnd)
 import GHC.Generics         (Generic)
+import Control.DeepSeq      (NFData)
 import Servant.API
 
 
@@ -50,7 +51,7 @@ data BinaryCache = BinaryCache
   , uri :: Text
   , publicSigningKeys :: [Text]
   , githubUsername :: Text
-  } deriving (Show, Generic, FromJSON, ToJSON, ToSchema)
+  } deriving (Show, Generic, FromJSON, ToJSON, ToSchema, NFData)
 
 newtype BinaryCacheCreate = BinaryCacheCreate
   { publicSigningKey :: Text

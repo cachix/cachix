@@ -1,7 +1,9 @@
-resolver: lts-12.0
+resolver: lts-13.4
 packages:
 - cachix-api
 - cachix
 nix:
     packages: [zlib,lzma]
     pure: false
+extra-deps:
+- servant-conduit-0.15

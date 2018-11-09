@@ -1,4 +1,4 @@
-resolver: lts-12.0
+resolver: lts-13.4
 packages:
 - cachix-api
 - cachix
@@ -7,3 +7,9 @@ nix:
     pure: false
 extra-deps:
 - netrc-0.2.0.0
+- servant-conduit-0.15
+- git: https://github.com/domenkozar/servant
+  commit: 221467d7b0394cb8425b13197250652f8f839653
+  subdirs:
+    - servant-client
+    - servant-client-core

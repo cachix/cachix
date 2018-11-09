@@ -134,7 +134,7 @@ read ncl = do
     result <- parse <$> readFile filename
     case result of
       Left err -> do
-        putStrLn (Mega.parseErrorPretty err)
+        putStrLn (Mega.errorBundlePretty err)
         panic $ toS filename <> " failed to parse, please copy the above error and contents of nix.conf and open an issue at https://github.com/cachix/cachix"
       Right conf -> return $ Just conf
 
@@ -165,16 +165,16 @@ parseLine constr name = Mega.try $ do
     _ <- many (char ' ')
     _ <- char '='
     _ <- many (char ' ')
-    values <- Mega.sepBy1 (many (satisfy (not . isSpace))) (some (char ' '))
+    values <- Mega.sepBy1 (many (Mega.satisfy (not . isSpace))) (some (char ' '))
     _ <- many spaceChar
     return $ constr (fmap toS values)
 
 parseOther :: Parser NixConfLine
-parseOther = Mega.try $ Other . toS <$> Mega.someTill anyChar (void eol <|> Mega.eof)
+parseOther = Mega.try $ Other . toS <$> Mega.someTill Mega.anySingle (void eol <|> Mega.eof)
 
 parseAltLine :: Parser NixConfLine
 parseAltLine =
-      (const (Other "")  <$> eol)
+      (Other "" <$ eol)
   <|> parseLine Substituters "substituters"
   <|> parseLine TrustedPublicKeys "trusted-public-keys"
   <|> parseLine TrustedUsers "trusted-users"
@@ -187,5 +187,5 @@ parseAltLine =
 parser :: Parser NixConf
 parser = NixConf <$> many parseAltLine
 
-parse :: Text -> Either (Mega.ParseError (Mega.Token Text) Void) NixConf
+parse :: Text -> Either (Mega.ParseErrorBundle Text Void) NixConf
 parse = Mega.parse parser "nix.conf"

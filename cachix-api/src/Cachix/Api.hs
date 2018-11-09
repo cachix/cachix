@@ -16,16 +16,18 @@ module Cachix.Api
   ) where
 
 import Control.Lens
-
+import Control.Monad.Trans.Resource
+import Data.ByteString (ByteString)
+import Data.Conduit (ConduitT)
 import Data.Proxy (Proxy(..))
 import Data.Swagger hiding (Header)
 import Data.Text
 import GHC.Generics (Generic)
-import Network.AWS (AWS)
 import Servant.API hiding (BasicAuth)
-import Servant.Auth
 import Servant.API.Generic
-import Servant.Streaming
+import Servant.Auth
+import Servant.Auth.Swagger ()
+import Servant.Client.Streaming
 import Servant.Swagger
 import Web.Cookie                (SetCookie)
 
@@ -62,10 +64,10 @@ data BinaryCacheAPI route = BinaryCacheAPI
       CachixAuth :>
       "nar" :>
       Capture "nar" NarC :>
-      StreamResponseGet '[XNixNar, JSON]
+      StreamGet NoFraming OctetStream (ConduitT () ByteString (ResourceT IO) ())
   , createNar :: route :-
       "nar" :>
-      StreamBodyMonad '[XNixNar, JSON] AWS :>
+      StreamBody NoFraming OctetStream (ConduitT () ByteString (ResourceT IO) ()) :> -- XNixNar
       Post '[JSON] NoContent
   -- Hydra: src/lib/Hydra/View/NARInfo.pm
   , narinfo :: route :-

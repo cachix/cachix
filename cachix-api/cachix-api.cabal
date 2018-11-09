@@ -47,15 +47,16 @@ library
     , conduit >=1.3.0
     , cookie
     , cryptonite
+    , deepseq
     , http-api-data
     , http-media
     , lens
     , memory
     , servant >=0.14.1
+    , servant-client
     , servant-auth
     , servant-auth-server
     , servant-auth-swagger
-    , servant-streaming
     , servant-swagger
     , servant-swagger-ui-core
     , string-conv
@@ -101,7 +102,6 @@ test-suite cachix-api-test
     , servant-auth
     , servant-auth-server
     , servant-auth-swagger
-    , servant-streaming
     , servant-swagger
     , servant-swagger-ui-core
     , string-conv

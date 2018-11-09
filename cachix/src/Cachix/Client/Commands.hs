@@ -13,15 +13,13 @@ import           Crypto.Sign.Ed25519
 import           Control.Concurrent           (threadDelay)
 import qualified Control.Concurrent.QSem       as QSem
 import           Control.Concurrent.Async     (mapConcurrently)
-import           Control.Monad                (forever)
+import           Control.Monad                (forever, (>=>))
 import           Control.Exception.Safe       (MonadThrow, throwM)
-import           Control.Monad.Trans.Resource (ResourceT)
 import           Control.Retry                (recoverAll, RetryStatus(rsIterNumber))
 import qualified Data.ByteString.Base64        as B64
 import           Data.Conduit
 import           Data.Default                  (def)
 import           Data.Conduit.Process
-import qualified Data.Conduit.List             as CL
 import           Data.Conduit.Lzma              ( compress )
 import           Data.IORef
 import           Data.List                      ( isSuffixOf )
@@ -31,18 +29,17 @@ import qualified Data.Text                      as T
 import           Network.HTTP.Types (status404)
 import           Protolude
 import           Servant.API
-import           Servant.Client
 import           Servant.Auth                   ()
 import           Servant.Auth.Client
-import           Servant.Streaming.Client       ()
 import           Servant.API.Generic
 import           Servant.Client.Generic
+import           Servant.Client.Streaming
+import           Servant.Conduit                ()
 import           System.Directory               ( doesFileExist )
 import           System.FSNotify
 import           System.IO                      ( stdin, hIsTerminalDevice )
 import           System.Process                 ( readProcess )
 import           System.Environment             ( lookupEnv )
-import qualified Streaming.Prelude             as S
 
 import qualified Cachix.Api                    as Api
 import           Cachix.Api.Signing             (fingerprint, passthroughSizeSink, passthroughHashSink)
@@ -238,58 +235,55 @@ pushStorePath env name storePath = retryPath $ \retrystatus -> do
              .| passthroughSizeSink fileSizeRef
              .| passthroughHashSink fileHashRef
 
-            conduitToStreaming :: S.Stream (S.Of ByteString) (ResourceT IO) ()
-            conduitToStreaming = runConduit (transPipe lift stream' .| CL.mapM_ S.yield)
         -- for now we need to use letsencrypt domain instead of cloudflare due to its upload limits
         let newClientEnv = (clientenv env) {
               baseUrl = (baseUrl (clientenv env)) { baseUrlHost = toS name <> "." <> baseUrlHost (baseUrl (clientenv env))}
             }
-        NoContent <- escalate <=< (`runClientM` newClientEnv) $ Api.createNar
-          (cachixBCClient name)
-          (contentType (Proxy :: Proxy Api.XNixNar), conduitToStreaming)
-        closeStdout
-        exitcode <- waitForStreamingProcess cph
-        -- TODO: print process stderr?
-        when (exitcode /= ExitSuccess) $ throwM $ NarStreamingError exitcode $ show cmd
+        void $ (`withClientM` newClientEnv)
+            (Api.createNar (cachixBCClient name) stream')
+            $ escalate >=> \NoContent -> do
+                closeStdout
+                exitcode <- waitForStreamingProcess cph
+                -- TODO: print process stderr?
+                when (exitcode /= ExitSuccess) $ throwM $ NarStreamingError exitcode $ show cmd
 
-        narSize <- readIORef narSizeRef
-        narHashB16 <- readIORef narHashRef
-        fileHash <- readIORef fileHashRef
-        fileSize <- readIORef fileSizeRef
+                narSize <- readIORef narSizeRef
+                narHashB16 <- readIORef narHashRef
+                fileHash <- readIORef fileHashRef
+                fileSize <- readIORef fileSizeRef
 
-        -- TODO: #3: implement using pure haskell
-        narHash <- ("sha256:" <>) . T.strip . toS <$> readProcess "nix-hash" ["--type", "sha256", "--to-base32", toS narHashB16] mempty
+                -- TODO: #3: implement using pure haskell
+                narHash <- ("sha256:" <>) . T.strip . toS <$> readProcess "nix-hash" ["--type", "sha256", "--to-base32", toS narHashB16] mempty
 
-        deriverRaw <- T.strip . toS <$> readProcess "nix-store" ["-q", "--deriver", toS storePath] mempty
-        let deriver = if deriverRaw == "unknown-deriver"
-                      then deriverRaw
-                      else T.drop 11 deriverRaw
+                deriverRaw <- T.strip . toS <$> readProcess "nix-store" ["-q", "--deriver", toS storePath] mempty
+                let deriver = if deriverRaw == "unknown-deriver"
+                              then deriverRaw
+                              else T.drop 11 deriverRaw
 
-        references <- sort . T.lines . T.strip . toS <$> readProcess "nix-store" ["-q", "--references", toS storePath] mempty
+                references <- sort . T.lines . T.strip . toS <$> readProcess "nix-store" ["-q", "--references", toS storePath] mempty
 
-        let
-            fp = fingerprint storePath narHash narSize references
-            sig = dsign sk fp
-            nic = Api.NarInfoCreate
-              { cStoreHash = storeHash
-              , cStoreSuffix = storeSuffix
-              , cNarHash = narHash
-              , cNarSize = narSize
-              , cFileSize = fileSize
-              , cFileHash = fileHash
-              , cReferences = fmap (T.drop 11) references
-              , cDeriver = deriver
-              , cSig = toS $ B64.encode $ unSignature sig
-              }
+                let
+                    fp = fingerprint storePath narHash narSize references
+                    sig = dsign sk fp
+                    nic = Api.NarInfoCreate
+                      { cStoreHash = storeHash
+                      , cStoreSuffix = storeSuffix
+                      , cNarHash = narHash
+                      , cNarSize = narSize
+                      , cFileSize = fileSize
+                      , cFileHash = fileHash
+                      , cReferences = fmap (T.drop 11) references
+                      , cDeriver = deriver
+                      , cSig = toS $ B64.encode $ unSignature sig
+                      }
 
-        escalate $ Api.isNarInfoCreateValid nic
+                escalate $ Api.isNarInfoCreateValid nic
 
-        -- Upload narinfo with signature
-        NoContent <- escalate <=< (`runClientM` clientenv env) $ Api.createNarinfo
-          (cachixBCClient name)
-          (Api.NarInfoC storeHash)
-          nic
-        return ()
+                -- Upload narinfo with signature
+                escalate <=< (`runClientM` clientenv env) $ Api.createNarinfo
+                  (cachixBCClient name)
+                  (Api.NarInfoC storeHash)
+                  nic
 
 
 -- Utils

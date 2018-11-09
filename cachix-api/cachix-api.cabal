@@ -44,23 +44,24 @@ library
       src
   build-depends:
       aeson
-    , amazonka
     , base >=4.7 && <5
     , base16-bytestring
     , bytestring
     , conduit >=1.3.0
     , cookie
     , cryptonite
+    , deepseq
     , exceptions
     , http-api-data
     , http-media
     , lens
     , memory
+    , resourcet
     , servant >=0.14.1
+    , servant-client
     , servant-auth
     , servant-auth-server
     , servant-auth-swagger
-    , servant-streaming
     , servant-swagger
     , string-conv
     , swagger2
@@ -87,7 +88,6 @@ test-suite cachix-api-test
       test
   build-depends:
       aeson
-    , amazonka
     , base >=4.7 && <5
     , base16-bytestring
     , bytestring
@@ -105,7 +105,6 @@ test-suite cachix-api-test
     , servant-auth
     , servant-auth-server
     , servant-auth-swagger
-    , servant-streaming
     , servant-swagger
     , servant-swagger-ui-core
     , string-conv

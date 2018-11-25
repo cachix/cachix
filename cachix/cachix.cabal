@@ -115,3 +115,6 @@ test-suite cachix-test
       base >=4.7 && <5
     , cachix
     , cachix-api
+    , hspec
+    , protolude
+    , here

@@ -31,7 +31,6 @@ module Cachix.Client.NixConf
   , trustedPublicKeysKey
   ) where
 
-import Control.Exception (catch)
 import Data.Char (isSpace)
 import Data.Text (unwords, unlines)
 import Data.List (nub)
@@ -41,6 +40,7 @@ import Text.Megaparsec.Char
 import System.Directory ( doesFileExist, createDirectoryIfMissing
                         , getXdgDirectory, XdgDirectory(..)
                         )
+import System.FilePath.Posix ( takeDirectory )
 import Cachix.Api (BinaryCache(..))
 import Cachix.Client.NixVersion (NixVersion(..))
 
@@ -119,6 +119,7 @@ trustedPublicKeysKey Nix201 = "trusted-public-keys"
 write :: NixVersion -> NixConfLoc -> NixConf -> IO ()
 write nixversion ncl nc = do
   filename <- getFilename ncl
+  createDirectoryIfMissing True (takeDirectory filename)
   writeFile filename $ render nixversion nc
 
 read :: NixConfLoc -> IO (Maybe NixConf)
@@ -148,8 +149,6 @@ getFilename ncl = do
   dir <- case ncl of
     Global -> return "/etc/nix"
     Local -> getXdgDirectory XdgConfig "nix"
-  _ <- catch (createDirectoryIfMissing True dir) $ \e ->
-    hPutStr stderr ("Warning: Couldn't create " <> dir <> " :" <> show (e :: IOException))
   return $ dir <> "/nix.conf"
 
 -- nix.conf Parser

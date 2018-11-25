@@ -16,10 +16,12 @@ property x = NixConf.render Nix20 <$> parse x `shouldBe` Right x
 propertyNix1 :: Text -> Expectation
 propertyNix1 x = NixConf.render Nix1XX <$> parse x `shouldBe` Right x
 
+bc :: BinaryCache
 bc = BinaryCache
  { name = "name"
  , uri = "https://name.cachix.org"
  , publicSigningKeys = ["pub"]
+ , githubUsername = "foobar"
  }
 
 spec :: Spec
@@ -127,6 +129,7 @@ spec = do
                                                     , Other ""
                                                     , Other ""])
 
+realExample :: Text
 realExample = [hereLit|
 substituters = a  b c
 trusted-users = him me

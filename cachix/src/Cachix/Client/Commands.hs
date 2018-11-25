@@ -211,7 +211,8 @@ pushStorePath env name storePath = do
     where
       go sk = do
         let (storeHash, storeSuffix) = splitStorePath $ toS storePath
-        putStrLn $ "pushing " <> storePath
+        -- we append newline instead of putStrLn due to https://github.com/haskell/text/issues/242
+        putStr $ "pushing " <> storePath <> "\n"
 
         narSizeRef <- liftIO $ newIORef 0
         fileSizeRef <- liftIO $ newIORef 0

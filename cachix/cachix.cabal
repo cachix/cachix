@@ -53,6 +53,7 @@ library
     , conduit-extra
     , cookie
     , cryptonite
+    , data-default
     , dhall
     , directory
     , ed25519
@@ -71,6 +72,7 @@ library
     , process
     , protolude
     , resourcet
+    , retry
     , safe-exceptions
     , servant >=0.14.1
     , servant-auth

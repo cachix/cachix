@@ -26,6 +26,7 @@ data CachixException
   | AmbiguousInput Text
   | NoInput Text
   | NoConfig Text
+  | NarStreamingError ExitCode Text
   deriving (Show, Typeable)
 
 instance Exception CachixException

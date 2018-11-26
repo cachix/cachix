@@ -16,8 +16,10 @@ import           Control.Concurrent.Async     (mapConcurrently)
 import           Control.Monad                (forever)
 import           Control.Exception.Safe       (MonadThrow, throwM)
 import           Control.Monad.Trans.Resource (ResourceT)
+import           Control.Retry                (recoverAll, RetryStatus(rsIterNumber))
 import qualified Data.ByteString.Base64        as B64
 import           Data.Conduit
+import           Data.Default                  (def)
 import           Data.Conduit.Process
 import qualified Data.Conduit.List             as CL
 import           Data.Conduit.Lzma              ( compress )
@@ -189,8 +191,9 @@ push env name _ True = withManager $ \mgr -> do
     dropEnd index xs = take (length xs - index) xs
 
 pushStorePath :: Env -> Text -> Text -> IO ()
-pushStorePath env name storePath = do
+pushStorePath env name storePath = retryPath $ \retrystatus -> do
   -- use secret key from config or env
+  -- TODO: this shouldn't happen for each store path
   maybeEnvSK <- lookupEnv "CACHIX_SIGNING_KEY"
   let matches Config{..} = filter (\bc -> Config.name bc == name) binaryCaches
       maybeBCSK = case config env of
@@ -205,14 +208,19 @@ pushStorePath env name storePath = do
     (cachixBCClient name)
     (Api.NarInfoC storeHash)
   case res of
-    Right NoContent -> return ()
-    Left err | isErr err status404 -> go sk
-             | otherwise -> panic $ show err -- TODO: retry
+    Right NoContent -> pass -- we're done as store path is already in the cache
+    Left err | isErr err status404 -> go sk retrystatus
+             | otherwise -> escalate $ void res
     where
-      go sk = do
+      retryText :: RetryStatus -> Text
+      retryText retrystatus =
+        if rsIterNumber retrystatus == 0
+        then ""
+        else "(retry #" <> show (rsIterNumber retrystatus) <> ") "
+      go sk retrystatus = do
         let (storeHash, storeSuffix) = splitStorePath $ toS storePath
         -- we append newline instead of putStrLn due to https://github.com/haskell/text/issues/242
-        putStr $ "pushing " <> storePath <> "\n"
+        putStr $ "pushing " <> retryText retrystatus <> storePath <> "\n"
 
         narSizeRef <- liftIO $ newIORef 0
         fileSizeRef <- liftIO $ newIORef 0
@@ -236,15 +244,13 @@ pushStorePath env name storePath = do
         let newClientEnv = (clientenv env) {
               baseUrl = (baseUrl (clientenv env)) { baseUrlHost = toS name <> "." <> baseUrlHost (baseUrl (clientenv env))}
             }
-        -- TODO: http retry: retry package?
         NoContent <- escalate <=< (`runClientM` newClientEnv) $ Api.createNar
           (cachixBCClient name)
           (contentType (Proxy :: Proxy Api.XNixNar), conduitToStreaming)
         closeStdout
         exitcode <- waitForStreamingProcess cph
         -- TODO: print process stderr?
-        when (exitcode /= ExitSuccess) $
-          panic $ "Failed with " <> show exitcode <> ": " <> show cmd
+        when (exitcode /= ExitSuccess) $ throwM $ NarStreamingError exitcode $ show cmd
 
         narSize <- readIORef narSizeRef
         narHashB16 <- readIORef narHashRef
@@ -288,7 +294,11 @@ pushStorePath env name storePath = do
 
 -- Utils
 
--- TODO: should one error abort the whole pushing process? Or do a retry? Or keep going and then fail?
+-- Retry up to 5 times for each store path.
+-- Catches all exceptions except skipAsyncExceptions
+retryPath :: (RetryStatus -> IO a) -> IO a
+retryPath = recoverAll def
+
 escalate :: (Exception exc, MonadThrow m) => Either exc a -> m a
 escalate = escalateAs identity
 

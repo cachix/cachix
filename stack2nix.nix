@@ -6151,13 +6151,14 @@ inherit (pkgs.xorg) libXfixes;};
       "cachix" = callPackage
         ({ mkDerivation, async, base, base16-bytestring, base64-bytestring
          , bifunctors, bytestring, cachix-api, conduit, conduit-extra
-         , cookie, cryptonite, dhall, directory, ed25519, filepath, fsnotify
-         , here, hspec, hspec-discover, http-client, http-client-tls
-         , http-conduit, http-types, lzma-conduit, megaparsec, memory
-         , mmorph, optparse-applicative, process, protolude, resourcet
-         , safe-exceptions, servant, servant-auth, servant-auth-client
-         , servant-client, servant-client-core, servant-streaming-client
-         , stdenv, streaming, text, unix, uri-bytestring, versions
+         , cookie, cryptonite, data-default, dhall, directory, ed25519
+         , filepath, fsnotify, here, hspec, hspec-discover, http-client
+         , http-client-tls, http-conduit, http-types, lzma-conduit
+         , megaparsec, memory, mmorph, optparse-applicative, process
+         , protolude, resourcet, retry, safe-exceptions, servant
+         , servant-auth, servant-auth-client, servant-client
+         , servant-client-core, servant-streaming-client, stdenv, streaming
+         , text, unix, uri-bytestring, versions
          }:
          mkDerivation {
            pname = "cachix";
@@ -6167,13 +6168,14 @@ inherit (pkgs.xorg) libXfixes;};
            isExecutable = true;
            libraryHaskellDepends = [
              async base base16-bytestring base64-bytestring bifunctors
-             bytestring cachix-api conduit conduit-extra cookie cryptonite dhall
-             directory ed25519 filepath fsnotify here http-client
-             http-client-tls http-conduit http-types lzma-conduit megaparsec
-             memory mmorph optparse-applicative process protolude resourcet
-             safe-exceptions servant servant-auth servant-auth-client
-             servant-client servant-client-core servant-streaming-client
-             streaming text unix uri-bytestring versions
+             bytestring cachix-api conduit conduit-extra cookie cryptonite
+             data-default dhall directory ed25519 filepath fsnotify here
+             http-client http-client-tls http-conduit http-types lzma-conduit
+             megaparsec memory mmorph optparse-applicative process protolude
+             resourcet retry safe-exceptions servant servant-auth
+             servant-auth-client servant-client servant-client-core
+             servant-streaming-client streaming text unix uri-bytestring
+             versions
            ];
            executableHaskellDepends = [ base cachix-api ];
            executableToolDepends = [ hspec-discover ];

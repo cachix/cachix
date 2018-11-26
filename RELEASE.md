@@ -1,7 +1,8 @@
 - git checkout -B v0.X.X
-- bump version in package.yaml
+- bump version in cachix.cabal
 - ./scripts/stack2nix
 - update changelog
+- git commit -m "0.X.X"
 - stack sdist cachix{,-api}
 - git tag v0.X.X
 - git push --tags origin HEAD

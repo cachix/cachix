@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
+## [0.1.3] - 2018-11-26
+
+### Changed
+
+- #77 retry transient HTTP exceptions @domenkozar
+- #151 prevent mingled  store paths output @domenkozar
+- #141 prevent unncessary warning about /etc/nix missing @domenkozar
+- #142 ditch hpack @domenkozar
+
 ## [0.1.2] - 2018-09-27
 
 ### Changed

@@ -39,6 +39,8 @@ library
       Cachix.Client.URI
   other-modules:
       Paths_cachix
+  autogen-modules:
+      Paths_cachix
   hs-source-dirs:
       src
   build-depends:
@@ -90,6 +92,8 @@ executable cachix
   import: defaults
   main-is: Main.hs
   other-modules:
+      Paths_cachix
+  autogen-modules:
       Paths_cachix
   hs-source-dirs:
       cachix

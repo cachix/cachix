@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [0.1.0.3] - 2018-11-27
+
+### Changed
+
+- Remove redundant orphan instance for swagger2-2.3.1 @domenkozar
+
 ## [0.1.0.2] - 2018-09-27
 
 ### Changed

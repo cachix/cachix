@@ -36,8 +36,6 @@ library
       Cachix.Types.Servant
       Cachix.Types.Session
       Cachix.Types.SwaggerOrphans
-  other-modules:
-      Paths_cachix_api
   hs-source-dirs:
       src
   build-depends:
@@ -68,8 +66,6 @@ library
 executable cachix-gen-swagger
   import: defaults
   main-is: Main.hs
-  other-modules:
-      Paths_cachix_api
   hs-source-dirs:
       cachix-gen-swagger
   build-depends:
@@ -83,7 +79,6 @@ test-suite cachix-api-test
   main-is: Main.hs
   other-modules:
       Spec
-      Paths_cachix_api
   hs-source-dirs:
       test
   build-depends:

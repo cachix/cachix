@@ -5,3 +5,5 @@ packages:
 nix:
     packages: [zlib,lzma]
     pure: false
+extra-deps:
+- netrc-0.2.0.0

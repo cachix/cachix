@@ -14,7 +14,7 @@ import           Control.Concurrent           (threadDelay)
 import qualified Control.Concurrent.QSem       as QSem
 import           Control.Concurrent.Async     (mapConcurrently)
 import           Control.Monad                (forever)
-import           Control.Exception.Safe       (MonadThrow, throwM)
+import           Control.Exception.Safe       (throwM)
 import           Control.Monad.Trans.Resource (ResourceT)
 import           Control.Retry                (recoverAll, RetryStatus(rsIterNumber))
 import qualified Data.ByteString.Base64        as B64
@@ -45,6 +45,7 @@ import           System.Environment             ( lookupEnv )
 import qualified Streaming.Prelude             as S
 
 import qualified Cachix.Api                    as Api
+import           Cachix.Api.Error
 import           Cachix.Api.Signing             (fingerprint, passthroughSizeSink, passthroughHashSink)
 import qualified Cachix.Types.NarInfoCreate    as Api
 import qualified Cachix.Types.BinaryCacheCreate as Api
@@ -55,6 +56,7 @@ import           Cachix.Client.Config           ( Config(..)
                                                 )
 import qualified Cachix.Client.Config          as Config
 import           Cachix.Client.Env              ( Env(..) )
+import           Cachix.Client.Exception        ( CachixException(..) )
 import           Cachix.Client.OptionsParser    ( CachixOptions(..) )
 import           Cachix.Client.InstallationMode
 import           Cachix.Client.NixVersion       ( getNixVersion )
@@ -130,6 +132,7 @@ use env name shouldEchoNixOS = do
   res <- (`runClientM` clientenv env) $ Api.get (cachixBCClient name) (envToToken env)
   case res of
     -- TODO: handle 404
+    -- TODO: 404/401?: if cache is private add token is wrong, instruct what to do
     Left err -> panic $ show err
     Right binaryCache -> do
       eitherNixVersion <- getNixVersion
@@ -146,7 +149,7 @@ use env name shouldEchoNixOS = do
                 , isTrusted = isTrusted
                 , isNixOS = isNixOS
                 }
-          addBinaryCache binaryCache $
+          addBinaryCache (config env) binaryCache $
             if shouldEchoNixOS
             then EchoNixOS nixVersion
             else getInstallationMode nixEnv
@@ -308,12 +311,6 @@ pushStorePath env name storePath = retryPath $ \retrystatus -> do
 -- Catches all exceptions except skipAsyncExceptions
 retryPath :: (RetryStatus -> IO a) -> IO a
 retryPath = recoverAll def
-
-escalate :: (Exception exc, MonadThrow m) => Either exc a -> m a
-escalate = escalateAs identity
-
-escalateAs :: (Exception exc, MonadThrow m) => (l -> exc) -> Either l a -> m a
-escalateAs f = either (throwM . f) pure
 
 mapConcurrentlyBounded :: Traversable t => Int -> (a -> IO b) -> t a -> IO (t b)
 mapConcurrentlyBounded bound action items = do

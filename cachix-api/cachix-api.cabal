@@ -28,6 +28,7 @@ library
   import: defaults
   exposed-modules:
       Cachix.Api
+      Cachix.Api.Error
       Cachix.Api.Signing
       Cachix.Api.Types
       Cachix.Types.BinaryCacheAuthenticated
@@ -48,6 +49,7 @@ library
     , conduit >=1.3.0
     , cookie
     , cryptonite
+    , exceptions
     , http-api-data
     , http-media
     , lens

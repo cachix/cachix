@@ -6160,11 +6160,11 @@ inherit (pkgs.xorg) libXfixes;};
          , cookie, cryptonite, data-default, dhall, directory, ed25519
          , filepath, fsnotify, here, hspec, hspec-discover, http-client
          , http-client-tls, http-conduit, http-types, lzma-conduit
-         , megaparsec, memory, mmorph, optparse-applicative, process
+         , megaparsec, memory, mmorph, netrc, optparse-applicative, process
          , protolude, resourcet, retry, safe-exceptions, servant
          , servant-auth, servant-auth-client, servant-client
          , servant-client-core, servant-streaming-client, stdenv, streaming
-         , text, unix, uri-bytestring, versions
+         , temporary, text, unix, uri-bytestring, versions
          }:
          mkDerivation {
            pname = "cachix";
@@ -6172,20 +6172,23 @@ inherit (pkgs.xorg) libXfixes;};
            src = ./cachix;
            isLibrary = true;
            isExecutable = true;
+           enableSeparateDataOutput = true;
            libraryHaskellDepends = [
              async base base16-bytestring base64-bytestring bifunctors
              bytestring cachix-api conduit conduit-extra cookie cryptonite
              data-default dhall directory ed25519 filepath fsnotify here
              http-client http-client-tls http-conduit http-types lzma-conduit
-             megaparsec memory mmorph optparse-applicative process protolude
-             resourcet retry safe-exceptions servant servant-auth
+             megaparsec memory mmorph netrc optparse-applicative process
+             protolude resourcet retry safe-exceptions servant servant-auth
              servant-auth-client servant-client servant-client-core
              servant-streaming-client streaming text unix uri-bytestring
              versions
            ];
            executableHaskellDepends = [ base cachix-api ];
            executableToolDepends = [ hspec-discover ];
-           testHaskellDepends = [ base cachix-api here hspec protolude ];
+           testHaskellDepends = [
+             base cachix-api directory here hspec protolude temporary
+           ];
            doHaddock = false;
            homepage = "https://github.com/cachix/cachix#readme";
            description = "Command line client for Nix binary cache hosting https://cachix.org";
@@ -6193,11 +6196,12 @@ inherit (pkgs.xorg) libXfixes;};
          }) {};
       "cachix-api" = callPackage
         ({ mkDerivation, aeson, amazonka, base, base16-bytestring
-         , bytestring, conduit, cookie, cryptonite, hspec, hspec-discover
-         , http-api-data, http-media, lens, memory, protolude, servant
-         , servant-auth, servant-auth-server, servant-auth-swagger
-         , servant-streaming, servant-swagger, servant-swagger-ui-core
-         , stdenv, string-conv, swagger2, text, transformers
+         , bytestring, conduit, cookie, cryptonite, exceptions, hspec
+         , hspec-discover, http-api-data, http-media, lens, memory
+         , protolude, servant, servant-auth, servant-auth-server
+         , servant-auth-swagger, servant-streaming, servant-swagger
+         , servant-swagger-ui-core, stdenv, string-conv, swagger2, text
+         , transformers
          }:
          mkDerivation {
            pname = "cachix-api";
@@ -6207,7 +6211,7 @@ inherit (pkgs.xorg) libXfixes;};
            isExecutable = true;
            libraryHaskellDepends = [
              aeson amazonka base base16-bytestring bytestring conduit cookie
-             cryptonite http-api-data http-media lens memory servant
+             cryptonite exceptions http-api-data http-media lens memory servant
              servant-auth servant-auth-server servant-auth-swagger
              servant-streaming servant-swagger servant-swagger-ui-core
              string-conv swagger2 text transformers
@@ -24278,6 +24282,21 @@ inherit (pkgs) libjpeg; inherit (pkgs) libpng; inherit (pkgs) zlib;};
            homepage = "https://github.com/nh2/haskell-netpbm";
            description = "Loading PBM, PGM, PPM image files";
            license = stdenv.lib.licenses.mit;
+         }) {};
+      "netrc" = callPackage
+        ({ mkDerivation, base, bytestring, deepseq, parsec, stdenv }:
+         mkDerivation {
+           pname = "netrc";
+           version = "0.2.0.0";
+           sha256 = "9a5e07efa44f4b715b110aa4f9687e2b75458fb7537a2f4f1a3582c9e2e82a86";
+           revision = "5";
+           editedCabalFile = "0v383hy7iw44xxnpdp2fla2dc8ivrhwgh2m303ps4z9fsw25cyka";
+           libraryHaskellDepends = [ base bytestring deepseq parsec ];
+           doHaddock = false;
+           doCheck = false;
+           homepage = "https://github.com/hvr/netrc";
+           description = "Parser for .netrc files";
+           license = stdenv.lib.licenses.gpl3;
          }) {};
       "nettle" = callPackage
         ({ mkDerivation, base, byteable, bytestring, crypto-cipher-types

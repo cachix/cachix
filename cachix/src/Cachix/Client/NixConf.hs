@@ -32,7 +32,7 @@ module Cachix.Client.NixConf
   ) where
 
 import Data.Char (isSpace)
-import Data.Text (unwords, unlines)
+import qualified Data.Text as T
 import Data.List (nub)
 import Protolude
 import qualified Text.Megaparsec as Mega
@@ -49,6 +49,7 @@ data NixConfLine
   = Substituters [Text]
   | TrustedUsers [Text]
   | TrustedPublicKeys [Text]
+  | NetRcFile Text
   | Other Text
   deriving (Show, Eq)
 
@@ -98,12 +99,13 @@ defaultSigningKey :: Text
 defaultSigningKey = "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
 
 render :: NixVersion -> NixConf -> Text
-render nixversion (NixConf nixconflines) = unlines $ fmap go nixconflines
+render nixversion (NixConf nixconflines) = T.unlines $ fmap go nixconflines
   where
     go :: NixConfLine -> Text
-    go (Substituters xs) = substitutersKey nixversion <> " = " <> unwords xs
-    go (TrustedUsers xs) = "trusted-users = " <> unwords xs
-    go (TrustedPublicKeys xs) = trustedPublicKeysKey nixversion <> " = " <> unwords xs
+    go (Substituters xs) = substitutersKey nixversion <> " = " <> T.unwords xs
+    go (TrustedUsers xs) = "trusted-users = " <> T.unwords xs
+    go (TrustedPublicKeys xs) = trustedPublicKeysKey nixversion <> " = " <> T.unwords xs
+    go (NetRcFile filename) = "netrc-file = " <> filename
     go (Other line) = line
 
 substitutersKey :: NixVersion -> Text
@@ -178,6 +180,8 @@ parseAltLine =
   <|> parseLine TrustedUsers "trusted-users"
   <|> parseLine TrustedPublicKeys "binary-cache-public-keys"
   <|> parseLine Substituters "binary-caches"
+  -- NB: assume that space in this option means space in filename
+  <|> parseLine (NetRcFile . T.concat) "netrc-file"
   <|> parseOther
 
 parser :: Parser NixConf

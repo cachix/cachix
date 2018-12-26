@@ -10,7 +10,8 @@ copyright:      2018 Domen Kožar
 license:        Apache-2.0
 license-file:   LICENSE
 build-type:     Simple
-
+data-files: *.input, *.output
+data-dir: test/data
 extra-source-files:
     ChangeLog.md
     README.md
@@ -31,7 +32,9 @@ library
       Cachix.Client.Commands
       Cachix.Client.Config
       Cachix.Client.Env
+      Cachix.Client.Exception
       Cachix.Client.InstallationMode
+      Cachix.Client.NetRc
       Cachix.Client.NixConf
       Cachix.Client.NixVersion
       Cachix.Client.OptionsParser
@@ -70,6 +73,7 @@ library
     , megaparsec
     , memory
     , mmorph
+    , netrc
     , optparse-applicative
     , process
     , protolude
@@ -110,6 +114,7 @@ test-suite cachix-test
   main-is: Main.hs
   other-modules:
       InstallationModeSpec
+      NetRcSpec
       NixConfSpec
       NixVersionSpec
       Spec
@@ -121,6 +126,8 @@ test-suite cachix-test
       base >=4.7 && <5
     , cachix
     , cachix-api
+    , directory
     , hspec
     , protolude
     , here
+    , temporary

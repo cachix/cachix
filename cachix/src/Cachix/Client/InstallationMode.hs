@@ -2,7 +2,6 @@
 module Cachix.Client.InstallationMode
   ( InstallationMode(..)
   , NixEnv(..)
-  , CachixException(..)
   , getInstallationMode
   , addBinaryCache
   , isTrustedUser
@@ -12,24 +11,16 @@ module Cachix.Client.InstallationMode
 import           Protolude
 import           Data.String.Here
 import qualified Data.Text as T
+import           Cachix.Client.Config (Config)
+import           Cachix.Client.Exception (CachixException(..))
+import qualified Cachix.Client.NetRc as NetRc
 import qualified Cachix.Client.NixConf as NixConf
 import           Cachix.Client.NixVersion ( NixVersion(..) )
 import           Cachix.Api as Api
 import           System.Directory               ( getPermissions, writable )
 import           System.Environment             ( lookupEnv )
+import           System.FilePath                ( replaceFileName )
 
-data CachixException
-  = UnsupportedNixVersion Text
-  | UserEnvNotSet Text
-  | MustBeRoot Text
-  | NixOSInstructions Text
-  | AmbiguousInput Text
-  | NoInput Text
-  | NoConfig Text
-  | NarStreamingError ExitCode Text
-  deriving (Show, Typeable)
-
-instance Exception CachixException
 
 data NixEnv = NixEnv
   { nixVersion :: NixVersion
@@ -57,8 +48,8 @@ getInstallationMode NixEnv{..}
 
 
 -- | Add a Binary cache to nix.conf, print nixos config or fail
-addBinaryCache :: Api.BinaryCache -> InstallationMode -> IO ()
-addBinaryCache Api.BinaryCache{..} (EchoNixOS _) = do
+addBinaryCache :: Maybe Config -> Api.BinaryCache -> InstallationMode -> IO ()
+addBinaryCache _ Api.BinaryCache{..} (EchoNixOS _) = do
   putText [iTrim|
 nix = {
   binaryCaches = [
@@ -71,7 +62,7 @@ nix = {
 };
   |]
   throwIO $ NixOSInstructions "Add above lines to your NixOS configuration file"
-addBinaryCache Api.BinaryCache{..} (EchoNixOSWithTrustedUser _) = do
+addBinaryCache _ Api.BinaryCache{..} (EchoNixOSWithTrustedUser _) = do
   -- TODO: DRY
   user <- getUser
   putText [iTrim|
@@ -87,18 +78,26 @@ nix = {
 };
   |]
   throwIO $ NixOSInstructions "Add above lines to your NixOS configuration file"
-addBinaryCache _ UntrustedRequiresSudo = throwIO $
+addBinaryCache _ _ UntrustedRequiresSudo = throwIO $
   MustBeRoot "Run command as root OR execute: $ echo \"trusted-users = root $USER\" | sudo tee -a /etc/nix/nix.conf && sudo pkill nix-daemon"
-addBinaryCache _ Nix20RequiresSudo = throwIO $
+addBinaryCache _ _ Nix20RequiresSudo = throwIO $
   MustBeRoot "Run command as root OR upgrade to latest Nix - to be able to use it without root (recommended)"
-addBinaryCache bc@Api.BinaryCache{..} (Install nixversion ncl) = do
+addBinaryCache maybeConfig bc@Api.BinaryCache{..} (Install nixversion ncl) = do
   -- TODO: might need locking one day
   gnc <- NixConf.read NixConf.Global
-  lnc <- NixConf.read NixConf.Local
-  let final = if ncl == NixConf.Global then gnc else lnc
-      input = if ncl == NixConf.Global then [gnc] else [gnc, lnc]
-  NixConf.write nixversion ncl $ NixConf.add bc (catMaybes input) (fromMaybe (NixConf.NixConf []) final)
+  (input, output) <- case ncl of
+    NixConf.Global -> return ([gnc], gnc)
+    NixConf.Local -> do
+      lnc <- NixConf.read NixConf.Local
+      return ([gnc, lnc], lnc)
+  let nixconf = fromMaybe (NixConf.NixConf []) output
+  NixConf.write nixversion ncl $ NixConf.add bc (catMaybes input) nixconf
   filename <- NixConf.getFilename ncl
+  case maybeConfig of
+    Nothing -> return () -- no authentication, which is fine for public binary caches
+    Just config -> do
+      let netrcfile = fromMaybe (replaceFileName filename "netrc" ) Nothing -- TODO: get netrc from nixconf
+      NetRc.add config [bc] netrcfile
   putStrLn $ "Configured " <> uri <> " binary cache in " <> toS filename
 
 isTrustedUser :: [Text] -> IO Bool

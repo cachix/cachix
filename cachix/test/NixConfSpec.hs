@@ -20,6 +20,7 @@ bc :: BinaryCache
 bc = BinaryCache
  { name = "name"
  , uri = "https://name.cachix.org"
+ , isPublic = True
  , publicSigningKeys = ["pub"]
  , githubUsername = "foobar"
  }

@@ -7,6 +7,7 @@ module Cachix.Api
   , servantApi
   , swaggerDoc
   , CachixAPI(..)
+  , InstallAPI(..)
   , BinaryCacheAPI(..)
   , CachixServantAPI
   , module Cachix.Api.Types
@@ -72,6 +73,16 @@ data BinaryCacheAPI route = BinaryCacheAPI
       Post '[JSON] NoContent
   } deriving Generic
 
+data InstallAPI route = InstallAPI
+  { installGetLatest :: route :-
+    Summary "Redirects to a tarball containing nix expression to build the latest version of cachix cli" :>
+    Get302 '[JSON] '[]
+  , installGetVersion :: route :-
+    Summary "Redirects to a tarball containing nix expression to build given version of cachix cli" :>
+    Capture "version" Text :>
+    Get302 '[JSON] '[]
+  } deriving Generic
+
 data CachixAPI route = CachixAPI
    { logout :: route :-
        "logout" :>
@@ -106,6 +117,9 @@ data CachixAPI route = CachixAPI
        "cache" :>
        Capture "name" Text :>
        ToServantApi BinaryCacheAPI
+   , install :: route :-
+       "install" :>
+       ToServantApi InstallAPI
    } deriving Generic
 
 type CachixServantAPI = "api" :> "v1" :> ToServantApi CachixAPI

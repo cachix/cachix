@@ -8,6 +8,7 @@ module Cachix.Api
   , swaggerDoc
   , CachixAPI(..)
   , InstallAPI(..)
+  , GitHubAPI(..)
   , BinaryCacheAPI(..)
   , CachixServantAPI
   , module Cachix.Api.Types
@@ -37,6 +38,7 @@ import Cachix.Api.Types
 
 import qualified Cachix.Types.BinaryCacheCreate as BinaryCacheCreate
 import qualified Cachix.Types.BinaryCacheAuthenticated as BinaryCacheAuthenticated
+import qualified Cachix.Types.GitHubTeam as GitHubTeam
 import qualified Cachix.Types.NarInfoCreate as NarInfoCreate
 
 type CachixAuth = Auth '[Cookie, JWT, BasicAuth] Session
@@ -89,6 +91,19 @@ data InstallAPI route = InstallAPI
     Get302 '[JSON] '[]
   } deriving Generic
 
+data GitHubAPI route = GitHubAPI
+  { githubOrganizations :: route :-
+    CachixAuth :>
+    "orgs" :>
+    Get '[JSON] [Text]
+  , githubTeams :: route :-
+    CachixAuth :>
+    "orgs" :>
+    Capture "org" Text :>
+    "teams" :>
+    Get '[JSON] [GitHubTeam.GitHubTeam]
+  } deriving Generic
+
 data CachixAPI route = CachixAPI
    { logout :: route :-
        "logout" :>
@@ -126,6 +141,9 @@ data CachixAPI route = CachixAPI
    , install :: route :-
        "install" :>
        ToServantApi InstallAPI
+   , github :: route :-
+       "github" :>
+       ToServantApi GitHubAPI
    } deriving Generic
 
 type CachixServantAPI = "api" :> "v1" :> ToServantApi CachixAPI

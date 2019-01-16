@@ -82,7 +82,8 @@ instance ToHttpApiData NarInfoC where
   toUrlPiece (NarInfoC n) = n <> ".narinfo"
 
 data User = User
-  { fullname :: Text
+  { fullname :: Maybe Text
   , username :: Text
   , email :: Maybe Text
+  , hasOrgsAcccess :: Bool
   } deriving (Generic, FromJSON, ToJSON, ToSchema)

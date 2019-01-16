@@ -1,5 +1,5 @@
-module Cachix.Types.BinaryCacheCreate
-  ( BinaryCacheCreate(..)
+module Cachix.Types.GitHubTeam
+  ( GitHubTeam(..)
   ) where
 
 import           Data.Aeson                     ( FromJSON
@@ -10,9 +10,7 @@ import           Data.Text                      ( Text )
 import           GHC.Generics                   ( Generic )
 
 
-data BinaryCacheCreate = BinaryCacheCreate
-  { publicSigningKey :: Text
-  , isPublic :: Bool
-  , githubOrganization :: Maybe Text
-  , githubTeamId :: Maybe Int
-  } deriving (Show, Generic, FromJSON, ToJSON, ToSchema)
+data GitHubTeam = GitHubTeam
+  { id :: Int
+  , name :: Text
+  } deriving (Generic, FromJSON, ToJSON, ToSchema)

@@ -92,6 +92,8 @@ create env@Env { config = Just config } name = do
   let bc = Api.BinaryCacheCreate
         { publicSigningKey = toS $ B64.encode pk
         , isPublic = True
+        , githubOrganization = Nothing 
+        , githubTeamId = Nothing
         }
   res <- (`runClientM` clientenv env) $ Api.create (cachixBCClient name) (authToken config) bc
   case res of

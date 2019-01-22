@@ -1,6 +1,6 @@
 cabal-version:  2.2
 name:           cachix
-version:        0.1.3
+version:        0.1.4
 synopsis:       Command line client for Nix binary cache hosting https://cachix.org
 homepage:       https://github.com/cachix/cachix#readme
 bug-reports:    https://github.com/cachix/cachix/issues
@@ -12,7 +12,7 @@ license-file:   LICENSE
 build-type:     Simple
 
 extra-source-files:
-    ChangeLog.md
+    CHANGELOG.md
     README.md
 
 common defaults
@@ -66,7 +66,7 @@ library
     , http-conduit
     , http-types
     , lzma-conduit
-    , megaparsec
+    , megaparsec >= 7.0.0
     , memory
     , mmorph
     , optparse-applicative

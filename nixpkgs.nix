@@ -5,6 +5,6 @@ let
     then builtins.fetchTarball { inherit url; }
     else builtins.fetchTarball attrs;
 in import (fetchTarball {
-  url = "https://github.com/NixOS/nixpkgs/archive/d6b74a4145c28f9740c3147c588b122533fcd8f3.tar.gz";
-  sha256 = "1qy81fv5drkcdg3830hz17vf4xgkyxc93wm5m2744dyzzkj8fzp7";
+  url = "https://github.com/NixOS/nixpkgs/archive/35832681f19e178ff5e4984c71e83ee0fbc7ebb3.tar.gz";
+  sha256 = "12yfp52rcypqcngj5kh2jdxmld1bakh67qxhc16y7z7lgy0mj26n";
 }) { config = {}; overlays = []; }

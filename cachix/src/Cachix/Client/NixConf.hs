@@ -172,7 +172,7 @@ parseOther = Mega.try $ Other . toS <$> Mega.someTill Mega.anySingle (void eol <
 
 parseAltLine :: Parser NixConfLine
 parseAltLine =
-      (Other ""  <$ eol)
+      (const (Other "")  <$> eol)
   <|> parseLine Substituters "substituters"
   <|> parseLine TrustedPublicKeys "trusted-public-keys"
   <|> parseLine TrustedUsers "trusted-users"

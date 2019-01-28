@@ -5,6 +5,7 @@
 module Cachix.Client.Commands
   ( authtoken
   , create
+  , generateKeypair
   , push
   , use
   ) where
@@ -49,6 +50,7 @@ import           Cachix.Api.Error
 import           Cachix.Api.Signing             (fingerprint, passthroughSizeSink, passthroughHashSink)
 import qualified Cachix.Types.NarInfoCreate    as Api
 import qualified Cachix.Types.BinaryCacheCreate as Api
+import qualified Cachix.Types.SigningKeyCreate as SigningKeyCreate
 import           Cachix.Client.Config           ( Config(..)
                                                 , BinaryCacheConfig(..)
                                                 , writeConfig
@@ -77,37 +79,31 @@ authtoken env token = do
     Just config -> config { authToken = Token (toS token) }
     Nothing -> mkConfig token
   putStrLn ([hereLit|
-Continue by creating a binary cache with:
-
-    $ cachix create <name>
-
-and share it with others over https://<name>.cachix.org
+Continue by creating a binary cache at https://cachix.org
   |] :: Text)
 
 create :: Env -> Text -> IO ()
-create Env { config = Nothing } _ = throwIO $ NoConfig "start with: $ cachix authtoken <token>"
-create env@Env { config = Just config } name = do
+create _ _ =
+  throwIO $ DeprecatedCommand "Create command has been deprecated. Please visit https://cachix.org to create a binary cache."
+
+generateKeypair :: Env -> Text -> IO ()
+generateKeypair Env { config = Nothing } _ = throwIO $ NoConfig "Start with visiting https://cachix.org and copying the token to $ cachix authtoken <token>"
+generateKeypair env@Env { config = Just config } name = do
   (PublicKey pk, SecretKey sk) <- createKeypair
 
-  let bc = Api.BinaryCacheCreate
-        { publicSigningKey = toS $ B64.encode pk
-        , isPublic = True
-        , githubOrganization = Nothing 
-        , githubTeamId = Nothing
-        }
-  res <- (`runClientM` clientenv env) $ Api.create (cachixBCClient name) (authToken config) bc
-  case res of
-    -- TODO: handle all kinds of errors
-    Left err -> panic $ show err
-    Right _ -> do
-      -- write signing key to config
-      let signingKey = toS $ B64.encode sk
-          bcc = BinaryCacheConfig name signingKey
+  let signingKey = toS $ B64.encode sk
+      signingKeyCreate = SigningKeyCreate.SigningKeyCreate (toS $ B64.encode pk)
+      bcc = BinaryCacheConfig name signingKey
 
-      writeConfig (configPath (cachixoptions env)) $
-        config { binaryCaches = binaryCaches config <> [bcc] }
+  -- we first validate if key can be added to the binary cache
+  escalate =<< ((`runClientM` clientenv env) $ Api.createKey (cachixBCClient name) (authToken config) signingKeyCreate)
 
-      putStrLn ([iTrim|
+  -- if key was successfully added, write it to the config
+  -- TODO: this breaks if more than one key is added, see #27
+  writeConfig (configPath (cachixoptions env)) $
+    config { binaryCaches = binaryCaches config <> [bcc] }
+
+  putStrLn ([iTrim|
 Signing key has been saved on your local machine. To populate
 your binary cache:
 
@@ -122,7 +118,8 @@ To instruct Nix to use the binary cache:
 
     $ cachix use ${name}
 
-      |] :: Text)
+IMPORTANT: Make sure to make a backup for the signing key above, as you have the only copy.
+  |] :: Text)
 
 envToToken :: Env -> Token
 envToToken env =

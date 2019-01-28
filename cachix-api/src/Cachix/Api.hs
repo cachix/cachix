@@ -40,6 +40,8 @@ import qualified Cachix.Types.BinaryCacheCreate as BinaryCacheCreate
 import qualified Cachix.Types.BinaryCacheAuthenticated as BinaryCacheAuthenticated
 import qualified Cachix.Types.GitHubTeam as GitHubTeam
 import qualified Cachix.Types.NarInfoCreate as NarInfoCreate
+import qualified Cachix.Types.SigningKeyCreate as SigningKeyCreate
+
 
 type CachixAuth = Auth '[Cookie, JWT, BasicAuth] Session
 
@@ -78,6 +80,11 @@ data BinaryCacheAPI route = BinaryCacheAPI
   , createNarinfo :: route :-
       Capture "narinfo" NarInfoC :>
       ReqBody '[JSON] NarInfoCreate.NarInfoCreate :>
+      Post '[JSON] NoContent
+  , createKey :: route :-
+      CachixAuth :>
+      "key" :>
+      ReqBody '[JSON] SigningKeyCreate.SigningKeyCreate :>
       Post '[JSON] NoContent
   } deriving Generic
 

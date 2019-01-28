@@ -16,6 +16,7 @@ main = do
   case command of
     AuthToken token -> Commands.authtoken env token
     Create name -> Commands.create env name
+    GenerateKeypair name -> Commands.generateKeypair env name
     Push name paths watchStore -> Commands.push env name paths watchStore
     Use name shouldEchoNixOS -> Commands.use env name shouldEchoNixOS
     Version -> putText cachixVersion

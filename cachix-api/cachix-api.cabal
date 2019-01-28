@@ -38,6 +38,7 @@ library
       Cachix.Types.NarInfoCreate
       Cachix.Types.Servant
       Cachix.Types.Session
+      Cachix.Types.SigningKeyCreate
       Cachix.Types.SwaggerOrphans
   hs-source-dirs:
       src

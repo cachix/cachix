@@ -1,4 +1,4 @@
-module Cachix.Client.Exception (CachixException(..)) where 
+module Cachix.Client.Exception (CachixException(..)) where
 
 import Protolude
 
@@ -12,6 +12,7 @@ data CachixException
   | NoConfig Text
   | NetRcParseError Text
   | NarStreamingError ExitCode Text
+  | DeprecatedCommand Text
   deriving (Show, Typeable)
 
 instance Exception CachixException

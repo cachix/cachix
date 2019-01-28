@@ -51,6 +51,7 @@ type BinaryCacheName = Text
 data CachixCommand
   = AuthToken Text
   | Create BinaryCacheName
+  | GenerateKeypair BinaryCacheName
   | Push BinaryCacheName [Text] Bool -- TODO: refactor to a record
   | Use BinaryCacheName Bool --- TODO: refactor to a record
   | Version
@@ -60,16 +61,19 @@ data CachixCommand
 parserCachixCommand :: Parser CachixCommand
 parserCachixCommand = subparser $
   command "authtoken" (infoH authtoken (progDesc "Configure token for authentication to cachix.org")) <>
-  command "create" (infoH create (progDesc "Create a new binary cache")) <>
+  command "create" (infoH create (progDesc "DEPRECATED: Go to https://cachix.org instead")) <>
+  command "generate-keypair" (infoH generateKeypair (progDesc "Generate keypair for an binary cache")) <>
   command "push" (infoH push (progDesc "Upload Nix store paths to the binary cache")) <>
   command "use" (infoH use (progDesc "Configure nix.conf to enable binary cache during builds"))
   where
+    nameArg = strArgument (metavar "NAME")
     authtoken = AuthToken <$> strArgument (metavar "TOKEN")
-    create = Create <$> strArgument (metavar "NAME")
-    push = Push <$> strArgument (metavar "NAME")
+    create = Create <$> nameArg
+    generateKeypair = GenerateKeypair <$> nameArg
+    push = Push <$> nameArg
                 <*> many (strArgument (metavar "PATHS..."))
                 <*> switch (long "watch-store" <> short 'w' <> help "Run in daemon mode and push store paths as they are added to /nix/store")
-    use = Use <$> strArgument (metavar "NAME")
+    use = Use <$> nameArg
               <*> switch (long "nixos" <> short 'n' <> help "Output NixOS configuration lines")
 
 getOpts :: IO (CachixOptions, CachixCommand)

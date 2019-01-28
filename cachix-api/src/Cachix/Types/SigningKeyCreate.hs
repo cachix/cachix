@@ -1,5 +1,5 @@
-module Cachix.Types.BinaryCacheCreate
-  ( BinaryCacheCreate(..)
+module Cachix.Types.SigningKeyCreate
+  ( SigningKeyCreate(..)
   ) where
 
 import           Data.Aeson                     ( FromJSON
@@ -10,9 +10,6 @@ import           Data.Text                      ( Text )
 import           GHC.Generics                   ( Generic )
 
 
-data BinaryCacheCreate = BinaryCacheCreate
-  { publicSigningKey :: Maybe Text
-  , isPublic :: Bool
-  , githubOrganization :: Maybe Text
-  , githubTeamId :: Maybe Int
+newtype SigningKeyCreate = SigningKeyCreate
+  { publicKey :: Text
   } deriving (Show, Generic, FromJSON, ToJSON, ToSchema)

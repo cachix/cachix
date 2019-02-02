@@ -6213,8 +6213,8 @@ inherit (pkgs.xorg) libXfixes;};
              aeson amazonka base base16-bytestring bytestring conduit cookie
              cryptonite exceptions http-api-data http-media lens memory servant
              servant-auth servant-auth-server servant-auth-swagger
-             servant-streaming servant-swagger servant-swagger-ui-core
-             string-conv swagger2 text transformers
+             servant-streaming servant-swagger string-conv swagger2 text
+             transformers
            ];
            executableHaskellDepends = [ aeson base ];
            testHaskellDepends = [

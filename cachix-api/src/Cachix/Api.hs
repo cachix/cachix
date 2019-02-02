@@ -3,8 +3,7 @@
 {-# LANGUAGE TypeOperators #-}
 
 module Cachix.Api
-  ( api
-  , servantApi
+  ( servantApi
   , swaggerDoc
   , CachixAPI(..)
   , InstallAPI(..)
@@ -27,7 +26,6 @@ import Servant.Auth
 import Servant.API.Generic
 import Servant.Streaming
 import Servant.Swagger
-import Servant.Swagger.UI.Core   (SwaggerSchemaUI)
 import Web.Cookie                (SetCookie)
 
 import Cachix.Types.ContentTypes
@@ -157,12 +155,6 @@ type CachixServantAPI = "api" :> "v1" :> ToServantApi CachixAPI
 
 servantApi :: Proxy CachixServantAPI
 servantApi = Proxy
-
-type API = CachixServantAPI
-   :<|> "api" :> SwaggerSchemaUI "v1" "swagger.json"
-
-api :: Proxy API
-api = Proxy
 
 swaggerDoc :: Swagger
 swaggerDoc = toSwagger servantApi

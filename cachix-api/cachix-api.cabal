@@ -62,7 +62,6 @@ library
     , servant-auth-swagger
     , servant-streaming
     , servant-swagger
-    , servant-swagger-ui-core
     , string-conv
     , swagger2
     , text

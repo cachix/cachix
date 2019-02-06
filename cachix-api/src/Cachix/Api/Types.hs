@@ -86,4 +86,9 @@ data User = User
   , username :: Text
   , email :: Maybe Text
   , hasOrgsAcccess :: Bool
+  , activeSubscription :: SubscriptionType
+  , subscriptionAccountId :: Maybe Text
   } deriving (Generic, FromJSON, ToJSON, ToSchema)
+
+data SubscriptionType = Community | Starter | Basic | Pro
+  deriving (Generic, FromJSON, ToJSON, ToSchema, Show, Read)

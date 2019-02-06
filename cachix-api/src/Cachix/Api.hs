@@ -6,6 +6,7 @@ module Cachix.Api
   ( servantApi
   , swaggerDoc
   , CachixAPI(..)
+  , CachixAuth
   , InstallAPI(..)
   , GitHubAPI(..)
   , BinaryCacheAPI(..)

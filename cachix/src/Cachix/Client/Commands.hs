@@ -29,7 +29,7 @@ import           Data.List                      ( isSuffixOf )
 import           Data.Maybe                     ( fromJust )
 import           Data.String.Here
 import qualified Data.Text                      as T
-import           Network.HTTP.Types (status404)
+import           Network.HTTP.Types             (status404, status401)
 import           Protolude
 import           Servant.API
 import           Servant.Client
@@ -130,9 +130,10 @@ use env name shouldEchoNixOS = do
   -- 1. get cache public key
   res <- (`runClientM` clientenv env) $ Api.get (cachixBCClient name) (envToToken env)
   case res of
-    -- TODO: handle 404
-    -- TODO: 404/401?: if cache is private add token is wrong, instruct what to do
-    Left err -> panic $ show err
+    Left err | isErr err status401 && isJust (config env) -> throwM $ AccessDeniedBinaryCache $ "You don't seem to have API access to binary cache " <> name
+             | isErr err status401 -> throwM $ AccessDeniedBinaryCache "You must first authenticate using:  $ cachix authtoken <token>"
+             | isErr err status404 -> throwM $ BinaryCacheNotFound $ "Binary cache" <> name <> " does not exist."
+             | otherwise -> escalate $ void res
     Right binaryCache -> do
       eitherNixVersion <- getNixVersion
       case eitherNixVersion of
@@ -220,8 +221,9 @@ pushStorePath env name storePath = retryPath $ \retrystatus -> do
     (Api.NarInfoC storeHash)
   case res of
     Right NoContent -> pass -- we're done as store path is already in the cache
-    -- TODO: 401
     Left err | isErr err status404 -> go sk retrystatus
+             | isErr err status401 && isJust (config env) -> throwM $ AccessDeniedBinaryCache $ "You don't seem to have API access to binary cache " <> name
+             | isErr err status401 -> throwM $ AccessDeniedBinaryCache "You must first authenticate using $ cachix authtoken <token>"
              | otherwise -> escalate $ void res
     where
       retryText :: RetryStatus -> Text

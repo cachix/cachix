@@ -13,6 +13,8 @@ data CachixException
   | NetRcParseError Text
   | NarStreamingError ExitCode Text
   | DeprecatedCommand Text
+  | AccessDeniedBinaryCache Text
+  | BinaryCacheNotFound Text
   deriving (Show, Typeable)
 
 instance Exception CachixException

@@ -59,7 +59,7 @@ import           Cachix.Client.Config           ( Config(..)
 import qualified Cachix.Client.Config          as Config
 import           Cachix.Client.Env              ( Env(..) )
 import           Cachix.Client.Exception        ( CachixException(..) )
-import           Cachix.Client.OptionsParser    ( CachixOptions(..) )
+import           Cachix.Client.OptionsParser    ( CachixOptions(..), UseOptions(..) )
 import           Cachix.Client.InstallationMode
 import           Cachix.Client.NixVersion       ( getNixVersion )
 import qualified Cachix.Client.NixConf         as NixConf
@@ -125,8 +125,8 @@ envToToken :: Env -> Token
 envToToken env =
   maybe (Token "") authToken (config env)
 
-use :: Env -> Text -> Bool -> IO ()
-use env name shouldEchoNixOS = do
+use :: Env -> Text -> UseOptions -> IO ()
+use env name useOptions = do
   -- 1. get cache public key
   res <- (`runClientM` clientenv env) $ Api.get (cachixBCClient name) (envToToken env)
   case res of
@@ -149,8 +149,8 @@ use env name shouldEchoNixOS = do
                 , isTrusted = isTrusted
                 , isNixOS = isNixOS
                 }
-          addBinaryCache (config env) binaryCache $
-            if shouldEchoNixOS
+          addBinaryCache (config env) binaryCache useOptions $
+            if useNixOS useOptions
             then EchoNixOS nixVersion
             else getInstallationMode nixEnv
 

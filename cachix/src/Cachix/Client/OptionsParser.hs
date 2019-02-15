@@ -2,6 +2,7 @@
 module Cachix.Client.OptionsParser
   ( CachixCommand(..)
   , CachixOptions(..)
+  , UseOptions(..)
   , BinaryCacheName
   , getOpts
   ) where
@@ -53,10 +54,14 @@ data CachixCommand
   | Create BinaryCacheName
   | GenerateKeypair BinaryCacheName
   | Push BinaryCacheName [Text] Bool -- TODO: refactor to a record
-  | Use BinaryCacheName Bool --- TODO: refactor to a record
+  | Use BinaryCacheName UseOptions
   | Version
   deriving Show
 
+data UseOptions = UseOptions
+  { useNixOS :: Bool
+  , useNixOSFolder :: FilePath
+  } deriving Show
 
 parserCachixCommand :: Parser CachixCommand
 parserCachixCommand = subparser $
@@ -72,9 +77,20 @@ parserCachixCommand = subparser $
     generateKeypair = GenerateKeypair <$> nameArg
     push = Push <$> nameArg
                 <*> many (strArgument (metavar "PATHS..."))
-                <*> switch (long "watch-store" <> short 'w' <> help "Run in daemon mode and push store paths as they are added to /nix/store")
+                <*> switch ( long "watch-store"
+                          <> short 'w'
+                          <> help "Run in daemon mode and push store paths as they are added to /nix/store"
+                           )
     use = Use <$> nameArg
-              <*> switch (long "nixos" <> short 'n' <> help "Output NixOS configuration lines")
+              <*> (UseOptions <$> switch ( long "nixos"
+                                        <> short 'n'
+                                        <> help "Write NixOS modules")
+                              <*> strOption ( long "nixos-folder"
+                                           <> short 'd'
+                                           <> help "Base directory for NixOS configuration"
+                                           <> value "/etc/nixos/"
+                                           <> showDefault
+                                           ))
 
 getOpts :: IO (CachixOptions, CachixCommand)
 getOpts = do

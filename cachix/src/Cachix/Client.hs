@@ -18,5 +18,5 @@ main = do
     Create name -> Commands.create env name
     GenerateKeypair name -> Commands.generateKeypair env name
     Push name paths watchStore -> Commands.push env name paths watchStore
-    Use name shouldEchoNixOS -> Commands.use env name shouldEchoNixOS
+    Use name useOptions -> Commands.use env name useOptions
     Version -> putText cachixVersion

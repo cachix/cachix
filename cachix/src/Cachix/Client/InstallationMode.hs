@@ -16,11 +16,11 @@ import           Cachix.Client.Exception (CachixException(..))
 import qualified Cachix.Client.NetRc as NetRc
 import qualified Cachix.Client.NixConf as NixConf
 import           Cachix.Client.NixVersion ( NixVersion(..) )
+import           Cachix.Client.OptionsParser    ( UseOptions(..) )
 import           Cachix.Api as Api
-import           System.Directory               ( getPermissions, writable )
+import           System.Directory               ( getPermissions, writable, createDirectoryIfMissing )
 import           System.Environment             ( lookupEnv )
-import           System.FilePath                ( replaceFileName )
-
+import           System.FilePath                ( replaceFileName, (</>) )
 
 data NixEnv = NixEnv
   { nixVersion :: NixVersion
@@ -48,41 +48,17 @@ getInstallationMode NixEnv{..}
 
 
 -- | Add a Binary cache to nix.conf, print nixos config or fail
-addBinaryCache :: Maybe Config -> Api.BinaryCache -> InstallationMode -> IO ()
-addBinaryCache _ Api.BinaryCache{..} (EchoNixOS _) = do
-  putText [iTrim|
-nix = {
-  binaryCaches = [
-    "https://cache.nixos.org/"
-    "${uri}"
-  ];
-  binaryCachePublicKeys = [
-    ${T.intercalate " " (map (\s -> "\"" <> s <> "\"") publicSigningKeys)}
-  ];
-};
-  |]
-  throwIO $ NixOSInstructions "Add above lines to your NixOS configuration file"
-addBinaryCache _ Api.BinaryCache{..} (EchoNixOSWithTrustedUser _) = do
-  -- TODO: DRY
-  user <- getUser
-  putText [iTrim|
-nix = {
-  binaryCaches = [
-    "https://cache.nixos.org/"
-    "${uri}"
-  ];
-  binaryCachePublicKeys = [
-    ${T.intercalate " " (map (\s -> "\"" <> s <> "\"") publicSigningKeys)}
-  ];
-  trustedUsers = [ "root" "${user}" ];
-};
-  |]
-  throwIO $ NixOSInstructions "Add above lines to your NixOS configuration file"
-addBinaryCache _ _ UntrustedRequiresSudo = throwIO $
+addBinaryCache :: Maybe Config -> Api.BinaryCache -> UseOptions -> InstallationMode -> IO ()
+addBinaryCache _ _ _ UntrustedRequiresSudo = throwIO $
   MustBeRoot "Run command as root OR execute: $ echo \"trusted-users = root $USER\" | sudo tee -a /etc/nix/nix.conf && sudo pkill nix-daemon"
-addBinaryCache _ _ Nix20RequiresSudo = throwIO $
+addBinaryCache _ _ _ Nix20RequiresSudo = throwIO $
   MustBeRoot "Run command as root OR upgrade to latest Nix - to be able to use it without root (recommended)"
-addBinaryCache maybeConfig bc@Api.BinaryCache{..} (Install nixversion ncl) = do
+addBinaryCache maybeConfig bc useOptions (EchoNixOS _) =
+  nixosBinaryCache maybeConfig Nothing bc useOptions
+addBinaryCache maybeConfig bc useOptions (EchoNixOSWithTrustedUser _) = do
+  user <- getUser
+  nixosBinaryCache maybeConfig (Just user) bc useOptions
+addBinaryCache maybeConfig bc@Api.BinaryCache{..} _ (Install nixversion ncl) = do
   -- TODO: might need locking one day
   gnc <- NixConf.read NixConf.Global
   (input, output) <- case ncl of
@@ -92,13 +68,86 @@ addBinaryCache maybeConfig bc@Api.BinaryCache{..} (Install nixversion ncl) = do
       return ([gnc, lnc], lnc)
   let nixconf = fromMaybe (NixConf.NixConf []) output
   NixConf.write nixversion ncl $ NixConf.add bc (catMaybes input) nixconf
+  unless isPublic $ addPrivateBinaryCacheNetRC maybeConfig bc ncl
   filename <- NixConf.getFilename ncl
-  case maybeConfig of
-    Nothing -> return () -- no authentication, which is fine for public binary caches
-    Just config -> do
-      let netrcfile = fromMaybe (replaceFileName filename "netrc" ) Nothing -- TODO: get netrc from nixconf
-      NetRc.add config [bc] netrcfile
   putStrLn $ "Configured " <> uri <> " binary cache in " <> toS filename
+
+nixosBinaryCache :: Maybe Config -> Maybe Text -> Api.BinaryCache -> UseOptions -> IO ()
+nixosBinaryCache maybeConfig maybeUser bc@Api.BinaryCache{..} UseOptions { useNixOSFolder=baseDirectory } = do
+  createDirectoryIfMissing True $ toS toplevel
+  writeFile (toS glueModuleFile) glueModule
+  writeFile (toS cacheModuleFile) cacheModule
+  unless isPublic $ addPrivateBinaryCacheNetRC maybeConfig bc NixConf.Global
+  putText instructions
+  where
+    configurationNix :: Text
+    configurationNix = toS $ toS baseDirectory </> "configuration.nix"
+    namespace :: Text
+    namespace = "cachix"
+    toplevel :: Text
+    toplevel = toS $ toS baseDirectory </> toS namespace
+    glueModuleFile :: Text
+    glueModuleFile = toplevel <> ".nix"
+    cacheModuleFile :: Text
+    cacheModuleFile = toplevel <> "/" <> toS name <> ".nix"
+
+    extra :: Text
+    extra = maybe "" (\user -> [i|trustedUsers = [ "root" "${user}" ];|]) maybeUser
+
+    instructions :: Text
+    instructions = [iTrim|
+Cachix configuration written to ${glueModuleFile}.
+Binary cache ${name} configuration written to ${cacheModuleFile}.
+
+To start using cachix add the following to your ${configurationNix}:
+
+    imports = [ ./cachix.nix ];
+
+Then run:
+
+    $ nixos-rebuild switch
+    |]
+
+    glueModule :: Text
+    glueModule = [i|
+{ pkgs, lib, ... }:
+
+let
+  folder = ./cachix;
+  toImport = name: value: folder + ("/" + name);
+  filterCaches = key: value: value == "regular" && lib.hasSuffix ".nix" key;
+  imports = lib.mapAttrsToList toImport (lib.filterAttrs filterCaches (builtins.readDir folder));
+in {
+  inherit imports;
+  nix.binaryCaches = ["https://cache.nixos.org/"];
+}
+    |]
+
+    cacheModule :: Text
+    cacheModule = [i|
+{
+  nix = {
+    binaryCaches = [
+      "${uri}"
+    ];
+    binaryCachePublicKeys = [
+      ${T.intercalate " " (map (\s -> "\"" <> s <> "\"") publicSigningKeys)}
+    ];
+    ${extra}
+  };
+}
+    |]
+
+-- TODO: allow overriding netrc location
+addPrivateBinaryCacheNetRC :: Maybe Config -> Api.BinaryCache -> NixConf.NixConfLoc -> IO ()
+addPrivateBinaryCacheNetRC maybeConfig bc nixconf = do
+  filename <- (`replaceFileName` "netrc") <$> NixConf.getFilename nixconf
+  case maybeConfig of
+    Nothing -> panic "Run $ cachix authtoken <token>"
+    Just config -> do
+      let netrcfile = fromMaybe filename Nothing -- TODO: get netrc from nixconf
+      NetRc.add config [bc] netrcfile
+      putErrText $ "Configured private read access credentials in " <> toS filename
 
 isTrustedUser :: [Text] -> IO Bool
 isTrustedUser users = do

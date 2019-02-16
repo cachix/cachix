@@ -35,7 +35,7 @@ config = Config
   , binaryCaches = []
   }
 
--- TODO: poor man's golden tests, hspec doesn't have a lib
+-- TODO: poor man's golden tests, use https://github.com/stackbuilders/hspec-golden
 test :: [BinaryCache] -> Text -> Expectation
 test binaryCaches goldenName = withSystemTempFile "hspec-netrc" $ \filepath _ -> do
     input <- getInput

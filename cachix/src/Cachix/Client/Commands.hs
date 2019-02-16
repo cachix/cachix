@@ -125,34 +125,39 @@ envToToken :: Env -> Token
 envToToken env =
   maybe (Token "") authToken (config env)
 
+notAuthenticatedBinaryCache :: CachixException
+notAuthenticatedBinaryCache =
+  AccessDeniedBinaryCache "You must first authenticate using:  $ cachix authtoken <token>"
+
+accessDeniedBinaryCache :: Text -> CachixException
+accessDeniedBinaryCache name =
+  AccessDeniedBinaryCache $ "You don't seem to have API access to binary cache " <> name
+
 use :: Env -> Text -> UseOptions -> IO ()
 use env name useOptions = do
   -- 1. get cache public key
   res <- (`runClientM` clientenv env) $ Api.get (cachixBCClient name) (envToToken env)
   case res of
-    Left err | isErr err status401 && isJust (config env) -> throwM $ AccessDeniedBinaryCache $ "You don't seem to have API access to binary cache " <> name
-             | isErr err status401 -> throwM $ AccessDeniedBinaryCache "You must first authenticate using:  $ cachix authtoken <token>"
+    Left err | isErr err status401 && isJust (config env) -> throwM $ accessDeniedBinaryCache name
+             | isErr err status401 -> throwM notAuthenticatedBinaryCache
              | isErr err status404 -> throwM $ BinaryCacheNotFound $ "Binary cache" <> name <> " does not exist."
-             | otherwise -> escalate $ void res
+             | otherwise -> throwM err
     Right binaryCache -> do
-      eitherNixVersion <- getNixVersion
-      case eitherNixVersion of
-        Left err -> panic err
-        Right nixVersion -> do
-          user <- getUser
-          nc <- NixConf.read NixConf.Global
-          isTrusted <- isTrustedUser $ NixConf.readLines (catMaybes [nc]) NixConf.isTrustedUsers
-          isNixOS <- doesFileExist "/etc/NIXOS"
-          let nixEnv = NixEnv
-                { nixVersion = nixVersion
-                , isRoot = user == "root"
-                , isTrusted = isTrusted
-                , isNixOS = isNixOS
-                }
-          addBinaryCache (config env) binaryCache useOptions $
-            if useNixOS useOptions
-            then EchoNixOS nixVersion
-            else getInstallationMode nixEnv
+      nixVersion <- escalateAs UnsupportedNixVersion =<< getNixVersion
+      user <- getUser
+      nc <- NixConf.read NixConf.Global
+      isTrusted <- isTrustedUser $ NixConf.readLines (catMaybes [nc]) NixConf.isTrustedUsers
+      isNixOS <- doesFileExist "/etc/NIXOS"
+      let nixEnv = NixEnv
+            { nixVersion = nixVersion
+            , isRoot = user == "root"
+            , isTrusted = isTrusted
+            , isNixOS = isNixOS
+            }
+      addBinaryCache (config env) binaryCache useOptions $
+        if useNixOS useOptions
+        then EchoNixOS nixVersion
+        else getInstallationMode nixEnv
 
 
 -- TODO: lots of room for perfomance improvements
@@ -222,9 +227,9 @@ pushStorePath env name storePath = retryPath $ \retrystatus -> do
   case res of
     Right NoContent -> pass -- we're done as store path is already in the cache
     Left err | isErr err status404 -> go sk retrystatus
-             | isErr err status401 && isJust (config env) -> throwM $ AccessDeniedBinaryCache $ "You don't seem to have API access to binary cache " <> name
-             | isErr err status401 -> throwM $ AccessDeniedBinaryCache "You must first authenticate using $ cachix authtoken <token>"
-             | otherwise -> escalate $ void res
+             | isErr err status401 && isJust (config env) -> throwM $ accessDeniedBinaryCache name
+             | isErr err status401 -> throwM notAuthenticatedBinaryCache
+             | otherwise -> throwM err
     where
       retryText :: RetryStatus -> Text
       retryText retrystatus =

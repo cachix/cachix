@@ -110,6 +110,7 @@ Then run:
 
     glueModule :: Text
     glueModule = [i|
+# WARN: this file will get overwritten by $ cachix use <name>
 { pkgs, lib, ... }:
 
 let

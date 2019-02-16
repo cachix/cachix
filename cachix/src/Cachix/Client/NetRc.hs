@@ -16,10 +16,9 @@ import           Cachix.Client.Config (Config, authToken)
 import           Cachix.Client.Exception (CachixException(NetRcParseError))
 
 
-{- Add a list of binary caches to netrc under `filename`.
-   Makes sure there are no duplicate entries (using domain as a key).
-   If file under filename doesn't exist it's created.
--}
+-- | Add a list of binary caches to netrc under `filename`.
+--   Makes sure there are no duplicate entries (using domain as a key).
+--   If file under filename doesn't exist it's created.
 add :: Config
     -> [Api.BinaryCache]
     -> FilePath

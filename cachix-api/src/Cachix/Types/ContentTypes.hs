@@ -5,7 +5,9 @@ module Cachix.Types.ContentTypes (
   XNixCacheInfo
 ) where
 
-import           Data.Typeable      (Typeable)
+import           Data.ByteString      (ByteString)
+import           Data.ByteString.Lazy (fromStrict, toStrict)
+import           Data.Typeable        (Typeable)
 import qualified Network.HTTP.Media as M
 import           Servant.API
 
@@ -29,3 +31,9 @@ instance MimeUnrender XNixCacheInfo NixCacheInfo where
 
 instance MimeUnrender XNixNarInfo NarInfo where
   mimeUnrender _ _ = Left "TODO"
+
+instance MimeRender XNixNar ByteString where
+  mimeRender _ = fromStrict
+
+instance MimeUnrender XNixNar ByteString where
+  mimeUnrender _ = Right . toStrict

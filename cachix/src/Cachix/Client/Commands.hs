@@ -69,6 +69,9 @@ cachixClient = fromServant $ client Api.servantApi
 cachixBCClient :: Text -> Api.BinaryCacheAPI (AsClientT ClientM)
 cachixBCClient name = fromServant $ Api.cache cachixClient name
 
+cachixBCStreamingClient :: Text -> Api.BinaryCacheStreamingAPI (AsClientT ClientM)
+cachixBCStreamingClient name = fromServant $ client (Proxy :: Proxy Api.BinaryCachStreamingServantAPI) name
+
 authtoken :: Env -> Text -> IO ()
 authtoken env token = do
   -- TODO: check that token actually authenticates!
@@ -259,7 +262,7 @@ pushStorePath env name storePath = retryPath $ \retrystatus -> do
               baseUrl = (baseUrl (clientenv env)) { baseUrlHost = toS name <> "." <> baseUrlHost (baseUrl (clientenv env))}
             }
         void $ (`withClientM` newClientEnv)
-            (Api.createNar (cachixBCClient name) stream')
+            (Api.createNar (cachixBCStreamingClient name) stream')
             $ escalate >=> \NoContent -> do
                 closeStdout
                 exitcode <- waitForStreamingProcess cph

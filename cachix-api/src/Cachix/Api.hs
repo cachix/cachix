@@ -6,11 +6,13 @@ module Cachix.Api
   ( servantApi
   , swaggerDoc
   , CachixAPI(..)
+  , CachixServantAPI
   , CachixAuth
   , InstallAPI(..)
   , GitHubAPI(..)
   , BinaryCacheAPI(..)
-  , CachixServantAPI
+  , BinaryCacheStreamingAPI(..)
+  , BinaryCachStreamingServantAPI
   , module Cachix.Api.Types
   , module Cachix.Types.ContentTypes
   ) where
@@ -27,7 +29,6 @@ import Servant.API hiding (BasicAuth)
 import Servant.API.Generic
 import Servant.Auth
 import Servant.Auth.Swagger ()
-import Servant.Client.Streaming
 import Servant.Swagger
 import Web.Cookie                (SetCookie)
 
@@ -59,16 +60,6 @@ data BinaryCacheAPI route = BinaryCacheAPI
       CachixAuth :>
       "nix-cache-info" :>
       Get '[XNixCacheInfo, JSON] NixCacheInfo
-  -- Hydra: src/lib/Hydra/View/NixNAR.pm
-  , nar :: route :-
-      CachixAuth :>
-      "nar" :>
-      Capture "nar" NarC :>
-      StreamGet NoFraming OctetStream (ConduitT () ByteString (ResourceT IO) ())
-  , createNar :: route :-
-      "nar" :>
-      StreamBody NoFraming OctetStream (ConduitT () ByteString (ResourceT IO) ()) :> -- XNixNar
-      Post '[JSON] NoContent
   -- Hydra: src/lib/Hydra/View/NARInfo.pm
   , narinfo :: route :-
       CachixAuth :>
@@ -86,6 +77,20 @@ data BinaryCacheAPI route = BinaryCacheAPI
       CachixAuth :>
       "key" :>
       ReqBody '[JSON] SigningKeyCreate.SigningKeyCreate :>
+      Post '[JSON] NoContent
+  } deriving Generic
+
+-- | Streaming endpoints
+data BinaryCacheStreamingAPI route = BinaryCacheStreamingAPI
+  { -- Hydra: src/lib/Hydra/View/NixNAR.pm
+    nar :: route :-
+      CachixAuth :>
+      "nar" :>
+      Capture "nar" NarC :>
+      StreamGet NoFraming OctetStream (ConduitT () ByteString (ResourceT IO) ())
+  , createNar :: route :-
+      "nar" :>
+      StreamBody NoFraming XNixNar (ConduitT () ByteString (ResourceT IO) ()) :>
       Post '[JSON] NoContent
   } deriving Generic
 
@@ -155,6 +160,9 @@ data CachixAPI route = CachixAPI
    } deriving Generic
 
 type CachixServantAPI = "api" :> "v1" :> ToServantApi CachixAPI
+
+type BinaryCachStreamingServantAPI =
+  "api" :> "v1" :> "cache" :> Capture "name" Text :> ToServantApi BinaryCacheStreamingAPI
 
 servantApi :: Proxy CachixServantAPI
 servantApi = Proxy

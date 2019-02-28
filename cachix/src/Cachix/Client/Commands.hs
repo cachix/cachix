@@ -104,7 +104,7 @@ generateKeypair env@Env { config = Just config } name = do
     config { binaryCaches = binaryCaches config <> [bcc] }
 
   putStrLn ([iTrim|
-Signing key has been saved on your local machine. To populate
+Secret signing key has been saved in the file above. To populate
 your binary cache:
 
     $ nix-build | cachix push ${name}

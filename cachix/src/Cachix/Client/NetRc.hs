@@ -5,6 +5,7 @@ module Cachix.Client.NetRc
 
 import qualified Data.ByteString    as BS
 import           Data.List            (nubBy)
+import qualified Data.Text          as T
 import           Network.NetRc
 import           Protolude
 import           System.Directory     ( doesFileExist )
@@ -46,9 +47,14 @@ add config binarycaches filename = do
 
     mkHost :: Api.BinaryCache -> NetRcHost
     mkHost bc = NetRcHost
-      { nrhName = toS $ Api.uri bc
+      { nrhName = toS $ stripPrefix "http://" $ stripPrefix "https://" (Api.uri bc)
       , nrhLogin = ""
       , nrhPassword = getToken (authToken config)
       , nrhAccount = ""
       , nrhMacros = []
       }
+      where
+        -- stripPrefix that either strips or returns the same string
+        stripPrefix :: Text -> Text -> Text
+        stripPrefix prefix str =
+          maybe str identity $ T.stripPrefix prefix str

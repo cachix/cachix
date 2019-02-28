@@ -1,1 +1,1 @@
-machine https://name.cachix.org password token123
+machine name.cachix.org password token123

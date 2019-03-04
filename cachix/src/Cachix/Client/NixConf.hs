@@ -29,6 +29,7 @@ module Cachix.Client.NixConf
   , defaultSigningKey
   , substitutersKey
   , trustedPublicKeysKey
+  , setNetRC
   ) where
 
 import Data.Char (isSpace)
@@ -142,6 +143,11 @@ update :: NixVersion -> NixConfLoc -> (Maybe NixConf -> NixConf) -> IO ()
 update nixversion ncl f = do
   nc <- f <$> read ncl
   write nixversion ncl nc
+
+setNetRC :: Text -> NixConf -> NixConf
+setNetRC netrc (NixConf nc) = NixConf $ filter noNetRc nc ++ [NetRcFile netrc]
+  where noNetRc (NetRcFile _) = False
+        noNetRc _ = True
 
 data NixConfLoc = Global | Local
   deriving (Show, Eq)

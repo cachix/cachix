@@ -75,15 +75,10 @@ addBinaryCache maybeConfig bc@Api.BinaryCache{..} _ (Install nixversion ncl) = d
         -- We only add the netrc line for local user configs for now.
         -- On NixOS we assume it will be picked up from the default location.
         guard (ncl == NixConf.Local)
-        pure (setNetRC $ toS netrcLoc)
+        pure (NixConf.setNetRC $ toS netrcLoc)
   NixConf.write nixversion ncl $ addNetRCLine $ NixConf.add bc (catMaybes input) nixconf
   filename <- NixConf.getFilename ncl
   putStrLn $ "Configured " <> uri <> " binary cache in " <> toS filename
-
-setNetRC :: Text -> NixConf.NixConf -> NixConf.NixConf
-setNetRC netrc (NixConf.NixConf nc) = NixConf.NixConf $ filter noNetRc nc ++ [NixConf.NetRcFile netrc]
-  where noNetRc (NixConf.NetRcFile _) = False
-        noNetRc _ = True
 
 nixosBinaryCache :: Maybe Config -> Maybe Text -> Api.BinaryCache -> UseOptions -> IO ()
 nixosBinaryCache maybeConfig maybeUser bc@Api.BinaryCache{..} UseOptions { useNixOSFolder=baseDirectory } = do

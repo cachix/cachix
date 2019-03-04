@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
+## [0.2.0] - 2019-03-04
+
+### Added
+
+- #71 new command `cachix generate-keypair` with
+  clearer instructions how to handle the secrets @domenkozar
+- #24 #168 Private binary cache support @domenkozar @roberth
+
+### Changed
+- #158 #160 #166 #91 Improve NixOS experience by
+  writing out nixos modules @domenkozar
+- #170 Get rid of amazonka dependency @domenkozar
+
 ## [0.1.3] - 2018-11-26
 
 ### Changed
@@ -59,3 +72,11 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Added
 
 - Initial release @domenkozar
+
+[Unreleased]: https://github.com/cachix/cachix/compare/v0.1.4...HEAD
+[0.2.0]: https://github.com/cachix/cachix/compare/v0.1.3...v0.2.0
+[0.1.3]: https://github.com/cachix/cachix/compare/v0.1.2...v0.1.3
+[0.1.2]: https://github.com/cachix/cachix/compare/v0.1.1...v0.1.2
+[0.1.1]: https://github.com/cachix/cachix/compare/v0.1.0.2...v0.1.1
+[0.1.0.2]: https://github.com/cachix/cachix/compare/v0.1.0.1...v0.1.0.2
+[0.1.0.1]: https://github.com/cachix/cachix/compare/v0.1.0.0...v0.1.0.1

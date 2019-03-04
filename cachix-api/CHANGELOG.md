@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [0.2.0] - 2019-03-04
+
+# Added
+
+- #168 LTS-13 support @domenkozar
+- #161 /api/v1/install support @domenkozar
+- #168 private binary caches support @domenkozar
+
+### Changed
+
+- #168 remove swagger UI @domenkozar
+
 ## [0.1.0.3] - 2018-11-27
 
 ### Changed

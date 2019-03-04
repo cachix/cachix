@@ -67,17 +67,30 @@ addBinaryCache maybeConfig bc@Api.BinaryCache{..} _ (Install nixversion ncl) = d
       lnc <- NixConf.read NixConf.Local
       return ([gnc, lnc], lnc)
   let nixconf = fromMaybe (NixConf.NixConf []) output
-  NixConf.write nixversion ncl $ NixConf.add bc (catMaybes input) nixconf
-  unless isPublic $ addPrivateBinaryCacheNetRC maybeConfig bc ncl
+  netrcLocMaybe <- forM (guard $ not  isPublic) $ const $ addPrivateBinaryCacheNetRC maybeConfig bc ncl
+  let
+    addNetRCLine :: NixConf.NixConf -> NixConf.NixConf
+    addNetRCLine = fromMaybe identity $ do
+        netrcLoc <- netrcLocMaybe :: Maybe FilePath
+        -- We only add the netrc line for local user configs for now.
+        -- On NixOS we assume it will be picked up from the default location.
+        guard (ncl == NixConf.Local)
+        pure (setNetRC $ toS netrcLoc)
+  NixConf.write nixversion ncl $ addNetRCLine $ NixConf.add bc (catMaybes input) nixconf
   filename <- NixConf.getFilename ncl
   putStrLn $ "Configured " <> uri <> " binary cache in " <> toS filename
+
+setNetRC :: Text -> NixConf.NixConf -> NixConf.NixConf
+setNetRC netrc (NixConf.NixConf nc) = NixConf.NixConf $ filter noNetRc nc ++ [NixConf.NetRcFile netrc]
+  where noNetRc (NixConf.NetRcFile _) = False
+        noNetRc _ = True
 
 nixosBinaryCache :: Maybe Config -> Maybe Text -> Api.BinaryCache -> UseOptions -> IO ()
 nixosBinaryCache maybeConfig maybeUser bc@Api.BinaryCache{..} UseOptions { useNixOSFolder=baseDirectory } = do
   createDirectoryIfMissing True $ toS toplevel
   writeFile (toS glueModuleFile) glueModule
   writeFile (toS cacheModuleFile) cacheModule
-  unless isPublic $ addPrivateBinaryCacheNetRC maybeConfig bc NixConf.Global
+  unless isPublic $ void $ addPrivateBinaryCacheNetRC maybeConfig bc NixConf.Global
   putText instructions
   where
     configurationNix :: Text
@@ -140,7 +153,7 @@ in {
     |]
 
 -- TODO: allow overriding netrc location
-addPrivateBinaryCacheNetRC :: Maybe Config -> Api.BinaryCache -> NixConf.NixConfLoc -> IO ()
+addPrivateBinaryCacheNetRC :: Maybe Config -> Api.BinaryCache -> NixConf.NixConfLoc -> IO FilePath
 addPrivateBinaryCacheNetRC maybeConfig bc nixconf = do
   filename <- (`replaceFileName` "netrc") <$> NixConf.getFilename nixconf
   case maybeConfig of
@@ -149,6 +162,7 @@ addPrivateBinaryCacheNetRC maybeConfig bc nixconf = do
       let netrcfile = fromMaybe filename Nothing -- TODO: get netrc from nixconf
       NetRc.add config [bc] netrcfile
       putErrText $ "Configured private read access credentials in " <> toS filename
+      pure filename
 
 isTrustedUser :: [Text] -> IO Bool
 isTrustedUser users = do

@@ -5,5 +5,5 @@
 - git commit -m "0.X.X"
 - stack sdist cachix{,-api}
 - git tag v0.X.X
-- git push --tags origin HEAD
+- git push --tags 
 - stack upload cachix{,-api}

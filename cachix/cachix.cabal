@@ -57,7 +57,6 @@ library
     , conduit-extra
     , cookie
     , cryptonite
-    , data-default
     , dhall
     , directory
     , ed25519

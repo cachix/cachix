@@ -16,10 +16,9 @@ import qualified Control.Concurrent.QSem       as QSem
 import           Control.Concurrent.Async     (mapConcurrently)
 import           Control.Monad                (forever, (>=>))
 import           Control.Exception.Safe       (MonadThrow, throwM)
-import           Control.Retry                (recoverAll, RetryStatus(rsIterNumber))
+import           Control.Retry                (recoverAll, RetryStatus(rsIterNumber), RetryPolicy, constantDelay, limitRetries)
 import qualified Data.ByteString.Base64        as B64
 import           Data.Conduit
-import           Data.Default                  (def)
 import           Data.Conduit.Process
 import           Data.Conduit.Lzma              ( compress )
 import           Data.IORef
@@ -313,7 +312,11 @@ pushStorePath env name storePath = retryPath $ \retrystatus -> do
 -- Retry up to 5 times for each store path.
 -- Catches all exceptions except skipAsyncExceptions
 retryPath :: (RetryStatus -> IO a) -> IO a
-retryPath = recoverAll def
+retryPath = recoverAll defaultRetryPolicy
+
+defaultRetryPolicy :: RetryPolicy
+defaultRetryPolicy =
+  constantDelay 50000 <> limitRetries 3
 
 mapConcurrentlyBounded :: Traversable t => Int -> (a -> IO b) -> t a -> IO (t b)
 mapConcurrentlyBounded bound action items = do

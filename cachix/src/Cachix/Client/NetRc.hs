@@ -8,7 +8,7 @@ import           Data.List            (nubBy)
 import qualified Data.Text          as T
 import           Network.NetRc
 import           Protolude
-import           System.FilePath.Posix ( takeDirectory )
+import           System.FilePath       ( takeDirectory )
 import           System.Directory     ( doesFileExist, createDirectoryIfMissing )
 import           Servant.Auth.Client  (getToken)
 

@@ -8,7 +8,8 @@ import           Data.List            (nubBy)
 import qualified Data.Text          as T
 import           Network.NetRc
 import           Protolude
-import           System.Directory     ( doesFileExist )
+import           System.FilePath.Posix ( takeDirectory )
+import           System.Directory     ( doesFileExist, createDirectoryIfMissing )
 import           Servant.Auth.Client  (getToken)
 
 import qualified Cachix.Api as Api
@@ -29,6 +30,7 @@ add config binarycaches filename = do
   netrc <- if doesExist
            then BS.readFile filename >>= parse
            else return $ NetRc [] []
+  createDirectoryIfMissing True (takeDirectory filename)
   BS.writeFile filename $ netRcToByteString $ uniqueAppend netrc
   where
     parse :: ByteString -> IO NetRc

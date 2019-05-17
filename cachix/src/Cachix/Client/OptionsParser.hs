@@ -1,4 +1,3 @@
-{-# LANGUAGE QuasiQuotes #-}
 module Cachix.Client.OptionsParser
   ( CachixCommand(..)
   , CachixOptions(..)
@@ -11,10 +10,10 @@ import Data.Bifunctor            (first)
 import Protolude hiding          (option)
 import URI.ByteString            (URIRef, Absolute, parseURI, strictURIParserOptions
                                  , serializeURIRef')
-import URI.ByteString.QQ
 import Options.Applicative
 
 import qualified Cachix.Client.Config as Config
+import Cachix.Client.URI         (defaultCachixURI)
 
 data CachixOptions = CachixOptions
   { host :: URIRef Absolute
@@ -26,7 +25,7 @@ parserCachixOptions :: Config.ConfigPath -> Parser CachixOptions
 parserCachixOptions defaultConfigPath = CachixOptions
   <$> option uriOption ( long "host"
                        <> short 'h'
-                       <> value [uri|https://cachix.org|]
+                       <> value defaultCachixURI
                        <> metavar "URI"
                        <> showDefaultWith (toS . serializeURIRef')
                        <> help "Host to connect to"

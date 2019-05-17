@@ -38,6 +38,7 @@ library
       Cachix.Client.NixConf
       Cachix.Client.NixVersion
       Cachix.Client.OptionsParser
+      Cachix.Client.Push
       Cachix.Client.Servant
       Cachix.Client.URI
   other-modules:
@@ -75,6 +76,7 @@ library
     , optparse-applicative
     , process
     , protolude
+    , resourcet
     , retry
     , safe-exceptions
     , servant >=0.15

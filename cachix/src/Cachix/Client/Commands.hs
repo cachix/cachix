@@ -12,23 +12,15 @@ module Cachix.Client.Commands
 
 import           Crypto.Sign.Ed25519
 import           Control.Concurrent           (threadDelay)
-import qualified Control.Concurrent.QSem       as QSem
-import           Control.Concurrent.Async     (mapConcurrently)
-import           Control.Monad                (forever, (>=>))
-import           Control.Exception.Safe       (MonadThrow, throwM)
-import           Control.Retry                (recoverAll, RetryStatus(rsIterNumber), RetryPolicy, constantDelay, limitRetries)
+import           Control.Exception.Safe       (throwM)
+import           Control.Retry                (RetryStatus(rsIterNumber))
 import qualified Data.ByteString.Base64        as B64
-import           Data.Conduit
-import           Data.Conduit.Process
-import           Data.Conduit.Lzma              ( compress )
-import           Data.IORef
 import           Data.List                      ( isSuffixOf )
 import           Data.Maybe                     ( fromJust )
 import           Data.String.Here
 import qualified Data.Text                      as T
 import           Network.HTTP.Types             (status404, status401)
 import           Protolude
-import           Servant.API
 import           Servant.Auth                   ()
 import           Servant.Auth.Client
 import           Servant.API.Generic
@@ -38,14 +30,10 @@ import           Servant.Conduit                ()
 import           System.Directory               ( doesFileExist )
 import           System.FSNotify
 import           System.IO                      ( stdin, hIsTerminalDevice )
-import           System.Process                 ( readProcess )
 import           System.Environment             ( lookupEnv )
 
 import qualified Cachix.Api                    as Api
 import           Cachix.Api.Error
-import           Cachix.Api.Signing             (fingerprint, passthroughSizeSink, passthroughHashSink)
-import qualified Cachix.Types.NarInfoCreate    as Api
-import qualified Cachix.Types.BinaryCacheCreate as Api
 import qualified Cachix.Types.SigningKeyCreate as SigningKeyCreate
 import           Cachix.Client.Config           ( Config(..)
                                                 , BinaryCacheConfig(..)
@@ -59,6 +47,7 @@ import           Cachix.Client.OptionsParser    ( CachixOptions(..), UseOptions(
 import           Cachix.Client.InstallationMode
 import           Cachix.Client.NixVersion       ( getNixVersion )
 import qualified Cachix.Client.NixConf         as NixConf
+import           Cachix.Client.Push
 import           Cachix.Client.Servant
 
 
@@ -67,9 +56,6 @@ cachixClient = fromServant $ client Api.servantApi
 
 cachixBCClient :: Text -> Api.BinaryCacheAPI (AsClientT ClientM)
 cachixBCClient name = fromServant $ Api.cache cachixClient name
-
-cachixBCStreamingClient :: Text -> Api.BinaryCacheStreamingAPI (AsClientT ClientM)
-cachixBCStreamingClient name = fromServant $ client (Proxy :: Proxy Api.BinaryCachStreamingServantAPI) name
 
 authtoken :: Env -> Text -> IO ()
 authtoken env token = do
@@ -95,7 +81,9 @@ generateKeypair env@Env { config = Just config } name = do
       bcc = BinaryCacheConfig name signingKey
 
   -- we first validate if key can be added to the binary cache
-  escalate =<< ((`runClientM` clientenv env) $ Api.createKey (cachixBCClient name) (authToken config) signingKeyCreate)
+  discardNoContent
+    $ escalate =<< ((`runClientM` clientenv env)
+    $ Api.createKey (cachixBCClient name) (authToken config) signingKeyCreate)
 
   -- if key was successfully added, write it to the config
   -- TODO: this breaks if more than one key is added, see #27
@@ -171,14 +159,20 @@ push env name rawPaths False = do
 
   -- TODO: if empty, take whole nix store and warn: nix store-path --all
   when (null inputStorePaths) $ throwIO $ NoInput "You need to specify store paths either as stdin or as a cli argument"
+  sk <- findSigningKey env name
 
-  -- Query list of paths
-  -- TODO: split args if too big
-  paths <- T.lines . toS <$> readProcess "nix-store" (fmap toS (["-qR"] <> inputStorePaths)) mempty
-
-  -- TODO: make pool size configurable, on beefier machines this could be doubled
-  _ <- mapConcurrentlyBounded 4 (pushStorePath env name) paths
+  void $ pushClosure
+    (mapConcurrentlyBounded 4)
+    (clientenv env)
+    PushCache
+      { pushCacheToken = envToToken env
+      , pushCacheName = name
+      , pushCacheSigningKey = sk
+      }
+    (pushStrategy env name)
+    inputStorePaths
   putText "All done."
+
 push env name _ True = withManager $ \mgr -> do
   _ <- watchDir mgr "/nix/store" filterF action
   putText "Watching /nix/store for new builds ..."
@@ -205,125 +199,52 @@ push env name _ True = withManager $ \mgr -> do
     dropEnd :: Int -> [a] -> [a]
     dropEnd index xs = take (length xs - index) xs
 
-pushStorePath :: Env -> Text -> Text -> IO ()
-pushStorePath env name storePath = retryPath $ \retrystatus -> do
-  -- use secret key from config or env
-  -- TODO: this shouldn't happen for each store path
+-- | Find a secret key in the 'Config' or environment variable
+findSigningKey
+  :: Env
+  -> Text          -- ^ Cache name
+  -> IO SecretKey  -- ^ Secret key or exception
+findSigningKey env name = do
   maybeEnvSK <- lookupEnv "CACHIX_SIGNING_KEY"
   let matches Config{..} = filter (\bc -> Config.name bc == name) binaryCaches
       maybeBCSK = case config env of
         Nothing -> Nothing
         Just c -> Config.secretKey <$> head (matches c)
       -- TODO: better error msg
-      sk = SecretKey $ toS $ B64.decodeLenient $ toS $ fromJust $ maybeBCSK <|> toS <$> maybeEnvSK <|> panic "You need to: export CACHIX_SIGNING_KEY=XXX"
-      (storeHash, _) = splitStorePath $ toS storePath
-  -- Check if narinfo already exists
-  -- TODO: query also cache.nixos.org? server-side?
-  res <- (`runClientM` clientenv env) $ Api.narinfoHead
-    (cachixBCClient name)
-    (envToToken env)
-    (Api.NarInfoC storeHash)
-  case res of
-    Right NoContent -> pass -- we're done as store path is already in the cache
-    Left err | isErr err status404 -> go sk retrystatus
-             | isErr err status401 && isJust (config env) -> throwM $ accessDeniedBinaryCache name
-             | isErr err status401 -> throwM notAuthenticatedBinaryCache
-             | otherwise -> throwM err
-    where
-      retryText :: RetryStatus -> Text
-      retryText retrystatus =
-        if rsIterNumber retrystatus == 0
-        then ""
-        else "(retry #" <> show (rsIterNumber retrystatus) <> ") "
-      go sk retrystatus = do
-        let (storeHash, storeSuffix) = splitStorePath $ toS storePath
-        -- we append newline instead of putStrLn due to https://github.com/haskell/text/issues/242
-        putStr $ "pushing " <> retryText retrystatus <> storePath <> "\n"
+  pure $ SecretKey $ toS $ B64.decodeLenient $ toS $ fromJust $ maybeBCSK <|> toS <$> maybeEnvSK <|> panic "You need to: export CACHIX_SIGNING_KEY=XXX"
 
-        narSizeRef <- liftIO $ newIORef 0
-        fileSizeRef <- liftIO $ newIORef 0
-        narHashRef <- liftIO $ newIORef ("" :: Text)
-        fileHashRef <- liftIO $ newIORef ("" :: Text)
+retryText :: RetryStatus -> Text
+retryText retrystatus =
+  if rsIterNumber retrystatus == 0
+  then ""
+  else "(retry #" <> show (rsIterNumber retrystatus) <> ") "
 
-        -- stream store path as xz compressed nar file
-        let cmd = proc "nix-store" ["--dump", toS storePath]
-        (ClosedStream, (stdoutStream, closeStdout), ClosedStream, cph) <- streamingProcess cmd
-        let stream'
-              = stdoutStream
-             .| passthroughSizeSink narSizeRef
-             .| passthroughHashSink narHashRef
-             .| compress Nothing
-             .| passthroughSizeSink fileSizeRef
-             .| passthroughHashSink fileHashRef
+pushStrategy :: Env -> Text -> Text -> PushStrategy IO ()
+pushStrategy env name storePath = PushStrategy
+  { onAlreadyPresent = pass
+  , on401 = if isJust (config env)
+            then throwM $ accessDeniedBinaryCache name
+            else throwM notAuthenticatedBinaryCache
+  , onError = throwM
+  , onAttempt = \retrystatus -> 
+      -- we append newline instead of putStrLn due to https://github.com/haskell/text/issues/242
+      putStr $ "pushing " <> retryText retrystatus <> storePath <> "\n"
+  , onDone = pass
+  , withXzipCompressor = defaultWithXzipCompressor
+  }
 
-        -- for now we need to use letsencrypt domain instead of cloudflare due to its upload limits
-        let newClientEnv = (clientenv env) {
-              baseUrl = (baseUrl (clientenv env)) { baseUrlHost = toS name <> "." <> baseUrlHost (baseUrl (clientenv env))}
-            }
-        void $ (`withClientM` newClientEnv)
-            (Api.createNar (cachixBCStreamingClient name) stream')
-            $ escalate >=> \NoContent -> do
-                closeStdout
-                exitcode <- waitForStreamingProcess cph
-                -- TODO: print process stderr?
-                when (exitcode /= ExitSuccess) $ throwM $ NarStreamingError exitcode $ show cmd
+pushStorePath :: Env -> Text -> Text -> IO ()
+pushStorePath env name storePath = do
+  sk <- findSigningKey env name
+  -- use secret key from config or env
+  -- TODO: this shouldn't happen for each store path
 
-                narSize <- readIORef narSizeRef
-                narHashB16 <- readIORef narHashRef
-                fileHash <- readIORef fileHashRef
-                fileSize <- readIORef fileSizeRef
-
-                -- TODO: #3: implement using pure haskell
-                narHash <- ("sha256:" <>) . T.strip . toS <$> readProcess "nix-hash" ["--type", "sha256", "--to-base32", toS narHashB16] mempty
-
-                deriverRaw <- T.strip . toS <$> readProcess "nix-store" ["-q", "--deriver", toS storePath] mempty
-                let deriver = if deriverRaw == "unknown-deriver"
-                              then deriverRaw
-                              else T.drop 11 deriverRaw
-
-                references <- sort . T.lines . T.strip . toS <$> readProcess "nix-store" ["-q", "--references", toS storePath] mempty
-
-                let
-                    fp = fingerprint storePath narHash narSize references
-                    sig = dsign sk fp
-                    nic = Api.NarInfoCreate
-                      { cStoreHash = storeHash
-                      , cStoreSuffix = storeSuffix
-                      , cNarHash = narHash
-                      , cNarSize = narSize
-                      , cFileSize = fileSize
-                      , cFileHash = fileHash
-                      , cReferences = fmap (T.drop 11) references
-                      , cDeriver = deriver
-                      , cSig = toS $ B64.encode $ unSignature sig
-                      }
-
-                escalate $ Api.isNarInfoCreateValid nic
-
-                -- Upload narinfo with signature
-                escalate <=< (`runClientM` clientenv env) $ Api.createNarinfo
-                  (cachixBCClient name)
-                  (Api.NarInfoC storeHash)
-                  nic
-
-
--- Utils
-
--- Retry up to 5 times for each store path.
--- Catches all exceptions except skipAsyncExceptions
-retryPath :: (RetryStatus -> IO a) -> IO a
-retryPath = recoverAll defaultRetryPolicy
-
-defaultRetryPolicy :: RetryPolicy
-defaultRetryPolicy =
-  constantDelay 50000 <> limitRetries 3
-
-mapConcurrentlyBounded :: Traversable t => Int -> (a -> IO b) -> t a -> IO (t b)
-mapConcurrentlyBounded bound action items = do
-  qs <- QSem.newQSem bound
-  let wrapped x = bracket_ (QSem.waitQSem qs) (QSem.signalQSem qs) (action x)
-  mapConcurrently wrapped items
-
-splitStorePath :: Text -> (Text, Text)
-splitStorePath storePath =
-  (T.take 32 (T.drop 11 storePath), T.drop 44 storePath)
+  pushSingleStorePath
+    (clientenv env)
+    PushCache
+      { pushCacheToken = envToToken env
+      , pushCacheName = name
+      , pushCacheSigningKey = sk
+      }
+    (pushStrategy env name storePath)
+    storePath

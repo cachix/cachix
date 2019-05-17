@@ -1,16 +1,22 @@
--- | Ugly glue between URI and BaseUrl
--- | TODO: mark as Internal module
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE QuasiQuotes #-}
 module Cachix.Client.URI
   ( getBaseUrl
+  , defaultCachixURI
+  , defaultCachixBaseUrl
   ) where
 
 import Protolude
 import qualified URI.ByteString as UBS
 import URI.ByteString hiding (Scheme)
 import Servant.Client
+import URI.ByteString.QQ
 
 
+-- TODO: make getBaseUrl internal
+
+-- | Partial function from URI to BaseUrl
+--
 getBaseUrl :: URIRef Absolute -> BaseUrl
 getBaseUrl URI{..} =
   case uriAuthority of
@@ -35,3 +41,9 @@ getBaseUrl URI{..} =
         defaultPort = case getScheme of
           Http -> 80
           Https -> 443
+
+defaultCachixURI :: URIRef Absolute
+defaultCachixURI = [uri|https://cachix.org|]
+
+defaultCachixBaseUrl :: BaseUrl
+defaultCachixBaseUrl = getBaseUrl defaultCachixURI

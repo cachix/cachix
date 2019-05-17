@@ -44,11 +44,12 @@ import           Cachix.Api.Signing             (fingerprint, passthroughSizeSin
 import qualified Cachix.Types.NarInfoCreate    as Api
 import           Cachix.Client.Exception        ( CachixException(..) )
 import           Cachix.Client.Servant
+import           Cachix.Client.Secrets
 
 
 data PushCache = PushCache
   { pushCacheName :: Text
-  , pushCacheSigningKey :: SecretKey
+  , pushCacheSigningKey :: SigningKey
   , pushCacheToken :: Token
   }
 data PushStrategy m r = PushStrategy
@@ -140,7 +141,7 @@ pushSingleStorePath ce cache cb storePath = retryPath $ \retrystatus -> do
 
                   let
                       fp = fingerprint storePath narHash narSize references
-                      sig = dsign (pushCacheSigningKey cache) fp
+                      sig = dsign (signingSecretKey $ pushCacheSigningKey cache) fp
                       nic = Api.NarInfoCreate
                         { cStoreHash = storeHash
                         , cStoreSuffix = storeSuffix

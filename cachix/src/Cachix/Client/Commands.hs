@@ -48,6 +48,10 @@ import           Cachix.Client.InstallationMode
 import           Cachix.Client.NixVersion       ( getNixVersion )
 import qualified Cachix.Client.NixConf         as NixConf
 import           Cachix.Client.Push
+import           Cachix.Client.Secrets          ( SigningKey(SigningKey)
+                                                , parseSigningKeyLenient
+                                                , exportSigningKey
+                                                )
 import           Cachix.Client.Servant
 
 
@@ -74,9 +78,9 @@ create _ _ =
 generateKeypair :: Env -> Text -> IO ()
 generateKeypair Env { config = Nothing } _ = throwIO $ NoConfig "Start with visiting https://cachix.org and copying the token to $ cachix authtoken <token>"
 generateKeypair env@Env { config = Just config } name = do
-  (PublicKey pk, SecretKey sk) <- createKeypair
+  (PublicKey pk, sk) <- createKeypair
 
-  let signingKey = toS $ B64.encode sk
+  let signingKey = exportSigningKey $ SigningKey sk
       signingKeyCreate = SigningKeyCreate.SigningKeyCreate (toS $ B64.encode pk)
       bcc = BinaryCacheConfig name signingKey
 
@@ -202,8 +206,8 @@ push env name _ True = withManager $ \mgr -> do
 -- | Find a secret key in the 'Config' or environment variable
 findSigningKey
   :: Env
-  -> Text          -- ^ Cache name
-  -> IO SecretKey  -- ^ Secret key or exception
+  -> Text           -- ^ Cache name
+  -> IO SigningKey  -- ^ Secret key or exception
 findSigningKey env name = do
   maybeEnvSK <- lookupEnv "CACHIX_SIGNING_KEY"
   let matches Config{..} = filter (\bc -> Config.name bc == name) binaryCaches
@@ -211,7 +215,7 @@ findSigningKey env name = do
         Nothing -> Nothing
         Just c -> Config.secretKey <$> head (matches c)
       -- TODO: better error msg
-  pure $ SecretKey $ toS $ B64.decodeLenient $ toS $ fromJust $ maybeBCSK <|> toS <$> maybeEnvSK <|> panic "You need to: export CACHIX_SIGNING_KEY=XXX"
+  escalateAs FatalError $ parseSigningKeyLenient $ fromJust $ maybeBCSK <|> toS <$> maybeEnvSK <|> panic "You need to: export CACHIX_SIGNING_KEY=XXX"
 
 retryText :: RetryStatus -> Text
 retryText retrystatus =

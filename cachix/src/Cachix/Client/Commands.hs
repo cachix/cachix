@@ -2,6 +2,7 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Cachix.Client.Commands
   ( authtoken
   , create
@@ -23,6 +24,7 @@ import           Network.HTTP.Types             (status404, status401)
 import           Protolude
 import           Servant.Auth                   ()
 import           Servant.Auth.Client
+import           Servant.API                    ( NoContent )
 import           Servant.API.Generic
 import           Servant.Client.Generic
 import           Servant.Client.Streaming
@@ -85,8 +87,8 @@ generateKeypair env@Env { config = Just config } name = do
       bcc = BinaryCacheConfig name signingKey
 
   -- we first validate if key can be added to the binary cache
-  discardNoContent
-    $ escalate =<< ((`runClientM` clientenv env)
+  (_ :: NoContent) <- escalate
+    =<< ((`runClientM` clientenv env)
     $ Api.createKey (cachixBCClient name) (authToken config) signingKeyCreate)
 
   -- if key was successfully added, write it to the config

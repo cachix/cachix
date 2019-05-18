@@ -6,7 +6,6 @@
 
 module Cachix.Client.Servant
   ( isErr
-  , discardNoContent
   ) where
 
 import Protolude
@@ -26,7 +25,3 @@ isErr (FailureResponse resp) status
 #endif
   | responseStatusCode resp == status = True
 isErr _ _ = False
-
--- | Convert 'NoContent' to '()' in order to silence a needless warning.
-discardNoContent :: Functor f => f NoContent -> f ()
-discardNoContent = void

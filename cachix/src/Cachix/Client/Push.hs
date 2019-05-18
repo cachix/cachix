@@ -2,6 +2,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Cachix.Client.Push
   ( -- * Pushing a single path
     pushSingleStorePath
@@ -83,7 +84,7 @@ pushSingleStorePath ce cache cb storePath = retryPath $ \retrystatus -> do
     (cachixBCClient name)
     (pushCacheToken cache)
     (Api.NarInfoC storeHash)
-  (case res of
+  case res of
     Right NoContent -> onAlreadyPresent cb -- we're done as store path is already in the cache
     Left err | isErr err status404 -> doUpload
              | isErr err status401 -> on401 cb
@@ -114,7 +115,7 @@ pushSingleStorePath ce cache cb storePath = retryPath $ \retrystatus -> do
           let newClientEnv = ce {
                   baseUrl = (baseUrl ce) { baseUrlHost = toS name <> "." <> baseUrlHost (baseUrl ce)}
                 }
-          discardNoContent $ liftIO $ (`withClientM` newClientEnv)
+          (_ :: NoContent) <- liftIO $ (`withClientM` newClientEnv)
               (Api.createNar (cachixBCStreamingClient name) stream')
               $ escalate >=> \NoContent -> do
                   closeStdout
@@ -162,8 +163,7 @@ pushSingleStorePath ce cache cb storePath = retryPath $ \retrystatus -> do
                     (Api.NarInfoC storeHash)
                     nic
           onDone cb
-    )
-  where 
+  where
     -- Retry up to 5 times for each store path.
     -- Catches all exceptions except skipAsyncExceptions
     retryPath :: (MonadIO m, MonadMask m) => (RetryStatus -> m a) -> m a

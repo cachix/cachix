@@ -30,9 +30,12 @@ library
   exposed-modules:
       Cachix.Client
       Cachix.Client.Commands
+      Cachix.Client.Commands.Export
+      Cachix.Client.Commands.Export.OptionsParser
       Cachix.Client.Config
       Cachix.Client.Env
       Cachix.Client.Exception
+      Cachix.Client.Export
       Cachix.Client.InstallationMode
       Cachix.Client.NetRc
       Cachix.Client.NixConf
@@ -49,7 +52,8 @@ library
   hs-source-dirs:
       src
   build-depends:
-      async
+      aeson
+    , async
     , base >=4.7 && <5
     , base16-bytestring
     , base64-bytestring
@@ -89,6 +93,7 @@ library
     , text
     , unix
     , uri-bytestring
+    , validation
     , versions
 
 executable cachix

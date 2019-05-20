@@ -6130,15 +6130,16 @@ inherit (pkgs.xorg) libXfixes;};
            license = stdenv.lib.licenses.bsd3;
          }) {};
       "cachix" = callPackage
-        ({ mkDerivation, async, base, base16-bytestring, base64-bytestring
-         , bytestring, cachix-api, conduit, conduit-extra, cookie
-         , cryptonite, dhall, directory, ed25519, filepath, fsnotify, here
-         , hspec, hspec-discover, http-client, http-client-tls, http-conduit
-         , http-types, lzma-conduit, megaparsec, memory, mmorph, netrc
-         , optparse-applicative, process, protolude, resourcet, retry
-         , safe-exceptions, servant, servant-auth, servant-auth-client
-         , servant-client, servant-client-core, servant-conduit, stdenv
-         , temporary, text, unix, uri-bytestring, versions
+        ({ mkDerivation, aeson, async, base, base16-bytestring
+         , base64-bytestring, bytestring, cachix-api, conduit, conduit-extra
+         , cookie, cryptonite, dhall, directory, ed25519, filepath, fsnotify
+         , here, hspec, hspec-discover, http-client, http-client-tls
+         , http-conduit, http-types, lzma-conduit, megaparsec, memory
+         , mmorph, netrc, optparse-applicative, process, protolude
+         , resourcet, retry, safe-exceptions, servant, servant-auth
+         , servant-auth-client, servant-client, servant-client-core
+         , servant-conduit, stdenv, temporary, text, unix, uri-bytestring
+         , validation, versions
          }:
          mkDerivation {
            pname = "cachix";
@@ -6148,14 +6149,14 @@ inherit (pkgs.xorg) libXfixes;};
            isExecutable = true;
            enableSeparateDataOutput = true;
            libraryHaskellDepends = [
-             async base base16-bytestring base64-bytestring bytestring
+             aeson async base base16-bytestring base64-bytestring bytestring
              cachix-api conduit conduit-extra cookie cryptonite dhall directory
              ed25519 filepath fsnotify here http-client http-client-tls
              http-conduit http-types lzma-conduit megaparsec memory mmorph netrc
              optparse-applicative process protolude resourcet retry
              safe-exceptions servant servant-auth servant-auth-client
              servant-client servant-client-core servant-conduit text unix
-             uri-bytestring versions
+             uri-bytestring validation versions
            ];
            executableHaskellDepends = [ base cachix-api ];
            executableToolDepends = [ hspec-discover ];
@@ -6171,10 +6172,10 @@ inherit (pkgs.xorg) libXfixes;};
         ({ mkDerivation, aeson, base, base16-bytestring, bytestring
          , conduit, cookie, cryptonite, deepseq, exceptions, hspec
          , hspec-discover, http-api-data, http-media, lens, memory
-         , protolude, resourcet, servant, servant-auth, servant-auth-server
-         , servant-auth-swagger, servant-client, servant-swagger
-         , servant-swagger-ui-core, stdenv, string-conv, swagger2, text
-         , transformers
+         , protolude, QuickCheck, resourcet, servant, servant-auth
+         , servant-auth-server, servant-auth-swagger, servant-client
+         , servant-swagger, servant-swagger-ui-core, stdenv, string-conv
+         , swagger2, text, transformers
          }:
          mkDerivation {
            pname = "cachix-api";
@@ -6192,8 +6193,8 @@ inherit (pkgs.xorg) libXfixes;};
            executableHaskellDepends = [ aeson base ];
            testHaskellDepends = [
              aeson base base16-bytestring bytestring conduit cookie cryptonite
-             hspec http-api-data http-media lens memory protolude servant
-             servant-auth servant-auth-server servant-auth-swagger
+             hspec http-api-data http-media lens memory protolude QuickCheck
+             servant servant-auth servant-auth-server servant-auth-swagger
              servant-swagger servant-swagger-ui-core string-conv swagger2 text
              transformers
            ];

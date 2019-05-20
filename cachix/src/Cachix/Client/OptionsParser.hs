@@ -14,6 +14,7 @@ import Options.Applicative
 
 import qualified Cachix.Client.Config as Config
 import Cachix.Client.URI         (defaultCachixURI)
+import qualified Cachix.Client.Commands.Export.OptionsParser as Export
 
 data CachixOptions = CachixOptions
   { host :: URIRef Absolute
@@ -54,6 +55,7 @@ data CachixCommand
   | GenerateKeypair BinaryCacheName
   | Push BinaryCacheName [Text] Bool -- TODO: refactor to a record
   | Use BinaryCacheName UseOptions
+  | Export Export.Arguments
   | Version
   deriving Show
 
@@ -66,6 +68,7 @@ parserCachixCommand :: Parser CachixCommand
 parserCachixCommand = subparser $
   command "authtoken" (infoH authtoken (progDesc "Configure token for authentication to cachix.org")) <>
   command "create" (infoH create (progDesc "DEPRECATED: Go to https://cachix.org instead")) <>
+  command "export" (infoH (Export <$> Export.parseArguments) (progDesc "Read cachix secrets from local configuration and export in JSON Lines format")) <>
   command "generate-keypair" (infoH generateKeypair (progDesc "Generate keypair for an binary cache")) <>
   command "push" (infoH push (progDesc "Upload Nix store paths to the binary cache")) <>
   command "use" (infoH use (progDesc "Configure nix.conf to enable binary cache during builds"))

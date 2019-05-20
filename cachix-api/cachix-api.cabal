@@ -40,6 +40,9 @@ library
       Cachix.Types.Session
       Cachix.Types.SigningKeyCreate
       Cachix.Types.SwaggerOrphans
+      Cachix.Formats.Common
+      Cachix.Formats.CachixPullToken
+      Cachix.Formats.CachixSigningKey
   hs-source-dirs:
       src
   build-depends:
@@ -84,6 +87,7 @@ test-suite cachix-api-test
   main-is: Main.hs
   other-modules:
       Spec
+      Cachix.FormatsSpec
   hs-source-dirs:
       test
   build-depends:
@@ -101,6 +105,7 @@ test-suite cachix-api-test
     , lens
     , memory
     , protolude
+    , QuickCheck
     , servant >=0.14.1
     , servant-auth
     , servant-auth-server

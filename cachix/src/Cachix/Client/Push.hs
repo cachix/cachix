@@ -33,8 +33,6 @@ import           Protolude
 import           Servant.API
 import           Servant.Auth                   ()
 import           Servant.Auth.Client
-import           Servant.API.Generic
-import           Servant.Client.Generic
 import           Servant.Client.Streaming
 import           Servant.Conduit                ()
 import           System.Process                 ( readProcess )
@@ -208,12 +206,3 @@ mapConcurrentlyBounded bound action items = do
 splitStorePath :: Text -> (Text, Text)
 splitStorePath storePath =
   (T.take 32 (T.drop 11 storePath), T.drop 44 storePath)
-
-cachixClient :: Api.CachixAPI (AsClientT ClientM)
-cachixClient = fromServant $ client Api.servantApi
-
-cachixBCClient :: Text -> Api.BinaryCacheAPI (AsClientT ClientM)
-cachixBCClient name = fromServant $ Api.cache cachixClient name
-
-cachixBCStreamingClient :: Text -> Api.BinaryCacheStreamingAPI (AsClientT ClientM)
-cachixBCStreamingClient name = fromServant $ client (Proxy :: Proxy Api.BinaryCachStreamingServantAPI) name

@@ -22,11 +22,8 @@ import           Data.String.Here
 import qualified Data.Text                      as T
 import           Network.HTTP.Types             (status404, status401)
 import           Protolude
-import           Servant.Auth                   ()
 import           Servant.Auth.Client
 import           Servant.API                    ( NoContent )
-import           Servant.API.Generic
-import           Servant.Client.Generic
 import           Servant.Client.Streaming
 import           Servant.Conduit                ()
 import           System.Directory               ( doesFileExist )
@@ -56,12 +53,6 @@ import           Cachix.Client.Secrets          ( SigningKey(SigningKey)
                                                 )
 import           Cachix.Client.Servant
 
-
-cachixClient :: Api.CachixAPI (AsClientT ClientM)
-cachixClient = fromServant $ client Api.servantApi
-
-cachixBCClient :: Text -> Api.BinaryCacheAPI (AsClientT ClientM)
-cachixBCClient name = fromServant $ Api.cache cachixClient name
 
 authtoken :: Env -> Text -> IO ()
 authtoken env token = do

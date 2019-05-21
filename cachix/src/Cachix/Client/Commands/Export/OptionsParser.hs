@@ -20,26 +20,26 @@ data Arguments = Arguments
 parseArguments :: Parser Arguments
 parseArguments = Arguments
   <$> ( flag' Stdout ( long "stdout"
-                        <> help "Export to stdout"
+                        <> help "Write to stdout"
                          )
       <|> Out <$> strOption (long "write-to"
                             <> short 'o'
                             <> metavar "FILE"
-                            <> help "Export to fresh or truncated FILE"
+                            <> help "Write to fresh or truncated FILE"
                             <> completer (bashCompleter "file")
                              )
       <|> Append <$> strOption (long "append-to"
                             <> short 'a'
                             <> metavar "FILE"
-                            <> help "Export by appending to new or existing FILE"
+                            <> help "Write by appending to new or existing FILE"
                             <> completer (bashCompleter "file")
                              )
   )
   <*> many (strOption ( long "push"
           <> metavar "CACHE"
-          <> help "Export secrets for pushing and pulling with CACHE"
+          <> help "Export config+secrets for pushing and pulling with CACHE"
            ))
   <*> many (strOption ( long "pull"
           <> metavar "CACHE"
-          <> help "Export secrets for pulling from CACHE"
+          <> help "Export config+secrets for pulling from CACHE"
            ))

@@ -8,6 +8,7 @@ import           Cachix.Client.Servant
 import           Cachix.Client.Env
 import qualified Cachix.Formats.CachixSigningKey as CachixSigningKey
 import qualified Cachix.Formats.CachixPullToken as CachixPullToken
+import qualified Cachix.Formats.CachixPublicKey as CachixPublicKey
 import           Data.Aeson
 import           Data.List (find)
 import           Data.Validation
@@ -28,7 +29,8 @@ exportPushSecret env cfg cacheName = do
     cacheInfo <- runAuthenticatedClient env (Api.get (cachixBCClient cacheName))
     pure (
         toEncodingSigningKey cache
-        : [ toEncodingPullKey cfg cacheName | not (Api.isPublic cacheInfo) ]
+        : [ toEncodingPullToken cfg cacheName | not (Api.isPublic cacheInfo) ]
+        ++ toEncodingPublicKey cacheInfo
       )
 
 exportPullSecrets :: Env -> Config.Config -> [Text] -> IO (Validation (NonEmpty Text) [Encoding])
@@ -38,13 +40,13 @@ exportPullSecrets env cfg caches = do
 
 exportPullSecret :: Env -> Config.Config -> Text -> IO (Validation (NonEmpty Text) [Encoding])
 exportPullSecret env cfg cacheName = do
-  
+
   cacheInfo <- runAuthenticatedClient env (Api.get (cachixBCClient cacheName))
 
-  if Api.isPublic cacheInfo
-  then pure [] <$ hPutStr stderr ("Note: cache " <> cacheName <>
-                                 " is public, requiring no secret to pull.\n")
-  else pure $ pure [ toEncodingPullKey cfg cacheName ]
+  pure
+    $ pure
+    $ [ toEncodingPullToken cfg cacheName | not (Api.isPublic cacheInfo) ]
+    ++ toEncodingPublicKey cacheInfo
 
 toEncodingSigningKey :: Config.BinaryCacheConfig -> Encoding
 toEncodingSigningKey bc = toEncoding $ CachixSigningKey.CachixSigningKey
@@ -53,8 +55,18 @@ toEncodingSigningKey bc = toEncoding $ CachixSigningKey.CachixSigningKey
   }
 
 -- TODO: Support cache-specific tokens
-toEncodingPullKey :: Config.Config -> Text -> Encoding
-toEncodingPullKey cfg bc = toEncoding $ CachixPullToken.CachixPullToken
+toEncodingPullToken :: Config.Config -> Text -> Encoding
+toEncodingPullToken cfg bc = toEncoding $ CachixPullToken.CachixPullToken
   { CachixPullToken.cacheName = bc
   , CachixPullToken.secretToken = toSL $ Servant.Auth.Client.getToken $ Config.authToken cfg
   }
+
+toEncodingPublicKey :: Api.BinaryCache -> [Encoding]
+toEncodingPublicKey bc =
+  map
+      (\sk -> toEncoding $ CachixPublicKey.CachixPublicKey
+        { CachixPublicKey.cacheName = Api.name bc
+        , CachixPublicKey.publicKey = sk
+        }
+      )
+    $ Api.publicSigningKeys bc

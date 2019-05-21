@@ -41,6 +41,7 @@ library
       Cachix.Types.SigningKeyCreate
       Cachix.Types.SwaggerOrphans
       Cachix.Formats.Common
+      Cachix.Formats.CachixPublicKey
       Cachix.Formats.CachixPullToken
       Cachix.Formats.CachixSigningKey
   hs-source-dirs:

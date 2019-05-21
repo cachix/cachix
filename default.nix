@@ -12,7 +12,7 @@ let
   );
   hsPkgs = (import ./stack2nix.nix { inherit pkgs; }).override {
     overrides = self: super: {
-      cachix = justStaticExecutables (filterStack super.cachix);
+      cachix = generateOptparseApplicativeCompletion "cachix" (justStaticExecutables (filterStack super.cachix));
       cachix-api = filterStack super.cachix-api;
       # TODO: get stack2nix/cabal2nix to fill these in
       inherit (pkgs.darwin.apple_sdk.frameworks) Cocoa CoreServices;

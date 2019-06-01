@@ -20,13 +20,15 @@ Available options:
   -h,--help                Show this help text
   -h,--host URI            Host to connect to (default: https://cachix.org)
   -c,--config CONFIGPATH   Cachix configuration
-                           file (default: "/home/ielectric/.config/cachix/cachix.dhall")
+                           file (default: "~/.config/cachix/cachix.dhall")
   -v,--verbose             Verbose mode
   -V,--version             Show cachix version
 
 Available commands:
   authtoken                Configure token for authentication to cachix.org
-  create                   Create a new binary cache
+  export                   Read local secrets and configuration and export them
+                           in JSON Lines format
+  generate-keypair         Generate keypair for an binary cache
   push                     Upload Nix store paths to the binary cache
   use                      Configure nix.conf to enable binary cache during
                            builds

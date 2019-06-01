@@ -18,7 +18,7 @@ Usage: cachix [-h|--host URI] [-c|--config CONFIGPATH] [-v|--verbose] (COMMAND |
 
 Available options:
   -h,--help                Show this help text
-  -h,--host URI            Host to connect to (default: https://cachix.org)
+  --host URI               Host to connect to (default: https://cachix.org)
   -c,--config CONFIGPATH   Cachix configuration
                            file (default: "/home/ielectric/.config/cachix/cachix.dhall")
   -v,--verbose             Verbose mode

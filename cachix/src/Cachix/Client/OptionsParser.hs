@@ -24,7 +24,6 @@ data CachixOptions = CachixOptions
 parserCachixOptions :: Config.ConfigPath -> Parser CachixOptions
 parserCachixOptions defaultConfigPath = CachixOptions
   <$> option uriOption ( long "host"
-                       <> short 'h'
                        <> value defaultCachixURI
                        <> metavar "URI"
                        <> showDefaultWith (toS . serializeURIRef')

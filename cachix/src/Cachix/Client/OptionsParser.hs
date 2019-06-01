@@ -65,7 +65,7 @@ parserCachixCommand :: Parser CachixCommand
 parserCachixCommand = subparser $
   command "authtoken" (infoH authtoken (progDesc "Configure token for authentication to cachix.org")) <>
   command "create" (infoH create (progDesc "DEPRECATED: Go to https://cachix.org instead")) <>
-  command "generate-keypair" (infoH generateKeypair (progDesc "Generate keypair for an binary cache")) <>
+  command "generate-keypair" (infoH generateKeypair (progDesc "Generate keypair for a binary cache")) <>
   command "push" (infoH push (progDesc "Upload Nix store paths to the binary cache")) <>
   command "use" (infoH use (progDesc "Configure nix.conf to enable binary cache during builds"))
   where

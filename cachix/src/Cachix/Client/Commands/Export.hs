@@ -28,9 +28,15 @@ run env args = do
                  (++) <$> encodings1V <*> encodings2V
                )
 
-  bracket (case outputFile args of
-    Stdout -> pure stdout
-    Out f -> openFile f WriteMode
-    Append f -> openFile f AppendMode) hClose $ \h ->
-      forM_ encodings $ \encoding ->
-        BL.hPutStr h (BB.toLazyByteString (Data.Aeson.fromEncoding encoding <> "\n"))
+  let
+    open = case outputFile args of
+        Stdout -> pure stdout
+        Out f -> openFile f WriteMode
+        Append f -> openFile f AppendMode
+
+    withOutputHandle = bracket open hClose
+
+  withOutputHandle $ \h ->
+    forM_ encodings $ \encoding ->
+      BL.hPutStr h (BB.toLazyByteString
+                      (Data.Aeson.fromEncoding encoding <> "\n"))

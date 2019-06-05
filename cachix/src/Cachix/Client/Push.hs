@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE Rank2Types #-}
@@ -35,7 +34,7 @@ import           Servant.Auth                   ()
 import           Servant.Auth.Client
 import           Servant.API.Generic
 import           Servant.Client.Generic
-import           Servant.Client.Streaming
+import           Servant.Client.Streaming hiding (ClientError)
 import           Servant.Conduit                ()
 import           System.Process                 ( readProcess )
 
@@ -57,7 +56,7 @@ data PushStrategy m r = PushStrategy
   { onAlreadyPresent :: m r -- ^ Called when a path is already in the cache.
   , onAttempt :: RetryStatus -> m ()
   , on401 :: m r
-  , onError :: ServantError -> m r
+  , onError :: ClientError -> m r
   , onDone :: m r
   , withXzipCompressor :: forall a. (ConduitM ByteString ByteString (ResourceT IO) () -> m a) -> m a
   }
@@ -74,7 +73,7 @@ pushSingleStorePath
   -> Text -- ^ store path
   -> m r -- ^ r is determined by the 'PushStrategy'
 pushSingleStorePath ce cache cb storePath = retryPath $ \retrystatus -> do
-  
+
   let (storeHash, storeSuffix) = splitStorePath $ toS storePath
       name = pushCacheName cache
 

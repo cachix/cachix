@@ -6,22 +6,25 @@
 
 module Cachix.Client.Servant
   ( isErr
+  , Cachix.Client.Servant.ClientError
   ) where
 
 import Protolude
 import Network.HTTP.Types (Status)
-import Servant.API (NoContent)
-import Servant.Client
+import qualified Servant.Client
 
+type ClientError =
 #if !MIN_VERSION_servant_client(0,16,0)
-#define ClientError ServantError
+  Servant.Client.ServantError
+#else
+  Servant.Client.ClientError
 #endif
 
 isErr :: ClientError -> Status -> Bool
 #if MIN_VERSION_servant_client(0,16,0)
-isErr (FailureResponse _ resp) status
+isErr (Servant.Client.FailureResponse _ resp) status
 #else
-isErr (FailureResponse resp) status
+isErr (Servant.Client.FailureResponse resp) status
 #endif
-  | responseStatusCode resp == status = True
+  | Servant.Client.responseStatusCode resp == status = True
 isErr _ _ = False

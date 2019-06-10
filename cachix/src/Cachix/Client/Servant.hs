@@ -3,6 +3,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# OPTIONS_GHC -O0 #-} -- TODO https://github.com/haskell-servant/servant/issues/986
 
 module Cachix.Client.Servant
   ( isErr
@@ -13,27 +14,21 @@ module Cachix.Client.Servant
   , Cachix.Client.Servant.ClientError
   ) where
 
-import Protolude
-import Network.HTTP.Types (Status)
-import Servant.API (NoContent)
-import Servant.Client
 import           Protolude
 
 import qualified Cachix.Api as Api
 import           Cachix.Api.Error
+import qualified Cachix.Client.Config as Config
+import qualified Cachix.Client.Env as Env
+import qualified Cachix.Client.Exception as Exception
 import           Network.HTTP.Types (Status)
 import           Servant.API.Generic
 import           Servant.Auth             ()
 import           Servant.Auth.Client      (Token)
-import           Servant.Client.Generic
+import qualified Servant.Client
+import           Servant.Client.Generic   (AsClientT)
 import           Servant.Client.Streaming
 import           Servant.Conduit          ()
-import qualified Cachix.Client.Env as Env
-import qualified Cachix.Client.Config as Config
-import qualified Cachix.Client.Exception as Exception
-import Protolude
-import Network.HTTP.Types (Status)
-import qualified Servant.Client
 
 type ClientError =
 #if !MIN_VERSION_servant_client(0,16,0)

@@ -2,6 +2,8 @@ module Cachix.Client.OptionsParser
   ( CachixCommand(..)
   , CachixOptions(..)
   , UseOptions(..)
+  , PushArguments(..)
+  , PushOptions(..)
   , BinaryCacheName
   , getOpts
   ) where
@@ -51,7 +53,7 @@ data CachixCommand
   = AuthToken Text
   | Create BinaryCacheName
   | GenerateKeypair BinaryCacheName
-  | Push BinaryCacheName [Text] Bool -- TODO: refactor to a record
+  | Push PushArguments
   | Use BinaryCacheName UseOptions
   | Version
   deriving Show
@@ -59,6 +61,15 @@ data CachixCommand
 data UseOptions = UseOptions
   { useNixOS :: Bool
   , useNixOSFolder :: FilePath
+  } deriving Show
+
+data PushArguments
+  = PushPaths PushOptions Text [Text]
+  | PushWatchStore PushOptions Text
+  deriving Show
+
+data PushOptions = PushOptions
+  {
   } deriving Show
 
 parserCachixCommand :: Parser CachixCommand
@@ -73,12 +84,17 @@ parserCachixCommand = subparser $
     authtoken = AuthToken <$> strArgument (metavar "TOKEN")
     create = Create <$> nameArg
     generateKeypair = GenerateKeypair <$> nameArg
-    push = Push <$> nameArg
-                <*> many (strArgument (metavar "PATHS..."))
-                <*> switch ( long "watch-store"
+
+    pushOptions = pure PushOptions
+    push = (\opts cache f -> Push $ f opts cache) <$> pushOptions <*> nameArg <*> (pushPaths <|> pushWatchStore)
+    pushPaths = (\paths opts cache -> PushPaths opts cache paths) <$>
+                   many (strArgument (metavar "PATHS..."))
+    pushWatchStore = (\() opts cache -> PushWatchStore opts cache) <$>
+                  flag' () ( long "watch-store"
                           <> short 'w'
                           <> help "Run in daemon mode and push store paths as they are added to /nix/store"
                            )
+
     use = Use <$> nameArg
               <*> (UseOptions <$> switch ( long "nixos"
                                         <> short 'n'

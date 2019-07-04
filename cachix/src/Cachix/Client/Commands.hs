@@ -42,7 +42,9 @@ import           Cachix.Client.Config           ( Config(..)
 import qualified Cachix.Client.Config          as Config
 import           Cachix.Client.Env              ( Env(..) )
 import           Cachix.Client.Exception        ( CachixException(..) )
-import           Cachix.Client.OptionsParser    ( CachixOptions(..), UseOptions(..) )
+import           Cachix.Client.OptionsParser    ( CachixOptions(..), UseOptions(..)
+                                                , PushArguments(..) -- , PushOptions(..)
+                                                )
 import           Cachix.Client.InstallationMode
 import           Cachix.Client.NixVersion       ( getNixVersion )
 import qualified Cachix.Client.NixConf         as NixConf
@@ -145,8 +147,8 @@ use env name useOptions = do
 
 
 -- TODO: lots of room for perfomance improvements
-push :: Env -> Text -> [Text] -> Bool -> IO ()
-push env name rawPaths False = do
+push :: Env -> PushArguments -> IO ()
+push env (PushPaths _opts name rawPaths) = do
   hasNoStdin <- hIsTerminalDevice stdin
   when (not hasNoStdin && not (null rawPaths)) $ throwIO $ AmbiguousInput "You provided both stdin and store path arguments, pick only one to proceed."
   inputStorePaths <-
@@ -170,7 +172,7 @@ push env name rawPaths False = do
     inputStorePaths
   putText "All done."
 
-push env name _ True = withManager $ \mgr -> do
+push env (PushWatchStore _opts name) = withManager $ \mgr -> do
   _ <- watchDir mgr "/nix/store" filterF action
   putText "Watching /nix/store for new builds ..."
   forever $ threadDelay 1000000

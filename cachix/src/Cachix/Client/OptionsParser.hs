@@ -69,7 +69,7 @@ data PushArguments
   deriving Show
 
 data PushOptions = PushOptions
-  {
+  { compressionLevel :: Int
   } deriving Show
 
 parserCachixCommand :: Parser CachixCommand
@@ -85,7 +85,20 @@ parserCachixCommand = subparser $
     create = Create <$> nameArg
     generateKeypair = GenerateKeypair <$> nameArg
 
-    pushOptions = pure PushOptions
+    validatedLevel l =
+      l <$ unless (l `elem` [0 .. 9]) (readerError $ "value " <> show l <> " not in expected range: [0..9]")
+
+    pushOptions :: Parser PushOptions
+    pushOptions = PushOptions
+       <$> option (auto >>= validatedLevel)
+            ( long "compression-level"
+            <> metavar "[0..9]"
+            <> help "The compression level for XZ compression.\
+                   \ Take compressor *and* decompressor memory usage into account before using [7..9]!"
+            <> showDefault
+            <> value 2
+            )
+
     push = (\opts cache f -> Push $ f opts cache) <$> pushOptions <*> nameArg <*> (pushPaths <|> pushWatchStore)
     pushPaths = (\paths opts cache -> PushPaths opts cache paths) <$>
                    many (strArgument (metavar "PATHS..."))

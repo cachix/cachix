@@ -43,7 +43,7 @@ import qualified Cachix.Client.Config          as Config
 import           Cachix.Client.Env              ( Env(..) )
 import           Cachix.Client.Exception        ( CachixException(..) )
 import           Cachix.Client.OptionsParser    ( CachixOptions(..), UseOptions(..)
-                                                , PushArguments(..) -- , PushOptions(..)
+                                                , PushArguments(..), PushOptions(..)
                                                 )
 import           Cachix.Client.InstallationMode
 import           Cachix.Client.NixVersion       ( getNixVersion )
@@ -148,7 +148,7 @@ use env name useOptions = do
 
 -- TODO: lots of room for perfomance improvements
 push :: Env -> PushArguments -> IO ()
-push env (PushPaths _opts name rawPaths) = do
+push env (PushPaths opts name rawPaths) = do
   hasNoStdin <- hIsTerminalDevice stdin
   when (not hasNoStdin && not (null rawPaths)) $ throwIO $ AmbiguousInput "You provided both stdin and store path arguments, pick only one to proceed."
   inputStorePaths <-
@@ -168,11 +168,11 @@ push env (PushPaths _opts name rawPaths) = do
       , pushCacheName = name
       , pushCacheSigningKey = sk
       }
-    (pushStrategy env name)
+    (pushStrategy env opts name)
     inputStorePaths
   putText "All done."
 
-push env (PushWatchStore _opts name) = withManager $ \mgr -> do
+push env (PushWatchStore opts name) = withManager $ \mgr -> do
   _ <- watchDir mgr "/nix/store" filterF action
   putText "Watching /nix/store for new builds ..."
   forever $ threadDelay 1000000
@@ -183,7 +183,7 @@ push env (PushWatchStore _opts name) = withManager $ \mgr -> do
 #else
     action (Removed fp _) =
 #endif
-      pushStorePath env name $ toS $ dropEnd 5 fp
+      pushStorePath env opts name $ toS $ dropEnd 5 fp
     action _ = return ()
 
     filterF :: ActionPredicate
@@ -218,8 +218,8 @@ retryText retrystatus =
   then ""
   else "(retry #" <> show (rsIterNumber retrystatus) <> ") "
 
-pushStrategy :: Env -> Text -> Text -> PushStrategy IO ()
-pushStrategy env name storePath = PushStrategy
+pushStrategy :: Env -> PushOptions -> Text -> Text -> PushStrategy IO ()
+pushStrategy env opts name storePath = PushStrategy
   { onAlreadyPresent = pass
   , on401 = if isJust (config env)
             then throwM $ accessDeniedBinaryCache name
@@ -229,11 +229,11 @@ pushStrategy env name storePath = PushStrategy
       -- we append newline instead of putStrLn due to https://github.com/haskell/text/issues/242
       putStr $ "pushing " <> retryText retrystatus <> storePath <> "\n"
   , onDone = pass
-  , withXzipCompressor = defaultWithXzipCompressor
+  , withXzipCompressor = defaultWithXzipCompressorWithLevel (compressionLevel opts)
   }
 
-pushStorePath :: Env -> Text -> Text -> IO ()
-pushStorePath env name storePath = do
+pushStorePath :: Env -> PushOptions -> Text -> Text -> IO ()
+pushStorePath env opts name storePath = do
   sk <- findSigningKey env name
   -- use secret key from config or env
   -- TODO: this shouldn't happen for each store path
@@ -245,5 +245,5 @@ pushStorePath env name storePath = do
       , pushCacheName = name
       , pushCacheSigningKey = sk
       }
-    (pushStrategy env name storePath)
+    (pushStrategy env opts name storePath)
     storePath

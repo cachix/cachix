@@ -8,6 +8,7 @@ module Cachix.Client.Push
   , PushCache(..)
   , PushStrategy(..)
   , defaultWithXzipCompressor
+  , defaultWithXzipCompressorWithLevel
 
     -- * Pushing a closure of store paths
   , pushClosure
@@ -60,8 +61,10 @@ data PushStrategy m r = PushStrategy
   }
 
 defaultWithXzipCompressor :: forall m a. (ConduitM ByteString ByteString (ResourceT IO) () -> m a) -> m a
-defaultWithXzipCompressor = ($ compress Nothing)
+defaultWithXzipCompressor = ($ compress (Just 2))
 
+defaultWithXzipCompressorWithLevel :: Int -> forall m a. (ConduitM ByteString ByteString (ResourceT IO) () -> m a) -> m a
+defaultWithXzipCompressorWithLevel l = ($ compress (Just l))
 
 pushSingleStorePath
   :: (MonadMask m, MonadIO m)

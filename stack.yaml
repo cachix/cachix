@@ -3,7 +3,8 @@ packages:
 - cachix-api
 - cachix
 nix:
-    packages: [zlib,lzma]
+    packages: []
+    shell-file: ./nix/stack-shell.nix
     pure: false
 extra-deps:
 - netrc-0.2.0.0

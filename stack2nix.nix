@@ -6178,7 +6178,7 @@ inherit (pkgs.xorg) libXfixes;};
          }:
          mkDerivation {
            pname = "cachix-api";
-           version = "0.2.0";
+           version = "0.2.1";
            src = ./cachix-api;
            isLibrary = true;
            isExecutable = true;

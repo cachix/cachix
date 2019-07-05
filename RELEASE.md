@@ -1,9 +1,13 @@
 - git checkout -B v0.X.X
-- bump version in cachix.cabal
+- bump version in cachix.cabal and cachix-api.cabal
 - ./scripts/stack2nix
-- update changelog
+- update changelog (cachix and cachix-api)
+- README.md `cachix --help` changes
 - git commit -m "0.X.X"
+- git push -u origin HEAD
+- # make a PR
 - stack sdist cachix{,-api}
+- stack upload cachix{,-api}
 - git tag v0.X.X
 - git push --tags 
-- stack upload cachix{,-api}
+- bump link to https://cachix.org/api/v1/install

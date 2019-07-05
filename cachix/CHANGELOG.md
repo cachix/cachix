@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
+## [0.2.1] - 2019-07-05
+
+### Added
+
+- #180 support servant 0.16 @domenkozar
+- #200 add `cachix push --compression-level` and default to 2 @roberth
+  This should cut pushing time by a significant factor.
+
+### Changed
+
+- #194 remove shadowed -h option @roberth
+- #180 reduce retries limit to 3 @domenkozar
+- #192 extract `cachix push` into a proper library module @roberth
+
+### Fixed
+
+- #187 create possibly missing directories for netrc @domenkozar
+- #185 fix command line completions @roberth
+- #196 improve build time by working around a GHC bug @roberth
+
 ## [0.2.0] - 2019-03-04
 
 ### Added
@@ -16,6 +36,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - #24 #168 Private binary cache support @domenkozar @roberth
 
 ### Changed
+
 - #158 #160 #166 #91 Improve NixOS experience by
   writing out nixos modules @domenkozar
 - #170 Get rid of amazonka dependency @domenkozar

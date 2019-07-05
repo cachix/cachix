@@ -1,6 +1,6 @@
 cabal-version:  2.2
 name:           cachix
-version:        0.2.0
+version:        0.2.1
 synopsis:       Command line client for Nix binary cache hosting https://cachix.org
 homepage:       https://github.com/cachix/cachix#readme
 bug-reports:    https://github.com/cachix/cachix/issues

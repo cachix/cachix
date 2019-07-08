@@ -2,6 +2,7 @@
 - bump version in cachix.cabal and cachix-api.cabal
 - ./scripts/stack2nix
 - update changelog (cachix and cachix-api)
+- make sure changelog has an url entry for the latest tag
 - README.md `cachix --help` changes
 - git commit -m "0.X.X"
 - git push -u origin HEAD

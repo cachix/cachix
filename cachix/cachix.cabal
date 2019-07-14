@@ -10,11 +10,12 @@ copyright:      2018 Domen Kožar
 license:        Apache-2.0
 license-file:   LICENSE
 build-type:     Simple
-data-files: *.input, *.output
-data-dir: test/data
 extra-source-files:
     CHANGELOG.md
     README.md
+    test/data/*.input
+    test/data/*.output
+
 
 common defaults
   default-extensions: OverloadedStrings NoImplicitPrelude RecordWildCards DeriveGeneric

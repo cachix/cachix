@@ -6146,7 +6146,6 @@ inherit (pkgs.xorg) libXfixes;};
            src = ./cachix;
            isLibrary = true;
            isExecutable = true;
-           enableSeparateDataOutput = true;
            libraryHaskellDepends = [
              async base base16-bytestring base64-bytestring bytestring
              cachix-api conduit conduit-extra cookie cryptonite dhall directory

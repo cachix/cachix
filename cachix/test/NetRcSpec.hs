@@ -1,6 +1,5 @@
 module NetRcSpec where
 
-import Paths_cachix
 import Protolude
 import System.Directory (copyFile)
 import System.IO.Temp   (withSystemTempFile)
@@ -38,16 +37,14 @@ config = Config
 -- TODO: poor man's golden tests, use https://github.com/stackbuilders/hspec-golden
 test :: [BinaryCache] -> Text -> Expectation
 test binaryCaches goldenName = withSystemTempFile "hspec-netrc" $ \filepath _ -> do
-    input <- getInput
-    output <- getOutput
+    let
+      input = "test/data/" <> toS goldenName <> ".input"
+      output = "test/data/" <> toS goldenName <> ".output"
     copyFile input filepath
     NetRc.add config binaryCaches filepath
     real <- readFile filepath
     expected <- readFile output
     real `shouldBe` expected
-  where
-    getInput = getDataFileName $ toS goldenName <> ".input"
-    getOutput = getDataFileName $ toS goldenName <> ".output"
 
 spec :: Spec
 spec =

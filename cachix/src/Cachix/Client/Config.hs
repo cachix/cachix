@@ -9,9 +9,9 @@ module Cachix.Client.Config
   , mkConfig
   ) where
 
+import Cachix.Client.Config.Orphans()
 import Dhall     hiding ( Text )
 import Dhall.Pretty     ( prettyExpr )
-import Dhall.Core (Expr(..), Chunks(..))
 import GHC.Generics     ( Generic )
 import Servant.Auth.Client
 import System.Directory ( doesFileExist, createDirectoryIfMissing
@@ -32,18 +32,6 @@ data Config = Config
  { authToken :: Token
  , binaryCaches :: [BinaryCacheConfig]
  } deriving (Show, Generic, Interpret, Inject)
-
-instance Interpret Token where
-  autoWith _ = Type
-    { extract = \(TextLit (Chunks [] t)) -> pure (Token (toS t))
-    , expected = Text
-    }
-
-instance Inject Token where
-  injectWith _ = InputType
-    { embed = TextLit . Chunks [] . toS . getToken
-    , declared = Text
-    }
 
 mkConfig :: Text -> Config
 mkConfig token = Config

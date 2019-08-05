@@ -122,10 +122,10 @@ parserCachixCommand = subparser $
 getOpts :: IO (CachixOptions, CachixCommand)
 getOpts = do
   configpath <- Config.getDefaultFilename
-  customExecParser (prefs showHelpOnEmpty) (opts configpath)
+  customExecParser (prefs showHelpOnEmpty) (optsInfo configpath)
 
-opts :: Config.ConfigPath -> ParserInfo (CachixOptions, CachixCommand)
-opts configpath = infoH parser desc
+optsInfo :: Config.ConfigPath -> ParserInfo (CachixOptions, CachixCommand)
+optsInfo configpath = infoH parser desc
   where parser = (,) <$> parserCachixOptions configpath <*> (parserCachixCommand <|> versionParser)
         versionParser :: Parser CachixCommand
         versionParser = flag' Version ( long "version"

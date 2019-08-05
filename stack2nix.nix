@@ -6131,10 +6131,11 @@ inherit (pkgs.xorg) libXfixes;};
          }) {};
       "cachix" = callPackage
         ({ mkDerivation, async, base, base16-bytestring, base64-bytestring
-         , bytestring, cachix-api, conduit, conduit-extra, cookie
-         , cryptonite, dhall, directory, ed25519, filepath, fsnotify, here
-         , hspec, hspec-discover, http-client, http-client-tls, http-conduit
-         , http-types, lzma-conduit, megaparsec, memory, mmorph, netrc
+         , bytestring, cachix-api, conduit, conduit-extra, containers
+         , cookie, cryptonite, dhall, directory, ed25519, filepath, fsnotify
+         , here, hspec, hspec-discover, http-client, http-client-tls
+         , http-conduit, http-types, inline-c, inline-c-cpp, lzma-conduit
+         , megaparsec, memory, mmorph, netrc, nix-main, nix-store
          , optparse-applicative, process, protolude, resourcet, retry
          , safe-exceptions, servant, servant-auth, servant-auth-client
          , servant-client, servant-client-core, servant-conduit, stdenv
@@ -6148,14 +6149,15 @@ inherit (pkgs.xorg) libXfixes;};
            isExecutable = true;
            libraryHaskellDepends = [
              async base base16-bytestring base64-bytestring bytestring
-             cachix-api conduit conduit-extra cookie cryptonite dhall directory
-             ed25519 filepath fsnotify here http-client http-client-tls
-             http-conduit http-types lzma-conduit megaparsec memory mmorph netrc
-             optparse-applicative process protolude resourcet retry
-             safe-exceptions servant servant-auth servant-auth-client
-             servant-client servant-client-core servant-conduit text unix
-             uri-bytestring versions
+             cachix-api conduit conduit-extra containers cookie cryptonite dhall
+             directory ed25519 filepath fsnotify here http-client
+             http-client-tls http-conduit http-types inline-c inline-c-cpp
+             lzma-conduit megaparsec memory mmorph netrc optparse-applicative
+             process protolude resourcet retry safe-exceptions servant
+             servant-auth servant-auth-client servant-client servant-client-core
+             servant-conduit text unix uri-bytestring versions
            ];
+           libraryPkgconfigDepends = [ nix-main nix-store ];
            executableHaskellDepends = [ base cachix-api ];
            executableToolDepends = [ hspec-discover ];
            testHaskellDepends = [
@@ -6165,7 +6167,7 @@ inherit (pkgs.xorg) libXfixes;};
            homepage = "https://github.com/cachix/cachix#readme";
            description = "Command line client for Nix binary cache hosting https://cachix.org";
            license = stdenv.lib.licenses.asl20;
-         }) {};
+         }) {inherit (pkgs) nix-main; inherit (pkgs) nix-store;};
       "cachix-api" = callPackage
         ({ mkDerivation, aeson, base, base16-bytestring, bytestring
          , conduit, cookie, cryptonite, deepseq, exceptions, hspec

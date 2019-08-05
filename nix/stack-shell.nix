@@ -6,5 +6,7 @@ in pkgs.haskell.lib.buildStackProject {
   buildInputs = [
     pkgs.lzma
     pkgs.zlib
+    pkgs.nix
+    pkgs.boost
   ];
 }

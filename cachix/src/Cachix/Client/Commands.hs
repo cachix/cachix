@@ -159,10 +159,12 @@ push env (PushPaths opts name rawPaths) = do
   -- TODO: if empty, take whole nix store and warn: nix store-path --all
   when (null inputStorePaths) $ throwIO $ NoInput "You need to specify store paths either as stdin or as a cli argument"
   sk <- findSigningKey env name
+  store <- wait (storeAsync env)
 
   void $ pushClosure
     (mapConcurrentlyBounded 4)
     (clientenv env)
+    store
     PushCache
       { pushCacheToken = envToToken env
       , pushCacheName = name
@@ -174,6 +176,7 @@ push env (PushPaths opts name rawPaths) = do
 
 push env (PushWatchStore opts name) = withManager $ \mgr -> do
   _ <- watchDir mgr "/nix/store" filterF action
+  _ <- wait (storeAsync env)
   putText "Watching /nix/store for new builds ..."
   forever $ threadDelay 1000000
   where
@@ -237,9 +240,11 @@ pushStorePath env opts name storePath = do
   sk <- findSigningKey env name
   -- use secret key from config or env
   -- TODO: this shouldn't happen for each store path
+  store <- wait (storeAsync env)
 
   pushSingleStorePath
     (clientenv env)
+    store
     PushCache
       { pushCacheToken = envToToken env
       , pushCacheName = name

@@ -27,7 +27,7 @@ import           Servant.Auth             ()
 import           Servant.Auth.Client      (Token)
 import qualified Servant.Client
 import           Servant.Client.Generic   (AsClientT)
-import           Servant.Client.Streaming
+import           Servant.Client.Streaming hiding (ClientError)
 import           Servant.Conduit          ()
 
 type ClientError =

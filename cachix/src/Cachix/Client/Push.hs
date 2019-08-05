@@ -44,6 +44,8 @@ import qualified Cachix.Types.NarInfoCreate    as Api
 import           Cachix.Client.Exception        ( CachixException(..) )
 import           Cachix.Client.Servant
 import           Cachix.Client.Secrets
+import           Cachix.Client.Store            ( Store )
+import qualified Cachix.Client.Store           as Store
 
 
 data PushCache = PushCache
@@ -69,11 +71,12 @@ defaultWithXzipCompressorWithLevel l = ($ compress (Just l))
 pushSingleStorePath
   :: (MonadMask m, MonadIO m)
   => ClientEnv  -- ^ cachix base url, connection manager, see 'Cachix.Client.URI.defaultCachixBaseUrl', 'Servant.Client.mkClientEnv'
+  -> Store
   -> PushCache -- ^ details for pushing to cache
   -> PushStrategy m r -- ^ how to report results, (some) errors, and do some things
   -> Text -- ^ store path
   -> m r -- ^ r is determined by the 'PushStrategy'
-pushSingleStorePath ce cache cb storePath = retryPath $ \retrystatus -> do
+pushSingleStorePath ce _store cache cb storePath = retryPath $ \retrystatus -> do
 
   let (storeHash, storeSuffix) = splitStorePath $ toS storePath
       name = pushCacheName cache
@@ -183,18 +186,24 @@ pushClosure
      --
      -- For example: @'mapConcurrentlyBounded' 4@
   -> ClientEnv -- ^ See 'pushSingleStorePath'
+  -> Store
   -> PushCache
   -> (Text -> PushStrategy m r)
   -> [Text] -- ^ Initial store paths
   -> m [r] -- ^ Every @r@ per store path of the entire closure of store paths
-pushClosure traversal clientEnv pushCache pushStrategy inputStorePaths = do
+pushClosure traversal clientEnv store pushCache pushStrategy inputStorePaths = do
   
   -- Get the transitive closure of dependencies
-  -- TODO: split args if too big
-  paths <- liftIO $ T.lines . toS <$> readProcess "nix-store" (fmap toS (["-qR"] <> inputStorePaths)) mempty
+  paths <- liftIO $ do
+    inputs <- Store.newEmptyPathSet
+    for_ inputStorePaths $ \path -> do
+      normalized <- Store.followLinksToStorePath store (encodeUtf8 path)
+      Store.addToPathSet normalized inputs
+    closure <- Store.computeFSClosure store Store.defaultClosureParams inputs
+    Store.traversePathSet (pure . toSL) closure
 
   -- TODO: make pool size configurable, on beefier machines this could be doubled
-  traversal (\path -> pushSingleStorePath clientEnv pushCache (pushStrategy path) path) paths
+  traversal (\path -> pushSingleStorePath clientEnv store pushCache (pushStrategy path) path) paths
 
 mapConcurrentlyBounded :: Traversable t => Int -> (a -> IO b) -> t a -> IO (t b)
 mapConcurrentlyBounded bound action items = do

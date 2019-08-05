@@ -19,17 +19,21 @@ import System.Directory            ( canonicalizePath )
 import Cachix.Client.Config        ( readConfig, Config )
 import Cachix.Client.OptionsParser ( CachixOptions(..) )
 import Cachix.Client.URI           ( getBaseUrl )
+import Cachix.Client.Store         ( Store, openStore )
+import Control.Concurrent.Async    ( Async, async )
 
 
 data Env = Env
   { config :: Maybe Config
   , clientenv :: ClientEnv
   , cachixoptions :: CachixOptions
+  , storeAsync :: Async Store
   }
 
 
 mkEnv :: CachixOptions -> IO Env
 mkEnv rawcachixoptions = do
+  store <- async openStore
   -- make sure path to the config is passed as absolute to dhall logic
   canonicalConfigPath <- canonicalizePath (configPath rawcachixoptions)
   let cachixoptions = rawcachixoptions { configPath = canonicalConfigPath }
@@ -40,6 +44,7 @@ mkEnv rawcachixoptions = do
     { config = config
     , clientenv = clientenv
     , cachixoptions = cachixoptions
+    , storeAsync = store
     }
 
 customManagerSettings :: ManagerSettings

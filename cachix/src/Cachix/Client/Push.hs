@@ -28,6 +28,7 @@ import           Data.Conduit.Process
 import           Data.Conduit.Lzma              ( compress )
 import           Data.IORef
 import qualified Data.Text                      as T
+import qualified Data.Set                       as Set
 import           Network.HTTP.Types             (status404, status401)
 import           Protolude
 import           Servant.API
@@ -54,9 +55,7 @@ data PushCache = PushCache
   , pushCacheToken :: Token
   }
 data PushStrategy m r = PushStrategy
-  { onAlreadyPresent :: m r -- ^ Called when a path is already in the cache.
-  , onAttempt :: RetryStatus -> m ()
-  , on401 :: m r
+  { onAttempt :: RetryStatus -> m ()
   , onError :: ClientError -> m r
   , onDone :: m r
   , withXzipCompressor :: forall a. (ConduitM ByteString ByteString (ResourceT IO) () -> m a) -> m a
@@ -77,95 +76,81 @@ pushSingleStorePath
   -> Text -- ^ store path
   -> m r -- ^ r is determined by the 'PushStrategy'
 pushSingleStorePath ce _store cache cb storePath = retryPath $ \retrystatus -> do
-
   let (storeHash, storeSuffix) = splitStorePath $ toS storePath
       name = pushCacheName cache
 
-  -- Check if narinfo already exists
-  -- TODO: query also cache.nixos.org? server-side?
-  res <- liftIO $ (`runClientM` ce) $ Api.narinfoHead
-    (cachixBCClient name)
-    (pushCacheToken cache)
-    (Api.NarInfoC storeHash)
-  case res of
-    Right NoContent -> onAlreadyPresent cb -- we're done as store path is already in the cache
-    Left err | isErr err status404 -> doUpload
-             | isErr err status401 -> on401 cb
-             | otherwise -> onError cb err
-     where
-      doUpload = do
-        onAttempt cb retrystatus
+  onAttempt cb retrystatus
 
-        narSizeRef <- liftIO $ newIORef 0
-        fileSizeRef <- liftIO $ newIORef 0
-        narHashRef <- liftIO $ newIORef ("" :: Text)
-        fileHashRef <- liftIO $ newIORef ("" :: Text)
+  narSizeRef <- liftIO $ newIORef 0
+  fileSizeRef <- liftIO $ newIORef 0
+  narHashRef <- liftIO $ newIORef ("" :: Text)
+  fileHashRef <- liftIO $ newIORef ("" :: Text)
 
-        -- stream store path as xz compressed nar file
-        let cmd = proc "nix-store" ["--dump", toS storePath]
-        -- TODO: print process stderr?
-        (ClosedStream, (stdoutStream, closeStdout), ClosedStream, cph) <- liftIO $ streamingProcess cmd
-        withXzipCompressor cb $ \xzCompressor -> do
-          let stream'
-                = stdoutStream
-                    .| passthroughSizeSink narSizeRef
-                    .| passthroughHashSink narHashRef
-                    .| xzCompressor
-                    .| passthroughSizeSink fileSizeRef
-                    .| passthroughHashSink fileHashRef
+  -- stream store path as xz compressed nar file
+  let cmd = proc "nix-store" ["--dump", toS storePath]
+  -- TODO: print process stderr?
+  (ClosedStream, (stdoutStream, closeStdout), ClosedStream, cph) <- liftIO $ streamingProcess cmd
+  withXzipCompressor cb $ \xzCompressor -> do
+    let stream'
+          = stdoutStream
+              .| passthroughSizeSink narSizeRef
+              .| passthroughHashSink narHashRef
+              .| xzCompressor
+              .| passthroughSizeSink fileSizeRef
+              .| passthroughHashSink fileHashRef
 
-          -- for now we need to use letsencrypt domain instead of cloudflare due to its upload limits
-          let newClientEnv = ce {
-                  baseUrl = (baseUrl ce) { baseUrlHost = toS name <> "." <> baseUrlHost (baseUrl ce)}
-                }
-          (_ :: NoContent) <- liftIO $ (`withClientM` newClientEnv)
-              (Api.createNar (cachixBCStreamingClient name) stream')
-              $ escalate >=> \NoContent -> do
-                  closeStdout
-                  exitcode <- waitForStreamingProcess cph
-                  when (exitcode /= ExitSuccess) $ throwM $ NarStreamingError exitcode $ show cmd
+    -- for now we need to use letsencrypt domain instead of cloudflare due to its upload limits
+    let newClientEnv = ce {
+            baseUrl = (baseUrl ce) { baseUrlHost = toS name <> "." <> baseUrlHost (baseUrl ce)}
+          }
+    (_ :: NoContent) <- liftIO $ (`withClientM` newClientEnv)
+        (Api.createNar (cachixBCStreamingClient name) stream')
+        $ escalate >=> \NoContent -> do
+            closeStdout
+            exitcode <- waitForStreamingProcess cph
+            when (exitcode /= ExitSuccess) $ throwM $ NarStreamingError exitcode $ show cmd
 
-                  -- TODO: we're done, so we can leave withClientM. Doing so
-                  --       will allow more concurrent requests when the number
-                  --       of XZ compressors is limited
-                  narSize <- readIORef narSizeRef
-                  narHashB16 <- readIORef narHashRef
-                  fileHash <- readIORef fileHashRef
-                  fileSize <- readIORef fileSizeRef
+            -- TODO: we're done, so we can leave withClientM. Doing so
+            --       will allow more concurrent requests when the number
+            --       of XZ compressors is limited
+            narSize <- readIORef narSizeRef
+            narHashB16 <- readIORef narHashRef
+            fileHash <- readIORef fileHashRef
+            fileSize <- readIORef fileSizeRef
 
-                  -- TODO: #3: implement using pure haskell
-                  narHash <- ("sha256:" <>) . T.strip . toS <$> readProcess "nix-hash" ["--type", "sha256", "--to-base32", toS narHashB16] mempty
+            -- TODO: #3: implement using pure haskell
+            narHash <- ("sha256:" <>) . T.strip . toS <$> readProcess "nix-hash" ["--type", "sha256", "--to-base32", toS narHashB16] mempty
 
-                  deriverRaw <- T.strip . toS <$> readProcess "nix-store" ["-q", "--deriver", toS storePath] mempty
-                  let deriver = if deriverRaw == "unknown-deriver"
-                                then deriverRaw
-                                else T.drop 11 deriverRaw
+            deriverRaw <- T.strip . toS <$> readProcess "nix-store" ["-q", "--deriver", toS storePath] mempty
+            let deriver = if deriverRaw == "unknown-deriver"
+                          then deriverRaw
+                          else T.drop 11 deriverRaw
 
-                  references <- sort . T.lines . T.strip . toS <$> readProcess "nix-store" ["-q", "--references", toS storePath] mempty
+            references <- sort . T.lines . T.strip . toS <$> readProcess "nix-store" ["-q", "--references", toS storePath] mempty
 
-                  let
-                      fp = fingerprint storePath narHash narSize references
-                      sig = dsign (signingSecretKey $ pushCacheSigningKey cache) fp
-                      nic = Api.NarInfoCreate
-                        { cStoreHash = storeHash
-                        , cStoreSuffix = storeSuffix
-                        , cNarHash = narHash
-                        , cNarSize = narSize
-                        , cFileSize = fileSize
-                        , cFileHash = fileHash
-                        , cReferences = fmap (T.drop 11) references
-                        , cDeriver = deriver
-                        , cSig = toS $ B64.encode $ unSignature sig
-                        }
+            let
+                fp = fingerprint storePath narHash narSize references
+                sig = dsign (signingSecretKey $ pushCacheSigningKey cache) fp
+                nic = Api.NarInfoCreate
+                  { cStoreHash = storeHash
+                  , cStoreSuffix = storeSuffix
+                  , cNarHash = narHash
+                  , cNarSize = narSize
+                  , cFileSize = fileSize
+                  , cFileHash = fileHash
+                  , cReferences = fmap (T.drop 11) references
+                  , cDeriver = deriver
+                  , cSig = toS $ B64.encode $ unSignature sig
+                  }
 
-                  escalate $ Api.isNarInfoCreateValid nic
+            escalate $ Api.isNarInfoCreateValid nic
 
-                  -- Upload narinfo with signature
-                  escalate <=< (`runClientM` ce) $ Api.createNarinfo
-                    (cachixBCClient name)
-                    (Api.NarInfoC storeHash)
-                    nic
-          onDone cb
+            -- Upload narinfo with signature
+            escalate <=< (`runClientM` ce) $ Api.createNarinfo
+              (cachixBCClient name)
+              (Api.NarInfoC storeHash)
+              nic
+    onDone cb
   where
     -- Retry up to 5 times for each store path.
     -- Catches all exceptions except skipAsyncExceptions
@@ -192,7 +177,6 @@ pushClosure
   -> [Text] -- ^ Initial store paths
   -> m [r] -- ^ Every @r@ per store path of the entire closure of store paths
 pushClosure traversal clientEnv store pushCache pushStrategy inputStorePaths = do
-  
   -- Get the transitive closure of dependencies
   paths <- liftIO $ do
     inputs <- Store.newEmptyPathSet
@@ -202,8 +186,18 @@ pushClosure traversal clientEnv store pushCache pushStrategy inputStorePaths = d
     closure <- Store.computeFSClosure store Store.defaultClosureParams inputs
     Store.traversePathSet (pure . toSL) closure
 
+  -- Check what store paths are missing
+  -- TODO: query also cache.nixos.org? server-side?
+  missingHashesList <- escalate =<<  liftIO ( (`runClientM` clientEnv) $ Api.narinfoBulk
+    (cachixBCClient (pushCacheName pushCache))
+    (pushCacheToken pushCache)
+    (fst . splitStorePath <$> paths))
+
+  let missingHashes = Set.fromList missingHashesList
+      missingPaths = filter (\path -> Set.member (fst (splitStorePath path)) missingHashes) paths
+
   -- TODO: make pool size configurable, on beefier machines this could be doubled
-  traversal (\path -> pushSingleStorePath clientEnv store pushCache (pushStrategy path) path) paths
+  traversal (\path -> pushSingleStorePath clientEnv store pushCache (pushStrategy path) path) missingPaths
 
 mapConcurrentlyBounded :: Traversable t => Int -> (a -> IO b) -> t a -> IO (t b)
 mapConcurrentlyBounded bound action items = do

@@ -1,7 +1,9 @@
-resolver: lts-13.30
+resolver: lts-14.0
 packages:
 - cachix-api
 - cachix
+extra-deps:
+- netrc-0.2.0.0
 nix:
     packages: []
     shell-file: ./nix/stack-shell.nix

@@ -1,0 +1,46 @@
+{
+    "haskell.nix": {
+        "homepage": "https://input-output-hk.github.io/haskell.nix",
+        "url": "https://github.com/input-output-hk/haskell.nix/archive/0992ede70e4ea845751dcbcf89b62e5f3a92a30e.tar.gz",
+        "owner": "input-output-hk",
+        "branch": "master",
+        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz",
+        "repo": "haskell.nix",
+        "sha256": "0jj8smi1j8in8lb4bi2ffymkykf2s95ybmy5xdsxawyw3gvp6h6a",
+        "description": "Alternative Haskell Infrastructure for Nixpkgs",
+        "rev": "0992ede70e4ea845751dcbcf89b62e5f3a92a30e"
+    },
+    "nixpkgs": {
+        "homepage": "https://github.com/NixOS/nixpkgs",
+        "url": "https://github.com/NixOS/nixpkgs-channels/archive/65729e08178c25139683316d3c246e35a4643e80.tar.gz",
+        "owner": "NixOS",
+        "branch": "nixos-19.03",
+        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz",
+        "repo": "nixpkgs-channels",
+        "sha256": "0siqb1cm24yjj790bmig3140ajclx15iqnc0ls7vmhr1zvmf5s41",
+        "description": "A read-only mirror of NixOS/nixpkgs tracking the released channels. Send issues and PRs to",
+        "rev": "65729e08178c25139683316d3c246e35a4643e80"
+    },
+    "gitignore": {
+        "homepage": "",
+        "url": "https://github.com/hercules-ci/gitignore/archive/ec5dd0536a5e4c3a99c797b86180f7261197c124.tar.gz",
+        "owner": "hercules-ci",
+        "branch": "master",
+        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz",
+        "repo": "gitignore",
+        "sha256": "0k2r8y21rn4kr5dmddd3906x0733fs3bb8hzfpabkdav3wcy3klv",
+        "description": "Nix function for filtering local git sources",
+        "rev": "ec5dd0536a5e4c3a99c797b86180f7261197c124"
+    },
+    "niv": {
+        "homepage": "https://github.com/nmattia/niv",
+        "url": "https://github.com/nmattia/niv/archive/8b7b70465c130d8d7a98fba1396ad1481daee518.tar.gz",
+        "owner": "nmattia",
+        "branch": "master",
+        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz",
+        "repo": "niv",
+        "sha256": "0fgdrxn2vzpnzr6pxaiyn5zzbd812c6f7xjjhfir0kpzamjnxwwl",
+        "description": "Easy dependency management for Nix projects",
+        "rev": "8b7b70465c130d8d7a98fba1396ad1481daee518"
+    }
+}

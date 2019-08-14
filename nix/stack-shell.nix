@@ -1,5 +1,7 @@
 { ghc }:
-let pkgs = import ../nixpkgs.nix;
+let 
+  sources = (import ./sources.nix);
+  pkgs = import sources.nixpkgs {} ;
 in pkgs.haskell.lib.buildStackProject {
   inherit ghc;
   name = "cachix-stack-shell";

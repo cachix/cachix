@@ -1,5 +1,7 @@
-{ pkgs ? import ./nixpkgs.nix }:
-pkgs.mkShell {
+let
+  sources = (import ./nix/sources.nix);
+  pkgs = import sources.nixpkgs {};
+in pkgs.mkShell {
   buildInputs = [
     pkgs.stack
     # hie can't find hspec-discover via stack

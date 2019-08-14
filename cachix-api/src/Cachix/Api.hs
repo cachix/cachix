@@ -69,6 +69,12 @@ data BinaryCacheAPI route = BinaryCacheAPI
       CachixAuth :>
       Capture "narinfo" NarInfoC :>
       Head
+  , narinfoBulk :: route :-
+      CachixAuth :>
+      "narinfo" :>
+      Summary "Given a list of store hashes, return a list of those that are missing" :>
+      ReqBody '[JSON] [Text] :>
+      Post '[JSON] [Text]
   , createNarinfo :: route :-
       Capture "narinfo" NarInfoC :>
       ReqBody '[JSON] NarInfoCreate.NarInfoCreate :>

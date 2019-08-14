@@ -1,24 +1,19 @@
-{ pkgs ? import ./nixpkgs.nix
-}:
-
-with pkgs.haskell.lib;
-
 let
-  filterStack = drv: overrideCabal drv (super: {
-     src = builtins.filterSource
-      (path: type: baseNameOf path != ".stack-work")
-      super.src;
-    }
-  );
-  hsPkgs = (import ./stack2nix.nix { inherit pkgs; }).override {
-    overrides = self: super: {
-      cachix = addBuildDepends (generateOptparseApplicativeCompletion "cachix" (justStaticExecutables (filterStack super.cachix))) [ pkgs.boost ];
-      cachix-api = filterStack super.cachix-api;
-      # TODO: get stack2nix/cabal2nix to fill these in
-      inherit (pkgs.darwin.apple_sdk.frameworks) Cocoa CoreServices;
-    };
+  sources = (import ./nix/sources.nix);
+  pin = import sources.nixpkgs {} ;
+  haskell = import (sources."haskell.nix") { pkgs = pin; };
+  gitignoreSource = (import sources.gitignore { inherit (pin) lib; }).gitignoreSource;
+
+  pkgSet = haskell.mkStackPkgSet {
+    stack-pkgs = import (haskell.callStackToNix {
+      src = gitignoreSource ./.;
+    });
+    pkg-def-extras = [];
+    modules = [
+     { packages.Cabal.patches = [./nix/cabal.patch]; }
+     { packages.happy.package.setup-depends = [pkgSet.config.hsPkgs.Cabal]; }
+     { packages.pretty-show.package.setup-depends = [pkgSet.config.hsPkgs.Cabal]; }
+    ];
   };
-in hsPkgs.cachix // { 
-  hlint = pkgs.hlint; 
-  hsPkgs = hsPkgs;
-}
+  packages = pkgSet.config.hsPkgs;
+in packages.cachix.components.exes.cachix

@@ -6,7 +6,7 @@
 [![Hackage](https://img.shields.io/hackage/v/cachix.svg)](https://hackage.haskell.org/package/cachix)
 [![Cachix](https://img.shields.io/badge/cachix-cachix-blue.svg)](https://cachix.cachix.org)
 
-<img src="https://cachix.org/images/logo.png" width="200">
+<img src="https://raw.githubusercontent.com/cachix/cachix/master/logo.png" width="200">
 
 ```
 $ cachix --help

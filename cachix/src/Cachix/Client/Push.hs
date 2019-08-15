@@ -55,7 +55,9 @@ data PushCache = PushCache
   , pushCacheToken :: Token
   }
 data PushStrategy m r = PushStrategy
-  { onAttempt :: RetryStatus -> m ()
+  { onAlreadyPresent :: m r -- ^ Called when a path is already in the cache.
+  , onAttempt :: RetryStatus -> m ()
+  , on401 :: m r
   , onError :: ClientError -> m r
   , onDone :: m r
   , withXzipCompressor :: forall a. (ConduitM ByteString ByteString (ResourceT IO) () -> m a) -> m a
@@ -75,7 +77,31 @@ pushSingleStorePath
   -> PushStrategy m r -- ^ how to report results, (some) errors, and do some things
   -> Text -- ^ store path
   -> m r -- ^ r is determined by the 'PushStrategy'
-pushSingleStorePath ce _store cache cb storePath = retryPath $ \retrystatus -> do
+pushSingleStorePath clientEnv _store cache cb storePath = retryPath $ \retrystatus -> do
+  let storeHash = fst $ splitStorePath $ toS storePath
+      name = pushCacheName cache
+  -- Check if narinfo already exists
+  -- TODO: query also cache.nixos.org? server-side?
+  res <- liftIO $ (`runClientM` clientEnv) $ Api.narinfoHead
+    (cachixBCClient name)
+    (pushCacheToken cache)
+    (Api.NarInfoC storeHash)
+  case res of
+    Right NoContent -> onAlreadyPresent cb -- we're done as store path is already in the cache
+    Left err | isErr err status404 -> uploadStorePath clientEnv _store cache cb storePath retrystatus
+             | isErr err status401 -> on401 cb
+             | otherwise -> onError cb err
+
+uploadStorePath
+  :: (MonadMask m, MonadIO m)
+  => ClientEnv  -- ^ cachix base url, connection manager, see 'Cachix.Client.URI.defaultCachixBaseUrl', 'Servant.Client.mkClientEnv'
+  -> Store
+  -> PushCache -- ^ details for pushing to cache
+  -> PushStrategy m r -- ^ how to report results, (some) errors, and do some things
+  -> Text -- ^ store path
+  -> RetryStatus
+  -> m r -- ^ r is determined by the 'PushStrategy'
+uploadStorePath clientEnv _store cache cb storePath retrystatus = do
   let (storeHash, storeSuffix) = splitStorePath $ toS storePath
       name = pushCacheName cache
 
@@ -100,8 +126,8 @@ pushSingleStorePath ce _store cache cb storePath = retryPath $ \retrystatus -> d
               .| passthroughHashSink fileHashRef
 
     -- for now we need to use letsencrypt domain instead of cloudflare due to its upload limits
-    let newClientEnv = ce {
-            baseUrl = (baseUrl ce) { baseUrlHost = toS name <> "." <> baseUrlHost (baseUrl ce)}
+    let newClientEnv = clientEnv {
+            baseUrl = (baseUrl clientEnv) { baseUrlHost = toS name <> "." <> baseUrlHost (baseUrl clientEnv)}
           }
     (_ :: NoContent) <- liftIO $ (`withClientM` newClientEnv)
         (Api.createNar (cachixBCStreamingClient name) stream')
@@ -146,17 +172,17 @@ pushSingleStorePath ce _store cache cb storePath = retryPath $ \retrystatus -> d
             escalate $ Api.isNarInfoCreateValid nic
 
             -- Upload narinfo with signature
-            escalate <=< (`runClientM` ce) $ Api.createNarinfo
+            escalate <=< (`runClientM` clientEnv) $ Api.createNarinfo
               (cachixBCClient name)
               (Api.NarInfoC storeHash)
               nic
     onDone cb
-  where
-    -- Retry up to 5 times for each store path.
-    -- Catches all exceptions except skipAsyncExceptions
-    retryPath :: (MonadIO m, MonadMask m) => (RetryStatus -> m a) -> m a
-    retryPath = recoverAll defaultRetryPolicy
 
+-- Retry up to 5 times for each store path.
+-- Catches all exceptions except skipAsyncExceptions
+retryPath :: (MonadIO m, MonadMask m) => (RetryStatus -> m a) -> m a
+retryPath = recoverAll defaultRetryPolicy
+  where
     defaultRetryPolicy :: RetryPolicy
     defaultRetryPolicy =
       constantDelay 50000 <> limitRetries 3
@@ -188,16 +214,17 @@ pushClosure traversal clientEnv store pushCache pushStrategy inputStorePaths = d
 
   -- Check what store paths are missing
   -- TODO: query also cache.nixos.org? server-side?
-  missingHashesList <- escalate =<<  liftIO ( (`runClientM` clientEnv) $ Api.narinfoBulk
-    (cachixBCClient (pushCacheName pushCache))
-    (pushCacheToken pushCache)
-    (fst . splitStorePath <$> paths))
+  missingHashesList <- retryPath $ \_ -> do
+    escalate =<<  liftIO ( (`runClientM` clientEnv) $ Api.narinfoBulk
+      (cachixBCClient (pushCacheName pushCache))
+      (pushCacheToken pushCache)
+      (fst . splitStorePath <$> paths))
 
   let missingHashes = Set.fromList missingHashesList
       missingPaths = filter (\path -> Set.member (fst (splitStorePath path)) missingHashes) paths
 
   -- TODO: make pool size configurable, on beefier machines this could be doubled
-  traversal (\path -> pushSingleStorePath clientEnv store pushCache (pushStrategy path) path) missingPaths
+  traversal (\path -> retryPath $ \retrystatus -> uploadStorePath clientEnv store pushCache (pushStrategy path) path retrystatus) missingPaths
 
 mapConcurrentlyBounded :: Traversable t => Int -> (a -> IO b) -> t a -> IO (t b)
 mapConcurrentlyBounded bound action items = do

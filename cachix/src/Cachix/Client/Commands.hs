@@ -223,7 +223,11 @@ retryText retrystatus =
 
 pushStrategy :: Env -> PushOptions -> Text -> Text -> PushStrategy IO ()
 pushStrategy env opts name storePath = PushStrategy
-  { onError = throwM
+  { onAlreadyPresent = pass
+  , on401 = if isJust (config env)
+            then throwM $ accessDeniedBinaryCache name
+            else throwM notAuthenticatedBinaryCache
+  , onError = throwM
   , onAttempt = \retrystatus ->
       -- we append newline instead of putStrLn due to https://github.com/haskell/text/issues/242
       putStr $ "pushing " <> retryText retrystatus <> storePath <> "\n"

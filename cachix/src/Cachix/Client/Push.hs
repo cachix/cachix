@@ -214,7 +214,7 @@ pushClosure traversal clientEnv store pushCache pushStrategy inputStorePaths = d
 
   -- Check what store paths are missing
   -- TODO: query also cache.nixos.org? server-side?
-  missingHashesList <- retryPath $ \_ -> do
+  missingHashesList <- retryPath $ \_ ->
     escalate =<<  liftIO ( (`runClientM` clientEnv) $ Api.narinfoBulk
       (cachixBCClient (pushCacheName pushCache))
       (pushCacheToken pushCache)

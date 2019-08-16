@@ -37,10 +37,11 @@ import           Servant.Auth.Client
 import           Servant.Client.Streaming hiding (ClientError)
 import           Servant.Conduit                ()
 import           System.Process                 ( readProcess )
+import qualified System.Nix.Base32
 
 import qualified Cachix.Api                    as Api
 import           Cachix.Api.Error
-import           Cachix.Api.Signing             (fingerprint, passthroughSizeSink, passthroughHashSink)
+import           Cachix.Api.Signing             (fingerprint, passthroughSizeSink, passthroughHashSinkB16, passthroughHashSink)
 import qualified Cachix.Types.NarInfoCreate    as Api
 import           Cachix.Client.Exception        ( CachixException(..) )
 import           Cachix.Client.Servant
@@ -109,8 +110,8 @@ uploadStorePath clientEnv _store cache cb storePath retrystatus = do
 
   narSizeRef <- liftIO $ newIORef 0
   fileSizeRef <- liftIO $ newIORef 0
-  narHashRef <- liftIO $ newIORef ("" :: Text)
-  fileHashRef <- liftIO $ newIORef ("" :: Text)
+  narHashRef <- liftIO $ newIORef ("" :: ByteString)
+  fileHashRef <- liftIO $ newIORef ("" :: ByteString)
 
   -- stream store path as xz compressed nar file
   let cmd = proc "nix-store" ["--dump", toS storePath]
@@ -123,7 +124,7 @@ uploadStorePath clientEnv _store cache cb storePath retrystatus = do
               .| passthroughHashSink narHashRef
               .| xzCompressor
               .| passthroughSizeSink fileSizeRef
-              .| passthroughHashSink fileHashRef
+              .| passthroughHashSinkB16 fileHashRef
 
     -- for now we need to use letsencrypt domain instead of cloudflare due to its upload limits
     let newClientEnv = clientEnv {
@@ -140,12 +141,9 @@ uploadStorePath clientEnv _store cache cb storePath retrystatus = do
             --       will allow more concurrent requests when the number
             --       of XZ compressors is limited
             narSize <- readIORef narSizeRef
-            narHashB16 <- readIORef narHashRef
+            narHash <- ("sha256:" <>) . System.Nix.Base32.encode <$> readIORef narHashRef
             fileHash <- readIORef fileHashRef
             fileSize <- readIORef fileSizeRef
-
-            -- TODO: #3: implement using pure haskell
-            narHash <- ("sha256:" <>) . T.strip . toS <$> readProcess "nix-hash" ["--type", "sha256", "--to-base32", toS narHashB16] mempty
 
             deriverRaw <- T.strip . toS <$> readProcess "nix-store" ["-q", "--deriver", toS storePath] mempty
             let deriver = if deriverRaw == "unknown-deriver"
@@ -163,7 +161,7 @@ uploadStorePath clientEnv _store cache cb storePath retrystatus = do
                   , cNarHash = narHash
                   , cNarSize = narSize
                   , cFileSize = fileSize
-                  , cFileHash = fileHash
+                  , cFileHash = toS fileHash
                   , cReferences = fmap (T.drop 11) references
                   , cDeriver = deriver
                   , cSig = toS $ B64.encode $ unSignature sig

@@ -56,7 +56,6 @@ library
   build-depends:
       async
     , base >=4.7 && <5
-    , base16-bytestring
     , base64-bytestring
     , bytestring
     , cachix-api
@@ -71,6 +70,7 @@ library
     , filepath
     , fsnotify
     , here
+    , hnix-store-core
     , http-client
     , http-client-tls
     , http-conduit

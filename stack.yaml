@@ -4,6 +4,7 @@ packages:
 - cachix
 extra-deps:
 - netrc-0.2.0.0
+- hnix-store-core-0.1.0.0
 nix:
     packages: []
     shell-file: ./nix/stack-shell.nix

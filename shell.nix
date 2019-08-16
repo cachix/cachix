@@ -4,6 +4,7 @@ let
 in pkgs.mkShell {
   buildInputs = [
     pkgs.stack
+    pkgs.hlint
     # hie can't find hspec-discover via stack
     pkgs.haskellPackages.hspec-discover
     ];

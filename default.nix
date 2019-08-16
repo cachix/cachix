@@ -1,8 +1,8 @@
 let
   sources = (import ./nix/sources.nix);
-  pin = import sources.nixpkgs { overlays = [(self: super: { nix-store = self.nix; nix-main = self.nix; })];} ;
-  haskell = import (sources."haskell.nix") { pkgs = pin; };
-  gitignoreSource = (import sources.gitignore { inherit (pin) lib; }).gitignoreSource;
+  pkgs = import sources.nixpkgs { overlays = [(self: super: { nix-store = self.nix; nix-main = self.nix; })];} ;
+  haskell = import (sources."haskell.nix") { inherit pkgs; };
+  gitignoreSource = (import sources.gitignore { inherit (pkgs) lib; }).gitignoreSource;
 
   pkgSet = haskell.mkStackPkgSet {
     stack-pkgs = import (haskell.callStackToNix {
@@ -13,8 +13,8 @@ let
      { packages.Cabal.patches = [./nix/cabal.patch]; }
      { packages.happy.package.setup-depends = [pkgSet.config.hsPkgs.Cabal]; }
      { packages.pretty-show.package.setup-depends = [pkgSet.config.hsPkgs.Cabal]; }
-     { packages.cachix.components.library.build-tools = [ pin.boost ]; }
+     { packages.cachix.components.library.build-tools = [ pkgs.boost ]; }
     ];
   };
   packages = pkgSet.config.hsPkgs;
-in packages.cachix.components.exes.cachix
+in packages.cachix.components.exes.cachix 

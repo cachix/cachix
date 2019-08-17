@@ -81,7 +81,7 @@ pushSingleStorePath
   -> PushStrategy m r -- ^ how to report results, (some) errors, and do some things
   -> Text -- ^ store path
   -> m r -- ^ r is determined by the 'PushStrategy'
-pushSingleStorePath clientEnv _store cache cb storePath = retryPath $ \retrystatus -> do
+pushSingleStorePath clientEnv _store cache cb storePath = retryAll $ \retrystatus -> do
   let storeHash = fst $ splitStorePath $ toS storePath
       name = pushCacheName cache
   -- Check if narinfo already exists
@@ -174,10 +174,9 @@ uploadStorePath clientEnv _store cache cb storePath retrystatus = do
               nic
     onDone cb
 
--- Retry up to 5 times for each store path.
 -- Catches all exceptions except skipAsyncExceptions
-retryPath :: (MonadIO m, MonadMask m) => (RetryStatus -> m a) -> m a
-retryPath = recoverAll defaultRetryPolicy
+retryAll :: (MonadIO m, MonadMask m) => (RetryStatus -> m a) -> m a
+retryAll = recoverAll defaultRetryPolicy
   where
     defaultRetryPolicy :: RetryPolicy
     defaultRetryPolicy =
@@ -210,7 +209,7 @@ pushClosure traversal clientEnv store pushCache pushStrategy inputStorePaths = d
 
   -- Check what store paths are missing
   -- TODO: query also cache.nixos.org? server-side?
-  missingHashesList <- retryPath $ \_ ->
+  missingHashesList <- retryAll $ \_ ->
     escalate =<<  liftIO ( (`runClientM` clientEnv) $ Api.narinfoBulk
       (cachixBCClient (pushCacheName pushCache))
       (pushCacheToken pushCache)
@@ -220,7 +219,7 @@ pushClosure traversal clientEnv store pushCache pushStrategy inputStorePaths = d
       missingPaths = filter (\path -> Set.member (fst (splitStorePath path)) missingHashes) paths
 
   -- TODO: make pool size configurable, on beefier machines this could be doubled
-  traversal (\path -> retryPath $ \retrystatus -> uploadStorePath clientEnv store pushCache (pushStrategy path) path retrystatus) missingPaths
+  traversal (\path -> retryAll $ \retrystatus -> uploadStorePath clientEnv store pushCache (pushStrategy path) path retrystatus) missingPaths
 
 mapConcurrentlyBounded :: Traversable t => Int -> (a -> IO b) -> t a -> IO (t b)
 mapConcurrentlyBounded bound action items = do

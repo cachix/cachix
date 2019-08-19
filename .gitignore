@@ -3,3 +3,4 @@
 dist/
 result
 result-*
+.pre-commit-hooks

@@ -1,12 +1,12 @@
 let
-  sources = (import ./nix/sources.nix);
-  pkgs = import sources.nixpkgs {};
+  pkgs = import ./nix {};
 in pkgs.mkShell {
   buildInputs = [
     pkgs.stack
-    pkgs.hlint
+    pkgs.niv
     # hie can't find hspec-discover via stack
     pkgs.haskellPackages.hspec-discover
     ];
-  NIX_PATH = "nixpkgs=${pkgs.path}";
+  NIX_PATH = "";
+  inherit (pkgs.pre-commit-check) shellHook;
 }

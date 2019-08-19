@@ -1,8 +1,16 @@
 { sources ? import ./sources.nix }:
-with
-  { overlay = _: pkgs:
-      { inherit (import sources.niv {}) niv;
-      };
+let
+  overlay = self: pkgs: {
+    inherit (import sources.niv {}) niv;
+    nix-pre-commit-hooks = import sources.nix-pre-commit-hooks;
+    haskellnix = import sources."haskell.nix" { pkgs = self; };
+    inherit (import sources.gitignore { inherit (pkgs) lib; })
+      gitignoreSource;
+    nix-store = pkgs.nix;
+    nix-main = pkgs.nix;
+    pre-commit-check = self.nix-pre-commit-hooks.run {
+      src = pkgs.gitignoreSource ../.;
+    };
   };
-import sources.nixpkgs
+in import sources.nixpkgs
   { overlays = [ overlay ] ; config = {}; }

@@ -20,14 +20,12 @@ import qualified Control.Concurrent.QSem       as QSem
 import           Control.Concurrent.Async     (mapConcurrently)
 import           Control.Monad                ((>=>))
 import           Control.Monad.Trans.Resource (ResourceT)
-import           Control.Exception.Safe       (MonadMask)
+import           Control.Exception.Safe       (MonadMask, throwM)
 import           Control.Retry                (recoverAll, RetryStatus, RetryPolicy, constantDelay, limitRetries)
 import qualified Data.ByteString.Base64        as B64
 import           Data.Conduit
-import           Data.Conduit.Combinators (sourceLazy)
+import           Data.Conduit.Process
 import           Data.Conduit.Lzma              ( compress )
-import qualified Data.Binary as Binary
-import           Data.Binary.Put               (runPut)
 import           Data.IORef
 import qualified Data.Text                      as T
 import qualified Data.Set                       as Set
@@ -40,7 +38,6 @@ import           Servant.Client.Streaming hiding (ClientError)
 import           Servant.Conduit                ()
 import           System.Process                 ( readProcess )
 import qualified System.Nix.Base32
-import qualified System.Nix.Nar as Nar
 
 import qualified Cachix.Api                    as Api
 import           Cachix.Api.Error
@@ -117,16 +114,17 @@ uploadStorePath clientEnv _store cache cb storePath retrystatus = do
   fileHashRef <- liftIO $ newIORef ("" :: ByteString)
 
   -- stream store path as xz compressed nar file
-  nar <- liftIO $ runPut . Binary.put <$> Nar.localPackNar Nar.narEffectsIO (toS storePath)
-
+  let cmd = proc "nix-store" ["--dump", toS storePath]
+  -- TODO: print process stderr?
+  (ClosedStream, (stdoutStream, closeStdout), ClosedStream, cph) <- liftIO $ streamingProcess cmd
   withXzipCompressor cb $ \xzCompressor -> do
     let stream'
-          = sourceLazy nar
-          .| passthroughSizeSink narSizeRef
-          .| passthroughHashSink narHashRef
-          .| xzCompressor
-          .| passthroughSizeSink fileSizeRef
-          .| passthroughHashSinkB16 fileHashRef
+          = stdoutStream
+              .| passthroughSizeSink narSizeRef
+              .| passthroughHashSink narHashRef
+              .| xzCompressor
+              .| passthroughSizeSink fileSizeRef
+              .| passthroughHashSinkB16 fileHashRef
 
     -- for now we need to use letsencrypt domain instead of cloudflare due to its upload limits
     let newClientEnv = clientEnv {
@@ -135,6 +133,10 @@ uploadStorePath clientEnv _store cache cb storePath retrystatus = do
     (_ :: NoContent) <- liftIO $ (`withClientM` newClientEnv)
         (Api.createNar (cachixBCStreamingClient name) stream')
         $ escalate >=> \NoContent -> do
+            closeStdout
+            exitcode <- waitForStreamingProcess cph
+            when (exitcode /= ExitSuccess) $ throwM $ NarStreamingError exitcode $ show cmd
+
             -- TODO: we're done, so we can leave withClientM. Doing so
             --       will allow more concurrent requests when the number
             --       of XZ compressors is limited

@@ -1,0 +1,8 @@
+repos:
+- repo: .pre-commit-hooks/
+  rev: master
+  hooks:
+   -   id: ormolu
+   -   id: shellcheck
+   -   id: hlint
+   -   id: cabal-fmt

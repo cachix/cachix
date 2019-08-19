@@ -1,13 +1,9 @@
 let
-  sources = import ./nix/sources.nix;
-  pkgs = import sources.nixpkgs { overlays = [(self: super: { nix-store = self.nix; nix-main = self.nix; })];} ;
-  haskell = import sources."haskell.nix" { inherit pkgs; };
-  inherit (import sources.gitignore { inherit (pkgs) lib; })
-    gitignoreSource;
-
-  pkgSet = haskell.mkStackPkgSet {
-    stack-pkgs = import (haskell.callStackToNix {
-      src = gitignoreSource ./.;
+  pkgs = import ./nix {};
+  src = pkgs.gitignoreSource ./.;
+  pkgSet = pkgs.haskellnix.mkStackPkgSet {
+    stack-pkgs = import (pkgs.haskellnix.callStackToNix {
+      inherit src;
     });
     pkg-def-extras = [];
     modules = [
@@ -18,4 +14,6 @@ let
     ];
   };
   packages = pkgSet.config.hsPkgs;
-in packages.cachix.components.exes.cachix 
+in packages.cachix.components.exes.cachix  // {
+  inherit (pkgs) pre-commit-check;
+}

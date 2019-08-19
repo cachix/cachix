@@ -207,6 +207,8 @@ pushClosure traversal clientEnv store pushCache pushStrategy inputStorePaths = d
     closure <- Store.computeFSClosure store Store.defaultClosureParams inputs
     Store.traversePathSet (pure . toSL) closure
 
+  hPutStrLn stderr ("Closure: " ++ show paths)
+
   -- Check what store paths are missing
   -- TODO: query also cache.nixos.org? server-side?
   missingHashesList <- retryAll $ \_ ->
@@ -215,8 +217,12 @@ pushClosure traversal clientEnv store pushCache pushStrategy inputStorePaths = d
       (pushCacheToken pushCache)
       (fst . splitStorePath <$> paths))
 
+  hPutStrLn stderr ("Missing hashes list: " ++ show missingHashesList)
+
   let missingHashes = Set.fromList missingHashesList
       missingPaths = filter (\path -> Set.member (fst (splitStorePath path)) missingHashes) paths
+
+  hPutStrLn stderr ("Missing paths: " ++ show missingPaths)
 
   -- TODO: make pool size configurable, on beefier machines this could be doubled
   traversal (\path -> retryAll $ \retrystatus -> uploadStorePath clientEnv store pushCache (pushStrategy path) path retrystatus) missingPaths

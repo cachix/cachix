@@ -9,7 +9,7 @@ let
     nix-store = pkgs.nix;
     nix-main = pkgs.nix;
     pre-commit-check = self.nix-pre-commit-hooks.run {
-      src = pkgs.gitignoreSource ../.;
+      src = self.gitignoreSource ../.;
     };
   };
 in import sources.nixpkgs

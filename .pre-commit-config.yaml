@@ -3,6 +3,8 @@ repos:
   rev: master
   hooks:
    -   id: ormolu
+       # CPP isn't supported
+       exclude: (Cachix/Client/Servant\.hs$|Cachix/Types/SwaggerOrphans\.hs$)
    -   id: shellcheck
    -   id: hlint
    -   id: cabal-fmt

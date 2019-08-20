@@ -1,20 +1,23 @@
 module Cachix.Types.BinaryCacheAuthenticated
-  ( BinaryCacheAuthenticated(..)
-  ) where
+  ( BinaryCacheAuthenticated (..)
+    )
+where
 
-import           Data.Aeson                     ( FromJSON
-                                                , ToJSON
-                                                )
+import Data.Aeson
+  ( FromJSON,
+    ToJSON
+    )
 import Data.Swagger
-import           Data.Text                      ( Text )
-import           GHC.Generics                   ( Generic )
-
+import Data.Text (Text)
+import GHC.Generics (Generic)
 
 -- | Binary Cache response content when user is authenticated
-data BinaryCacheAuthenticated = BinaryCacheAuthenticated
-  { name :: Text
-  , uri :: Text
-  , publicSigningKeys :: [Text]
-  , isPublic :: Bool
-  , totalFileSize :: Integer
-  } deriving (Show, Generic, FromJSON, ToJSON, ToSchema)
+data BinaryCacheAuthenticated
+  = BinaryCacheAuthenticated
+      { name :: Text,
+        uri :: Text,
+        publicSigningKeys :: [Text],
+        isPublic :: Bool,
+        totalFileSize :: Integer
+        }
+  deriving (Show, Generic, FromJSON, ToJSON, ToSchema)

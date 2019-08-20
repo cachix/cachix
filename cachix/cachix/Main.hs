@@ -1,13 +1,11 @@
 module Main (main) where
 
-import Prelude
-import Control.Exception (handle, SomeException, fromException)
-import System.IO
-import System.Exit (exitFailure, exitWith)
-import GHC.IO.Encoding
-
 import qualified Cachix.Client as CC
-
+import Control.Exception (SomeException, fromException, handle)
+import GHC.IO.Encoding
+import System.Exit (exitFailure, exitWith)
+import System.IO
+import Prelude
 
 main :: IO ()
 main = do

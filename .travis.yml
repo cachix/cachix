@@ -14,8 +14,8 @@ script:
 - nix-build -j2 | cachix push cachix
 matrix:
   include:
-    - script: nix-shell --run "hlint ."
-      env: NAME=hlint
+    - script: nix-build -A pre-commit-check
+      env: NAME=pre-commit-check
     - os: osx
       language: generic
       before_install:

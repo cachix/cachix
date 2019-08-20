@@ -1,32 +1,33 @@
 module Cachix.Api.Signing
-  ( fingerprint
-  , passthroughSizeSink
-  , passthroughHashSinkB16
-  , passthroughHashSink
-  ) where
+  ( fingerprint,
+    passthroughSizeSink,
+    passthroughHashSinkB16,
+    passthroughHashSink
+    )
+where
 
-import           Crypto.Hash
-import           Control.Monad.IO.Class  (MonadIO, liftIO)
+import Control.Monad.IO.Class (MonadIO, liftIO)
+import Crypto.Hash
 import qualified Data.ByteArray as BA
-import           Data.ByteArray.Encoding (convertToBase, Base(..))
+import Data.ByteArray.Encoding (Base (..), convertToBase)
 import qualified Data.ByteString as BS
-import           Data.ByteString (ByteString)
-import           Data.Conduit
-import qualified Data.Conduit.Combinators      as CC
-import           Data.IORef
-import           Data.String.Conv (toS)
+import Data.ByteString (ByteString)
+import Data.Conduit
+import qualified Data.Conduit.Combinators as CC
+import Data.IORef
+import Data.String.Conv (toS)
 import qualified Data.Text as T
-import           Data.Text (Text)
-
+import Data.Text (Text)
 
 -- perl/lib/Nix/Manifest.pm:fingerprintPath
 -- NB: references must be sorted
 fingerprint :: Text -> Text -> Integer -> [Text] -> ByteString
-fingerprint storePath narHash narSize references = toS $ T.intercalate ";"
-  ["1", storePath, narHash, T.pack (show narSize), T.intercalate "," references]
+fingerprint storePath narHash narSize references =
+  toS
+    $ T.intercalate ";"
+        ["1", storePath, narHash, T.pack (show narSize), T.intercalate "," references]
 
 -- Useful sinks for streaming nars
-
 sizeSink :: MonadIO m => ConduitT ByteString o m Integer
 sizeSink = CC.foldM (\p n -> return (p + fromIntegral (BS.length n))) 0
 

@@ -1,15 +1,19 @@
 module Cachix.Types.SigningKeyCreate
-  ( SigningKeyCreate(..)
-  ) where
+  ( SigningKeyCreate (..)
+    )
+where
 
-import           Data.Aeson                     ( FromJSON
-                                                , ToJSON
-                                                )
-import           Data.Swagger
-import           Data.Text                      ( Text )
-import           GHC.Generics                   ( Generic )
+import Data.Aeson
+  ( FromJSON,
+    ToJSON
+    )
+import Data.Swagger
+import Data.Text (Text)
+import GHC.Generics (Generic)
 
 -- | Conveys that a signing secret key was created, by sharing the public key.
-newtype SigningKeyCreate = SigningKeyCreate
-  { publicKey :: Text
-  } deriving (Show, Generic, FromJSON, ToJSON, ToSchema)
+newtype SigningKeyCreate
+  = SigningKeyCreate
+      { publicKey :: Text
+        }
+  deriving (Show, Generic, FromJSON, ToJSON, ToSchema)

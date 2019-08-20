@@ -1,4 +1,4 @@
-module Cachix.Client.Exception (CachixException(..)) where
+module Cachix.Client.Exception (CachixException (..)) where
 
 import Protolude
 

@@ -1,13 +1,12 @@
 module Cachix.Client
   ( main
-  ) where
+    )
+where
 
+import Cachix.Client.Commands as Commands
+import Cachix.Client.Env (cachixVersion, mkEnv)
+import Cachix.Client.OptionsParser (CachixCommand (..), getOpts)
 import Protolude
-
-import Cachix.Client.OptionsParser ( CachixCommand(..), getOpts )
-import Cachix.Client.Commands      as Commands
-import Cachix.Client.Env           ( mkEnv, cachixVersion )
-
 
 main :: IO ()
 main = do

@@ -1,14 +1,14 @@
 module Cachix.Client.NixVersion
-  ( getNixVersion
-  , parseNixVersion
-  , NixVersion(..)
-  ) where
+  ( getNixVersion,
+    parseNixVersion,
+    NixVersion (..)
+    )
+where
 
+import Data.Text as T
+import Data.Versions
 import Protolude
 import System.Process (readProcessWithExitCode)
-import Data.Versions
-import Data.Text as T
-
 
 data NixVersion
   = Nix20
@@ -26,12 +26,12 @@ getNixVersion = do
 
 parseNixVersion :: Text -> Either Text NixVersion
 parseNixVersion output =
-  let
-    verStr = T.drop 14 $ T.strip output
-    err = "Couldn't parse 'nix-env --version' output: " <> output
-  in case versioning verStr of
-    Left _ -> Left err
-    Right ver | verStr == "" -> Left err
-              | ver < Ideal (SemVer 1 99 0 [] []) -> Right Nix1XX
-              | ver < Ideal (SemVer 2 0 1 [] []) -> Right Nix20
-              | otherwise -> Right Nix201
+  let verStr = T.drop 14 $ T.strip output
+      err = "Couldn't parse 'nix-env --version' output: " <> output
+   in case versioning verStr of
+        Left _ -> Left err
+        Right ver
+          | verStr == "" -> Left err
+          | ver < Ideal (SemVer 1 99 0 [] []) -> Right Nix1XX
+          | ver < Ideal (SemVer 2 0 1 [] []) -> Right Nix20
+          | otherwise -> Right Nix201

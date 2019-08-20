@@ -1,33 +1,36 @@
 {-# LANGUAGE QuasiQuotes #-}
-module Cachix.Client.InstallationMode
-  ( InstallationMode(..)
-  , NixEnv(..)
-  , getInstallationMode
-  , addBinaryCache
-  , isTrustedUser
-  , getUser
-  ) where
 
-import           Protolude
-import           Data.String.Here
-import qualified Data.Text as T
-import           Cachix.Client.Config (Config)
-import           Cachix.Client.Exception (CachixException(..))
+module Cachix.Client.InstallationMode
+  ( InstallationMode (..),
+    NixEnv (..),
+    getInstallationMode,
+    addBinaryCache,
+    isTrustedUser,
+    getUser
+    )
+where
+
+import Cachix.Api as Api
+import Cachix.Client.Config (Config)
+import Cachix.Client.Exception (CachixException (..))
 import qualified Cachix.Client.NetRc as NetRc
 import qualified Cachix.Client.NixConf as NixConf
-import           Cachix.Client.NixVersion ( NixVersion(..) )
-import           Cachix.Client.OptionsParser    ( UseOptions(..) )
-import           Cachix.Api as Api
-import           System.Directory               ( getPermissions, writable, createDirectoryIfMissing )
-import           System.Environment             ( lookupEnv )
-import           System.FilePath                ( replaceFileName, (</>) )
+import Cachix.Client.NixVersion (NixVersion (..))
+import Cachix.Client.OptionsParser (UseOptions (..))
+import Data.String.Here
+import qualified Data.Text as T
+import Protolude
+import System.Directory (createDirectoryIfMissing, getPermissions, writable)
+import System.Environment (lookupEnv)
+import System.FilePath ((</>), replaceFileName)
 
-data NixEnv = NixEnv
-  { nixVersion :: NixVersion
-  , isTrusted :: Bool
-  , isRoot :: Bool
-  , isNixOS :: Bool
-  }
+data NixEnv
+  = NixEnv
+      { nixVersion :: NixVersion,
+        isTrusted :: Bool,
+        isRoot :: Bool,
+        isNixOS :: Bool
+        }
 
 data InstallationMode
   = Install NixVersion NixConf.NixConfLoc
@@ -38,7 +41,7 @@ data InstallationMode
   deriving (Show, Eq)
 
 getInstallationMode :: NixEnv -> InstallationMode
-getInstallationMode NixEnv{..}
+getInstallationMode NixEnv {..}
   | isNixOS && (isRoot || nixVersion /= Nix201) = EchoNixOS nixVersion
   | isNixOS && not isTrusted = EchoNixOSWithTrustedUser nixVersion
   | not isNixOS && isRoot = Install nixVersion NixConf.Global
@@ -46,31 +49,32 @@ getInstallationMode NixEnv{..}
   | isTrusted = Install nixVersion NixConf.Local
   | otherwise = UntrustedRequiresSudo
 
-
 -- | Add a Binary cache to nix.conf, print nixos config or fail
 addBinaryCache :: Maybe Config -> Api.BinaryCache -> UseOptions -> InstallationMode -> IO ()
-addBinaryCache _ _ _ UntrustedRequiresSudo = throwIO $
-  MustBeRoot "Run command as root OR execute: $ echo \"trusted-users = root $USER\" | sudo tee -a /etc/nix/nix.conf && sudo pkill nix-daemon"
-addBinaryCache _ _ _ Nix20RequiresSudo = throwIO $
-  MustBeRoot "Run command as root OR upgrade to latest Nix - to be able to use it without root (recommended)"
+addBinaryCache _ _ _ UntrustedRequiresSudo =
+  throwIO
+    $ MustBeRoot "Run command as root OR execute: $ echo \"trusted-users = root $USER\" | sudo tee -a /etc/nix/nix.conf && sudo pkill nix-daemon"
+addBinaryCache _ _ _ Nix20RequiresSudo =
+  throwIO
+    $ MustBeRoot "Run command as root OR upgrade to latest Nix - to be able to use it without root (recommended)"
 addBinaryCache maybeConfig bc useOptions (EchoNixOS _) =
   nixosBinaryCache maybeConfig Nothing bc useOptions
 addBinaryCache maybeConfig bc useOptions (EchoNixOSWithTrustedUser _) = do
   user <- getUser
   nixosBinaryCache maybeConfig (Just user) bc useOptions
-addBinaryCache maybeConfig bc@Api.BinaryCache{..} _ (Install nixversion ncl) = do
+addBinaryCache maybeConfig bc@Api.BinaryCache {..} _ (Install nixversion ncl) = do
   -- TODO: might need locking one day
   gnc <- NixConf.read NixConf.Global
-  (input, output) <- case ncl of
-    NixConf.Global -> return ([gnc], gnc)
-    NixConf.Local -> do
-      lnc <- NixConf.read NixConf.Local
-      return ([gnc, lnc], lnc)
+  (input, output) <-
+    case ncl of
+      NixConf.Global -> return ([gnc], gnc)
+      NixConf.Local -> do
+        lnc <- NixConf.read NixConf.Local
+        return ([gnc, lnc], lnc)
   let nixconf = fromMaybe (NixConf.NixConf []) output
-  netrcLocMaybe <- forM (guard $ not  isPublic) $ const $ addPrivateBinaryCacheNetRC maybeConfig bc ncl
-  let
-    addNetRCLine :: NixConf.NixConf -> NixConf.NixConf
-    addNetRCLine = fromMaybe identity $ do
+  netrcLocMaybe <- forM (guard $ not isPublic) $ const $ addPrivateBinaryCacheNetRC maybeConfig bc ncl
+  let addNetRCLine :: NixConf.NixConf -> NixConf.NixConf
+      addNetRCLine = fromMaybe identity $ do
         netrcLoc <- netrcLocMaybe :: Maybe FilePath
         -- We only add the netrc line for local user configs for now.
         -- On NixOS we assume it will be picked up from the default location.
@@ -81,7 +85,7 @@ addBinaryCache maybeConfig bc@Api.BinaryCache{..} _ (Install nixversion ncl) = d
   putStrLn $ "Configured " <> uri <> " binary cache in " <> toS filename
 
 nixosBinaryCache :: Maybe Config -> Maybe Text -> Api.BinaryCache -> UseOptions -> IO ()
-nixosBinaryCache maybeConfig maybeUser bc@Api.BinaryCache{..} UseOptions { useNixOSFolder=baseDirectory } = do
+nixosBinaryCache maybeConfig maybeUser bc@Api.BinaryCache {..} UseOptions {useNixOSFolder = baseDirectory} = do
   createDirectoryIfMissing True $ toS toplevel
   writeFile (toS glueModuleFile) glueModule
   writeFile (toS cacheModuleFile) cacheModule
@@ -98,12 +102,11 @@ nixosBinaryCache maybeConfig maybeUser bc@Api.BinaryCache{..} UseOptions { useNi
     glueModuleFile = toplevel <> ".nix"
     cacheModuleFile :: Text
     cacheModuleFile = toplevel <> "/" <> toS name <> ".nix"
-
     extra :: Text
     extra = maybe "" (\user -> [i|trustedUsers = [ "root" "${user}" ];|]) maybeUser
-
     instructions :: Text
-    instructions = [iTrim|
+    instructions =
+      [iTrim|
 Cachix configuration written to ${glueModuleFile}.
 Binary cache ${name} configuration written to ${cacheModuleFile}.
 
@@ -115,9 +118,9 @@ Then run:
 
     $ nixos-rebuild switch
     |]
-
     glueModule :: Text
-    glueModule = [i|
+    glueModule =
+      [i|
 # WARN: this file will get overwritten by $ cachix use <name>
 { pkgs, lib, ... }:
 
@@ -131,9 +134,9 @@ in {
   nix.binaryCaches = ["https://cache.nixos.org/"];
 }
     |]
-
     cacheModule :: Text
-    cacheModule = [i|
+    cacheModule =
+      [i|
 {
   nix = {
     binaryCaches = [

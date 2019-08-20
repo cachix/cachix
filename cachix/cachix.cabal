@@ -1,65 +1,74 @@
-cabal-version:  2.2
-name:           cachix
-version:        0.2.1
-synopsis:       Command line client for Nix binary cache hosting https://cachix.org
-homepage:       https://github.com/cachix/cachix#readme
-bug-reports:    https://github.com/cachix/cachix/issues
-author:         Domen Kožar
-maintainer:     domen@enlambda.com
-copyright:      2018 Domen Kožar
-license:        Apache-2.0
-license-file:   LICENSE
-build-type:     Simple
-extra-source-files:
-    CHANGELOG.md
-    README.md
-    cbits/aliases.h
-    test/data/*.input
-    test/data/*.output
+cabal-version:      2.2
+name:               cachix
+version:            0.2.1
+synopsis:
+  Command line client for Nix binary cache hosting https://cachix.org
 
+homepage:           https://github.com/cachix/cachix#readme
+bug-reports:        https://github.com/cachix/cachix/issues
+author:             Domen Kožar
+maintainer:         domen@enlambda.com
+copyright:          2018 Domen Kožar
+license:            Apache-2.0
+license-file:       LICENSE
+build-type:         Simple
+extra-source-files:
+  CHANGELOG.md
+  README.md
+  cbits/aliases.h
+  test/data/*.input
+  test/data/*.output
 
 common defaults
-  default-extensions: OverloadedStrings NoImplicitPrelude RecordWildCards DeriveGeneric
-  ghc-options: -Wall -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -fwarn-tabs -fwarn-unused-imports -fwarn-missing-signatures -fwarn-name-shadowing -fwarn-incomplete-patterns
-  default-language: Haskell2010
+  default-extensions:
+    NoImplicitPrelude
+    DeriveGeneric
+    OverloadedStrings
+    RecordWildCards
+
+  ghc-options:
+    -Wall -Wcompat -Wincomplete-record-updates
+    -Wincomplete-uni-patterns -Wredundant-constraints -fwarn-tabs
+    -fwarn-unused-imports -fwarn-missing-signatures
+    -fwarn-name-shadowing -fwarn-incomplete-patterns
+
+  default-language:   Haskell2010
 
 source-repository head
-  type: git
+  type:     git
   location: https://github.com/cachix/cachix
 
 library
-  import: defaults
+  import:            defaults
   exposed-modules:
-      Cachix.Client
-      Cachix.Client.Commands
-      Cachix.Client.Config
-      Cachix.Client.Config.Orphans
-      Cachix.Client.Env
-      Cachix.Client.Exception
-      Cachix.Client.InstallationMode
-      Cachix.Client.NetRc
-      Cachix.Client.NixConf
-      Cachix.Client.NixVersion
-      Cachix.Client.OptionsParser
-      Cachix.Client.Push
-      Cachix.Client.Secrets
-      Cachix.Client.Servant
-      Cachix.Client.Store
-      Cachix.Client.Store.Context
-      Cachix.Client.URI
-  other-modules:
-      Paths_cachix
-  autogen-modules:
-      Paths_cachix
-  hs-source-dirs:
-      src
+    Cachix.Client
+    Cachix.Client.Commands
+    Cachix.Client.Config
+    Cachix.Client.Config.Orphans
+    Cachix.Client.Env
+    Cachix.Client.Exception
+    Cachix.Client.InstallationMode
+    Cachix.Client.NetRc
+    Cachix.Client.NixConf
+    Cachix.Client.NixVersion
+    Cachix.Client.OptionsParser
+    Cachix.Client.Push
+    Cachix.Client.Secrets
+    Cachix.Client.Servant
+    Cachix.Client.Store
+    Cachix.Client.Store.Context
+    Cachix.Client.URI
+
+  other-modules:     Paths_cachix
+  autogen-modules:   Paths_cachix
+  hs-source-dirs:    src
   build-depends:
-      async
-    , base >=4.7 && <5
+    , async
+    , base                  >=4.7     && <5
     , base64-bytestring
     , bytestring
     , cachix-api
-    , conduit >=1.3.0
+    , conduit               >=1.3.0
     , conduit-extra
     , containers
     , cookie
@@ -78,7 +87,7 @@ library
     , inline-c
     , inline-c-cpp
     , lzma-conduit
-    , megaparsec >= 7.0.0
+    , megaparsec            >=7.0.0
     , memory
     , mmorph
     , netrc
@@ -88,66 +97,62 @@ library
     , resourcet
     , retry
     , safe-exceptions
-    , servant >=0.15
+    , servant               >=0.15
     , servant-auth
-    , servant-auth-client >=0.3.3.0
-    , servant-client >=0.15
-    , servant-client-core >=0.15
+    , servant-auth-client   >=0.3.3.0
+    , servant-client        >=0.15
+    , servant-client-core   >=0.15
     , servant-conduit
     , text
     , unix
     , uri-bytestring
     , versions
-  ghc-options:
-    -- match what Nix is using
-    -optc=-std=c++14
-  if os(darwin)
+
+  ghc-options:       -optc=-std=c++14
+
+  -- match what Nix is using
+  if os(osx)
     ghc-options: -pgmc=clang++
-  cc-options: -Wall
-  include-dirs:
-      cbits
-  extra-libraries:
-      stdc++
-  pkgconfig-depends:
-      nix-store >= 2.0
-    , nix-main >= 2.0
+
+  cc-options:        -Wall
+  include-dirs:      cbits
+  extra-libraries:   stdc++
+  pkgconfig-depends: nix-store ==2.0 || >2.0, nix-main ==2.0 || >2.0
 
 executable cachix
-  import: defaults
-  main-is: Main.hs
-  other-modules:
-      Paths_cachix
-  autogen-modules:
-      Paths_cachix
-  hs-source-dirs:
-      cachix
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  import:             defaults
+  main-is:            Main.hs
+  other-modules:      Paths_cachix
+  autogen-modules:    Paths_cachix
+  hs-source-dirs:     cachix
+  ghc-options:        -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      base >=4.7 && <5
+    , base        >=4.7 && <5
     , cachix
     , cachix-api
-  build-tool-depends: hspec-discover:hspec-discover
+
+  build-tool-depends: hspec-discover:hspec-discover -any
 
 test-suite cachix-test
-  import: defaults
-  type: exitcode-stdio-1.0
-  main-is: Main.hs
+  import:         defaults
+  type:           exitcode-stdio-1.0
+  main-is:        Main.hs
   other-modules:
-      InstallationModeSpec
-      NetRcSpec
-      NixConfSpec
-      NixVersionSpec
-      Spec
-      Paths_cachix
-  hs-source-dirs:
-      test
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+    InstallationModeSpec
+    NetRcSpec
+    NixConfSpec
+    NixVersionSpec
+    Paths_cachix
+    Spec
+
+  hs-source-dirs: test
+  ghc-options:    -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      base >=4.7 && <5
+    , base        >=4.7 && <5
     , cachix
     , cachix-api
     , directory
+    , here
     , hspec
     , protolude
-    , here
     , temporary

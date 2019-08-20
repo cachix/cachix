@@ -1,8 +1,7 @@
 module Main (main) where
 
-import Data.Aeson (encode)
-
 import Cachix.Api (swaggerDoc)
+import Data.Aeson (encode)
 
 main :: IO ()
 main = print $ encode swaggerDoc

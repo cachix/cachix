@@ -1,43 +1,55 @@
 {-# LANGUAGE DeriveAnyClass #-}
+
 module Cachix.Client.Config
-  ( Config(..)
-  , BinaryCacheConfig(..)
-  , readConfig
-  , writeConfig
-  , getDefaultFilename
-  , ConfigPath
-  , mkConfig
-  ) where
+  ( Config (..),
+    BinaryCacheConfig (..),
+    readConfig,
+    writeConfig,
+    getDefaultFilename,
+    ConfigPath,
+    mkConfig
+    )
+where
 
-import Cachix.Client.Config.Orphans()
-import Dhall     hiding ( Text )
-import Dhall.Pretty     ( prettyExpr )
-import GHC.Generics     ( Generic )
-import Servant.Auth.Client
-import System.Directory ( doesFileExist, createDirectoryIfMissing
-                        , getXdgDirectory, XdgDirectory(..)
-                        )
-import System.Posix.Files ( setFileMode, unionFileModes, ownerReadMode
-                          , ownerWriteMode )
-import System.FilePath.Posix ( takeDirectory )
+import Cachix.Client.Config.Orphans ()
+import Dhall hiding (Text)
+import Dhall.Pretty (prettyExpr)
+import GHC.Generics (Generic)
 import Protolude
+import Servant.Auth.Client
+import System.Directory
+  ( XdgDirectory (..),
+    createDirectoryIfMissing,
+    doesFileExist,
+    getXdgDirectory
+    )
+import System.FilePath.Posix (takeDirectory)
+import System.Posix.Files
+  ( ownerReadMode,
+    ownerWriteMode,
+    setFileMode,
+    unionFileModes
+    )
 
+data BinaryCacheConfig
+  = BinaryCacheConfig
+      { name :: Text,
+        secretKey :: Text
+        }
+  deriving (Show, Generic, Interpret, Inject)
 
-data BinaryCacheConfig = BinaryCacheConfig
- { name :: Text
- , secretKey :: Text
- } deriving (Show, Generic, Interpret, Inject)
-
-data Config = Config
- { authToken :: Token
- , binaryCaches :: [BinaryCacheConfig]
- } deriving (Show, Generic, Interpret, Inject)
+data Config
+  = Config
+      { authToken :: Token,
+        binaryCaches :: [BinaryCacheConfig]
+        }
+  deriving (Show, Generic, Interpret, Inject)
 
 mkConfig :: Text -> Config
 mkConfig token = Config
-  { authToken = Token (toS token)
-  , binaryCaches = []
-  }
+  { authToken = Token (toS token),
+    binaryCaches = []
+    }
 
 type ConfigPath = FilePath
 
@@ -45,8 +57,8 @@ readConfig :: ConfigPath -> IO (Maybe Config)
 readConfig filename = do
   doesExist <- doesFileExist filename
   if doesExist
-  then Just <$> input auto (toS filename)
-  else return Nothing
+    then Just <$> input auto (toS filename)
+    else return Nothing
 
 getDefaultFilename :: IO FilePath
 getDefaultFilename = do

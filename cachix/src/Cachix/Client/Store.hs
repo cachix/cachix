@@ -43,8 +43,6 @@ C.include "<nix/shared.hh>"
 
 C.include "<nix/store-api.hh>"
 
-C.include "<nix/get-drvs.hh>"
-
 C.include "<nix/derivations.hh>"
 
 C.include "<nix/affinity.hh>"

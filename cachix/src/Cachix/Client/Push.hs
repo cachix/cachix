@@ -200,6 +200,7 @@ pushClosure
   -> [Text] -- ^ Initial store paths
   -> m [r] -- ^ Every @r@ per store path of the entire closure of store paths
 pushClosure traversal clientEnv store pushCache pushStrategy inputStorePaths = do
+  hPutStrLn stderr ("cachix: paths: " <> show inputStorePaths :: Text)
   -- Get the transitive closure of dependencies
   paths <-
     liftIO $ do
@@ -209,6 +210,8 @@ pushClosure traversal clientEnv store pushCache pushStrategy inputStorePaths = d
         Store.addToPathSet normalized inputs
       closure <- Store.computeFSClosure store Store.defaultClosureParams inputs
       Store.traversePathSet (pure . toSL) closure
+
+  hPutStrLn stderr ("cachix: closure paths: " <> show paths :: Text)
   -- Check what store paths are missing
   -- TODO: query also cache.nixos.org? server-side?
   missingHashesList <-
@@ -221,8 +224,10 @@ pushClosure traversal clientEnv store pushCache pushStrategy inputStorePaths = d
                       (pushCacheToken pushCache)
                       (fst . splitStorePath <$> paths)
                 )
+  hPutStrLn stderr ("cachix: missingHashes: " <> show missingHashesList :: Text)
   let missingHashes = Set.fromList missingHashesList
       missingPaths = filter (\path -> Set.member (fst (splitStorePath path)) missingHashes) paths
+  hPutStrLn stderr ("cachix: missingPaths: " <> show missingPaths :: Text)
   -- TODO: make pool size configurable, on beefier machines this could be doubled
   traversal (\path -> retryAll $ \retrystatus -> uploadStorePath clientEnv store pushCache (pushStrategy path) path retrystatus) missingPaths
 

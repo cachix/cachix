@@ -4,16 +4,12 @@ module NixConfSpec where
 
 import Cachix.Api (BinaryCache (..))
 import Cachix.Client.NixConf as NixConf
-import Cachix.Client.NixVersion (NixVersion (..))
 import Data.String.Here
 import Protolude
 import Test.Hspec
 
 property :: Text -> Expectation
-property x = NixConf.render Nix20 <$> parse x `shouldBe` Right x
-
-propertyNix1 :: Text -> Expectation
-propertyNix1 x = NixConf.render Nix1XX <$> parse x `shouldBe` Right x
+property x = NixConf.render <$> parse x `shouldBe` Right x
 
 bc :: BinaryCache
 bc = BinaryCache
@@ -33,8 +29,6 @@ spec = do
       $ property "substituters = a b c\n"
     it "handles all known keys"
       $ property "substituters = a b c\ntrusted-users = him me\ntrusted-public-keys = a\n"
-    it "handles all known keys for Nix 1.0"
-      $ propertyNix1 "binary-caches = a b c\ntrusted-users = him me\nbinary-cache-public-keys = a\n"
     it "random content"
       $ property "blabla = foobar\nfoo = bar\n"
   describe "add" $ do

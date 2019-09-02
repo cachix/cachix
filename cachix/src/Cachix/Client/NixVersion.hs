@@ -1,7 +1,6 @@
 module Cachix.Client.NixVersion
-  ( getNixVersion,
-    parseNixVersion,
-    NixVersion (..)
+  ( assertNixVersion,
+    parseNixVersion
     )
 where
 
@@ -10,21 +9,15 @@ import Data.Versions
 import Protolude
 import System.Process (readProcessWithExitCode)
 
-data NixVersion
-  = Nix20
-  | Nix201
-  | Nix1XX
-  deriving (Show, Eq)
-
-getNixVersion :: IO (Either Text NixVersion)
-getNixVersion = do
+assertNixVersion :: IO (Either Text ())
+assertNixVersion = do
   (exitcode, out, err) <- readProcessWithExitCode "nix-env" ["--version"] mempty
   unless (err == "") $ putStrLn $ "nix-env stderr: " <> err
   return $ case exitcode of
     ExitFailure i -> Left $ "'nix-env --version' exited with " <> show i
     ExitSuccess -> parseNixVersion $ toS out
 
-parseNixVersion :: Text -> Either Text NixVersion
+parseNixVersion :: Text -> Either Text ()
 parseNixVersion output =
   let verStr = T.drop 14 $ T.strip output
       err = "Couldn't parse 'nix-env --version' output: " <> output
@@ -32,6 +25,5 @@ parseNixVersion output =
         Left _ -> Left err
         Right ver
           | verStr == "" -> Left err
-          | ver < Ideal (SemVer 1 99 0 [] []) -> Right Nix1XX
-          | ver < Ideal (SemVer 2 0 1 [] []) -> Right Nix20
-          | otherwise -> Right Nix201
+          | ver < Ideal (SemVer 2 0 1 [] []) -> Left "Nix 2.0.2 or lower is not supported. Please upgrade: https://nixos.org/nix/"
+          | otherwise -> Right ()

@@ -6,7 +6,10 @@ module Cachix.Client.InstallationMode
     getInstallationMode,
     addBinaryCache,
     isTrustedUser,
-    getUser
+    getUser,
+    fromString,
+    toString,
+    UseOptions (..)
     )
 where
 
@@ -15,38 +18,52 @@ import Cachix.Client.Config (Config)
 import Cachix.Client.Exception (CachixException (..))
 import qualified Cachix.Client.NetRc as NetRc
 import qualified Cachix.Client.NixConf as NixConf
-import Cachix.Client.NixVersion (NixVersion (..))
-import Cachix.Client.OptionsParser (UseOptions (..))
 import Data.String.Here
 import qualified Data.Text as T
 import Protolude
-import System.Directory (createDirectoryIfMissing, getPermissions, writable)
+import System.Directory (Permissions, createDirectoryIfMissing, getPermissions, writable)
 import System.Environment (lookupEnv)
 import System.FilePath ((</>), replaceFileName)
+import Prelude (String)
 
 data NixEnv
   = NixEnv
-      { nixVersion :: NixVersion,
-        isTrusted :: Bool,
+      { isTrusted :: Bool,
         isRoot :: Bool,
         isNixOS :: Bool
         }
 
 data InstallationMode
-  = Install NixVersion NixConf.NixConfLoc
-  | EchoNixOS NixVersion
-  | EchoNixOSWithTrustedUser NixVersion
+  = Install NixConf.NixConfLoc
+  | WriteNixOS
   | UntrustedRequiresSudo
-  | Nix20RequiresSudo
   deriving (Show, Eq)
+
+data UseOptions
+  = UseOptions
+      { useMode :: Maybe InstallationMode,
+        useNixOSFolder :: FilePath
+        }
+  deriving (Show)
+
+fromString :: String -> Maybe InstallationMode
+fromString "root-nixconf" = Just $ Install NixConf.Global
+fromString "user-nixconf" = Just $ Install NixConf.Local
+fromString "nixos" = Just WriteNixOS
+fromString "untrusted-requires-sudo" = Just UntrustedRequiresSudo
+fromString _ = Nothing
+
+toString :: InstallationMode -> String
+toString (Install NixConf.Global) = "root-nixconf"
+toString (Install NixConf.Local) = "user-nixconf"
+toString WriteNixOS = "nixos"
+toString UntrustedRequiresSudo = "untrusted-requires-sudo"
 
 getInstallationMode :: NixEnv -> InstallationMode
 getInstallationMode NixEnv {..}
-  | isNixOS && (isRoot || nixVersion /= Nix201) = EchoNixOS nixVersion
-  | isNixOS && not isTrusted = EchoNixOSWithTrustedUser nixVersion
-  | not isNixOS && isRoot = Install nixVersion NixConf.Global
-  | nixVersion /= Nix201 = Nix20RequiresSudo
-  | isTrusted = Install nixVersion NixConf.Local
+  | isNixOS && isRoot = WriteNixOS
+  | not isNixOS && isRoot = Install NixConf.Global
+  | isTrusted = Install NixConf.Local
   | otherwise = UntrustedRequiresSudo
 
 -- | Add a Binary cache to nix.conf, print nixos config or fail
@@ -54,15 +71,9 @@ addBinaryCache :: Maybe Config -> Api.BinaryCache -> UseOptions -> InstallationM
 addBinaryCache _ _ _ UntrustedRequiresSudo =
   throwIO
     $ MustBeRoot "Run command as root OR execute: $ echo \"trusted-users = root $USER\" | sudo tee -a /etc/nix/nix.conf && sudo pkill nix-daemon"
-addBinaryCache _ _ _ Nix20RequiresSudo =
-  throwIO
-    $ MustBeRoot "Run command as root OR upgrade to latest Nix - to be able to use it without root (recommended)"
-addBinaryCache maybeConfig bc useOptions (EchoNixOS _) =
-  nixosBinaryCache maybeConfig Nothing bc useOptions
-addBinaryCache maybeConfig bc useOptions (EchoNixOSWithTrustedUser _) = do
-  user <- getUser
-  nixosBinaryCache maybeConfig (Just user) bc useOptions
-addBinaryCache maybeConfig bc@Api.BinaryCache {..} _ (Install nixversion ncl) = do
+addBinaryCache maybeConfig bc useOptions WriteNixOS =
+  nixosBinaryCache maybeConfig bc useOptions
+addBinaryCache maybeConfig bc@Api.BinaryCache {..} _ (Install ncl) = do
   -- TODO: might need locking one day
   gnc <- NixConf.read NixConf.Global
   (input, output) <-
@@ -80,18 +91,25 @@ addBinaryCache maybeConfig bc@Api.BinaryCache {..} _ (Install nixversion ncl) = 
         -- On NixOS we assume it will be picked up from the default location.
         guard (ncl == NixConf.Local)
         pure (NixConf.setNetRC $ toS netrcLoc)
-  NixConf.write nixversion ncl $ addNetRCLine $ NixConf.add bc (catMaybes input) nixconf
+  NixConf.write ncl $ addNetRCLine $ NixConf.add bc (catMaybes input) nixconf
   filename <- NixConf.getFilename ncl
   putStrLn $ "Configured " <> uri <> " binary cache in " <> toS filename
 
-nixosBinaryCache :: Maybe Config -> Maybe Text -> Api.BinaryCache -> UseOptions -> IO ()
-nixosBinaryCache maybeConfig maybeUser bc@Api.BinaryCache {..} UseOptions {useNixOSFolder = baseDirectory} = do
-  createDirectoryIfMissing True $ toS toplevel
-  writeFile (toS glueModuleFile) glueModule
-  writeFile (toS cacheModuleFile) cacheModule
-  unless isPublic $ void $ addPrivateBinaryCacheNetRC maybeConfig bc NixConf.Global
-  putText instructions
+nixosBinaryCache :: Maybe Config -> Api.BinaryCache -> UseOptions -> IO ()
+nixosBinaryCache maybeConfig bc@Api.BinaryCache {..} UseOptions {useNixOSFolder = baseDirectory} = do
+  eitherPermissions <- try $ getPermissions (toS toplevel) :: IO (Either SomeException Permissions)
+  case eitherPermissions of
+    Left _ -> throwIO $ NixOSInstructions deadendInstructions
+    Right permissions
+      | writable permissions -> installFiles
+      | otherwise -> throwIO $ NixOSInstructions deadendInstructions
   where
+    installFiles = do
+      createDirectoryIfMissing True $ toS toplevel
+      writeFile (toS glueModuleFile) glueModule
+      writeFile (toS cacheModuleFile) cacheModule
+      unless isPublic $ void $ addPrivateBinaryCacheNetRC maybeConfig bc NixConf.Global
+      putText instructions
     configurationNix :: Text
     configurationNix = toS $ toS baseDirectory </> "configuration.nix"
     namespace :: Text
@@ -102,8 +120,13 @@ nixosBinaryCache maybeConfig maybeUser bc@Api.BinaryCache {..} UseOptions {useNi
     glueModuleFile = toplevel <> ".nix"
     cacheModuleFile :: Text
     cacheModuleFile = toplevel <> "/" <> toS name <> ".nix"
-    extra :: Text
-    extra = maybe "" (\user -> [i|trustedUsers = [ "root" "${user}" ];|]) maybeUser
+    deadendInstructions :: Text
+    deadendInstructions =
+      [iTrim|
+Could not install NixOS configuration to /etc/nixos/ due to lack of write permissions.
+
+Pass `--nixos-folder /etc/mynixos/` as an alternative location with write permissions.
+      |]
     instructions :: Text
     instructions =
       [iTrim|
@@ -145,7 +168,6 @@ in {
     binaryCachePublicKeys = [
       ${T.intercalate " " (map (\s -> "\"" <> s <> "\"") publicSigningKeys)}
     ];
-    ${extra}
   };
 }
     |]

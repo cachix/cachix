@@ -25,12 +25,11 @@ import Cachix.Client.Env (Env (..))
 import Cachix.Client.Exception (CachixException (..))
 import Cachix.Client.InstallationMode
 import qualified Cachix.Client.NixConf as NixConf
-import Cachix.Client.NixVersion (getNixVersion)
+import Cachix.Client.NixVersion (assertNixVersion)
 import Cachix.Client.OptionsParser
   ( CachixOptions (..),
     PushArguments (..),
-    PushOptions (..),
-    UseOptions (..)
+    PushOptions (..)
     )
 import Cachix.Client.Push
 import Cachix.Client.Secrets
@@ -138,21 +137,18 @@ use env name useOptions = do
       | isErr err status404 -> throwM $ BinaryCacheNotFound $ "Binary cache" <> name <> " does not exist."
       | otherwise -> throwM err
     Right binaryCache -> do
-      nixVersion <- escalateAs UnsupportedNixVersion =<< getNixVersion
+      () <- escalateAs UnsupportedNixVersion =<< assertNixVersion
       user <- getUser
       nc <- NixConf.read NixConf.Global
       isTrusted <- isTrustedUser $ NixConf.readLines (catMaybes [nc]) NixConf.isTrustedUsers
       isNixOS <- doesFileExist "/etc/NIXOS"
       let nixEnv = NixEnv
-            { nixVersion = nixVersion,
-              isRoot = user == "root",
+            { isRoot = user == "root",
               isTrusted = isTrusted,
               isNixOS = isNixOS
               }
       addBinaryCache (config env) binaryCache useOptions
-        $ if useNixOS useOptions
-          then EchoNixOS nixVersion
-          else getInstallationMode nixEnv
+        $ fromMaybe (getInstallationMode nixEnv) (useMode useOptions)
 
 -- TODO: lots of room for perfomance improvements
 push :: Env -> PushArguments -> IO ()

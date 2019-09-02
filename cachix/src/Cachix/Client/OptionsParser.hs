@@ -1,7 +1,6 @@
 module Cachix.Client.OptionsParser
   ( CachixCommand (..),
     CachixOptions (..),
-    UseOptions (..),
     PushArguments (..),
     PushOptions (..),
     BinaryCacheName,
@@ -10,6 +9,7 @@ module Cachix.Client.OptionsParser
 where
 
 import qualified Cachix.Client.Config as Config
+import qualified Cachix.Client.InstallationMode as InstallationMode
 import Cachix.Client.URI (defaultCachixURI)
 import Data.Bifunctor (first)
 import Options.Applicative
@@ -65,15 +65,8 @@ data CachixCommand
   | Create BinaryCacheName
   | GenerateKeypair BinaryCacheName
   | Push PushArguments
-  | Use BinaryCacheName UseOptions
+  | Use BinaryCacheName InstallationMode.UseOptions
   | Version
-  deriving (Show)
-
-data UseOptions
-  = UseOptions
-      { useNixOS :: Bool,
-        useNixOSFolder :: FilePath
-        }
   deriving (Show)
 
 data PushArguments
@@ -127,11 +120,13 @@ parserCachixCommand =
                 )
     use =
       Use <$> nameArg
-        <*> ( UseOptions
-                <$> switch
-                      ( long "nixos"
-                          <> short 'n'
-                          <> help "Write NixOS modules"
+        <*> ( InstallationMode.UseOptions
+                <$> optional
+                      ( option (maybeReader InstallationMode.fromString)
+                          ( long "mode"
+                              <> short 'm'
+                              <> help "Mode in which to configure binary caches for Nix. Supported values: nixos, root-nixconf, user-nixconf"
+                            )
                         )
                 <*> strOption
                       ( long "nixos-folder"

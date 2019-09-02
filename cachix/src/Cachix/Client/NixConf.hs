@@ -28,14 +28,11 @@ module Cachix.Client.NixConf
     isTrustedUsers,
     defaultPublicURI,
     defaultSigningKey,
-    substitutersKey,
-    trustedPublicKeysKey,
     setNetRC
     )
 where
 
 import Cachix.Api (BinaryCache (..))
-import Cachix.Client.NixVersion (NixVersion (..))
 import Data.Char (isSpace)
 import Data.List (nub)
 import qualified Data.Text as T
@@ -103,31 +100,21 @@ defaultPublicURI = "https://cache.nixos.org"
 defaultSigningKey :: Text
 defaultSigningKey = "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
 
-render :: NixVersion -> NixConf -> Text
-render nixversion (NixConf nixconflines) = T.unlines $ fmap go nixconflines
+render :: NixConf -> Text
+render (NixConf nixconflines) = T.unlines $ fmap go nixconflines
   where
     go :: NixConfLine -> Text
-    go (Substituters xs) = substitutersKey nixversion <> " = " <> T.unwords xs
+    go (Substituters xs) = "substituters" <> " = " <> T.unwords xs
     go (TrustedUsers xs) = "trusted-users = " <> T.unwords xs
-    go (TrustedPublicKeys xs) = trustedPublicKeysKey nixversion <> " = " <> T.unwords xs
+    go (TrustedPublicKeys xs) = "trusted-public-keys" <> " = " <> T.unwords xs
     go (NetRcFile filename) = "netrc-file = " <> filename
     go (Other line) = line
 
-substitutersKey :: NixVersion -> Text
-substitutersKey Nix1XX = "binary-caches"
-substitutersKey Nix20 = "substituters"
-substitutersKey Nix201 = "substituters"
-
-trustedPublicKeysKey :: NixVersion -> Text
-trustedPublicKeysKey Nix1XX = "binary-cache-public-keys"
-trustedPublicKeysKey Nix20 = "trusted-public-keys"
-trustedPublicKeysKey Nix201 = "trusted-public-keys"
-
-write :: NixVersion -> NixConfLoc -> NixConf -> IO ()
-write nixversion ncl nc = do
+write :: NixConfLoc -> NixConf -> IO ()
+write ncl nc = do
   filename <- getFilename ncl
   createDirectoryIfMissing True (takeDirectory filename)
-  writeFile filename $ render nixversion nc
+  writeFile filename $ render nc
 
 read :: NixConfLoc -> IO (Maybe NixConf)
 read ncl = do
@@ -144,10 +131,10 @@ read ncl = do
             panic $ toS filename <> " failed to parse, please copy the above error and contents of nix.conf and open an issue at https://github.com/cachix/cachix"
           Right conf -> return $ Just conf
 
-update :: NixVersion -> NixConfLoc -> (Maybe NixConf -> NixConf) -> IO ()
-update nixversion ncl f = do
+update :: NixConfLoc -> (Maybe NixConf -> NixConf) -> IO ()
+update ncl f = do
   nc <- f <$> read ncl
-  write nixversion ncl nc
+  write ncl nc
 
 setNetRC :: Text -> NixConf -> NixConf
 setNetRC netrc (NixConf nc) = NixConf $ filter noNetRc nc ++ [NetRcFile netrc]

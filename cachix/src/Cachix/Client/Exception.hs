@@ -17,4 +17,7 @@ data CachixException
   | BinaryCacheNotFound Text
   deriving (Show, Typeable)
 
-instance Exception CachixException
+instance Exception CachixException where
+
+  displayException (NixOSInstructions txt) = toS txt
+  displayException e = show e

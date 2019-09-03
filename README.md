@@ -26,7 +26,6 @@ Available options:
 
 Available commands:
   authtoken                Configure token for authentication to cachix.org
-  create                   DEPRECATED: Go to https://cachix.org instead
   generate-keypair         Generate keypair for a binary cache
   push                     Upload Nix store paths to the binary cache
   use                      Configure nix.conf to enable binary cache during

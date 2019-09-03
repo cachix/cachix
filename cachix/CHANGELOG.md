@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Changed
 
 - #222 allow NixOS installation only as root
-- #215 LTS-14.0 and replace stack2nix with haskell.nix
+- #215 LTS-14.0 support and for development replace stack2nix with haskell.nix
 - #216 add bulk store path querying as a performance optimization
 - #222 drop support for Nix 2.0.1 or lower
 

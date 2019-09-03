@@ -7,12 +7,17 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [0.3.0] - 2019-09-03
+
+- #216 Add bulk store path query
+- #216 Provide plain and base16 passthrough sinks
+
 ## [0.2.1] - 2019-07-05
 
 # Added
 
 - #192 Add Secrets.SigningKey abstraction @robert
-- #180 support servant 0.16 @domenkozar
+- #180 Support servant 0.16 @domenkozar
 
 
 ## [0.2.0] - 2019-03-04

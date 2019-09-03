@@ -1,6 +1,5 @@
 - git checkout -B v0.X.X
 - bump version in cachix.cabal and cachix-api.cabal
-- ./scripts/stack2nix
 - update changelog (cachix and cachix-api)
 - make sure changelog has an url entry for the latest tag
 - README.md `cachix --help` changes

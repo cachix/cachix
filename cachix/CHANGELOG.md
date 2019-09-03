@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
+## [0.3.0] - 2019-09-03
+
+### Changed
+
+- #222 allow NixOS installation only as root
+- #215 LTS-14.0 and replace stack2nix with haskell.nix
+- #216 add bulk store path querying as a performance optimization
+- #222 drop support for Nix 2.0.1 or lower
+
+### Fixed
+
+- #222 Provide guidance if /etc/nixos is not writable
+- #222 Human friendly exception reporting
+- #212 Use C++ to determine closure, avoids shell argument limit size
+
 ## [0.2.1] - 2019-07-05
 
 ### Added
@@ -94,7 +109,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 - Initial release @domenkozar
 
-[Unreleased]: https://github.com/cachix/cachix/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/cachix/cachix/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/cachix/cachix/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/cachix/cachix/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/cachix/cachix/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/cachix/cachix/compare/v0.1.2...v0.1.3

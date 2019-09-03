@@ -33,6 +33,7 @@ data NixEnv
         isNixOS :: Bool
         }
 
+-- NOTE: update the list of options for --mode argument in OptionsParser.hs
 data InstallationMode
   = Install NixConf.NixConfLoc
   | WriteNixOS
@@ -99,10 +100,10 @@ nixosBinaryCache :: Maybe Config -> Api.BinaryCache -> UseOptions -> IO ()
 nixosBinaryCache maybeConfig bc@Api.BinaryCache {..} UseOptions {useNixOSFolder = baseDirectory} = do
   eitherPermissions <- try $ getPermissions (toS toplevel) :: IO (Either SomeException Permissions)
   case eitherPermissions of
-    Left _ -> throwIO $ NixOSInstructions deadendInstructions
+    Left _ -> throwIO $ NixOSInstructions noEtcPermissionInstructions
     Right permissions
       | writable permissions -> installFiles
-      | otherwise -> throwIO $ NixOSInstructions deadendInstructions
+      | otherwise -> throwIO $ NixOSInstructions noEtcPermissionInstructions
   where
     installFiles = do
       createDirectoryIfMissing True $ toS toplevel
@@ -120,8 +121,8 @@ nixosBinaryCache maybeConfig bc@Api.BinaryCache {..} UseOptions {useNixOSFolder 
     glueModuleFile = toplevel <> ".nix"
     cacheModuleFile :: Text
     cacheModuleFile = toplevel <> "/" <> toS name <> ".nix"
-    deadendInstructions :: Text
-    deadendInstructions =
+    noEtcPermissionInstructions :: Text
+    noEtcPermissionInstructions =
       [iTrim|
 Could not install NixOS configuration to /etc/nixos/ due to lack of write permissions.
 

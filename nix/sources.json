@@ -27,9 +27,9 @@
         "homepage": "https://github.com/nmattia/niv",
         "owner": "nmattia",
         "repo": "niv",
-        "rev": "8b7b70465c130d8d7a98fba1396ad1481daee518",
-        "sha256": "0fgdrxn2vzpnzr6pxaiyn5zzbd812c6f7xjjhfir0kpzamjnxwwl",
-        "url": "https://github.com/nmattia/niv/archive/8b7b70465c130d8d7a98fba1396ad1481daee518.tar.gz",
+        "rev": "c57098815e542b3a345d6f3fa821ea87c75b751d",
+        "sha256": "0q4xjg2nkzcvh62m92d1d2xzxf6xhfr512yndaklqp6qy8vz29jx",
+        "url": "https://github.com/nmattia/niv/archive/c57098815e542b3a345d6f3fa821ea87c75b751d.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "nix-pre-commit-hooks": {

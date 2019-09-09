@@ -108,7 +108,7 @@ library
     , uri-bytestring
     , versions
 
-  ghc-options:       -optc=-std=c++14
+  ghc-options:       -optc=-std=c++17
 
   -- match what Nix is using
   if os(osx)
@@ -116,7 +116,10 @@ library
 
   cc-options:        -Wall
   include-dirs:      cbits
-  extra-libraries:   stdc++
+  extra-libraries:
+    stdc++
+    boost_context
+
   pkgconfig-depends: nix-store ==2.0 || >2.0, nix-main ==2.0 || >2.0
 
 executable cachix

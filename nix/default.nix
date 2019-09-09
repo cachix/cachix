@@ -8,6 +8,7 @@ let
       gitignoreSource;
     nix-store = pkgs.nix;
     nix-main = pkgs.nix;
+    boost_context = pkgs.boost;
     pre-commit-check = self.nix-pre-commit-hooks.run {
       src = self.gitignoreSource ../.;
     };

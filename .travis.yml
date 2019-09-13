@@ -1,11 +1,15 @@
 language: nix
-nix: 2.2.2
+os:
+- linux
+- osx
 sudo: required
 before_script:
 - sudo mount -o remount,exec,size=4G,mode=755 /run/user || true
 - sudo mkdir -p /etc/nix
 - nix-env -iA cachix -f https://cachix.org/api/v1/install
-- cachix use cachix
+- sudo cachix use cachix
+- sudo launchctl kickstart -k system/org.nixos.nix-daemon || true
+- $(nix-build)/bin/cachix use cachix
 - cachix use hercules-ci
 env:
   global:

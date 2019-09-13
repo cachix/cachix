@@ -10,10 +10,13 @@ with
         builtins.fetchTarball { inherit url; }
       else
         builtins.fetchTarball { inherit url sha256; };
+
+  mapAttrs = f: set:
+    builtins.listToAttrs (map (attr: { name = attr; value = f attr set.${attr}; }) (builtins.attrNames set));
 };
 
 # NOTE: spec must _not_ have an "outPath" attribute
-builtins.mapAttrs (_: spec:
+mapAttrs (_: spec:
   if builtins.hasAttr "outPath" spec
   then abort
     "The values in versions.json should not have an 'outPath' attribute"

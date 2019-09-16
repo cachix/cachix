@@ -86,13 +86,13 @@ isTrustedUsers _ = Nothing
 
 -- | Pure version of addIO
 add :: BinaryCache -> [NixConf] -> NixConf -> NixConf
-add BinaryCache {..} toRead toWrite =
+add bc toRead toWrite =
   writeLines isPublicKey (TrustedPublicKeys $ nub publicKeys)
     $ writeLines isSubstituter (Substituters $ nub substituters) toWrite
   where
     -- Note: some defaults are always appended since overriding some setttings in nix.conf overrides defaults otherwise
-    substituters = (defaultPublicURI : readLines toRead isSubstituter) <> [uri]
-    publicKeys = (defaultSigningKey : readLines toRead isPublicKey) <> publicSigningKeys
+    substituters = (defaultPublicURI : readLines toRead isSubstituter) <> [uri bc]
+    publicKeys = (defaultSigningKey : readLines toRead isPublicKey) <> publicSigningKeys bc
 
 defaultPublicURI :: Text
 defaultPublicURI = "https://cache.nixos.org"

@@ -61,10 +61,10 @@ toString WriteNixOS = "nixos"
 toString UntrustedRequiresSudo = "untrusted-requires-sudo"
 
 getInstallationMode :: NixEnv -> InstallationMode
-getInstallationMode NixEnv {..}
-  | isNixOS && isRoot = WriteNixOS
-  | not isNixOS && isRoot = Install NixConf.Global
-  | isTrusted = Install NixConf.Local
+getInstallationMode nixenv
+  | isNixOS nixenv && isRoot nixenv = WriteNixOS
+  | not (isNixOS nixenv) && isRoot nixenv = Install NixConf.Global
+  | isTrusted nixenv = Install NixConf.Local
   | otherwise = UntrustedRequiresSudo
 
 -- | Add a Binary cache to nix.conf, print nixos config or fail
@@ -74,7 +74,7 @@ addBinaryCache _ _ _ UntrustedRequiresSudo =
     $ MustBeRoot "Run command as root OR execute: $ echo \"trusted-users = root $USER\" | sudo tee -a /etc/nix/nix.conf && sudo pkill nix-daemon"
 addBinaryCache maybeConfig bc useOptions WriteNixOS =
   nixosBinaryCache maybeConfig bc useOptions
-addBinaryCache maybeConfig bc@Api.BinaryCache {..} _ (Install ncl) = do
+addBinaryCache maybeConfig bc _ (Install ncl) = do
   -- TODO: might need locking one day
   gnc <- NixConf.read NixConf.Global
   (input, output) <-
@@ -84,7 +84,7 @@ addBinaryCache maybeConfig bc@Api.BinaryCache {..} _ (Install ncl) = do
         lnc <- NixConf.read NixConf.Local
         return ([gnc, lnc], lnc)
   let nixconf = fromMaybe (NixConf.NixConf []) output
-  netrcLocMaybe <- forM (guard $ not isPublic) $ const $ addPrivateBinaryCacheNetRC maybeConfig bc ncl
+  netrcLocMaybe <- forM (guard $ not (isPublic bc)) $ const $ addPrivateBinaryCacheNetRC maybeConfig bc ncl
   let addNetRCLine :: NixConf.NixConf -> NixConf.NixConf
       addNetRCLine = fromMaybe identity $ do
         netrcLoc <- netrcLocMaybe :: Maybe FilePath
@@ -94,10 +94,10 @@ addBinaryCache maybeConfig bc@Api.BinaryCache {..} _ (Install ncl) = do
         pure (NixConf.setNetRC $ toS netrcLoc)
   NixConf.write ncl $ addNetRCLine $ NixConf.add bc (catMaybes input) nixconf
   filename <- NixConf.getFilename ncl
-  putStrLn $ "Configured " <> uri <> " binary cache in " <> toS filename
+  putStrLn $ "Configured " <> uri bc <> " binary cache in " <> toS filename
 
 nixosBinaryCache :: Maybe Config -> Api.BinaryCache -> UseOptions -> IO ()
-nixosBinaryCache maybeConfig bc@Api.BinaryCache {..} UseOptions {useNixOSFolder = baseDirectory} = do
+nixosBinaryCache maybeConfig bc UseOptions {useNixOSFolder = baseDirectory} = do
   eitherPermissions <- try $ getPermissions (toS baseDirectory) :: IO (Either SomeException Permissions)
   case eitherPermissions of
     Left _ -> throwIO $ NixOSInstructions noEtcPermissionInstructions
@@ -109,7 +109,7 @@ nixosBinaryCache maybeConfig bc@Api.BinaryCache {..} UseOptions {useNixOSFolder 
       createDirectoryIfMissing True $ toS toplevel
       writeFile (toS glueModuleFile) glueModule
       writeFile (toS cacheModuleFile) cacheModule
-      unless isPublic $ void $ addPrivateBinaryCacheNetRC maybeConfig bc NixConf.Global
+      unless (isPublic bc) $ void $ addPrivateBinaryCacheNetRC maybeConfig bc NixConf.Global
       putText instructions
     configurationNix :: Text
     configurationNix = toS $ toS baseDirectory </> "configuration.nix"
@@ -120,7 +120,7 @@ nixosBinaryCache maybeConfig bc@Api.BinaryCache {..} UseOptions {useNixOSFolder 
     glueModuleFile :: Text
     glueModuleFile = toplevel <> ".nix"
     cacheModuleFile :: Text
-    cacheModuleFile = toplevel <> "/" <> toS name <> ".nix"
+    cacheModuleFile = toplevel <> "/" <> toS (name bc) <> ".nix"
     noEtcPermissionInstructions :: Text
     noEtcPermissionInstructions =
       [iTrim|
@@ -132,7 +132,7 @@ Pass `--nixos-folder /etc/mynixos/` as an alternative location with write permis
     instructions =
       [iTrim|
 Cachix configuration written to ${glueModuleFile}.
-Binary cache ${name} configuration written to ${cacheModuleFile}.
+Binary cache ${name bc} configuration written to ${cacheModuleFile}.
 
 To start using cachix add the following to your ${configurationNix}:
 
@@ -164,10 +164,10 @@ in {
 {
   nix = {
     binaryCaches = [
-      "${uri}"
+      "${uri bc}"
     ];
     binaryCachePublicKeys = [
-      ${T.intercalate " " (map (\s -> "\"" <> s <> "\"") publicSigningKeys)}
+      ${T.intercalate " " (map (\s -> "\"" <> s <> "\"") (publicSigningKeys bc))}
     ];
   };
 }

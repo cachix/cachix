@@ -19,11 +19,27 @@ extra-source-files:
   test/data/*.input
   test/data/*.output
 
+common defaults
+  default-extensions:
+    NoImplicitPrelude
+    DeriveAnyClass
+    DeriveGeneric
+    OverloadedStrings
+
+  ghc-options:
+    -Wall -Wcompat -Wincomplete-record-updates
+    -Wincomplete-uni-patterns -Wredundant-constraints -fwarn-tabs
+    -fwarn-unused-imports -fwarn-missing-signatures
+    -fwarn-name-shadowing -fwarn-incomplete-patterns
+
+  default-language:   Haskell2010
+
 source-repository head
   type:     git
   location: https://github.com/cachix/cachix
 
 library
+  import:            defaults
   exposed-modules:
     Cachix.Client
     Cachix.Client.Commands
@@ -43,29 +59,16 @@ library
     Cachix.Client.Store.Context
     Cachix.Client.URI
 
-  cc-options:         -Wall
-  pkgconfig-depends:  nix-store ==2.0 || >2.0, nix-main ==2.0 || >2.0
-  hs-source-dirs:     src
-  other-modules:      Paths_cachix
-  autogen-modules:    Paths_cachix
-  default-language:   Haskell2010
-  default-extensions:
-    NoImplicitPrelude
-    DeriveGeneric
-    OverloadedStrings
-    RecordWildCards
-
+  cc-options:        -Wall
+  pkgconfig-depends: nix-store ==2.0 || >2.0, nix-main ==2.0 || >2.0
+  hs-source-dirs:    src
+  other-modules:     Paths_cachix
+  autogen-modules:   Paths_cachix
   extra-libraries:
     stdc++
     boost_context
 
-  include-dirs:       cbits
-  ghc-options:
-    -Wall -Wcompat -Wincomplete-record-updates
-    -Wincomplete-uni-patterns -Wredundant-constraints -fwarn-tabs
-    -fwarn-unused-imports -fwarn-missing-signatures
-    -fwarn-name-shadowing -fwarn-incomplete-patterns
-
+  include-dirs:      cbits
   build-depends:
     , async
     , base                  >=4.7     && <5
@@ -112,37 +115,28 @@ library
     , uri-bytestring
     , versions
 
+  ghc-options:       -optc=-std=c++17
+
   if os(osx)
     ghc-options: -pgmc=clang++
 
 executable cachix
+  import:             defaults
   main-is:            Main.hs
   build-tool-depends: hspec-discover:hspec-discover -any
   hs-source-dirs:     cachix
   other-modules:      Paths_cachix
   autogen-modules:    Paths_cachix
-  default-language:   Haskell2010
-  default-extensions:
-    NoImplicitPrelude
-    DeriveGeneric
-    OverloadedStrings
-    RecordWildCards
-
-  ghc-options:
-    -Wall -Wcompat -Wincomplete-record-updates
-    -Wincomplete-uni-patterns -Wredundant-constraints -fwarn-tabs
-    -fwarn-unused-imports -fwarn-missing-signatures
-    -fwarn-name-shadowing -fwarn-incomplete-patterns
-
   build-depends:
     , base        >=4.7 && <5
     , cachix
     , cachix-api
 
 test-suite cachix-test
-  type:               exitcode-stdio-1.0
-  main-is:            Main.hs
-  hs-source-dirs:     test
+  import:         defaults
+  type:           exitcode-stdio-1.0
+  main-is:        Main.hs
+  hs-source-dirs: test
   other-modules:
     InstallationModeSpec
     NetRcSpec
@@ -150,19 +144,6 @@ test-suite cachix-test
     NixVersionSpec
     Paths_cachix
     Spec
-
-  default-language:   Haskell2010
-  default-extensions:
-    NoImplicitPrelude
-    DeriveGeneric
-    OverloadedStrings
-    RecordWildCards
-
-  ghc-options:
-    -Wall -Wcompat -Wincomplete-record-updates
-    -Wincomplete-uni-patterns -Wredundant-constraints -fwarn-tabs
-    -fwarn-unused-imports -fwarn-missing-signatures
-    -fwarn-name-shadowing -fwarn-incomplete-patterns
 
   build-depends:
     , base        >=4.7 && <5

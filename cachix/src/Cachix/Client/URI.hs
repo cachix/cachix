@@ -19,18 +19,18 @@ import URI.ByteString.QQ
 -- | Partial function from URI to BaseUrl
 --
 getBaseUrl :: URIRef Absolute -> BaseUrl
-getBaseUrl URI {..} =
-  case uriAuthority of
+getBaseUrl uriref =
+  case uriAuthority uriref of
     Nothing -> panic "missing host in url"
     Just authority ->
       BaseUrl
         getScheme
         (toS (hostBS (authorityHost authority)))
         getPort
-        (toS uriPath)
+        (toS (uriPath uriref))
       where
         getScheme :: Scheme
-        getScheme = case uriScheme of
+        getScheme = case uriScheme uriref of
           UBS.Scheme "http" -> Http
           UBS.Scheme "https" -> Https
           _ -> panic "uri can only be http/https"

@@ -86,6 +86,7 @@ executable cachix-gen-swagger
     , aeson
     , base        >=4.7 && <5
     , cachix-api
+    , protolude
 
 test-suite cachix-api-test
   import:             defaults

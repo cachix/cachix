@@ -157,15 +157,15 @@ uploadStorePath clientEnv _store cache cb storePath retrystatus = do
           let fp = fingerprint storePath narHash narSize references
               sig = dsign (signingSecretKey $ pushCacheSigningKey cache) fp
               nic = Api.NarInfoCreate
-                { cStoreHash = storeHash,
-                  cStoreSuffix = storeSuffix,
-                  cNarHash = narHash,
-                  cNarSize = narSize,
-                  cFileSize = fileSize,
-                  cFileHash = toS fileHash,
-                  cReferences = fmap (T.drop 11) references,
-                  cDeriver = deriver,
-                  cSig = toS $ B64.encode $ unSignature sig
+                { Api.cStoreHash = storeHash,
+                  Api.cStoreSuffix = storeSuffix,
+                  Api.cNarHash = narHash,
+                  Api.cNarSize = narSize,
+                  Api.cFileSize = fileSize,
+                  Api.cFileHash = toS fileHash,
+                  Api.cReferences = fmap (T.drop 11) references,
+                  Api.cDeriver = deriver,
+                  Api.cSig = toS $ B64.encode $ unSignature sig
                   }
           escalate $ Api.isNarInfoCreateValid nic
           -- Upload narinfo with signature

@@ -199,7 +199,7 @@ findSigningKey
   -> IO SigningKey -- ^ Secret key or exception
 findSigningKey env name = do
   maybeEnvSK <- lookupEnv "CACHIX_SIGNING_KEY"
-  let matches Config {..} = filter (\bc -> Config.name bc == name) binaryCaches
+  let matches c = filter (\bc -> Config.name bc == name) $ binaryCaches c
       maybeBCSK = case config env of
         Nothing -> Nothing
         Just c -> Config.secretKey <$> head (matches c)

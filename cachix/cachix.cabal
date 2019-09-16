@@ -1,16 +1,16 @@
 cabal-version:      2.2
 name:               cachix
-version:            0.3.0
+version:            0.3.1
+license:            Apache-2.0
+license-file:       LICENSE
+copyright:          2018 Domen Kožar
+maintainer:         domen@enlambda.com
+author:             Domen Kožar
+homepage:           https://github.com/cachix/cachix#readme
+bug-reports:        https://github.com/cachix/cachix/issues
 synopsis:
   Command line client for Nix binary cache hosting https://cachix.org
 
-homepage:           https://github.com/cachix/cachix#readme
-bug-reports:        https://github.com/cachix/cachix/issues
-author:             Domen Kožar
-maintainer:         domen@enlambda.com
-copyright:          2018 Domen Kožar
-license:            Apache-2.0
-license-file:       LICENSE
 build-type:         Simple
 extra-source-files:
   CHANGELOG.md
@@ -19,27 +19,11 @@ extra-source-files:
   test/data/*.input
   test/data/*.output
 
-common defaults
-  default-extensions:
-    NoImplicitPrelude
-    DeriveGeneric
-    OverloadedStrings
-    RecordWildCards
-
-  ghc-options:
-    -Wall -Wcompat -Wincomplete-record-updates
-    -Wincomplete-uni-patterns -Wredundant-constraints -fwarn-tabs
-    -fwarn-unused-imports -fwarn-missing-signatures
-    -fwarn-name-shadowing -fwarn-incomplete-patterns
-
-  default-language:   Haskell2010
-
 source-repository head
   type:     git
   location: https://github.com/cachix/cachix
 
 library
-  import:            defaults
   exposed-modules:
     Cachix.Client
     Cachix.Client.Commands
@@ -59,9 +43,29 @@ library
     Cachix.Client.Store.Context
     Cachix.Client.URI
 
-  other-modules:     Paths_cachix
-  autogen-modules:   Paths_cachix
-  hs-source-dirs:    src
+  cc-options:         -Wall
+  pkgconfig-depends:  nix-store ==2.0 || >2.0, nix-main ==2.0 || >2.0
+  hs-source-dirs:     src
+  other-modules:      Paths_cachix
+  autogen-modules:    Paths_cachix
+  default-language:   Haskell2010
+  default-extensions:
+    NoImplicitPrelude
+    DeriveGeneric
+    OverloadedStrings
+    RecordWildCards
+
+  extra-libraries:
+    stdc++
+    boost_context
+
+  include-dirs:       cbits
+  ghc-options:
+    -Wall -Wcompat -Wincomplete-record-updates
+    -Wincomplete-uni-patterns -Wredundant-constraints -fwarn-tabs
+    -fwarn-unused-imports -fwarn-missing-signatures
+    -fwarn-name-shadowing -fwarn-incomplete-patterns
+
   build-depends:
     , async
     , base                  >=4.7     && <5
@@ -108,38 +112,37 @@ library
     , uri-bytestring
     , versions
 
-  ghc-options:       -optc=-std=c++17
-
-  -- match what Nix is using
   if os(osx)
     ghc-options: -pgmc=clang++
 
-  cc-options:        -Wall
-  include-dirs:      cbits
-  extra-libraries:
-    stdc++
-    boost_context
-
-  pkgconfig-depends: nix-store ==2.0 || >2.0, nix-main ==2.0 || >2.0
-
 executable cachix
-  import:             defaults
   main-is:            Main.hs
+  build-tool-depends: hspec-discover:hspec-discover -any
+  hs-source-dirs:     cachix
   other-modules:      Paths_cachix
   autogen-modules:    Paths_cachix
-  hs-source-dirs:     cachix
-  ghc-options:        -threaded -rtsopts -with-rtsopts=-N
+  default-language:   Haskell2010
+  default-extensions:
+    NoImplicitPrelude
+    DeriveGeneric
+    OverloadedStrings
+    RecordWildCards
+
+  ghc-options:
+    -Wall -Wcompat -Wincomplete-record-updates
+    -Wincomplete-uni-patterns -Wredundant-constraints -fwarn-tabs
+    -fwarn-unused-imports -fwarn-missing-signatures
+    -fwarn-name-shadowing -fwarn-incomplete-patterns
+
   build-depends:
     , base        >=4.7 && <5
     , cachix
     , cachix-api
 
-  build-tool-depends: hspec-discover:hspec-discover -any
-
 test-suite cachix-test
-  import:         defaults
-  type:           exitcode-stdio-1.0
-  main-is:        Main.hs
+  type:               exitcode-stdio-1.0
+  main-is:            Main.hs
+  hs-source-dirs:     test
   other-modules:
     InstallationModeSpec
     NetRcSpec
@@ -148,8 +151,19 @@ test-suite cachix-test
     Paths_cachix
     Spec
 
-  hs-source-dirs: test
-  ghc-options:    -threaded -rtsopts -with-rtsopts=-N
+  default-language:   Haskell2010
+  default-extensions:
+    NoImplicitPrelude
+    DeriveGeneric
+    OverloadedStrings
+    RecordWildCards
+
+  ghc-options:
+    -Wall -Wcompat -Wincomplete-record-updates
+    -Wincomplete-uni-patterns -Wredundant-constraints -fwarn-tabs
+    -fwarn-unused-imports -fwarn-missing-signatures
+    -fwarn-name-shadowing -fwarn-incomplete-patterns
+
   build-depends:
     , base        >=4.7 && <5
     , cachix

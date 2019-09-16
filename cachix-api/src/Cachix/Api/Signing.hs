@@ -15,9 +15,8 @@ import Data.ByteString (ByteString)
 import Data.Conduit
 import qualified Data.Conduit.Combinators as CC
 import Data.IORef
-import Data.String.Conv (toS)
 import qualified Data.Text as T
-import Data.Text (Text)
+import Protolude
 
 -- perl/lib/Nix/Manifest.pm:fingerprintPath
 -- NB: references must be sorted
@@ -25,7 +24,7 @@ fingerprint :: Text -> Text -> Integer -> [Text] -> ByteString
 fingerprint storePath narHash narSize references =
   toS
     $ T.intercalate ";"
-        ["1", storePath, narHash, T.pack (show narSize), T.intercalate "," references]
+        ["1", storePath, narHash, show narSize, T.intercalate "," references]
 
 -- Useful sinks for streaming nars
 sizeSink :: MonadIO m => ConduitT ByteString o m Integer

@@ -8,8 +8,7 @@ import Data.Aeson
     ToJSON
     )
 import Data.Swagger
-import Data.Text (Text)
-import GHC.Generics (Generic)
+import Protolude
 
 data GitHubTeam
   = GitHubTeam

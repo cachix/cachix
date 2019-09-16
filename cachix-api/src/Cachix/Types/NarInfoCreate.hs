@@ -5,14 +5,12 @@ module Cachix.Types.NarInfoCreate
     )
 where
 
-import Control.Exception (Exception)
 import Data.Aeson
   ( FromJSON,
     ToJSON
     )
 import Data.Swagger
-import Data.Text (Text)
-import GHC.Generics (Generic)
+import Protolude
 
 -- TODO: get rid of c prefix
 

@@ -98,7 +98,7 @@ addBinaryCache maybeConfig bc@Api.BinaryCache {..} _ (Install ncl) = do
 
 nixosBinaryCache :: Maybe Config -> Api.BinaryCache -> UseOptions -> IO ()
 nixosBinaryCache maybeConfig bc@Api.BinaryCache {..} UseOptions {useNixOSFolder = baseDirectory} = do
-  eitherPermissions <- try $ getPermissions (toS toplevel) :: IO (Either SomeException Permissions)
+  eitherPermissions <- try $ getPermissions (toS baseDirectory) :: IO (Either SomeException Permissions)
   case eitherPermissions of
     Left _ -> throwIO $ NixOSInstructions noEtcPermissionInstructions
     Right permissions

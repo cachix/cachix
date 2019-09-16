@@ -8,8 +8,7 @@ import Data.Aeson
     ToJSON
     )
 import Data.Swagger
-import Data.Text (Text)
-import GHC.Generics (Generic)
+import Protolude
 
 -- | Conveys that a signing secret key was created, by sharing the public key.
 newtype SigningKeyCreate

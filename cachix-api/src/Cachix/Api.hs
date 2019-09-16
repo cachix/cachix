@@ -32,10 +32,8 @@ import Control.Lens
 import Control.Monad.Trans.Resource
 import Data.ByteString (ByteString)
 import Data.Conduit (ConduitT)
-import Data.Proxy (Proxy (..))
 import Data.Swagger hiding (Header)
-import Data.Text
-import GHC.Generics (Generic)
+import Protolude
 import Servant.API hiding (BasicAuth)
 import Servant.API.Generic
 import Servant.Auth

@@ -2,10 +2,9 @@ module Cachix.Api.Types where
 
 import Control.DeepSeq (NFData)
 import Data.Aeson (FromJSON, ToJSON)
-import Data.Monoid ((<>))
 import Data.Swagger (ToParamSchema, ToSchema)
-import Data.Text (Text, dropEnd, takeEnd)
-import GHC.Generics (Generic)
+import Data.Text (dropEnd, takeEnd)
+import Protolude
 import Servant.API
 
 data NixCacheInfo

@@ -9,7 +9,7 @@ module Cachix.Types.Session
 where
 
 import Data.Aeson (FromJSON, ToJSON)
-import GHC.Generics (Generic)
+import Protolude
 -- TODO: move these two into Servant.Auth
 import Servant.Auth.Server (FromJWT, ToJWT)
 

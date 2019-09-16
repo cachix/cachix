@@ -6,6 +6,7 @@ where
 
 import Control.Exception (Exception)
 import Control.Monad.Catch (MonadThrow (throwM))
+import Protolude
 
 {- | Examples:
     > escalate . maybeToEither err404
@@ -23,4 +24,4 @@ escalate
   :: (Exception exc, MonadThrow m)
   => Either exc a
   -> m a
-escalate = escalateAs id
+escalate = escalateAs identity

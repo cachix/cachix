@@ -8,8 +8,7 @@
 module Cachix.Types.SwaggerOrphans
   where
 
-import Control.DeepSeq (NFData)
-import Data.Proxy   (Proxy(..))
+import Protolude
 import Data.Conduit (ConduitT)
 import Data.Swagger (ToSchema(..))
 import Servant.API  (NoContent)

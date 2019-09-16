@@ -10,7 +10,7 @@ module Cachix.Types.Servant
     )
 where
 
-import Data.Text (Text)
+import Protolude
 import Servant.API
 
 -- Location header as per https://github.com/haskell-servant/servant/issues/117#issuecomment-381398666

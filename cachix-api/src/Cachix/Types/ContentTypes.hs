@@ -8,10 +8,10 @@ module Cachix.Types.ContentTypes
 where
 
 import Cachix.Api.Types
-import Data.ByteString (ByteString)
-import Data.ByteString.Lazy (fromStrict, toStrict)
+import qualified Data.ByteString.Lazy as BSL
 import Data.Typeable (Typeable)
 import qualified Network.HTTP.Media as M
+import Protolude
 import Servant.API
 
 data XNixNar deriving (Typeable)
@@ -42,8 +42,8 @@ instance MimeUnrender XNixNarInfo NarInfo where
 
 instance MimeRender XNixNar ByteString where
 
-  mimeRender _ = fromStrict
+  mimeRender _ = BSL.fromStrict
 
 instance MimeUnrender XNixNar ByteString where
 
-  mimeUnrender _ = Right . toStrict
+  mimeUnrender _ = Right . BSL.toStrict

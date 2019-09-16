@@ -16,6 +16,7 @@ extra-source-files:
 
 common defaults
   default-extensions:
+    NoImplicitPrelude
     DeriveAnyClass
     DeriveGeneric
     OverloadedStrings
@@ -64,6 +65,7 @@ library
     , http-media
     , lens
     , memory
+    , protolude
     , resourcet
     , servant               >=0.14.1
     , servant-auth

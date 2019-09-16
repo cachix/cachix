@@ -1,5 +1,5 @@
 language: nix
-nix: 2.2.2
+nix: 2.3
 sudo: required
 before_script:
 - sudo mount -o remount,exec,size=4G,mode=755 /run/user || true

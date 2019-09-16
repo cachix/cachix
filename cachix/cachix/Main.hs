@@ -21,4 +21,5 @@ handleExceptions = handle handler
     handler e = do
       hPutStrLn stderr ""
       hPutStr stderr (displayException e)
+      hFlush stderr
       exitFailure

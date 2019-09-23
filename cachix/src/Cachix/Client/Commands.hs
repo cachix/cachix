@@ -44,7 +44,7 @@ import Control.Exception.Safe (throwM)
 import Control.Retry (RetryStatus (rsIterNumber))
 import Crypto.Sign.Ed25519
 import qualified Data.ByteString.Base64 as B64
-import Data.List (isSuffixOf)
+import Data.List (isSuffixOf, reverse)
 import Data.Maybe (fromJust)
 import Data.String.Here
 import qualified Data.Text as T
@@ -90,7 +90,7 @@ generateKeypair env@Env {config = Just config} name = do
               $ Api.createKey (cachixBCClient name) (authToken config) signingKeyCreate
             )
   -- if key was successfully added, write it to the config
-  -- TODO: this breaks if more than one key is added, see #27
+  -- TODO: warn if binary cache with the same key already exists
   writeConfig (configPath (cachixoptions env))
     $ config {binaryCaches = binaryCaches config <> [bcc]}
   putStrLn
@@ -199,7 +199,8 @@ findSigningKey
   -> IO SigningKey -- ^ Secret key or exception
 findSigningKey env name = do
   maybeEnvSK <- lookupEnv "CACHIX_SIGNING_KEY"
-  let matches c = filter (\bc -> Config.name bc == name) $ binaryCaches c
+  -- we reverse list of caches to prioritize keys added as last
+  let matches c = filter (\bc -> Config.name bc == name) $ reverse $ binaryCaches c
       maybeBCSK = case config env of
         Nothing -> Nothing
         Just c -> Config.secretKey <$> head (matches c)

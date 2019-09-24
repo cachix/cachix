@@ -6,6 +6,7 @@ in pkgs.mkShell {
     pkgs.niv
     # hie can't find hspec-discover via stack
     pkgs.haskellPackages.hspec-discover
+    pkgs.haskellPackages.releaser
     ];
   NIX_PATH = "";
   inherit (pkgs.pre-commit-check) shellHook;

@@ -1,13 +1,5 @@
-- git checkout -B v0.X.X
-- bump version in cachix.cabal and cachix-api.cabal
-- update changelog (cachix and cachix-api)
-- make sure changelog has an url entry for the latest tag
+- cd cachix && nix-shell --run releaser
+- cd cachix-api && nix-shell --run releaser
 - README.md `cachix --help` changes
-- git commit -m "0.X.X"
-- git push -u origin HEAD
-- # make a PR
-- stack sdist cachix{,-api}
-- stack upload cachix{,-api}
-- git tag v0.X.X
-- git push --tags 
+- run functional&regression tests
 - bump link to https://cachix.org/api/v1/install

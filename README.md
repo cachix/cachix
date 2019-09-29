@@ -57,3 +57,8 @@ Install Cachix from master:
 - [#cachix@freenode](https://webchat.freenode.net/?channels=cachix) IRC
 - [domen@enlambda.com](mailto:domen@enlambda.com)
 - [Gitter](https://gitter.im/cachix/Lobby)
+
+## Changelog
+
+- [Cachix changelog](./cachix/CHANGELOG.md) for the command
+- [API changelog](./cachix-api/CHANGELOG.md) (Haskell)

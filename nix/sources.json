@@ -5,9 +5,10 @@
         "homepage": "",
         "owner": "hercules-ci",
         "repo": "gitignore",
-        "rev": "ec5dd0536a5e4c3a99c797b86180f7261197c124",
-        "sha256": "0k2r8y21rn4kr5dmddd3906x0733fs3bb8hzfpabkdav3wcy3klv",
-        "url": "https://github.com/hercules-ci/gitignore/archive/ec5dd0536a5e4c3a99c797b86180f7261197c124.tar.gz",
+        "rev": "f9e996052b5af4032fe6150bba4a6fe4f7b9d698",
+        "sha256": "0jrh5ghisaqdd0vldbywags20m2cxpkbbk5jjjmwaw0gr8nhsafv",
+        "type": "tarball",
+        "url": "https://github.com/hercules-ci/gitignore/archive/f9e996052b5af4032fe6150bba4a6fe4f7b9d698.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "haskell.nix": {

@@ -150,17 +150,16 @@ use env name useOptions = do
       addBinaryCache (config env) binaryCache useOptions
         $ fromMaybe (getInstallationMode nixEnv) (useMode useOptions)
 
--- TODO: lots of room for perfomance improvements
+-- TODO: lots of room for performance improvements
 push :: Env -> PushArguments -> IO ()
-push env (PushPaths opts name rawPaths) = do
-  hasNoStdin <- hIsTerminalDevice stdin
-  when (not hasNoStdin && not (null rawPaths)) $ throwIO $ AmbiguousInput "You provided both stdin and store path arguments, pick only one to proceed."
+push env (PushPaths opts name cliPaths) = do
+  hasStdin <- not <$> hIsTerminalDevice stdin
   inputStorePaths <-
-    if hasNoStdin
-      then return rawPaths
-      else T.words <$> getContents
-  -- TODO: if empty, take whole nix store and warn: nix store-path --all
-  when (null inputStorePaths) $ throwIO $ NoInput "You need to specify store paths either as stdin or as a cli argument"
+    case (hasStdin, cliPaths) of
+      (False, []) -> throwIO $ NoInput "You need to specify store paths either as stdin or as an command argument"
+      (True, []) -> T.words <$> getContents
+      -- if we get both stdin and cli args, prefer cli args
+      (_, paths) -> return paths
   sk <- findSigningKey env name
   store <- wait (storeAsync env)
   void

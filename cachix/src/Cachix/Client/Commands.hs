@@ -158,7 +158,11 @@ push env (PushPaths opts name cliPaths) = do
     case (hasStdin, cliPaths) of
       (False, []) -> throwIO $ NoInput "You need to specify store paths either as stdin or as an command argument"
       (True, []) -> T.words <$> getContents
-      -- if we get both stdin and cli args, prefer cli args
+      -- If we get both stdin and cli args, prefer cli args.
+      -- This avoids hangs in cases where stdin is non-interactive but unused by caller
+      -- some programming environments always create a (non-interactive) stdin
+      -- that may or may not be written to by the caller.
+      -- This is somewhat like the behavior of `cat` for example.
       (_, paths) -> return paths
   sk <- findSigningKey env name
   store <- wait (storeAsync env)

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
+## [0.3.4] - 2019-10-01
+
+### Fixed
+
+- #240: push: prefer store paths as command arguments over stdin 
+
+  Some programming languages like go and nodejs always open
+  stdin pipe, which confuses cachix to think there's stdin content.
+  
+  Sadly checking stdin for contents is tricky since we get
+  into the whole buffering mess.
+
 ## [0.3.3] - 2019-09-25
 
 ### Fixed
@@ -128,6 +140,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Initial release @domenkozar
 
 [Unreleased]: https://github.com/cachix/cachix/compare/v0.3.0...HEAD
+[0.3.4]: https://github.com/cachix/cachix/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/cachix/cachix/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/cachix/cachix/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/cachix/cachix/compare/v0.3.0...v0.3.1

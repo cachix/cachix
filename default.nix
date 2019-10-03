@@ -14,6 +14,6 @@ let
     ];
   };
   packages = pkgSet.config.hsPkgs;
-in packages.cachix.components.exes.cachix  // {
+in packages.cachix.components.all  // {
   inherit (pkgs) pre-commit-check;
 }

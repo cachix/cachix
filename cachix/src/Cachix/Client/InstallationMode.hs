@@ -140,7 +140,7 @@ To start using cachix add the following to your ${configurationNix}:
 
 Then run:
 
-    $ nixos-rebuild switch
+    $ sudo nixos-rebuild switch
     |]
     glueModule :: Text
     glueModule =

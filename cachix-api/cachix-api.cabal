@@ -43,6 +43,7 @@ library
     Cachix.Types.BinaryCacheAuthenticated
     Cachix.Types.BinaryCacheCreate
     Cachix.Types.ContentTypes
+    Cachix.Types.CreateToken
     Cachix.Types.GitHubTeam
     Cachix.Types.NarInfoCreate
     Cachix.Types.Servant

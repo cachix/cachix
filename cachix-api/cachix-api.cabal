@@ -63,6 +63,7 @@ library
     , exceptions
     , http-api-data
     , http-media
+    , jose
     , lens
     , memory
     , protolude

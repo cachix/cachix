@@ -1,20 +1,18 @@
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveGeneric #-}
-
--- | Module for auth session storage
+-- | Auth representations
 module Cachix.Types.Session
   ( Session (..),
-    UserId
-    )
+  )
 where
 
-import Data.Aeson (FromJSON, ToJSON)
 import Protolude
--- TODO: move these two into Servant.Auth
-import Servant.Auth.Server (FromJWT, ToJWT)
+import Servant.Auth.Server (FromJWT(..), ToJWT(..))
+import qualified Crypto.JWT as JWT
 
-type UserId = Integer
+data Session
+  = JWTSession JWT.ClaimsSet
+  deriving Eq
 
-newtype Session
-  = Session UserId
-  deriving (Eq, Show, Generic, FromJSON, ToJSON, FromJWT, ToJWT)
+instance ToJWT Session where
+  encodeJWT (JWTSession s) = s
+instance FromJWT Session where
+  decodeJWT cs = pure $ JWTSession cs

@@ -11,8 +11,6 @@ module Cachix.Types.SwaggerOrphans
 import Protolude
 import Data.Conduit (ConduitT)
 import Data.Swagger (ToSchema(..))
-import Servant.API  (NoContent)
-
 
 -- TODO: upstream to servant-conduit
 instance ToSchema i => ToSchema (ConduitT i o m r) where

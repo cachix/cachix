@@ -54,6 +54,11 @@ data BinaryCacheAPI route
                :- CachixAuth
                :> ReqBody '[JSON] BinaryCacheCreate.BinaryCacheCreate
                :> Post '[JSON] NoContent,
+        delete
+          :: route 
+               :- CachixAuth -- TODO: disallow auth tokens
+               :> Delete '[JSON] NoContent,
+
         -- https://cache.nixos.org/nix-cache-info
         nixCacheInfo
           :: route

@@ -22,6 +22,7 @@ import Cachix.Api.Types
 import qualified Cachix.Types.BinaryCacheAuthenticated as BinaryCacheAuthenticated
 import qualified Cachix.Types.BinaryCacheCreate as BinaryCacheCreate
 import Cachix.Types.ContentTypes
+import qualified Cachix.Types.CreateToken as CreateToken
 import qualified Cachix.Types.GitHubTeam as GitHubTeam
 import qualified Cachix.Types.NarInfoCreate as NarInfoCreate
 import Cachix.Types.Servant (Get302, Head, Post302)
@@ -179,6 +180,7 @@ data CachixAPI route
           :: route
                :- CachixAuth
                :> "token"
+               :> ReqBody '[JSON] CreateToken.CreateToken
                :> Post '[JSON] Text,
         caches
           :: route

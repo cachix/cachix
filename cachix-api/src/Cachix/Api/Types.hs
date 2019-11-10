@@ -63,20 +63,6 @@ newtype BinaryCacheError
         }
   deriving (Generic, FromJSON, ToJSON)
 
--- | Hash of nar.xz file
-newtype NarC = NarC Text deriving (Generic, ToSchema, ToParamSchema)
-
-instance FromHttpApiData NarC where
-
-  parseUrlPiece s =
-    if takeEnd 7 s == ".nar.xz"
-      then Right $ NarC (dropEnd 7 s)
-      else Left ""
-
-instance ToHttpApiData NarC where
-
-  toUrlPiece (NarC n) = n <> ".nar.xz"
-
 -- | Store path hash
 newtype NarInfoC = NarInfoC Text deriving (Generic, ToSchema, ToParamSchema)
 

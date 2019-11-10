@@ -14,11 +14,13 @@ module Cachix.Api
     BinaryCacheStreamingAPI (..),
     BinaryCachStreamingServantAPI,
     module Cachix.Api.Types,
-    module Cachix.Types.ContentTypes
+    module Cachix.Types.ContentTypes,
+    module Cachix.Types.NarFileName
     )
 where
 
 import Cachix.Api.Types
+import Cachix.Types.NarFileName (NarFileName(..))
 import qualified Cachix.Types.BinaryCacheAuthenticated as BinaryCacheAuthenticated
 import qualified Cachix.Types.BinaryCacheCreate as BinaryCacheCreate
 import Cachix.Types.ContentTypes
@@ -106,7 +108,7 @@ data BinaryCacheStreamingAPI route
           :: route
                :- CachixAuth
                :> "nar"
-               :> Capture "nar" NarC
+               :> Capture "nar" NarFileName
                :> StreamGet NoFraming OctetStream (ConduitT () ByteString (ResourceT IO) ()),
         createNar
           :: route

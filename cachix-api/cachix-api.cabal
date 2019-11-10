@@ -46,6 +46,7 @@ library
     Cachix.Types.CreateToken
     Cachix.Types.GitHubTeam
     Cachix.Types.NarInfoCreate
+    Cachix.Types.NarFileName
     Cachix.Types.Servant
     Cachix.Types.Session
     Cachix.Types.SigningKeyCreate

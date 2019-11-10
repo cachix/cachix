@@ -34,6 +34,7 @@ import Cachix.Types.SwaggerOrphans ()
 import Control.Lens
 import Control.Monad.Trans.Resource
 import Data.ByteString (ByteString)
+import qualified Data.ByteString.Lazy as BSL
 import Data.Conduit (ConduitT)
 import Data.Swagger hiding (Header)
 import Protolude
@@ -114,7 +115,15 @@ data BinaryCacheStreamingAPI route
           :: route
                :- "nar"
                :> StreamBody NoFraming XNixNar (ConduitT () ByteString (ResourceT IO) ())
-               :> Post '[JSON] NoContent
+               :> Post '[JSON] NoContent,
+        serveNar 
+          :: route
+              :- CachixAuth
+              :> "serve"
+              :> Capture "storepath" Text
+              :> CaptureAll "filepath" Text
+              :> Summary "Serve a file from a given store path"
+              :> Get '[OctetStream] BSL.ByteString
         }
   deriving (Generic)
 

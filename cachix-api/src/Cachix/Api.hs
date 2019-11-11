@@ -116,7 +116,7 @@ data BinaryCacheStreamingAPI route
                :- "nar"
                :> StreamBody NoFraming XNixNar (ConduitT () ByteString (ResourceT IO) ())
                :> Post '[JSON] NoContent,
-        serveNar 
+        serveNarContent
           :: route
               :- CachixAuth
               :> "serve"

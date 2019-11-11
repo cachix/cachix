@@ -123,7 +123,7 @@ data BinaryCacheStreamingAPI route
               :> Capture "storehash" Text
               :> CaptureAll "filepath" Text
               :> Summary "Serve a file from a given store path"
-              :> Get '[OctetStream] BSL.ByteString
+              :> Get '[OctetStream] (Headers '[Header "X-Content-Type-Options" Text] BSL.ByteString)
         }
   deriving (Generic)
 

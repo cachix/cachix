@@ -120,7 +120,7 @@ data BinaryCacheStreamingAPI route
           :: route
               :- CachixAuth
               :> "serve"
-              :> Capture "storepath" Text
+              :> Capture "storehash" Text
               :> CaptureAll "filepath" Text
               :> Summary "Serve a file from a given store path"
               :> Get '[OctetStream] BSL.ByteString

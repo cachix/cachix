@@ -11,6 +11,11 @@ let
     boost_context = pkgs.boost;
     pre-commit-check = self.nix-pre-commit-hooks.run {
       src = self.gitignoreSource ../.;
+      hooks.ormolu.enable = true;
+      hooks.ormolu.excludes = ["Cachix/Client/Servant\.hs$" "Cachix/Types/SwaggerOrphans\.hs$" ];
+      hooks.shellcheck.enable = true;
+      hooks.hlint.enable = true;
+      hooks.cabal-fmt.enable = true;
     };
   };
 in import sources.nixpkgs

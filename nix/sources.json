@@ -40,10 +40,10 @@
         "homepage": "",
         "owner": "hercules-ci",
         "repo": "nix-pre-commit-hooks",
-        "rev": "9ca817c5d933beef7cce1824e2db16d51a09c4ce",
-        "sha256": "13shsbp7f86swc9pa0f05xsvfkzna1505q2npkc6w0kjc7ayjg02",
+        "rev": "f1d3d40385f4290e8f63ce605f3e36fa827f8bee",
+        "sha256": "1vm8yvwi97i3z4ixsq9j1f4xqns174d0hsmlz8zfhjsz3yrwjq1d",
         "type": "tarball",
-        "url": "https://github.com/hercules-ci/nix-pre-commit-hooks/archive/9ca817c5d933beef7cce1824e2db16d51a09c4ce.tar.gz",
+        "url": "https://github.com/hercules-ci/nix-pre-commit-hooks/archive/f1d3d40385f4290e8f63ce605f3e36fa827f8bee.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "nixpkgs": {

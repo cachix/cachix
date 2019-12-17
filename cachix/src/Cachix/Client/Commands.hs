@@ -40,7 +40,7 @@ import Cachix.Client.Secrets
 import Cachix.Client.Servant
 import qualified Cachix.Types.SigningKeyCreate as SigningKeyCreate
 import Control.Concurrent (threadDelay)
-import Control.Exception.Safe (throwM)
+import Control.Exception.Safe (handle, throwM)
 import Control.Retry (RetryStatus (rsIterNumber))
 import Crypto.Sign.Ed25519
 import qualified Data.ByteString.Base64 as B64
@@ -184,8 +184,11 @@ push env (PushWatchStore opts name) = withManager $ \mgr -> do
   putText "Watching /nix/store for new builds ..."
   forever $ threadDelay 1000000
   where
+    logErr :: FilePath -> SomeException -> IO ()
+    logErr fp e = hPutStrLn stderr $ "Exception occured while pushing " <> fp <> ": " <> show e
+
     action :: Action
-    action (Removed fp _ _) =
+    action (Removed fp _ _) = Control.Exception.Safe.handle (logErr fp) $
       pushStorePath env opts name $ toS $ dropEnd 5 fp
     action _ = return ()
     filterF :: ActionPredicate

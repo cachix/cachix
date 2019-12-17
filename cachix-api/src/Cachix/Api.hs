@@ -15,17 +15,17 @@ module Cachix.Api
     BinaryCachStreamingServantAPI,
     module Cachix.Api.Types,
     module Cachix.Types.ContentTypes,
-    module Cachix.Types.NarFileName
-    )
+    module Cachix.Types.NarFileName,
+  )
 where
 
 import Cachix.Api.Types
-import Cachix.Types.NarFileName (NarFileName(..))
 import qualified Cachix.Types.BinaryCacheAuthenticated as BinaryCacheAuthenticated
 import qualified Cachix.Types.BinaryCacheCreate as BinaryCacheCreate
 import Cachix.Types.ContentTypes
 import qualified Cachix.Types.CreateToken as CreateToken
 import qualified Cachix.Types.GitHubTeam as GitHubTeam
+import Cachix.Types.NarFileName (NarFileName (..))
 import qualified Cachix.Types.NarInfoCreate as NarInfoCreate
 import Cachix.Types.Servant (Get302, Head, Post302)
 import Cachix.Types.Session (Session)
@@ -92,6 +92,12 @@ data BinaryCacheAPI route
                :- Capture "narinfo" NarInfoC
                :> ReqBody '[JSON] NarInfoCreate.NarInfoCreate
                :> Post '[JSON] NoContent,
+        narID
+          :: route
+               :- CachixAuth
+               :> "narid"
+               :> Capture "nar" NarFileName
+               :> Get '[JSON] Text,
         createKey
           :: route
                :- CachixAuth

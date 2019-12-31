@@ -59,6 +59,7 @@ library
     Cachix.Client.Store
     Cachix.Client.Store.Context
     Cachix.Client.URI
+    System.Nix.Base32
 
   cc-options:        -Wall
   pkgconfig-depends: nix-store ==2.0 || >2.0, nix-main ==2.0 || >2.0
@@ -81,13 +82,12 @@ library
     , containers
     , cookie
     , cryptonite
-    , dhall
+    , dhall                 >=1.28
     , directory
     , ed25519
     , filepath
     , fsnotify
     , here
-    , hnix-store-core
     , http-client
     , http-client-tls
     , http-conduit
@@ -114,6 +114,7 @@ library
     , text
     , unix
     , uri-bytestring
+    , vector
     , versions
 
   ghc-options:       -optc=-std=c++17

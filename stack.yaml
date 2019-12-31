@@ -1,10 +1,14 @@
-resolver: lts-14.0
+resolver: lts-15.0
 packages:
 - cachix-api
 - cachix
 extra-deps:
-- netrc-0.2.0.0
-- hnix-store-core-0.1.0.0
+- inline-c-cpp-0.4.0.0
+- jose-0.8.2.0
+- servant-auth-0.3.2.0
+- servant-auth-client-0.4.0.0
+- servant-auth-server-0.4.5.0
+- servant-auth-swagger-0.2.10.0
 nix:
     packages: []
     shell-file: ./nix/stack-shell.nix

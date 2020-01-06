@@ -10,4 +10,4 @@ main = hspecWith config Spec.spec
     config =
       defaultConfig
         { configColorMode = ColorAlways
-          }
+        }

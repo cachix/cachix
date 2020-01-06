@@ -9,8 +9,8 @@ module Cachix.Client.InstallationMode
     getUser,
     fromString,
     toString,
-    UseOptions (..)
-    )
+    UseOptions (..),
+  )
 where
 
 import Cachix.Api as Api
@@ -31,7 +31,7 @@ data NixEnv
       { isTrusted :: Bool,
         isRoot :: Bool,
         isNixOS :: Bool
-        }
+      }
 
 -- NOTE: update the list of options for --mode argument in OptionsParser.hs
 data InstallationMode
@@ -44,7 +44,7 @@ data UseOptions
   = UseOptions
       { useMode :: Maybe InstallationMode,
         useNixOSFolder :: FilePath
-        }
+      }
   deriving (Show)
 
 fromString :: String -> Maybe InstallationMode
@@ -70,8 +70,8 @@ getInstallationMode nixenv
 -- | Add a Binary cache to nix.conf, print nixos config or fail
 addBinaryCache :: Maybe Config -> Api.BinaryCache -> UseOptions -> InstallationMode -> IO ()
 addBinaryCache _ _ _ UntrustedRequiresSudo =
-  throwIO
-    $ MustBeRoot "Run command as root OR execute: $ echo \"trusted-users = root $USER\" | sudo tee -a /etc/nix/nix.conf && sudo pkill nix-daemon"
+  throwIO $
+    MustBeRoot "Run command as root OR execute: $ echo \"trusted-users = root $USER\" | sudo tee -a /etc/nix/nix.conf && sudo pkill nix-daemon"
 addBinaryCache maybeConfig bc useOptions WriteNixOS =
   nixosBinaryCache maybeConfig bc useOptions
 addBinaryCache maybeConfig bc _ (Install ncl) = do

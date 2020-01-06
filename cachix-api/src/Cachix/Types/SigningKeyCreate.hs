@@ -1,12 +1,12 @@
 module Cachix.Types.SigningKeyCreate
-  ( SigningKeyCreate (..)
-    )
+  ( SigningKeyCreate (..),
+  )
 where
 
 import Data.Aeson
   ( FromJSON,
-    ToJSON
-    )
+    ToJSON,
+  )
 import Data.Swagger
 import Protolude
 
@@ -14,5 +14,5 @@ import Protolude
 newtype SigningKeyCreate
   = SigningKeyCreate
       { publicKey :: Text
-        }
+      }
   deriving (Show, Generic, FromJSON, ToJSON, ToSchema)

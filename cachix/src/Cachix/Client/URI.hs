@@ -4,8 +4,8 @@
 module Cachix.Client.URI
   ( getBaseUrl,
     defaultCachixURI,
-    defaultCachixBaseUrl
-    )
+    defaultCachixBaseUrl,
+  )
 where
 
 import Protolude
@@ -17,7 +17,6 @@ import URI.ByteString.QQ
 -- TODO: make getBaseUrl internal
 
 -- | Partial function from URI to BaseUrl
---
 getBaseUrl :: URIRef Absolute -> BaseUrl
 getBaseUrl uriref =
   case uriAuthority uriref of

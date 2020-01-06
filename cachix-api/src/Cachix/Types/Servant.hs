@@ -6,8 +6,8 @@
 module Cachix.Types.Servant
   ( Get302,
     Post302,
-    Head
-    )
+    Head,
+  )
 where
 
 import Protolude

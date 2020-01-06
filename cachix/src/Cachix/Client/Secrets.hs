@@ -4,8 +4,8 @@ module Cachix.Client.Secrets
   ( -- * NAR signing
     SigningKey (..),
     parseSigningKeyLenient,
-    exportSigningKey
-    )
+    exportSigningKey,
+  )
 where
 
 -- TODO: * Auth token
@@ -18,9 +18,11 @@ import Protolude
 -- | A secret key for signing nars.
 newtype SigningKey = SigningKey {signingSecretKey :: SecretKey}
 
-parseSigningKeyLenientBS
-  :: ByteString -- ^ ASCII (Base64)
-  -> Either Text SigningKey -- ^ Error message or signing key
+parseSigningKeyLenientBS ::
+  -- | ASCII (Base64)
+  ByteString ->
+  -- | Error message or signing key
+  Either Text SigningKey
 parseSigningKeyLenientBS raw =
   let bcDropWhileEnd f = BC.reverse . BC.dropWhile f . BC.reverse
       bcDropAround f = bcDropWhileEnd f . BC.dropWhile f
@@ -28,14 +30,17 @@ parseSigningKeyLenientBS raw =
       nonNull = if BC.null stripped then Left "A signing key must not be empty" else pure stripped
    in SigningKey . SecretKey . B64.decodeLenient <$> nonNull
 
-parseSigningKeyLenient
-  :: Text -- ^ Base64
-  -> Either Text SigningKey -- ^ Error message or signing key
+parseSigningKeyLenient ::
+  -- | Base64
+  Text ->
+  -- | Error message or signing key
+  Either Text SigningKey
 parseSigningKeyLenient = parseSigningKeyLenientBS . toSL
 
-exportSigningKeyBS
-  :: SigningKey
-  -> ByteString -- ^ ASCII (Base64)
+exportSigningKeyBS ::
+  SigningKey ->
+  -- | ASCII (Base64)
+  ByteString
 exportSigningKeyBS (SigningKey (SecretKey bs)) = B64.encode bs
 
 exportSigningKey :: SigningKey -> Text

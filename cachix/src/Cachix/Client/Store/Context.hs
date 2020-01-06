@@ -34,8 +34,9 @@ context =
     <> mempty
       { C.ctxTypesTable =
           M.singleton (C.TypeName "refStore") [t|Ref NixStore|]
-            <> M.singleton (C.TypeName "refValidPathInfo")
-                 [t|Ref ValidPathInfo|]
+            <> M.singleton
+              (C.TypeName "refValidPathInfo")
+              [t|Ref ValidPathInfo|]
             <> M.singleton (C.TypeName "PathSet") [t|PathSet|]
             <> M.singleton (C.TypeName "PathSetIterator") [t|Iterator PathSet|]
-        }
+      }

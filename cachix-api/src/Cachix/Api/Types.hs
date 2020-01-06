@@ -12,39 +12,39 @@ data NixCacheInfo
       { storeDir :: Text,
         wantMassQuery :: Integer,
         priority :: Integer
-        }
+      }
   deriving (Generic, Show, FromJSON, ToJSON, ToSchema)
 
 -- narinfo url includes storePath hash and .narinfo suffix
 data NarInfo
   = NarInfo
-      { storePath :: Text,
-        -- ^ absolute path of the derivation in nix store
+      { -- | absolute path of the derivation in nix store
+        storePath :: Text,
+        -- | relative url (to current domain) to download nar file
         url :: Text,
-        -- ^ relative url (to current domain) to download nar file
+        -- | name of the compression algorithm, eg. xz
         compression :: Text,
-        -- ^ name of the compression algorithm, eg. xz
-        fileHash :: Text,
-        -- ^ sha256 hash of the compressed nar file
+        -- | sha256 hash of the compressed nar file
         -- NOTE: to compute use "nix-hash --type sha256 --flat"
+        fileHash :: Text,
+        -- | file size of compressed nar file
+        -- NOTE: du -b
         fileSize :: Integer,
-        -- ^ file size of compressed nar file
-        -- NOTE: du -b
-        narHash :: Text,
-        -- ^ sha256 hash of the decompressed nar file
+        -- | sha256 hash of the decompressed nar file
         -- NOTE: to compute use "nix-hash --type sha256 --flat --base32"
-        narSize :: Integer,
-        -- ^ file size of decompressed nar file
+        narHash :: Text,
+        -- | file size of decompressed nar file
         -- NOTE: du -b
-        references :: [Text],
-        -- ^ immediate dependencies of the storePath
+        narSize :: Integer,
+        -- | immediate dependencies of the storePath
         -- NOTE: nix-store -q --references
-        deriver :: Text,
-        -- ^ relative store path (to nix store root) of the deriver
+        references :: [Text],
+        -- | relative store path (to nix store root) of the deriver
         -- NOTE: nix-store -q --deriver
+        deriver :: Text,
+        -- | signature of fields: storePath, narHash, narSize, refs
         sig :: Text
-        -- ^ signature of fields: storePath, narHash, narSize, refs
-        }
+      }
   deriving (Generic, Show, FromJSON, ToJSON, ToSchema)
 
 data BinaryCache
@@ -54,27 +54,25 @@ data BinaryCache
         isPublic :: Bool,
         publicSigningKeys :: [Text],
         githubUsername :: Text
-        }
+      }
   deriving (Show, Generic, FromJSON, ToJSON, ToSchema, NFData)
 
 newtype BinaryCacheError
   = BinaryCacheError
       { error :: Text
-        }
+      }
   deriving (Generic, FromJSON, ToJSON)
 
 -- | Store path hash
 newtype NarInfoC = NarInfoC Text deriving (Generic, ToSchema, ToParamSchema)
 
 instance FromHttpApiData NarInfoC where
-
   parseUrlPiece s =
     if takeEnd 8 s == ".narinfo"
       then Right $ NarInfoC (dropEnd 8 s)
       else Left ""
 
 instance ToHttpApiData NarInfoC where
-
   toUrlPiece (NarInfoC n) = n <> ".narinfo"
 
 data User
@@ -85,7 +83,7 @@ data User
         hasOrgsAcccess :: Bool,
         activeSubscription :: SubscriptionType,
         subscriptionAccountId :: Maybe Text
-        }
+      }
   deriving (Generic, FromJSON, ToJSON, ToSchema)
 
 data SubscriptionType = Community | Starter | Basic | Pro

@@ -1,7 +1,7 @@
 -- Deals with adding private caches to netrc
 module Cachix.Client.NetRc
-  ( add
-    )
+  ( add,
+  )
 where
 
 import qualified Cachix.Api as Api
@@ -20,11 +20,11 @@ import System.FilePath (takeDirectory)
 -- | Add a list of binary caches to netrc under `filename`.
 --   Makes sure there are no duplicate entries (using domain as a key).
 --   If file under filename doesn't exist it's created.
-add
-  :: Config
-  -> [Api.BinaryCache]
-  -> FilePath
-  -> IO ()
+add ::
+  Config ->
+  [Api.BinaryCache] ->
+  FilePath ->
+  IO ()
 add config binarycaches filename = do
   doesExist <- doesFileExist filename
   netrc <-
@@ -51,7 +51,7 @@ add config binarycaches filename = do
         nrhPassword = getToken (authToken config),
         nrhAccount = "",
         nrhMacros = []
-        }
+      }
       where
         -- stripPrefix that either strips or returns the same string
         stripPrefix :: Text -> Text -> Text

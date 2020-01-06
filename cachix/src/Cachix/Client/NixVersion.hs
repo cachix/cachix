@@ -1,7 +1,7 @@
 module Cachix.Client.NixVersion
   ( assertNixVersion,
-    parseNixVersion
-    )
+    parseNixVersion,
+  )
 where
 
 import Data.Text as T

@@ -34,18 +34,6 @@
         "url": "https://github.com/nmattia/niv/archive/1dd094156b249586b66c16200ecfd365c7428dc0.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
-    "nix-pre-commit-hooks": {
-        "branch": "master",
-        "description": "Seamless integration https://pre-commit.com git hooks with Nix.",
-        "homepage": "",
-        "owner": "hercules-ci",
-        "repo": "nix-pre-commit-hooks",
-        "rev": "f1d3d40385f4290e8f63ce605f3e36fa827f8bee",
-        "sha256": "1vm8yvwi97i3z4ixsq9j1f4xqns174d0hsmlz8zfhjsz3yrwjq1d",
-        "type": "tarball",
-        "url": "https://github.com/hercules-ci/nix-pre-commit-hooks/archive/f1d3d40385f4290e8f63ce605f3e36fa827f8bee.tar.gz",
-        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
-    },
     "nixpkgs": {
         "branch": "nixos-unstable",
         "description": "A read-only mirror of NixOS/nixpkgs tracking the released channels. Send issues and PRs to",
@@ -56,6 +44,18 @@
         "sha256": "0jk93ikryi2hqc30l2n5i4vlgmklrlzb8cf7b3sg1q3k70q344jn",
         "type": "tarball",
         "url": "https://github.com/NixOS/nixpkgs-channels/archive/d484f2b7fc0834a068e8ace851faa449a03963f5.tar.gz",
+        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
+    },
+    "pre-commit-hooks.nix": {
+        "branch": "master",
+        "description": "Seamless integration of https://pre-commit.com git hooks with Nix.",
+        "homepage": "",
+        "owner": "hercules-ci",
+        "repo": "pre-commit-hooks.nix",
+        "rev": "5c3078ad58856ce22f883b5518879d27bfc59dd5",
+        "sha256": "1rwmzzifn5gg7d10v4iia58m5zrx3f60zsddil9via31rfb6f7wy",
+        "type": "tarball",
+        "url": "https://github.com/hercules-ci/pre-commit-hooks.nix/archive/5c3078ad58856ce22f883b5518879d27bfc59dd5.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     }
 }

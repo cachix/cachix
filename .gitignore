@@ -3,4 +3,4 @@
 dist/
 result
 result-*
-.pre-commit-hooks
+/.pre-commit-config.yaml

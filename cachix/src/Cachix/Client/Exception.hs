@@ -18,6 +18,5 @@ data CachixException
   deriving (Show, Typeable)
 
 instance Exception CachixException where
-
   displayException (NixOSInstructions txt) = toS txt
   displayException e = show e

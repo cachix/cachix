@@ -10,10 +10,11 @@ module Cachix.Client.Push
     PushStrategy (..),
     defaultWithXzipCompressor,
     defaultWithXzipCompressorWithLevel,
+
     -- * Pushing a closure of store paths
     pushClosure,
-    mapConcurrentlyBounded
-    )
+    mapConcurrentlyBounded,
+  )
 where
 
 import qualified Cachix.Api as Api
@@ -54,17 +55,18 @@ data PushCache
       { pushCacheName :: Text,
         pushCacheSigningKey :: SigningKey,
         pushCacheToken :: Token
-        }
+      }
 
 data PushStrategy m r
   = PushStrategy
-      { onAlreadyPresent :: m r, -- ^ Called when a path is already in the cache.
+      { -- | Called when a path is already in the cache.
+        onAlreadyPresent :: m r,
         onAttempt :: RetryStatus -> m (),
         on401 :: m r,
         onError :: ClientError -> m r,
         onDone :: m r,
         withXzipCompressor :: forall a. (ConduitM ByteString ByteString (ResourceT IO) () -> m a) -> m a
-        }
+      }
 
 defaultWithXzipCompressor :: forall m a. (ConduitM ByteString ByteString (ResourceT IO) () -> m a) -> m a
 defaultWithXzipCompressor = ($ compress (Just 2))
@@ -72,25 +74,30 @@ defaultWithXzipCompressor = ($ compress (Just 2))
 defaultWithXzipCompressorWithLevel :: Int -> forall m a. (ConduitM ByteString ByteString (ResourceT IO) () -> m a) -> m a
 defaultWithXzipCompressorWithLevel l = ($ compress (Just l))
 
-pushSingleStorePath
-  :: (MonadMask m, MonadIO m)
-  => ClientEnv -- ^ cachix base url, connection manager, see 'Cachix.Client.URI.defaultCachixBaseUrl', 'Servant.Client.mkClientEnv'
-  -> Store
-  -> PushCache -- ^ details for pushing to cache
-  -> PushStrategy m r -- ^ how to report results, (some) errors, and do some things
-  -> Text -- ^ store path
-  -> m r -- ^ r is determined by the 'PushStrategy'
+pushSingleStorePath ::
+  (MonadMask m, MonadIO m) =>
+  -- | cachix base url, connection manager, see 'Cachix.Client.URI.defaultCachixBaseUrl', 'Servant.Client.mkClientEnv'
+  ClientEnv ->
+  Store ->
+  -- | details for pushing to cache
+  PushCache ->
+  -- | how to report results, (some) errors, and do some things
+  PushStrategy m r ->
+  -- | store path
+  Text ->
+  -- | r is determined by the 'PushStrategy'
+  m r
 pushSingleStorePath clientEnv _store cache cb storePath = retryAll $ \retrystatus -> do
   let storeHash = fst $ splitStorePath $ toS storePath
       name = pushCacheName cache
   -- Check if narinfo already exists
   -- TODO: query also cache.nixos.org? server-side?
   res <-
-    liftIO $ (`runClientM` clientEnv)
-      $ Api.narinfoHead
-          (cachixBCClient name)
-          (pushCacheToken cache)
-          (Api.NarInfoC storeHash)
+    liftIO $ (`runClientM` clientEnv) $
+      Api.narinfoHead
+        (cachixBCClient name)
+        (pushCacheToken cache)
+        (Api.NarInfoC storeHash)
   case res of
     Right NoContent -> onAlreadyPresent cb -- we're done as store path is already in the cache
     Left err
@@ -98,15 +105,20 @@ pushSingleStorePath clientEnv _store cache cb storePath = retryAll $ \retrystatu
       | isErr err status401 -> on401 cb
       | otherwise -> onError cb err
 
-uploadStorePath
-  :: (MonadMask m, MonadIO m)
-  => ClientEnv -- ^ cachix base url, connection manager, see 'Cachix.Client.URI.defaultCachixBaseUrl', 'Servant.Client.mkClientEnv'
-  -> Store
-  -> PushCache -- ^ details for pushing to cache
-  -> PushStrategy m r -- ^ how to report results, (some) errors, and do some things
-  -> Text -- ^ store path
-  -> RetryStatus
-  -> m r -- ^ r is determined by the 'PushStrategy'
+uploadStorePath ::
+  (MonadMask m, MonadIO m) =>
+  -- | cachix base url, connection manager, see 'Cachix.Client.URI.defaultCachixBaseUrl', 'Servant.Client.mkClientEnv'
+  ClientEnv ->
+  Store ->
+  -- | details for pushing to cache
+  PushCache ->
+  -- | how to report results, (some) errors, and do some things
+  PushStrategy m r ->
+  -- | store path
+  Text ->
+  RetryStatus ->
+  -- | r is determined by the 'PushStrategy'
+  m r
 uploadStorePath clientEnv _store cache cb storePath retrystatus = do
   let (storeHash, storeSuffix) = splitStorePath $ toS storePath
       name = pushCacheName cache
@@ -131,46 +143,46 @@ uploadStorePath clientEnv _store cache cb storePath retrystatus = do
     let newClientEnv =
           clientEnv
             { baseUrl = (baseUrl clientEnv) {baseUrlHost = toS name <> "." <> baseUrlHost (baseUrl clientEnv)}
-              }
+            }
     (_ :: NoContent) <-
       liftIO
         $ (`withClientM` newClientEnv)
-            (Api.createNar (cachixBCStreamingClient name) stream')
+          (Api.createNar (cachixBCStreamingClient name) stream')
         $ escalate
-        >=> \NoContent -> do
-          closeStdout
-          exitcode <- waitForStreamingProcess cph
-          when (exitcode /= ExitSuccess) $ throwM $ NarStreamingError exitcode $ show cmd
-          -- TODO: we're done, so we can leave withClientM. Doing so
-          --       will allow more concurrent requests when the number
-          --       of XZ compressors is limited
-          narSize <- readIORef narSizeRef
-          narHash <- ("sha256:" <>) . System.Nix.Base32.encode <$> readIORef narHashRef
-          fileHash <- readIORef fileHashRef
-          fileSize <- readIORef fileSizeRef
-          deriverRaw <- T.strip . toS <$> readProcess "nix-store" ["-q", "--deriver", toS storePath] mempty
-          let deriver =
-                if deriverRaw == "unknown-deriver"
-                  then deriverRaw
-                  else T.drop 11 deriverRaw
-          references <- sort . T.lines . T.strip . toS <$> readProcess "nix-store" ["-q", "--references", toS storePath] mempty
-          let fp = fingerprint storePath narHash narSize references
-              sig = dsign (signingSecretKey $ pushCacheSigningKey cache) fp
-              nic = Api.NarInfoCreate
-                { Api.cStoreHash = storeHash,
-                  Api.cStoreSuffix = storeSuffix,
-                  Api.cNarHash = narHash,
-                  Api.cNarSize = narSize,
-                  Api.cFileSize = fileSize,
-                  Api.cFileHash = toS fileHash,
-                  Api.cReferences = fmap (T.drop 11) references,
-                  Api.cDeriver = deriver,
-                  Api.cSig = toS $ B64.encode $ unSignature sig
+          >=> \NoContent -> do
+            closeStdout
+            exitcode <- waitForStreamingProcess cph
+            when (exitcode /= ExitSuccess) $ throwM $ NarStreamingError exitcode $ show cmd
+            -- TODO: we're done, so we can leave withClientM. Doing so
+            --       will allow more concurrent requests when the number
+            --       of XZ compressors is limited
+            narSize <- readIORef narSizeRef
+            narHash <- ("sha256:" <>) . System.Nix.Base32.encode <$> readIORef narHashRef
+            fileHash <- readIORef fileHashRef
+            fileSize <- readIORef fileSizeRef
+            deriverRaw <- T.strip . toS <$> readProcess "nix-store" ["-q", "--deriver", toS storePath] mempty
+            let deriver =
+                  if deriverRaw == "unknown-deriver"
+                    then deriverRaw
+                    else T.drop 11 deriverRaw
+            references <- sort . T.lines . T.strip . toS <$> readProcess "nix-store" ["-q", "--references", toS storePath] mempty
+            let fp = fingerprint storePath narHash narSize references
+                sig = dsign (signingSecretKey $ pushCacheSigningKey cache) fp
+                nic = Api.NarInfoCreate
+                  { Api.cStoreHash = storeHash,
+                    Api.cStoreSuffix = storeSuffix,
+                    Api.cNarHash = narHash,
+                    Api.cNarSize = narSize,
+                    Api.cFileSize = fileSize,
+                    Api.cFileHash = toS fileHash,
+                    Api.cReferences = fmap (T.drop 11) references,
+                    Api.cDeriver = deriver,
+                    Api.cSig = toS $ B64.encode $ unSignature sig
                   }
-          escalate $ Api.isNarInfoCreateValid nic
-          -- Upload narinfo with signature
-          escalate <=< (`runClientM` clientEnv)
-            $ Api.createNarinfo
+            escalate $ Api.isNarInfoCreateValid nic
+            -- Upload narinfo with signature
+            escalate <=< (`runClientM` clientEnv) $
+              Api.createNarinfo
                 (cachixBCClient name)
                 (Api.NarInfoC storeHash)
                 nic
@@ -187,18 +199,21 @@ retryAll = recoverAll defaultRetryPolicy
 -- | Push an entire closure
 --
 -- Note: 'onAlreadyPresent' will be called less often in the future.
-pushClosure
-  :: (MonadIO m, MonadMask m)
-  => (forall a b. (a -> m b) -> [a] -> m [b])
-  -- ^ Traverse paths, responsible for bounding parallel processing of paths
+pushClosure ::
+  (MonadIO m, MonadMask m) =>
+  -- | Traverse paths, responsible for bounding parallel processing of paths
   --
   -- For example: @'mapConcurrentlyBounded' 4@
-  -> ClientEnv -- ^ See 'pushSingleStorePath'
-  -> Store
-  -> PushCache
-  -> (Text -> PushStrategy m r)
-  -> [Text] -- ^ Initial store paths
-  -> m [r] -- ^ Every @r@ per store path of the entire closure of store paths
+  (forall a b. (a -> m b) -> [a] -> m [b]) ->
+  -- | See 'pushSingleStorePath'
+  ClientEnv ->
+  Store ->
+  PushCache ->
+  (Text -> PushStrategy m r) ->
+  -- | Initial store paths
+  [Text] ->
+  -- | Every @r@ per store path of the entire closure of store paths
+  m [r]
 pushClosure traversal clientEnv store pushCache pushStrategy inputStorePaths = do
   -- Get the transitive closure of dependencies
   paths <-
@@ -215,12 +230,12 @@ pushClosure traversal clientEnv store pushCache pushStrategy inputStorePaths = d
     retryAll $ \_ ->
       escalate
         =<< liftIO
-              ( (`runClientM` clientEnv)
-                  $ Api.narinfoBulk
-                      (cachixBCClient (pushCacheName pushCache))
-                      (pushCacheToken pushCache)
-                      (fst . splitStorePath <$> paths)
-                )
+          ( (`runClientM` clientEnv) $
+              Api.narinfoBulk
+                (cachixBCClient (pushCacheName pushCache))
+                (pushCacheToken pushCache)
+                (fst . splitStorePath <$> paths)
+          )
   let missingHashes = Set.fromList missingHashesList
       missingPaths = filter (\path -> Set.member (fst (splitStorePath path)) missingHashes) paths
   -- TODO: make pool size configurable, on beefier machines this could be doubled

@@ -7,8 +7,8 @@ module Cachix.Client.Config
     writeConfig,
     getDefaultFilename,
     ConfigPath,
-    mkConfig
-    )
+    mkConfig,
+  )
 where
 
 import Cachix.Client.Config.Orphans ()
@@ -21,35 +21,35 @@ import System.Directory
   ( XdgDirectory (..),
     createDirectoryIfMissing,
     doesFileExist,
-    getXdgDirectory
-    )
+    getXdgDirectory,
+  )
 import System.FilePath.Posix (takeDirectory)
 import System.Posix.Files
   ( ownerReadMode,
     ownerWriteMode,
     setFileMode,
-    unionFileModes
-    )
+    unionFileModes,
+  )
 
 data BinaryCacheConfig
   = BinaryCacheConfig
       { name :: Text,
         secretKey :: Text
-        }
+      }
   deriving (Show, Generic, Interpret, Inject)
 
 data Config
   = Config
       { authToken :: Token,
         binaryCaches :: [BinaryCacheConfig]
-        }
+      }
   deriving (Show, Generic, Interpret, Inject)
 
 mkConfig :: Text -> Config
 mkConfig token = Config
   { authToken = Token (toS token),
     binaryCaches = []
-    }
+  }
 
 type ConfigPath = FilePath
 

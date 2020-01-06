@@ -1,14 +1,14 @@
 module Cachix.Types.NarInfoCreate
   ( NarInfoCreate (..),
     NarInfoInvalid,
-    isNarInfoCreateValid
-    )
+    isNarInfoCreateValid,
+  )
 where
 
 import Data.Aeson
   ( FromJSON,
-    ToJSON
-    )
+    ToJSON,
+  )
 import Data.Swagger
 import Protolude
 
@@ -17,8 +17,10 @@ import Protolude
 -- | Client create type
 data NarInfoCreate
   = NarInfoCreate
-      { cStoreHash :: Text, -- ^ $storePrefix / $storeHash - $storeSuffix
-        cStoreSuffix :: Text, -- ^ $storePrefix / $storeHash - $storeSuffix
+      { -- | \$storePrefix / $storeHash - $storeSuffix
+        cStoreHash :: Text,
+        -- | \$storePrefix / $storeHash - $storeSuffix
+        cStoreSuffix :: Text,
         cNarHash :: Text,
         cNarSize :: Integer,
         cFileHash :: Text,
@@ -26,7 +28,7 @@ data NarInfoCreate
         cReferences :: [Text],
         cDeriver :: Text,
         cSig :: Text
-        }
+      }
   deriving (Generic, Show, FromJSON, ToJSON, ToSchema)
 
 data NarInfoInvalid

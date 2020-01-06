@@ -1,12 +1,12 @@
 module Cachix.Types.BinaryCacheCreate
-  ( BinaryCacheCreate (..)
-    )
+  ( BinaryCacheCreate (..),
+  )
 where
 
 import Data.Aeson
   ( FromJSON,
-    ToJSON
-    )
+    ToJSON,
+  )
 import Data.Swagger
 import Protolude
 
@@ -16,5 +16,5 @@ data BinaryCacheCreate
         isPublic :: Bool,
         githubOrganization :: Maybe Text,
         githubTeamId :: Maybe Int
-        }
+      }
   deriving (Show, Generic, FromJSON, ToJSON, ToSchema)

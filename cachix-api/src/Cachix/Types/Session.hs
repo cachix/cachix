@@ -4,15 +4,16 @@ module Cachix.Types.Session
   )
 where
 
-import Protolude
-import Servant.Auth.Server (FromJWT(..), ToJWT(..))
 import qualified Crypto.JWT as JWT
+import Protolude
+import Servant.Auth.Server (FromJWT (..), ToJWT (..))
 
 data Session
   = JWTSession JWT.ClaimsSet
-  deriving Eq
+  deriving (Eq)
 
 instance ToJWT Session where
   encodeJWT (JWTSession s) = s
+
 instance FromJWT Session where
   decodeJWT cs = pure $ JWTSession cs

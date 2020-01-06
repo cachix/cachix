@@ -8,8 +8,8 @@ module Cachix.Client.Commands
     create,
     generateKeypair,
     push,
-    use
-    )
+    use,
+  )
 where
 
 import qualified Cachix.Api as Api
@@ -18,8 +18,8 @@ import Cachix.Client.Config
   ( BinaryCacheConfig (..),
     Config (..),
     mkConfig,
-    writeConfig
-    )
+    writeConfig,
+  )
 import qualified Cachix.Client.Config as Config
 import Cachix.Client.Env (Env (..))
 import Cachix.Client.Exception (CachixException (..))
@@ -29,14 +29,14 @@ import Cachix.Client.NixVersion (assertNixVersion)
 import Cachix.Client.OptionsParser
   ( CachixOptions (..),
     PushArguments (..),
-    PushOptions (..)
-    )
+    PushOptions (..),
+  )
 import Cachix.Client.Push
 import Cachix.Client.Secrets
   ( SigningKey (SigningKey),
     exportSigningKey,
-    parseSigningKeyLenient
-    )
+    parseSigningKeyLenient,
+  )
 import Cachix.Client.Servant
 import qualified Cachix.Types.SigningKeyCreate as SigningKeyCreate
 import Control.Concurrent (threadDelay)
@@ -68,9 +68,9 @@ authtoken env token = do
   putStrLn
     ( [hereLit|
 Continue by creating a binary cache at https://cachix.org
-  |]
-        :: Text
-      )
+  |] ::
+        Text
+    )
 
 create :: Env -> Text -> IO ()
 create _ _ =
@@ -85,14 +85,12 @@ generateKeypair env@Env {config = Just config} name = do
       bcc = BinaryCacheConfig name signingKey
   -- we first validate if key can be added to the binary cache
   (_ :: NoContent) <-
-    escalate
-      =<< ( (`runClientM` clientenv env)
-              $ Api.createKey (cachixBCClient name) (authToken config) signingKeyCreate
-            )
+    escalate <=< (`runClientM` clientenv env) $
+      Api.createKey (cachixBCClient name) (authToken config) signingKeyCreate
   -- if key was successfully added, write it to the config
   -- TODO: warn if binary cache with the same key already exists
-  writeConfig (configPath (cachixoptions env))
-    $ config {binaryCaches = binaryCaches config <> [bcc]}
+  writeConfig (configPath (cachixoptions env)) $
+    config {binaryCaches = binaryCaches config <> [bcc]}
   putStrLn
     ( [iTrim|
 Secret signing key has been saved in the file above. To populate
@@ -110,9 +108,9 @@ To instruct Nix to use the binary cache:
     $ cachix use ${name}
 
 IMPORTANT: Make sure to make a backup for the signing key above, as you have the only copy.
-  |]
-        :: Text
-      )
+  |] ::
+        Text
+    )
 
 envToToken :: Env -> Token
 envToToken env =
@@ -146,9 +144,9 @@ use env name useOptions = do
             { isRoot = user == "root",
               isTrusted = isTrusted,
               isNixOS = isNixOS
-              }
-      addBinaryCache (config env) binaryCache useOptions
-        $ fromMaybe (getInstallationMode nixEnv) (useMode useOptions)
+            }
+      addBinaryCache (config env) binaryCache useOptions $
+        fromMaybe (getInstallationMode nixEnv) (useMode useOptions)
 
 -- TODO: lots of room for performance improvements
 push :: Env -> PushArguments -> IO ()
@@ -166,17 +164,18 @@ push env (PushPaths opts name cliPaths) = do
       (_, paths) -> return paths
   sk <- findSigningKey env name
   store <- wait (storeAsync env)
-  void
-    $ pushClosure
-        (mapConcurrentlyBounded 4)
-        (clientenv env)
-        store PushCache
+  void $
+    pushClosure
+      (mapConcurrentlyBounded 4)
+      (clientenv env)
+      store
+      PushCache
         { pushCacheToken = envToToken env,
           pushCacheName = name,
           pushCacheSigningKey = sk
-          }
-        (pushStrategy env opts name)
-        inputStorePaths
+        }
+      (pushStrategy env opts name)
+      inputStorePaths
   putText "All done."
 push env (PushWatchStore opts name) = withManager $ \mgr -> do
   _ <- watchDir mgr "/nix/store" filterF action
@@ -186,10 +185,12 @@ push env (PushWatchStore opts name) = withManager $ \mgr -> do
   where
     logErr :: FilePath -> SomeException -> IO ()
     logErr fp e = hPutStrLn stderr $ "Exception occured while pushing " <> fp <> ": " <> show e
-
     action :: Action
-    action (Removed fp _ _) = Control.Exception.Safe.handle (logErr fp) $
-      pushStorePath env opts name $ toS $ dropEnd 5 fp
+    action (Removed fp _ _) =
+      Control.Exception.Safe.handle (logErr fp)
+        $ pushStorePath env opts name
+        $ toS
+        $ dropEnd 5 fp
     action _ = return ()
     filterF :: ActionPredicate
     filterF (Removed fp _ _)
@@ -199,10 +200,12 @@ push env (PushWatchStore opts name) = withManager $ \mgr -> do
     dropEnd index xs = take (length xs - index) xs
 
 -- | Find a secret key in the 'Config' or environment variable
-findSigningKey
-  :: Env
-  -> Text -- ^ Cache name
-  -> IO SigningKey -- ^ Secret key or exception
+findSigningKey ::
+  Env ->
+  -- | Cache name
+  Text ->
+  -- | Secret key or exception
+  IO SigningKey
 findSigningKey env name = do
   maybeEnvSK <- lookupEnv "CACHIX_SIGNING_KEY"
   -- we reverse list of caches to prioritize keys added as last
@@ -232,7 +235,7 @@ pushStrategy env opts name storePath = PushStrategy
       putStr $ "pushing " <> retryText retrystatus <> storePath <> "\n",
     onDone = pass,
     withXzipCompressor = defaultWithXzipCompressorWithLevel (compressionLevel opts)
-    }
+  }
 
 pushStorePath :: Env -> PushOptions -> Text -> Text -> IO ()
 pushStorePath env opts name storePath = do
@@ -242,10 +245,11 @@ pushStorePath env opts name storePath = do
   store <- wait (storeAsync env)
   pushSingleStorePath
     (clientenv env)
-    store PushCache
-    { pushCacheToken = envToToken env,
-      pushCacheName = name,
-      pushCacheSigningKey = sk
+    store
+    PushCache
+      { pushCacheToken = envToToken env,
+        pushCacheName = name,
+        pushCacheSigningKey = sk
       }
     (pushStrategy env opts name storePath)
     storePath

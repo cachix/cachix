@@ -1,8 +1,8 @@
 module Cachix.Client.Env
   ( Env (..),
     mkEnv,
-    cachixVersion
-    )
+    cachixVersion,
+  )
 where
 
 import Cachix.Client.Config (Config, readConfig)
@@ -15,8 +15,8 @@ import Network.HTTP.Client
   ( ManagerSettings,
     managerModifyRequest,
     managerResponseTimeout,
-    responseTimeoutNone
-    )
+    responseTimeoutNone,
+  )
 import Network.HTTP.Client.TLS (newTlsManagerWith, tlsManagerSettings)
 import Network.HTTP.Simple (setRequestHeader)
 import Paths_cachix (version)
@@ -30,7 +30,7 @@ data Env
         clientenv :: ClientEnv,
         cachixoptions :: CachixOptions,
         storeAsync :: Async Store
-        }
+      }
 
 mkEnv :: CachixOptions -> IO Env
 mkEnv rawcachixoptions = do
@@ -46,7 +46,7 @@ mkEnv rawcachixoptions = do
       clientenv = clientenv,
       cachixoptions = cachixoptions,
       storeAsync = store
-      }
+    }
 
 customManagerSettings :: ManagerSettings
 customManagerSettings =
@@ -54,7 +54,7 @@ customManagerSettings =
     { managerResponseTimeout = responseTimeoutNone,
       -- managerModifyRequest :: Request -> IO Request
       managerModifyRequest = return . setRequestHeader "User-Agent" [toS cachixVersion]
-      }
+    }
 
 cachixVersion :: Text
 cachixVersion = "cachix " <> toS (showVersion version)

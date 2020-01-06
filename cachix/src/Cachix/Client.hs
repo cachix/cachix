@@ -1,6 +1,6 @@
 module Cachix.Client
-  ( main
-    )
+  ( main,
+  )
 where
 
 import Cachix.Client.Commands as Commands

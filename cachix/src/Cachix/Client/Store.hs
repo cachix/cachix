@@ -4,12 +4,15 @@
 
 module Cachix.Client.Store
   ( Store,
+
     -- * Getting a Store
     openStore,
     releaseStore,
+
     -- * Query a path
     followLinksToStorePath,
     queryPathInfo,
+
     -- * Get closures
     computeFSClosure,
     ClosureParams (..),
@@ -18,9 +21,10 @@ module Cachix.Client.Store
     newEmptyPathSet,
     addToPathSet,
     traversePathSet,
+
     -- * Miscellaneous
-    storeUri
-    )
+    storeUri,
+  )
 where
 
 import Cachix.Client.Store.Context (NixStore, Ref, ValidPathInfo, context)
@@ -95,7 +99,6 @@ queryPathInfo (Store store) path = do
   newForeignPtr finalizeRefValidPathInfo vpi
 
 finalizeRefValidPathInfo :: FinalizerPtr (Ref ValidPathInfo)
-
 {-# NOINLINE finalizeRefValidPathInfo #-}
 finalizeRefValidPathInfo =
   unsafePerformIO
@@ -108,7 +111,6 @@ finalizeRefValidPathInfo =
 newtype PathSet = PathSet (ForeignPtr (C.Set C.CxxString))
 
 finalizePathSet :: FinalizerPtr C.PathSet
-
 {-# NOINLINE finalizePathSet #-}
 finalizePathSet =
   unsafePerformIO
@@ -143,21 +145,20 @@ traversePathSet f pathSet_ = withPathSet pathSet_ $ \pathSet -> do
           delete $(PathSetIterator *i);
           delete $(PathSetIterator *end);
         }|]
-  flip finally cleanup
-    $ let go :: ([a] -> [a]) -> IO [a]
-          go acc = do
-            isDone <-
-              [C.exp| int {
+  flip finally cleanup $
+    let go :: ([a] -> [a]) -> IO [a]
+        go acc = do
+          isDone <-
+            [C.exp| int {
             *$(PathSetIterator *i) == *$(PathSetIterator *end)
           }|]
-            if isDone /= 0
-              then pure $ acc []
-              else
-                do
-                  somePath <- unsafePackMallocCString =<< [C.exp| const char *{ strdup((*$(PathSetIterator *i))->c_str()) } |]
-                  a <- f somePath
-                  [C.throwBlock| void { (*$(PathSetIterator *i))++; } |]
-                  go (acc . (a :))
+          if isDone /= 0
+            then pure $ acc []
+            else do
+              somePath <- unsafePackMallocCString =<< [C.exp| const char *{ strdup((*$(PathSetIterator *i))->c_str()) } |]
+              a <- f somePath
+              [C.throwBlock| void { (*$(PathSetIterator *i))++; } |]
+              go (acc . (a :))
      in go identity
 
 ----- computeFSClosure -----
@@ -166,14 +167,14 @@ data ClosureParams
       { flipDirection :: Bool,
         includeOutputs :: Bool,
         includeDerivers :: Bool
-        }
+      }
 
 defaultClosureParams :: ClosureParams
 defaultClosureParams = ClosureParams
   { flipDirection = False,
     includeOutputs = False,
     includeDerivers = False
-    }
+  }
 
 computeFSClosure :: Store -> ClosureParams -> PathSet -> IO PathSet
 computeFSClosure (Store store) params startingSet_ = withPathSet startingSet_ $ \startingSet -> do

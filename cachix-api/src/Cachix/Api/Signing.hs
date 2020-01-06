@@ -2,8 +2,8 @@ module Cachix.Api.Signing
   ( fingerprint,
     passthroughSizeSink,
     passthroughHashSinkB16,
-    passthroughHashSink
-    )
+    passthroughHashSink,
+  )
 where
 
 import Control.Monad.IO.Class (MonadIO, liftIO)
@@ -22,9 +22,10 @@ import Protolude
 -- NB: references must be sorted
 fingerprint :: Text -> Text -> Integer -> [Text] -> ByteString
 fingerprint storePath narHash narSize references =
-  toS
-    $ T.intercalate ";"
-        ["1", storePath, narHash, show narSize, T.intercalate "," references]
+  toS $
+    T.intercalate
+      ";"
+      ["1", storePath, narHash, show narSize, T.intercalate "," references]
 
 -- Useful sinks for streaming nars
 sizeSink :: MonadIO m => ConduitT ByteString o m Integer

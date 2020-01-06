@@ -1,12 +1,12 @@
 module Cachix.Types.GitHubTeam
-  ( GitHubTeam (..)
-    )
+  ( GitHubTeam (..),
+  )
 where
 
 import Data.Aeson
   ( FromJSON,
-    ToJSON
-    )
+    ToJSON,
+  )
 import Data.Swagger
 import Protolude
 
@@ -14,5 +14,5 @@ data GitHubTeam
   = GitHubTeam
       { id :: Int,
         name :: Text
-        }
+      }
   deriving (Generic, FromJSON, ToJSON, ToSchema)

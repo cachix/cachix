@@ -1,12 +1,12 @@
 module Cachix.Types.BinaryCacheAuthenticated
-  ( BinaryCacheAuthenticated (..)
-    )
+  ( BinaryCacheAuthenticated (..),
+  )
 where
 
 import Data.Aeson
   ( FromJSON,
-    ToJSON
-    )
+    ToJSON,
+  )
 import Data.Swagger
 import Protolude
 
@@ -18,5 +18,5 @@ data BinaryCacheAuthenticated
         publicSigningKeys :: [Text],
         isPublic :: Bool,
         totalFileSize :: Integer
-        }
+      }
   deriving (Show, Generic, FromJSON, ToJSON, ToSchema)

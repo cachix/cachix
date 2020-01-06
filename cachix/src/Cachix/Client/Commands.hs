@@ -85,10 +85,8 @@ generateKeypair env@Env {config = Just config} name = do
       bcc = BinaryCacheConfig name signingKey
   -- we first validate if key can be added to the binary cache
   (_ :: NoContent) <-
-    escalate
-      =<< ( (`runClientM` clientenv env) $
-              Api.createKey (cachixBCClient name) (authToken config) signingKeyCreate
-          )
+    escalate <=< (`runClientM` clientenv env) $
+      Api.createKey (cachixBCClient name) (authToken config) signingKeyCreate
   -- if key was successfully added, write it to the config
   -- TODO: warn if binary cache with the same key already exists
   writeConfig (configPath (cachixoptions env)) $

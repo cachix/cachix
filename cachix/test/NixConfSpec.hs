@@ -112,33 +112,33 @@ spec = do
   describe "parse" $ do
     it "parses substituters" $
       parse "substituters = a\n"
-        `shouldBe` (Right $ NixConf [Substituters ["a"]])
+        `shouldBe` Right (NixConf [Substituters ["a"]])
     it "parses long key" $
       parse "binary-caches-parallel-connections = 40\n"
-        `shouldBe` (Right $ NixConf [Other "binary-caches-parallel-connections = 40"])
+        `shouldBe` Right (NixConf [Other "binary-caches-parallel-connections = 40"])
     it "parses substituters with multiple values" $
       parse "substituters = a b c\n"
-        `shouldBe` (Right $ NixConf [Substituters ["a", "b", "c"]])
+        `shouldBe` Right (NixConf [Substituters ["a", "b", "c"]])
     it "parses equal sign after the first key as literal" $
       parse "substituters = a b c= d\n"
-        `shouldBe` (Right $ NixConf [Substituters ["a", "b", "c=", "d"]])
+        `shouldBe` Right (NixConf [Substituters ["a", "b", "c=", "d"]])
     it "parses with missing endline" $
       parse "allowed-users = *"
-        `shouldBe` (Right $ NixConf [Other "allowed-users = *"])
+        `shouldBe` Right (NixConf [Other "allowed-users = *"])
     it "parses a complex example" $
       parse realExample
-        `shouldBe` ( Right $
-                       NixConf
-                         [ Other "",
-                           Substituters ["a", "b", "c"],
-                           TrustedUsers ["him", "me"],
-                           TrustedPublicKeys ["a"],
-                           Other "blabla =  asd",
-                           Other "# comment",
-                           Other "",
-                           Other ""
-                         ]
-                   )
+        `shouldBe` Right
+          ( NixConf
+              [ Other "",
+                Substituters ["a", "b", "c"],
+                TrustedUsers ["him", "me"],
+                TrustedPublicKeys ["a"],
+                Other "blabla =  asd",
+                Other "# comment",
+                Other "",
+                Other ""
+              ]
+          )
 
 realExample :: Text
 realExample =

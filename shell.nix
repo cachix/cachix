@@ -8,6 +8,6 @@ in pkgs.mkShell {
     pkgs.haskellPackages.hspec-discover
     pkgs.haskellPackages.releaser
     ];
-  NIX_PATH = "";
+  NIX_PATH = "nixpkgs=${pkgs.path}";
   inherit (pkgs.pre-commit-check) shellHook;
 }

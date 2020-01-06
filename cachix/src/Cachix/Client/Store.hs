@@ -12,6 +12,7 @@ module Cachix.Client.Store
     -- * Query a path
     followLinksToStorePath,
     queryPathInfo,
+    validPathInfoNarSize,
 
     -- * Get closures
     computeFSClosure,
@@ -89,13 +90,18 @@ storeUri (Store store) =
              return strdup(uri.c_str());
            } |]
 
--- TODO: test queryPathInfo
-queryPathInfo :: Store -> ByteString -> IO (ForeignPtr (Ref ValidPathInfo))
+queryPathInfo ::
+  Store ->
+  -- | Exact store path, not a subpath
+  ByteString ->
+  -- | ValidPathInfo or exception
+  IO (ForeignPtr (Ref ValidPathInfo))
 queryPathInfo (Store store) path = do
   vpi <-
-    [C.exp| refValidPathInfo* {
-             new refValidPathInfo((*$(refStore* store))->queryPathInfo($bs-cstr:path))
-           } |]
+    [C.throwBlock| refValidPathInfo*
+      {
+        return new refValidPathInfo((*$(refStore* store))->queryPathInfo($bs-cstr:path));
+      } |]
   newForeignPtr finalizeRefValidPathInfo vpi
 
 finalizeRefValidPathInfo :: FinalizerPtr (Ref ValidPathInfo)
@@ -106,6 +112,15 @@ finalizeRefValidPathInfo =
   void (*)(refValidPathInfo *) {
     [](refValidPathInfo *v){ delete v; }
   } |]
+
+-- | The narSize field of a ValidPathInfo struct. Source: store-api.hh
+validPathInfoNarSize :: ForeignPtr (Ref ValidPathInfo) -> Int64
+validPathInfoNarSize vpi =
+  fromIntegral $
+    toInteger
+      [C.pure| long
+        { (*$fptr-ptr:(refValidPathInfo* vpi))->narSize }
+      |]
 
 ----- PathSet -----
 newtype PathSet = PathSet (ForeignPtr (C.Set C.CxxString))

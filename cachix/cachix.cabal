@@ -47,6 +47,7 @@ library
     Cachix.Client.Config.Orphans
     Cachix.Client.Env
     Cachix.Client.Exception
+    Cachix.Client.HumanSize
     Cachix.Client.InstallationMode
     Cachix.Client.NetRc
     Cachix.Client.NixConf

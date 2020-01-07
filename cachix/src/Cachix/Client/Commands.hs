@@ -23,6 +23,7 @@ import Cachix.Client.Config
 import qualified Cachix.Client.Config as Config
 import Cachix.Client.Env (Env (..))
 import Cachix.Client.Exception (CachixException (..))
+import Cachix.Client.HumanSize (humanSize)
 import Cachix.Client.InstallationMode
 import qualified Cachix.Client.NixConf as NixConf
 import Cachix.Client.NixVersion (assertNixVersion)
@@ -230,9 +231,9 @@ pushStrategy env opts name storePath = PushStrategy
         then throwM $ accessDeniedBinaryCache name
         else throwM notAuthenticatedBinaryCache,
     onError = throwM,
-    onAttempt = \retrystatus ->
+    onAttempt = \retrystatus size ->
       -- we append newline instead of putStrLn due to https://github.com/haskell/text/issues/242
-      putStr $ "pushing " <> retryText retrystatus <> storePath <> "\n",
+      putStr $ retryText retrystatus <> "compressing and pushing " <> storePath <> " (" <> humanSize (fromIntegral size) <> ")\n",
     onDone = pass,
     withXzipCompressor = defaultWithXzipCompressorWithLevel (compressionLevel opts)
   }

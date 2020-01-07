@@ -61,7 +61,7 @@ data PushStrategy m r
   = PushStrategy
       { -- | Called when a path is already in the cache.
         onAlreadyPresent :: m r,
-        onAttempt :: RetryStatus -> m (),
+        onAttempt :: RetryStatus -> Int64 -> m (),
         on401 :: m r,
         onError :: ClientError -> m r,
         onDone :: m r,
@@ -119,16 +119,20 @@ uploadStorePath ::
   RetryStatus ->
   -- | r is determined by the 'PushStrategy'
   m r
-uploadStorePath clientEnv _store cache cb storePath retrystatus = do
+uploadStorePath clientEnv store cache cb storePath retrystatus = do
   let (storeHash, storeSuffix) = splitStorePath $ toS storePath
       name = pushCacheName cache
-  onAttempt cb retrystatus
   narSizeRef <- liftIO $ newIORef 0
   fileSizeRef <- liftIO $ newIORef 0
   narHashRef <- liftIO $ newIORef ("" :: ByteString)
   fileHashRef <- liftIO $ newIORef ("" :: ByteString)
+  normalized <- liftIO $ Store.followLinksToStorePath store $ toS storePath
+  pathinfo <- liftIO $ Store.queryPathInfo store normalized
   -- stream store path as xz compressed nar file
   let cmd = proc "nix-store" ["--dump", toS storePath]
+      storePathSize :: Int64
+      storePathSize = Store.validPathInfoNarSize pathinfo
+  onAttempt cb retrystatus storePathSize
   -- TODO: print process stderr?
   (ClosedStream, (stdoutStream, closeStdout), ClosedStream, cph) <- liftIO $ streamingProcess cmd
   withXzipCompressor cb $ \xzCompressor -> do
@@ -139,10 +143,14 @@ uploadStorePath clientEnv _store cache cb storePath retrystatus = do
             .| xzCompressor
             .| passthroughSizeSink fileSizeRef
             .| passthroughHashSinkB16 fileHashRef
-    -- for now we need to use letsencrypt domain instead of cloudflare due to its upload limits
-    let newClientEnv =
+    let subdomain =
+          -- TODO: multipart
+          if (fromIntegral storePathSize / (1024 * 1024)) > 100
+            then "api"
+            else toS name
+        newClientEnv =
           clientEnv
-            { baseUrl = (baseUrl clientEnv) {baseUrlHost = toS name <> "." <> baseUrlHost (baseUrl clientEnv)}
+            { baseUrl = (baseUrl clientEnv) {baseUrlHost = subdomain <> "." <> baseUrlHost (baseUrl clientEnv)}
             }
     (_ :: NoContent) <-
       liftIO

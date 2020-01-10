@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [0.4.0] - 2020-01-10
+
+- #249 Serve nar content
+- #247 Generalize auth to just JWTs
+- NarC -> NarFileName
+
 ## [0.3.0] - 2019-09-03
 
 - #216 Add bulk store path query

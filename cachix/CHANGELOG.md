@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
+## [0.3.5] - 2020-01-10
+
+### Added
+
+- #265: print store path size before compressing/pushing
+
+### Fixed
+
+- #258: don't swallow exceptions while --watch-store
+- NixOS: instruct to use sudo
+
 ## [0.3.4] - 2019-10-01
 
 ### Fixed

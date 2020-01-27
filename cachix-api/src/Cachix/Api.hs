@@ -69,6 +69,12 @@ data BinaryCacheAPI route
             :> "nix-cache-info"
             :> Get '[XNixCacheInfo, JSON] NixCacheInfo,
         -- Hydra: src/lib/Hydra/View/NARInfo.pm
+        narURL
+          :: route
+               :- CachixAuth
+               :> "narurl"
+               :> Capture "nar" NarFileName
+               :> Get '[JSON] Text,
         narinfo ::
           route
             :- CachixAuth

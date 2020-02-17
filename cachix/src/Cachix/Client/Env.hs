@@ -2,6 +2,7 @@ module Cachix.Client.Env
   ( Env (..),
     mkEnv,
     cachixVersion,
+    customManagerSettings,
   )
 where
 

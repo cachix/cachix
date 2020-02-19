@@ -55,7 +55,7 @@ Install Cachix from master:
 ## Support
 
 - [#cachix@freenode](https://webchat.freenode.net/?channels=cachix) IRC
-- [domen@enlambda.com](mailto:domen@enlambda.com)
+- [support@cachix.org](mailto:support@cachix.org)
 - [Gitter](https://gitter.im/cachix/Lobby)
 
 ## Changelog

@@ -13,7 +13,7 @@ let
       hooks.cabal-fmt.enable = true;
       hooks.hlint.enable = true;
       hooks.ormolu.enable = true;
-      hooks.ormolu.excludes = ["Cachix/Client/Servant\.hs$" "Cachix/Types/SwaggerOrphans\.hs$" ];
+      hooks.ormolu.excludes = ["Cachix/Client/Servant\.hs$" "Cachix/Client/Config/Orphans\.hs$" "Cachix/Types/SwaggerOrphans\.hs$" ];
       hooks.shellcheck.enable = true;
       src = self.gitignoreSource ../.;
     };

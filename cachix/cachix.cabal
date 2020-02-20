@@ -82,7 +82,7 @@ library
     , containers
     , cookie
     , cryptonite
-    , dhall                 >=1.28
+    , dhall
     , directory
     , ed25519
     , filepath

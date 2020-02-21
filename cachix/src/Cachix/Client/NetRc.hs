@@ -45,13 +45,14 @@ add config binarycaches filename = do
     new :: [NetRcHost]
     new = map mkHost $ filter (not . Api.isPublic) binarycaches
     mkHost :: Api.BinaryCache -> NetRcHost
-    mkHost bc = NetRcHost
-      { nrhName = toS $ stripPrefix "http://" $ stripPrefix "https://" (Api.uri bc),
-        nrhLogin = "",
-        nrhPassword = getToken (authToken config),
-        nrhAccount = "",
-        nrhMacros = []
-      }
+    mkHost bc =
+      NetRcHost
+        { nrhName = toS $ stripPrefix "http://" $ stripPrefix "https://" (Api.uri bc),
+          nrhLogin = "",
+          nrhPassword = getToken (authToken config),
+          nrhAccount = "",
+          nrhMacros = []
+        }
       where
         -- stripPrefix that either strips or returns the same string
         stripPrefix :: Text -> Text -> Text

@@ -141,11 +141,12 @@ use env name useOptions = do
       nc <- NixConf.read NixConf.Global
       isTrusted <- isTrustedUser $ NixConf.readLines (catMaybes [nc]) NixConf.isTrustedUsers
       isNixOS <- doesFileExist "/etc/NIXOS"
-      let nixEnv = NixEnv
-            { isRoot = user == "root",
-              isTrusted = isTrusted,
-              isNixOS = isNixOS
-            }
+      let nixEnv =
+            NixEnv
+              { isRoot = user == "root",
+                isTrusted = isTrusted,
+                isNixOS = isNixOS
+              }
       addBinaryCache (config env) binaryCache useOptions $
         fromMaybe (getInstallationMode nixEnv) (useMode useOptions)
 
@@ -224,19 +225,20 @@ retryText retrystatus =
     else "(retry #" <> show (rsIterNumber retrystatus) <> ") "
 
 pushStrategy :: Env -> PushOptions -> Text -> Text -> PushStrategy IO ()
-pushStrategy env opts name storePath = PushStrategy
-  { onAlreadyPresent = pass,
-    on401 =
-      if isJust (config env)
-        then throwM $ accessDeniedBinaryCache name
-        else throwM notAuthenticatedBinaryCache,
-    onError = throwM,
-    onAttempt = \retrystatus size ->
-      -- we append newline instead of putStrLn due to https://github.com/haskell/text/issues/242
-      putStr $ retryText retrystatus <> "compressing and pushing " <> storePath <> " (" <> humanSize (fromIntegral size) <> ")\n",
-    onDone = pass,
-    withXzipCompressor = defaultWithXzipCompressorWithLevel (compressionLevel opts)
-  }
+pushStrategy env opts name storePath =
+  PushStrategy
+    { onAlreadyPresent = pass,
+      on401 =
+        if isJust (config env)
+          then throwM $ accessDeniedBinaryCache name
+          else throwM notAuthenticatedBinaryCache,
+      onError = throwM,
+      onAttempt = \retrystatus size ->
+        -- we append newline instead of putStrLn due to https://github.com/haskell/text/issues/242
+        putStr $ retryText retrystatus <> "compressing and pushing " <> storePath <> " (" <> humanSize (fromIntegral size) <> ")\n",
+      onDone = pass,
+      withXzipCompressor = defaultWithXzipCompressorWithLevel (compressionLevel opts)
+    }
 
 pushStorePath :: Env -> PushOptions -> Text -> Text -> IO ()
 pushStorePath env opts name storePath = do

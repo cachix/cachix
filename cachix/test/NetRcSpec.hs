@@ -9,28 +9,31 @@ import System.IO.Temp (withSystemTempFile)
 import Test.Hspec
 
 bc1 :: BinaryCache
-bc1 = BinaryCache
-  { name = "name",
-    uri = "https://name.cachix.org",
-    publicSigningKeys = ["pub"],
-    isPublic = False,
-    githubUsername = "foobar"
-  }
+bc1 =
+  BinaryCache
+    { name = "name",
+      uri = "https://name.cachix.org",
+      publicSigningKeys = ["pub"],
+      isPublic = False,
+      githubUsername = "foobar"
+    }
 
 bc2 :: BinaryCache
-bc2 = BinaryCache
-  { name = "name2",
-    uri = "https://name2.cachix.org",
-    publicSigningKeys = ["pub2"],
-    isPublic = False,
-    githubUsername = "foobar2"
-  }
+bc2 =
+  BinaryCache
+    { name = "name2",
+      uri = "https://name2.cachix.org",
+      publicSigningKeys = ["pub2"],
+      isPublic = False,
+      githubUsername = "foobar2"
+    }
 
 config :: Config
-config = Config
-  { authToken = "token123",
-    binaryCaches = []
-  }
+config =
+  Config
+    { authToken = "token123",
+      binaryCaches = []
+    }
 
 -- TODO: poor man's golden tests, use https://github.com/stackbuilders/hspec-golden
 test :: [BinaryCache] -> Text -> Expectation

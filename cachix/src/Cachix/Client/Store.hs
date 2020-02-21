@@ -185,11 +185,12 @@ data ClosureParams
       }
 
 defaultClosureParams :: ClosureParams
-defaultClosureParams = ClosureParams
-  { flipDirection = False,
-    includeOutputs = False,
-    includeDerivers = False
-  }
+defaultClosureParams =
+  ClosureParams
+    { flipDirection = False,
+      includeOutputs = False,
+      includeDerivers = False
+    }
 
 computeFSClosure :: Store -> ClosureParams -> PathSet -> IO PathSet
 computeFSClosure (Store store) params startingSet_ = withPathSet startingSet_ $ \startingSet -> do

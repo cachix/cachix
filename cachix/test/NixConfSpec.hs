@@ -12,13 +12,14 @@ property :: Text -> Expectation
 property x = NixConf.render <$> parse x `shouldBe` Right x
 
 bc :: BinaryCache
-bc = BinaryCache
-  { name = "name",
-    uri = "https://name.cachix.org",
-    isPublic = True,
-    publicSigningKeys = ["pub"],
-    githubUsername = "foobar"
-  }
+bc =
+  BinaryCache
+    { name = "name",
+      uri = "https://name.cachix.org",
+      isPublic = True,
+      publicSigningKeys = ["pub"],
+      githubUsername = "foobar"
+    }
 
 spec :: Spec
 spec = do

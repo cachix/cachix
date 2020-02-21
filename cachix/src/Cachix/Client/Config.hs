@@ -46,10 +46,11 @@ data Config
   deriving (Show, Generic, Interpret, Inject)
 
 mkConfig :: Text -> Config
-mkConfig token = Config
-  { authToken = Token (toS token),
-    binaryCaches = []
-  }
+mkConfig token =
+  Config
+    { authToken = Token (toS token),
+      binaryCaches = []
+    }
 
 type ConfigPath = FilePath
 

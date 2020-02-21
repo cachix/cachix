@@ -42,12 +42,13 @@ mkEnv rawcachixoptions = do
   config <- readConfig $ configPath cachixoptions
   manager <- newTlsManagerWith customManagerSettings
   let clientenv = mkClientEnv manager $ getBaseUrl (host cachixoptions)
-  return Env
-    { config = config,
-      clientenv = clientenv,
-      cachixoptions = cachixoptions,
-      storeAsync = store
-    }
+  return
+    Env
+      { config = config,
+        clientenv = clientenv,
+        cachixoptions = cachixoptions,
+        storeAsync = store
+      }
 
 customManagerSettings :: ManagerSettings
 customManagerSettings =

@@ -176,17 +176,18 @@ uploadStorePath clientEnv store cache cb storePath retrystatus = do
             references <- sort . T.lines . T.strip . toS <$> readProcess "nix-store" ["-q", "--references", toS storePath] mempty
             let fp = fingerprint storePath narHash narSize references
                 sig = dsign (signingSecretKey $ pushCacheSigningKey cache) fp
-                nic = Api.NarInfoCreate
-                  { Api.cStoreHash = storeHash,
-                    Api.cStoreSuffix = storeSuffix,
-                    Api.cNarHash = narHash,
-                    Api.cNarSize = narSize,
-                    Api.cFileSize = fileSize,
-                    Api.cFileHash = toS fileHash,
-                    Api.cReferences = fmap (T.drop 11) references,
-                    Api.cDeriver = deriver,
-                    Api.cSig = toS $ B64.encode $ unSignature sig
-                  }
+                nic =
+                  Api.NarInfoCreate
+                    { Api.cStoreHash = storeHash,
+                      Api.cStoreSuffix = storeSuffix,
+                      Api.cNarHash = narHash,
+                      Api.cNarSize = narSize,
+                      Api.cFileSize = fileSize,
+                      Api.cFileHash = toS fileHash,
+                      Api.cReferences = fmap (T.drop 11) references,
+                      Api.cDeriver = deriver,
+                      Api.cSig = toS $ B64.encode $ unSignature sig
+                    }
             escalate $ Api.isNarInfoCreateValid nic
             -- Upload narinfo with signature
             escalate <=< (`runClientM` clientEnv) $

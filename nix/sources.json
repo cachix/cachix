@@ -50,12 +50,12 @@
         "branch": "master",
         "description": "Seamless integration of https://pre-commit.com git hooks with Nix.",
         "homepage": "",
-        "owner": "hercules-ci",
+        "owner": "cachix",
         "repo": "pre-commit-hooks.nix",
-        "rev": "5c3078ad58856ce22f883b5518879d27bfc59dd5",
-        "sha256": "1rwmzzifn5gg7d10v4iia58m5zrx3f60zsddil9via31rfb6f7wy",
+        "rev": "de4c397d7ebf89aabcec87a71fc95cd4c21df3d1",
+        "sha256": "0bq7bw714mgr6bijws0i4rjzc1cnw3536pai516whld3ra4dpb9z",
         "type": "tarball",
-        "url": "https://github.com/hercules-ci/pre-commit-hooks.nix/archive/5c3078ad58856ce22f883b5518879d27bfc59dd5.tar.gz",
+        "url": "https://github.com/cachix/pre-commit-hooks.nix/archive/de4c397d7ebf89aabcec87a71fc95cd4c21df3d1.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     }
 }

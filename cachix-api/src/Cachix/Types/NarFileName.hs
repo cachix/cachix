@@ -3,7 +3,7 @@ module Cachix.Types.NarFileName
   )
 where
 
-import Data.Swagger (ToParamSchema(..))
+import Data.Swagger (ToParamSchema (..))
 import Data.Text (dropEnd, takeEnd)
 import Protolude
 import Servant.API

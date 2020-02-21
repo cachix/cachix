@@ -86,12 +86,12 @@ data BinaryCacheAPI route
             :> Summary "Given a list of store hashes, return a list of those that are missing"
             :> ReqBody '[JSON] [Text]
             :> Post '[JSON] [Text],
-        narURL
-          :: route
-               :- CachixAuth
-               :> "narurl"
-               :> Capture "nar" NarFileName
-               :> Get '[JSON] Text,
+        narURL ::
+          route
+            :- CachixAuth
+            :> "narurl"
+            :> Capture "nar" NarFileName
+            :> Get '[JSON] Text,
         createNarinfo ::
           route
             :- Capture "narinfo" NarInfoC

@@ -15,3 +15,4 @@ jobs:
       with:
         name: cachix
         signingKey: '${{ secrets.CACHIX_SIGNING_KEY }}'
+        file: ci.nix

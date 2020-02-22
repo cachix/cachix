@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
+## [0.3.6] - 2020-02-22
+
+- #275: support LTS-13.x and GHC 8.2.2
+
 ## [0.3.5] - 2020-01-10
 
 ### Added

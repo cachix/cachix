@@ -100,10 +100,10 @@ nixosBinaryCache :: Maybe Config -> Api.BinaryCache -> UseOptions -> IO ()
 nixosBinaryCache maybeConfig bc UseOptions {useNixOSFolder = baseDirectory} = do
   eitherPermissions <- try $ getPermissions (toS baseDirectory) :: IO (Either SomeException Permissions)
   case eitherPermissions of
-    Left _ -> throwIO $ NixOSInstructions noEtcPermissionInstructions
+    Left _ -> throwIO $ NixOSInstructions $ noEtcPermissionInstructions $ toS baseDirectory
     Right permissions
       | writable permissions -> installFiles
-      | otherwise -> throwIO $ NixOSInstructions noEtcPermissionInstructions
+      | otherwise -> throwIO $ NixOSInstructions $ noEtcPermissionInstructions $ toS baseDirectory
   where
     installFiles = do
       createDirectoryIfMissing True $ toS toplevel
@@ -121,10 +121,10 @@ nixosBinaryCache maybeConfig bc UseOptions {useNixOSFolder = baseDirectory} = do
     glueModuleFile = toplevel <> ".nix"
     cacheModuleFile :: Text
     cacheModuleFile = toplevel <> "/" <> toS (name bc) <> ".nix"
-    noEtcPermissionInstructions :: Text
-    noEtcPermissionInstructions =
+    noEtcPermissionInstructions :: Text -> Text
+    noEtcPermissionInstructions dir =
       [iTrim|
-Could not install NixOS configuration to /etc/nixos/ due to lack of write permissions.
+Could not install NixOS configuration to ${dir} due to lack of write permissions.
 
 Pass `--nixos-folder /etc/mynixos/` as an alternative location with write permissions.
       |]

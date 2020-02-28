@@ -168,7 +168,7 @@ push env (PushPaths opts name cliPaths) = do
   store <- wait (storeAsync env)
   void $
     pushClosure
-      (mapConcurrentlyBounded 4)
+      (mapConcurrentlyBounded (numJobs opts))
       (clientenv env)
       store
       PushCache

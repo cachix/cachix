@@ -133,8 +133,7 @@ uploadStorePath clientEnv store cache cb storePath retrystatus = do
       storePathSize :: Int64
       storePathSize = Store.validPathInfoNarSize pathinfo
   onAttempt cb retrystatus storePathSize
-  -- TODO: print process stderr?
-  (ClosedStream, (stdoutStream, closeStdout), ClosedStream, cph) <- liftIO $ streamingProcess cmd
+  (ClosedStream, stdoutStream, Inherited, cph) <- liftIO $ streamingProcess cmd
   withXzipCompressor cb $ \xzCompressor -> do
     let stream' =
           stdoutStream
@@ -158,7 +157,6 @@ uploadStorePath clientEnv store cache cb storePath retrystatus = do
           (Api.createNar (cachixBCStreamingClient name) stream')
         $ escalate
           >=> \NoContent -> do
-            closeStdout
             exitcode <- waitForStreamingProcess cph
             when (exitcode /= ExitSuccess) $ throwM $ NarStreamingError exitcode $ show cmd
             -- TODO: we're done, so we can leave withClientM. Doing so

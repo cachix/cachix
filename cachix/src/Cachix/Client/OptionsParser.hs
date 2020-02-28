@@ -115,7 +115,7 @@ parserCachixCommand =
           auto
           ( long "jobs"
               <> short 'j'
-              <> help "Number of concurrent threads used for pushing store paths."
+              <> help "Number of threads used for pushing store paths."
               <> showDefault
               <> value 4
           )

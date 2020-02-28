@@ -35,15 +35,15 @@
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "nixpkgs": {
-        "branch": "haskell-updates",
+        "branch": "release-19.09",
         "description": "A read-only mirror of NixOS/nixpkgs tracking the released channels. Send issues and PRs to",
         "homepage": "https://github.com/NixOS/nixpkgs",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "25b7101ad7f30b4d2dd2192d5cb71be2be296d29",
-        "sha256": "1kyhqajswlgv360p89nd24556kvjb9ygs62y7afasrbmh9308hp8",
+        "rev": "ce9f1aaa39ee2a5b76a9c9580c859a74de65ead5",
+        "sha256": "1s2b9rvpyamiagvpl5cggdb2nmx4f7lpylipd397wz8f0wngygpi",
         "type": "tarball",
-        "url": "https://github.com/NixOS/nixpkgs/archive/25b7101ad7f30b4d2dd2192d5cb71be2be296d29.tar.gz",
+        "url": "https://github.com/NixOS/nixpkgs/archive/ce9f1aaa39ee2a5b76a9c9580c859a74de65ead5.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "pre-commit-hooks.nix": {

@@ -77,7 +77,8 @@ data PushArguments
 
 data PushOptions
   = PushOptions
-      { compressionLevel :: Int
+      { compressionLevel :: Int,
+        numJobs :: Int
       }
   deriving (Show)
 
@@ -102,12 +103,21 @@ parserCachixCommand =
         <$> option
           (auto >>= validatedLevel)
           ( long "compression-level"
+              <> short 'c'
               <> metavar "[0..9]"
               <> help
                 "The compression level for XZ compression.\
                 \ Take compressor *and* decompressor memory usage into account before using [7..9]!"
               <> showDefault
               <> value 2
+          )
+        <*> option
+          auto
+          ( long "jobs"
+              <> short 'j'
+              <> help "Number of concurrent threads used for pushing store paths."
+              <> showDefault
+              <> value 4
           )
     push = (\opts cache f -> Push $ f opts cache) <$> pushOptions <*> nameArg <*> (pushPaths <|> pushWatchStore)
     pushPaths =

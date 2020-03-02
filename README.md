@@ -1,12 +1,11 @@
-## Binary Cache as a Service - Build Nix packages once and share them for good
-
-# https://cachix.org HTTP and CLI interface
-
-[![Build Status](https://travis-ci.com/cachix/cachix.svg?branch=master)](https://travis-ci.com/cachix/cachix)
+[![Test](https://github.com/cachix/cachix/workflows/Test/badge.svg)](https://github.com/cachix/cachix/actions)
 [![Hackage](https://img.shields.io/hackage/v/cachix.svg)](https://hackage.haskell.org/package/cachix)
-[![Cachix](https://img.shields.io/badge/cachix-cachix-blue.svg)](https://cachix.cachix.org)
+
+## [Cachix](https://cachix.org) - Hosted Nix binary caches: Build Nix packages once and share them for good
 
 <img src="https://raw.githubusercontent.com/cachix/cachix/master/logo.png" width="200">
+
+# CLI interface
 
 ```
 $ cachix --help

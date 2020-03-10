@@ -123,7 +123,7 @@ validPathInfoNarSize vpi =
         { (*$fptr-ptr:(refValidPathInfo* vpi))->narSize }
       |]
 
--- | The narHash.to_string field of a ValidPathInfo struct. Source: store-api.hh
+-- | Copy the narHash field of a ValidPathInfo struct. Source: store-api.hh
 validPathInfoNarHash :: ForeignPtr (Ref ValidPathInfo) -> IO ByteString
 validPathInfoNarHash vpi =
   unsafePackMallocCString

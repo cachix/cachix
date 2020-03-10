@@ -13,6 +13,7 @@ module Cachix.Client.Store
     followLinksToStorePath,
     queryPathInfo,
     validPathInfoNarSize,
+    validPathInfoNarHash,
 
     -- * Get closures
     computeFSClosure,
@@ -120,6 +121,14 @@ validPathInfoNarSize vpi =
     toInteger
       [C.pure| long
         { (*$fptr-ptr:(refValidPathInfo* vpi))->narSize }
+      |]
+
+-- | The narHash.to_string field of a ValidPathInfo struct. Source: store-api.hh
+validPathInfoNarHash :: ForeignPtr (Ref ValidPathInfo) -> IO ByteString
+validPathInfoNarHash vpi =
+  unsafePackMallocCString
+    =<< [C.exp| const char
+        *{ strdup((*$fptr-ptr:(refValidPathInfo* vpi))->narHash.to_string().c_str()) }
       |]
 
 ----- PathSet -----

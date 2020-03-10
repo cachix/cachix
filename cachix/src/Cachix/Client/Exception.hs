@@ -12,6 +12,7 @@ data CachixException
   | NoConfig Text
   | NetRcParseError Text
   | NarStreamingError ExitCode Text
+  | NarHashMismatch Text
   | DeprecatedCommand Text
   | AccessDeniedBinaryCache Text
   | BinaryCacheNotFound Text

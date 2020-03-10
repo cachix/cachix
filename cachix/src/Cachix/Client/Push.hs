@@ -164,6 +164,8 @@ uploadStorePath clientEnv store cache cb storePath retrystatus = do
             --       of XZ compressors is limited
             narSize <- readIORef narSizeRef
             narHash <- ("sha256:" <>) . System.Nix.Base32.encode <$> readIORef narHashRef
+            narHashNix <- Store.validPathInfoNarHash pathinfo
+            when (narHash /= toS narHashNix) $ throwM $ NarHashMismatch "Nar hash mismatch between nix-store --dump and nix db"
             fileHash <- readIORef fileHashRef
             fileSize <- readIORef fileSizeRef
             deriverRaw <- T.strip . toS <$> readProcess "nix-store" ["-q", "--deriver", toS storePath] mempty

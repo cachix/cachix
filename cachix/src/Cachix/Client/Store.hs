@@ -14,6 +14,8 @@ module Cachix.Client.Store
     queryPathInfo,
     validPathInfoNarSize,
     validPathInfoNarHash,
+    validPathInfoDeriver,
+    validPathInfoReferences,
 
     -- * Get closures
     computeFSClosure,
@@ -130,6 +132,27 @@ validPathInfoNarHash vpi =
     =<< [C.exp| const char
         *{ strdup((*$fptr-ptr:(refValidPathInfo* vpi))->narHash.to_string().c_str()) }
       |]
+
+-- | Deriver field of a ValidPathInfo struct. Source: store-api.hh
+validPathInfoDeriver :: ForeignPtr (Ref ValidPathInfo) -> IO ByteString
+validPathInfoDeriver vpi =
+  unsafePackMallocCString
+    =<< [C.throwBlock| const char*
+        {
+          std::optional<Path> deriver = (*$fptr-ptr:(refValidPathInfo* vpi))->deriver;
+          return strdup((deriver == "" ? "unknown-deriver" : deriver->c_str()));
+        }
+      |]
+
+-- | References field of a ValidPathInfo struct. Source: store-api.hh
+validPathInfoReferences :: ForeignPtr (Ref ValidPathInfo) -> IO PathSet
+validPathInfoReferences vpi = do
+  ptr <-
+    [C.exp| const PathSet*
+            { new PathSet((*$fptr-ptr:(refValidPathInfo* vpi))->references) }
+        |]
+  fptr <- newForeignPtr finalizePathSet ptr
+  pure $ PathSet fptr
 
 ----- PathSet -----
 newtype PathSet = PathSet (ForeignPtr (C.Set C.CxxString))

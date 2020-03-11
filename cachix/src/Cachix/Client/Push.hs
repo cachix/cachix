@@ -29,7 +29,6 @@ import qualified Cachix.Types.NarInfoCreate as Api
 import Control.Concurrent.Async (mapConcurrently)
 import qualified Control.Concurrent.QSem as QSem
 import Control.Exception.Safe (MonadMask, throwM)
-import Control.Monad ((>=>))
 import Control.Monad.Trans.Resource (ResourceT)
 import Control.Retry (RetryPolicy, RetryStatus, constantDelay, limitRetries, recoverAll)
 import Crypto.Sign.Ed25519
@@ -48,7 +47,6 @@ import Servant.Auth.Client
 import Servant.Client.Streaming hiding (ClientError)
 import Servant.Conduit ()
 import qualified System.Nix.Base32
-import System.Process (readProcess)
 
 data PushCache
   = PushCache
@@ -159,42 +157,38 @@ uploadStorePath clientEnv store cache cb storePath retrystatus = do
           >=> \NoContent -> do
             exitcode <- waitForStreamingProcess cph
             when (exitcode /= ExitSuccess) $ throwM $ NarStreamingError exitcode $ show cmd
-            -- TODO: we're done, so we can leave withClientM. Doing so
-            --       will allow more concurrent requests when the number
-            --       of XZ compressors is limited
-            narSize <- readIORef narSizeRef
-            narHash <- ("sha256:" <>) . System.Nix.Base32.encode <$> readIORef narHashRef
-            narHashNix <- Store.validPathInfoNarHash pathinfo
-            when (narHash /= toS narHashNix) $ throwM $ NarHashMismatch "Nar hash mismatch between nix-store --dump and nix db"
-            fileHash <- readIORef fileHashRef
-            fileSize <- readIORef fileSizeRef
-            deriverRaw <- T.strip . toS <$> readProcess "nix-store" ["-q", "--deriver", toS storePath] mempty
-            let deriver =
-                  if deriverRaw == "unknown-deriver"
-                    then deriverRaw
-                    else T.drop 11 deriverRaw
-            references <- sort . T.lines . T.strip . toS <$> readProcess "nix-store" ["-q", "--references", toS storePath] mempty
-            let fp = fingerprint storePath narHash narSize references
-                sig = dsign (signingSecretKey $ pushCacheSigningKey cache) fp
-                nic =
-                  Api.NarInfoCreate
-                    { Api.cStoreHash = storeHash,
-                      Api.cStoreSuffix = storeSuffix,
-                      Api.cNarHash = narHash,
-                      Api.cNarSize = narSize,
-                      Api.cFileSize = fileSize,
-                      Api.cFileHash = toS fileHash,
-                      Api.cReferences = fmap (T.drop 11) references,
-                      Api.cDeriver = deriver,
-                      Api.cSig = toS $ B64.encode $ unSignature sig
-                    }
-            escalate $ Api.isNarInfoCreateValid nic
-            -- Upload narinfo with signature
-            escalate <=< (`runClientM` clientEnv) $
-              Api.createNarinfo
-                (cachixBCClient name)
-                (Api.NarInfoC storeHash)
-                nic
+            return NoContent
+    (_ :: NoContent) <- liftIO $ do
+      narSize <- readIORef narSizeRef
+      narHash <- ("sha256:" <>) . System.Nix.Base32.encode <$> readIORef narHashRef
+      narHashNix <- Store.validPathInfoNarHash pathinfo
+      when (narHash /= toS narHashNix) $ throwM $ NarHashMismatch "Nar hash mismatch between nix-store --dump and nix db"
+      fileHash <- readIORef fileHashRef
+      fileSize <- readIORef fileSizeRef
+      deriver <- Store.validPathInfoDeriver pathinfo
+      referencesPathSet <- Store.validPathInfoReferences pathinfo
+      references <- sort <$> Store.traversePathSet (pure . toS) referencesPathSet
+      let fp = fingerprint storePath narHash narSize references
+          sig = dsign (signingSecretKey $ pushCacheSigningKey cache) fp
+          nic =
+            Api.NarInfoCreate
+              { Api.cStoreHash = storeHash,
+                Api.cStoreSuffix = storeSuffix,
+                Api.cNarHash = narHash,
+                Api.cNarSize = narSize,
+                Api.cFileSize = fileSize,
+                Api.cFileHash = toS fileHash,
+                Api.cReferences = fmap (T.drop 11) references,
+                Api.cDeriver = T.drop 11 (toS deriver),
+                Api.cSig = toS $ B64.encode $ unSignature sig
+              }
+      escalate $ Api.isNarInfoCreateValid nic
+      -- Upload narinfo with signature
+      escalate <=< (`runClientM` clientEnv) $
+        Api.createNarinfo
+          (cachixBCClient name)
+          (Api.NarInfoC storeHash)
+          nic
     onDone cb
 
 -- Catches all exceptions except skipAsyncExceptions

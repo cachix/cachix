@@ -7,7 +7,36 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
+## [0.3.7] - 2020-03-12
+
+### Added
+
+- Allow specifying number of parallel jobs when pushing: cachix push mycache -j8
+
+### Changed
+
+- Print stderr during streaming of nars    
+
+### Fixed
+
+- Use max up to 8 cores to prevent performance issues
+  on machines with lots of cores
+
+- Get deriver and references from C++ structures rather
+  then shelling out (slight performance improvement)
+
+- #251: Assert nar hash before creating narinfo
+    
+  Fixes rare but annoying bug of "bad nar archive" from Nix.
+  Never managed to reproduce. One theory is that the path disappears as
+  its deleted by GC or nix-store --delete.
+
+- Print correct path when passing --nixos-folder and encountering an error
+
+
 ## [0.3.6] - 2020-02-22
+
+### Fixed
 
 - #275: support LTS-13.x and GHC 8.2.2
 

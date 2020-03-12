@@ -183,7 +183,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 - Initial release @domenkozar
 
-[Unreleased]: https://github.com/cachix/cachix/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/cachix/cachix/compare/v0.3.7...HEAD
+[0.3.7]: https://github.com/cachix/cachix/compare/v0.3.6...v0.3.7
+[0.3.6]: https://github.com/cachix/cachix/compare/v0.3.5...v0.3.6
+[0.3.5]: https://github.com/cachix/cachix/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/cachix/cachix/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/cachix/cachix/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/cachix/cachix/compare/v0.3.1...v0.3.2

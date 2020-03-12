@@ -126,7 +126,7 @@ executable cachix
   import:             defaults
   main-is:            Main.hs
   build-tool-depends: hspec-discover:hspec-discover -any
-  ghc-options:        -threaded -rtsopts -with-rtsopts=-N
+  ghc-options:        -threaded -rtsopts -with-rtsopts=-maxN8
   hs-source-dirs:     cachix
   other-modules:      Paths_cachix
   autogen-modules:    Paths_cachix

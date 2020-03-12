@@ -165,7 +165,7 @@ uploadStorePath clientEnv store cache cb storePath retrystatus = do
       when (narHash /= toS narHashNix) $ throwM $ NarHashMismatch "Nar hash mismatch between nix-store --dump and nix db"
       fileHash <- readIORef fileHashRef
       fileSize <- readIORef fileSizeRef
-      deriver <- Store.validPathInfoDeriver pathinfo
+      deriver <- toS <$> Store.validPathInfoDeriver pathinfo
       referencesPathSet <- Store.validPathInfoReferences pathinfo
       references <- sort <$> Store.traversePathSet (pure . toS) referencesPathSet
       let fp = fingerprint storePath narHash narSize references
@@ -179,7 +179,10 @@ uploadStorePath clientEnv store cache cb storePath retrystatus = do
                 Api.cFileSize = fileSize,
                 Api.cFileHash = toS fileHash,
                 Api.cReferences = fmap (T.drop 11) references,
-                Api.cDeriver = T.drop 11 (toS deriver),
+                Api.cDeriver =
+                  if deriver == "unknown-deriver"
+                    then deriver
+                    else T.drop 11 deriver,
                 Api.cSig = toS $ B64.encode $ unSignature sig
               }
       escalate $ Api.isNarInfoCreateValid nic

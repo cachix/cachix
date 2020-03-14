@@ -142,7 +142,7 @@ uploadStorePath clientEnv store cache cb storePath retrystatus = do
             .| passthroughHashSinkB16 fileHashRef
     let subdomain =
           -- TODO: multipart
-          if (fromIntegral storePathSize / (1024 * 1024)) > 100
+          if (fromIntegral storePathSize / (1024 * 1024) :: Double) > 100
             then "api"
             else toS name
         newClientEnv =

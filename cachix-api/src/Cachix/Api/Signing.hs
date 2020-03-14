@@ -6,12 +6,10 @@ module Cachix.Api.Signing
   )
 where
 
-import Control.Monad.IO.Class (MonadIO, liftIO)
 import Crypto.Hash
 import qualified Data.ByteArray as BA
 import Data.ByteArray.Encoding (Base (..), convertToBase)
 import qualified Data.ByteString as BS
-import Data.ByteString (ByteString)
 import Data.Conduit
 import qualified Data.Conduit.Combinators as CC
 import Data.IORef

@@ -11,7 +11,6 @@ where
 import qualified Cachix.Client.Config as Config
 import qualified Cachix.Client.InstallationMode as InstallationMode
 import Cachix.Client.URI (defaultCachixURI)
-import Data.Bifunctor (first)
 import Options.Applicative
 import Protolude hiding (option)
 import URI.ByteString

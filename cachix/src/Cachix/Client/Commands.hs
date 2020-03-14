@@ -15,7 +15,7 @@ where
 import qualified Cachix.Api as Api
 import Cachix.Api.Error
 import Cachix.Client.Config
-  ( BinaryCacheConfig (..),
+  ( BinaryCacheConfig (BinaryCacheConfig),
     Config (..),
     mkConfig,
     writeConfig,
@@ -24,7 +24,7 @@ import qualified Cachix.Client.Config as Config
 import Cachix.Client.Env (Env (..))
 import Cachix.Client.Exception (CachixException (..))
 import Cachix.Client.HumanSize (humanSize)
-import Cachix.Client.InstallationMode
+import qualified Cachix.Client.InstallationMode as InstallationMode
 import qualified Cachix.Client.NixConf as NixConf
 import Cachix.Client.NixVersion (assertNixVersion)
 import Cachix.Client.OptionsParser
@@ -40,12 +40,11 @@ import Cachix.Client.Secrets
   )
 import Cachix.Client.Servant
 import qualified Cachix.Types.SigningKeyCreate as SigningKeyCreate
-import Control.Concurrent (threadDelay)
 import Control.Exception.Safe (handle, throwM)
 import Control.Retry (RetryStatus (rsIterNumber))
 import Crypto.Sign.Ed25519
 import qualified Data.ByteString.Base64 as B64
-import Data.List (isSuffixOf, reverse)
+import Data.List (isSuffixOf)
 import Data.Maybe (fromJust)
 import Data.String.Here
 import qualified Data.Text as T
@@ -58,13 +57,13 @@ import Servant.Conduit ()
 import System.Directory (doesFileExist)
 import System.Environment (lookupEnv)
 import System.FSNotify
-import System.IO (hIsTerminalDevice, stdin)
+import System.IO (hIsTerminalDevice)
 
 authtoken :: Env -> Text -> IO ()
 authtoken env token = do
   -- TODO: check that token actually authenticates!
   writeConfig (configPath (cachixoptions env)) $ case config env of
-    Just config -> config {authToken = Token (toS token)}
+    Just cfg -> cfg {authToken = Token (toS token)}
     Nothing -> mkConfig token
   putStrLn
     ( [hereLit|
@@ -79,7 +78,7 @@ create _ _ =
 
 generateKeypair :: Env -> Text -> IO ()
 generateKeypair Env {config = Nothing} _ = throwIO $ NoConfig "Start with visiting https://cachix.org and copying the token to $ cachix authtoken <token>"
-generateKeypair env@Env {config = Just config} name = do
+generateKeypair env@Env {config = Just cfg} name = do
   (PublicKey pk, sk) <- createKeypair
   let signingKey = exportSigningKey $ SigningKey sk
       signingKeyCreate = SigningKeyCreate.SigningKeyCreate (toS $ B64.encode pk)
@@ -87,11 +86,11 @@ generateKeypair env@Env {config = Just config} name = do
   -- we first validate if key can be added to the binary cache
   (_ :: NoContent) <-
     escalate <=< (`runClientM` clientenv env) $
-      Api.createKey (cachixBCClient name) (authToken config) signingKeyCreate
+      Api.createKey (cachixBCClient name) (authToken cfg) signingKeyCreate
   -- if key was successfully added, write it to the config
   -- TODO: warn if binary cache with the same key already exists
   writeConfig (configPath (cachixoptions env)) $
-    config {binaryCaches = binaryCaches config <> [bcc]}
+    cfg {binaryCaches = binaryCaches cfg <> [bcc]}
   putStrLn
     ( [iTrim|
 Secret signing key has been saved in the file above. To populate
@@ -125,7 +124,7 @@ accessDeniedBinaryCache :: Text -> CachixException
 accessDeniedBinaryCache name =
   AccessDeniedBinaryCache $ "You don't seem to have API access to binary cache " <> name
 
-use :: Env -> Text -> UseOptions -> IO ()
+use :: Env -> Text -> InstallationMode.UseOptions -> IO ()
 use env name useOptions = do
   -- 1. get cache public key
   res <- (`runClientM` clientenv env) $ Api.get (cachixBCClient name) (envToToken env)
@@ -137,18 +136,18 @@ use env name useOptions = do
       | otherwise -> throwM err
     Right binaryCache -> do
       () <- escalateAs UnsupportedNixVersion =<< assertNixVersion
-      user <- getUser
+      user <- InstallationMode.getUser
       nc <- NixConf.read NixConf.Global
-      isTrusted <- isTrustedUser $ NixConf.readLines (catMaybes [nc]) NixConf.isTrustedUsers
+      isTrusted <- InstallationMode.isTrustedUser $ NixConf.readLines (catMaybes [nc]) NixConf.isTrustedUsers
       isNixOS <- doesFileExist "/etc/NIXOS"
       let nixEnv =
-            NixEnv
-              { isRoot = user == "root",
-                isTrusted = isTrusted,
-                isNixOS = isNixOS
+            InstallationMode.NixEnv
+              { InstallationMode.isRoot = user == "root",
+                InstallationMode.isTrusted = isTrusted,
+                InstallationMode.isNixOS = isNixOS
               }
-      addBinaryCache (config env) binaryCache useOptions $
-        fromMaybe (getInstallationMode nixEnv) (useMode useOptions)
+      InstallationMode.addBinaryCache (config env) binaryCache useOptions $
+        fromMaybe (InstallationMode.getInstallationMode nixEnv) (InstallationMode.useMode useOptions)
 
 -- TODO: lots of room for performance improvements
 push :: Env -> PushArguments -> IO ()

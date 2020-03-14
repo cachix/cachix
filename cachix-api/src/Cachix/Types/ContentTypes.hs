@@ -9,7 +9,6 @@ where
 
 import Cachix.Api.Types
 import qualified Data.ByteString.Lazy as BSL
-import Data.Typeable (Typeable)
 import qualified Network.HTTP.Media as M
 import Protolude
 import Servant.API

@@ -13,7 +13,7 @@ module Cachix.Client.InstallationMode
   )
 where
 
-import Cachix.Api as Api
+import qualified Cachix.Api as Api
 import Cachix.Client.Config (Config)
 import Cachix.Client.Exception (CachixException (..))
 import qualified Cachix.Client.NetRc as NetRc
@@ -84,7 +84,7 @@ addBinaryCache maybeConfig bc _ (Install ncl) = do
         lnc <- NixConf.read NixConf.Local
         return ([gnc, lnc], lnc)
   let nixconf = fromMaybe (NixConf.NixConf []) output
-  netrcLocMaybe <- forM (guard $ not (isPublic bc)) $ const $ addPrivateBinaryCacheNetRC maybeConfig bc ncl
+  netrcLocMaybe <- forM (guard $ not (Api.isPublic bc)) $ const $ addPrivateBinaryCacheNetRC maybeConfig bc ncl
   let addNetRCLine :: NixConf.NixConf -> NixConf.NixConf
       addNetRCLine = fromMaybe identity $ do
         netrcLoc <- netrcLocMaybe :: Maybe FilePath
@@ -94,7 +94,7 @@ addBinaryCache maybeConfig bc _ (Install ncl) = do
         pure (NixConf.setNetRC $ toS netrcLoc)
   NixConf.write ncl $ addNetRCLine $ NixConf.add bc (catMaybes input) nixconf
   filename <- NixConf.getFilename ncl
-  putStrLn $ "Configured " <> uri bc <> " binary cache in " <> toS filename
+  putStrLn $ "Configured " <> Api.uri bc <> " binary cache in " <> toS filename
 
 nixosBinaryCache :: Maybe Config -> Api.BinaryCache -> UseOptions -> IO ()
 nixosBinaryCache maybeConfig bc UseOptions {useNixOSFolder = baseDirectory} = do
@@ -109,7 +109,7 @@ nixosBinaryCache maybeConfig bc UseOptions {useNixOSFolder = baseDirectory} = do
       createDirectoryIfMissing True $ toS toplevel
       writeFile (toS glueModuleFile) glueModule
       writeFile (toS cacheModuleFile) cacheModule
-      unless (isPublic bc) $ void $ addPrivateBinaryCacheNetRC maybeConfig bc NixConf.Global
+      unless (Api.isPublic bc) $ void $ addPrivateBinaryCacheNetRC maybeConfig bc NixConf.Global
       putText instructions
     configurationNix :: Text
     configurationNix = toS $ toS baseDirectory </> "configuration.nix"
@@ -120,7 +120,7 @@ nixosBinaryCache maybeConfig bc UseOptions {useNixOSFolder = baseDirectory} = do
     glueModuleFile :: Text
     glueModuleFile = toplevel <> ".nix"
     cacheModuleFile :: Text
-    cacheModuleFile = toplevel <> "/" <> toS (name bc) <> ".nix"
+    cacheModuleFile = toplevel <> "/" <> toS (Api.name bc) <> ".nix"
     noEtcPermissionInstructions :: Text -> Text
     noEtcPermissionInstructions dir =
       [iTrim|
@@ -132,7 +132,7 @@ Pass `--nixos-folder /etc/mynixos/` as an alternative location with write permis
     instructions =
       [iTrim|
 Cachix configuration written to ${glueModuleFile}.
-Binary cache ${name bc} configuration written to ${cacheModuleFile}.
+Binary cache ${Api.name bc} configuration written to ${cacheModuleFile}.
 
 To start using cachix add the following to your ${configurationNix}:
 
@@ -164,10 +164,10 @@ in {
 {
   nix = {
     binaryCaches = [
-      "${uri bc}"
+      "${Api.uri bc}"
     ];
     binaryCachePublicKeys = [
-      ${T.intercalate " " (map (\s -> "\"" <> s <> "\"") (publicSigningKeys bc))}
+      ${T.intercalate " " (map (\s -> "\"" <> s <> "\"") (Api.publicSigningKeys bc))}
     ];
   };
 }
@@ -190,12 +190,12 @@ isTrustedUser users = do
   user <- getUser
   -- to detect single user installations
   permissions <- getPermissions "/nix/store"
-  let isTrusted = writable permissions || user `elem` users
-  when (not (null groups) && not isTrusted) $ do
+  let isTrustedU = writable permissions || user `elem` users
+  when (not (null groups) && not isTrustedU) $ do
     -- TODO: support Nix group syntax
     putText "Warn: cachix doesn't yet support checking if user is trusted via groups, so it will recommend sudo"
     putStrLn $ "Warn: groups found " <> T.intercalate "," groups
-  return isTrusted
+  return isTrustedU
   where
     groups = filter (\u -> T.head u == '@') users
 

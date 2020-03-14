@@ -10,7 +10,6 @@ import Cachix.Client.Config (Config, readConfig)
 import Cachix.Client.OptionsParser (CachixOptions (..))
 import Cachix.Client.Store (Store, openStore)
 import Cachix.Client.URI (getBaseUrl)
-import Control.Concurrent.Async (Async, async)
 import Data.Version (showVersion)
 import Network.HTTP.Client
   ( ManagerSettings,
@@ -38,15 +37,15 @@ mkEnv rawcachixoptions = do
   store <- async openStore
   -- make sure path to the config is passed as absolute to dhall logic
   canonicalConfigPath <- canonicalizePath (configPath rawcachixoptions)
-  let cachixoptions = rawcachixoptions {configPath = canonicalConfigPath}
-  config <- readConfig $ configPath cachixoptions
+  let cachixOptions = rawcachixoptions {configPath = canonicalConfigPath}
+  cfg <- readConfig $ configPath cachixOptions
   manager <- newTlsManagerWith customManagerSettings
-  let clientenv = mkClientEnv manager $ getBaseUrl (host cachixoptions)
+  let clientEnv = mkClientEnv manager $ getBaseUrl (host cachixOptions)
   return
     Env
-      { config = config,
-        clientenv = clientenv,
-        cachixoptions = cachixoptions,
+      { config = cfg,
+        clientenv = clientEnv,
+        cachixoptions = cachixOptions,
         storeAsync = store
       }
 

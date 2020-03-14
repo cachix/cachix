@@ -1,6 +1,5 @@
 module Cachix.Api.Types where
 
-import Control.DeepSeq (NFData)
 import Data.Aeson (FromJSON, ToJSON)
 import Data.Swagger (ToParamSchema, ToSchema)
 import Data.Text (dropEnd, takeEnd)

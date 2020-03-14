@@ -33,7 +33,6 @@ import qualified Cachix.Types.SigningKeyCreate as SigningKeyCreate
 import Cachix.Types.SwaggerOrphans ()
 import Control.Lens
 import Control.Monad.Trans.Resource
-import Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy as BSL
 import Data.Conduit (ConduitT)
 import Data.Swagger hiding (Header)

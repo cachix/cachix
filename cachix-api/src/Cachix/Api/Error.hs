@@ -4,7 +4,6 @@ module Cachix.Api.Error
   )
 where
 
-import Control.Exception (Exception)
 import Control.Monad.Catch (MonadThrow (throwM))
 import Protolude
 

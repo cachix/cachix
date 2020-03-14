@@ -25,9 +25,9 @@ instance Exception CachixException where
   displayException (NixOSInstructions s) = toS s
   displayException (AmbiguousInput s) = toS s
   displayException (NoInput s) = toS s
+  displayException (NoConfig s) = toS s
   displayException (NetRcParseError s) = toS s
   displayException (NarStreamingError _ s) = toS s
-  displayException (NarHashMismatch s) = toS s
   displayException (NarHashMismatch s) = toS s
   displayException (DeprecatedCommand s) = toS s
   displayException (AccessDeniedBinaryCache s) = toS s

@@ -14,7 +14,6 @@ where
 import Cachix.Client.Config.Orphans ()
 import Dhall hiding (Text)
 import Dhall.Pretty (prettyExpr)
-import GHC.Generics (Generic)
 import Protolude
 import Servant.Auth.Client
 import System.Directory

@@ -19,5 +19,16 @@ data CachixException
   deriving (Show, Typeable)
 
 instance Exception CachixException where
-  displayException (NixOSInstructions txt) = toS txt
-  displayException e = show e
+  displayException (UnsupportedNixVersion s) = toS s
+  displayException (UserEnvNotSet s) = toS s
+  displayException (MustBeRoot s) = toS s
+  displayException (NixOSInstructions s) = toS s
+  displayException (AmbiguousInput s) = toS s
+  displayException (NoInput s) = toS s
+  displayException (NetRcParseError s) = toS s
+  displayException (NarStreamingError _ s) = toS s
+  displayException (NarHashMismatch s) = toS s
+  displayException (NarHashMismatch s) = toS s
+  displayException (DeprecatedCommand s) = toS s
+  displayException (AccessDeniedBinaryCache s) = toS s
+  displayException (BinaryCacheNotFound s) = toS s

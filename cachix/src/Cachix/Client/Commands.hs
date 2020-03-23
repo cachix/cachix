@@ -65,12 +65,6 @@ authtoken env token = do
   writeConfig (configPath (cachixoptions env)) $ case config env of
     Just cfg -> cfg {authToken = Token (toS token)}
     Nothing -> mkConfig token
-  putStrLn
-    ( [hereLit|
-Continue by creating a binary cache at https://cachix.org
-  |] ::
-        Text
-    )
 
 create :: Env -> Text -> IO ()
 create _ _ =

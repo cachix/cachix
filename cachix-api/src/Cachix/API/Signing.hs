@@ -1,4 +1,4 @@
-module Cachix.Api.Signing
+module Cachix.API.Signing
   ( fingerprint,
     passthroughSizeSink,
     passthroughHashSinkB16,

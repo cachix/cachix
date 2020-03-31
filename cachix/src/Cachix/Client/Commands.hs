@@ -12,8 +12,8 @@ module Cachix.Client.Commands
   )
 where
 
-import qualified Cachix.Api as Api
-import Cachix.Api.Error
+import qualified Cachix.API as API
+import Cachix.API.Error
 import Cachix.Client.Config
   ( BinaryCacheConfig (BinaryCacheConfig),
     Config (..),
@@ -78,7 +78,7 @@ generateKeypair env name = do
   -- we first validate if key can be added to the binary cache
   (_ :: NoContent) <-
     escalate <=< (`runClientM` clientenv env) $
-      Api.createKey (cachixBCClient name) cachixAuthToken signingKeyCreate
+      API.createKey cachixClient cachixAuthToken name signingKeyCreate
   -- if key was successfully added, write it to the config
   -- TODO: warn if binary cache with the same key already exists
   let cfg = case config env of
@@ -120,7 +120,7 @@ use :: Env -> Text -> InstallationMode.UseOptions -> IO ()
 use env name useOptions = do
   cachixAuthToken <- Config.getAuthTokenOptional (config env)
   -- 1. get cache public key
-  res <- (`runClientM` clientenv env) $ Api.get (cachixBCClient name) cachixAuthToken
+  res <- (`runClientM` clientenv env) $ API.getCache cachixClient cachixAuthToken name
   case res of
     Left err
       | isErr err status401 && isJust (config env) -> throwM $ accessDeniedBinaryCache name

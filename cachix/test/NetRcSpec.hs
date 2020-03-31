@@ -1,8 +1,9 @@
 module NetRcSpec where
 
-import Cachix.Api (BinaryCache (..))
 import Cachix.Client.Config (Config, mkConfig)
 import qualified Cachix.Client.NetRc as NetRc
+import Cachix.Types.BinaryCache (BinaryCache (..))
+import Cachix.Types.Permission (Permission (..))
 import Protolude
 import System.Directory (copyFile)
 import System.IO.Temp (withSystemTempFile)
@@ -15,7 +16,8 @@ bc1 =
       uri = "https://name.cachix.org",
       publicSigningKeys = ["pub"],
       isPublic = False,
-      githubUsername = "foobar"
+      githubUsername = "foobar",
+      permission = Read
     }
 
 bc2 :: BinaryCache
@@ -25,7 +27,8 @@ bc2 =
       uri = "https://name2.cachix.org",
       publicSigningKeys = ["pub2"],
       isPublic = False,
-      githubUsername = "foobar2"
+      githubUsername = "foobar2",
+      permission = Read
     }
 
 config :: Config

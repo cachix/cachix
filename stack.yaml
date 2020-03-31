@@ -1,9 +1,10 @@
-resolver: lts-15.14
+resolver: lts-16.13
 packages:
 - cachix-api
 - cachix
 extra-deps:
 - servant-auth-client-0.4.0.0
+- nix-narinfo-0.1.0.1
 nix:
     packages: []
     shell-file: ./nix/stack-shell.nix

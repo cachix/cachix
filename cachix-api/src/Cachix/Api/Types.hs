@@ -46,13 +46,17 @@ data NarInfo
       }
   deriving (Generic, Show, FromJSON, ToJSON, ToSchema)
 
+data Permission = Read | Write | Admin
+  deriving (Generic, Show, FromJSON, ToJSON, ToSchema, NFData)
+
 data BinaryCache
   = BinaryCache
       { name :: Text,
         uri :: Text,
         isPublic :: Bool,
         publicSigningKeys :: [Text],
-        githubUsername :: Text
+        githubUsername :: Text,
+        permission :: Permission
       }
   deriving (Show, Generic, FromJSON, ToJSON, ToSchema, NFData)
 

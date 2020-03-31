@@ -37,29 +37,29 @@ source-repository head
 library
   import:          defaults
   exposed-modules:
-    Cachix.Api
-    Cachix.Api.Error
-    Cachix.Api.Signing
-    Cachix.Api.Types
-    Cachix.Types.BinaryCacheAuthenticated
-    Cachix.Types.BinaryCacheCreate
+    Cachix.API
+    Cachix.API.Error
+    Cachix.API.Signing
+    Cachix.Types.BinaryCache
+    Cachix.Types.ByteStringStreaming
     Cachix.Types.ContentTypes
-    Cachix.Types.CreateToken
-    Cachix.Types.GitHubTeam
     Cachix.Types.NarFileName
+    Cachix.Types.NarInfo
     Cachix.Types.NarInfoCreate
+    Cachix.Types.NarInfoHash
+    Cachix.Types.NixCacheInfo
+    Cachix.Types.Permission
     Cachix.Types.Servant
     Cachix.Types.Session
     Cachix.Types.SigningKeyCreate
-    Cachix.Types.SwaggerOrphans
 
   hs-source-dirs:  src
   build-depends:
     , aeson
-    , base                  >=4.7    && <5
+    , base                 >=4.7    && <5
     , base16-bytestring
     , bytestring
-    , conduit               >=1.3.0
+    , conduit              >=1.3.0
     , cookie
     , cryptonite
     , deepseq
@@ -69,28 +69,18 @@ library
     , jose
     , lens
     , memory
+    , nix-narinfo
     , protolude
     , resourcet
-    , servant               >=0.14.1
+    , servant              >=0.14.1
     , servant-auth
     , servant-auth-server
-    , servant-auth-swagger
     , servant-client
-    , servant-swagger
     , string-conv
     , swagger2
     , text
+    , time
     , transformers
-
-executable cachix-gen-swagger
-  import:         defaults
-  main-is:        Main.hs
-  hs-source-dirs: cachix-gen-swagger
-  build-depends:
-    , aeson
-    , base        >=4.7 && <5
-    , cachix-api
-    , protolude
 
 test-suite cachix-api-test
   import:             defaults

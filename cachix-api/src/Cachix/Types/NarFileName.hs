@@ -4,11 +4,11 @@ module Cachix.Types.NarFileName
 where
 
 import Data.Swagger (ToParamSchema (..))
-import Data.Text (dropEnd, takeEnd)
+import qualified Data.Text as T
 import Protolude
 import Servant.API
 
--- | <hash>.nar.xz file
+-- | <hash>.nar.<extension> file
 data NarFileName
   = NarFileName
       { contentHash :: Text,
@@ -18,9 +18,10 @@ data NarFileName
 
 instance FromHttpApiData NarFileName where
   parseUrlPiece s =
-    if takeEnd 7 s == ".nar.xz"
-      then Right $ NarFileName (dropEnd 7 s) "xz"
-      else Left "Wrong extension"
+    case T.splitOn "." s of
+      [filename, "nar", ext] ->
+        Right $ NarFileName filename ext
+      _ -> Left $ "Wrong nar filename: " <> s
 
 instance ToHttpApiData NarFileName where
   toUrlPiece narfilename = contentHash narfilename <> ".nar." <> extension narfilename

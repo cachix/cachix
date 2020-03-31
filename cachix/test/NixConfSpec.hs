@@ -2,8 +2,8 @@
 
 module NixConfSpec where
 
-import Cachix.Api (BinaryCache (..))
 import Cachix.Client.NixConf as NixConf
+import Cachix.Types.BinaryCache (BinaryCache (..))
 import Data.String.Here
 import Protolude
 import Test.Hspec

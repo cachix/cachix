@@ -4,11 +4,11 @@ module Cachix.Client.NetRc
   )
 where
 
-import qualified Cachix.Api as Api
-import Cachix.Api.Error (escalateAs)
+import Cachix.API.Error (escalateAs)
 import Cachix.Client.Config (Config)
 import qualified Cachix.Client.Config as Config
 import Cachix.Client.Exception (CachixException (NetRcParseError))
+import qualified Cachix.Types.BinaryCache as BinaryCache
 import qualified Data.ByteString as BS
 import Data.List (nubBy)
 import qualified Data.Text as T
@@ -23,7 +23,7 @@ import System.FilePath (takeDirectory)
 --   If file under filename doesn't exist it's created.
 add ::
   Config ->
-  [Api.BinaryCache] ->
+  [BinaryCache.BinaryCache] ->
   FilePath ->
   IO ()
 add config binarycaches filename = do
@@ -45,11 +45,11 @@ add config binarycaches filename = do
           f x y = nrhName x == nrhName y
        in NetRc (nubBy f (new cachixAuthToken ++ hosts)) macdefs
     new :: Token -> [NetRcHost]
-    new cachixAuthToken = map (mkHost cachixAuthToken) $ filter (not . Api.isPublic) binarycaches
-    mkHost :: Token -> Api.BinaryCache -> NetRcHost
+    new cachixAuthToken = map (mkHost cachixAuthToken) $ filter (not . BinaryCache.isPublic) binarycaches
+    mkHost :: Token -> BinaryCache.BinaryCache -> NetRcHost
     mkHost cachixAuthToken bc =
       NetRcHost
-        { nrhName = toS $ stripPrefix "http://" $ stripPrefix "https://" (Api.uri bc),
+        { nrhName = toS $ stripPrefix "http://" $ stripPrefix "https://" (BinaryCache.uri bc),
           nrhLogin = "",
           nrhPassword = getToken cachixAuthToken,
           nrhAccount = "",

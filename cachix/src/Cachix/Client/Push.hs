@@ -21,16 +21,18 @@ module Cachix.Client.Push
   )
 where
 
-import qualified Cachix.Api as Api
-import Cachix.Api.Error
-import Cachix.Api.Signing (fingerprint, passthroughHashSink, passthroughHashSinkB16, passthroughSizeSink)
+import qualified Cachix.API as API
+import Cachix.API.Error
+import Cachix.API.Signing (fingerprint, passthroughHashSink, passthroughHashSinkB16, passthroughSizeSink)
 import qualified Cachix.Client.Config as Config
 import Cachix.Client.Exception (CachixException (..))
 import Cachix.Client.Secrets
 import Cachix.Client.Servant
 import Cachix.Client.Store (Store)
 import qualified Cachix.Client.Store as Store
+import qualified Cachix.Types.ByteStringStreaming
 import qualified Cachix.Types.NarInfoCreate as Api
+import qualified Cachix.Types.NarInfoHash as NarInfoHash
 import Control.Concurrent.Async (mapConcurrently)
 import qualified Control.Concurrent.QSem as QSem
 import Control.Exception.Safe (MonadMask, throwM)
@@ -38,6 +40,7 @@ import Control.Monad.Trans.Resource (ResourceT)
 import Control.Retry (RetryPolicy, RetryStatus, exponentialBackoff, limitRetries, recoverAll)
 import Crypto.Sign.Ed25519
 import qualified Data.ByteString.Base64 as B64
+import Data.Coerce (coerce)
 import Data.Conduit
 import Data.Conduit.Lzma (compress)
 import Data.Conduit.Process hiding (env)
@@ -102,10 +105,11 @@ pushSingleStorePath clientEnv _store cache cb storePath = retryAll $ \retrystatu
   -- Check if narinfo already exists
   res <-
     liftIO $ (`runClientM` clientEnv) $
-      Api.narinfoHead
-        (cachixBCClient name)
+      API.narinfoHead
+        cachixClient
         (getCacheAuthToken cache)
-        (Api.NarInfoC storeHash)
+        name
+        (NarInfoHash.NarInfoHash storeHash)
   case res of
     Right NoContent -> onAlreadyPresent cb -- we're done as store path is already in the cache
     Left err
@@ -167,7 +171,7 @@ uploadStorePath clientEnv store cache cb storePath retrystatus = do
     (_ :: NoContent) <-
       liftIO
         $ (`withClientM` newClientEnv)
-          (Api.createNar (cachixBCStreamingClient name) stream')
+          (API.createNar cachixClient (getCacheAuthToken cache) name (mapOutput coerce stream'))
         $ escalate
           >=> \NoContent -> do
             exitcode <- waitForStreamingProcess cph
@@ -208,10 +212,11 @@ uploadStorePath clientEnv store cache cb storePath retrystatus = do
       escalate $ Api.isNarInfoCreateValid nic
       -- Upload narinfo with signature
       escalate <=< (`runClientM` clientEnv) $
-        Api.createNarinfo
-          (cachixBCClient name)
+        API.createNarinfo
+          cachixClient
           authToken
-          (Api.NarInfoC storeHash)
+          name
+          (NarInfoHash.NarInfoHash storeHash)
           nic
     onDone cb
 
@@ -257,9 +262,10 @@ pushClosure traversal clientEnv store pushCache pushStrategy inputStorePaths = d
       escalate
         =<< liftIO
           ( (`runClientM` clientEnv) $
-              Api.narinfoBulk
-                (cachixBCClient (pushCacheName pushCache))
+              API.narinfoBulk
+                cachixClient
                 (getCacheAuthToken pushCache)
+                (pushCacheName pushCache)
                 (fst . splitStorePath <$> paths)
           )
   let missingHashes = Set.fromList missingHashesList

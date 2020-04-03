@@ -98,7 +98,8 @@ addBinaryCache maybeConfig bc _ (Install ncl) = do
 
 nixosBinaryCache :: Maybe Config -> Api.BinaryCache -> UseOptions -> IO ()
 nixosBinaryCache maybeConfig bc UseOptions {useNixOSFolder = baseDirectory} = do
-  eitherPermissions <- try $ getPermissions (toS baseDirectory) :: IO (Either SomeException Permissions)
+  _ <- try $ createDirectoryIfMissing True $ toS toplevel :: IO (Either SomeException ())
+  eitherPermissions <- try $ getPermissions (toS toplevel) :: IO (Either SomeException Permissions)
   case eitherPermissions of
     Left _ -> throwIO $ NixOSInstructions $ noEtcPermissionInstructions $ toS baseDirectory
     Right permissions
@@ -106,7 +107,6 @@ nixosBinaryCache maybeConfig bc UseOptions {useNixOSFolder = baseDirectory} = do
       | otherwise -> throwIO $ NixOSInstructions $ noEtcPermissionInstructions $ toS baseDirectory
   where
     installFiles = do
-      createDirectoryIfMissing True $ toS toplevel
       writeFile (toS glueModuleFile) glueModule
       writeFile (toS cacheModuleFile) cacheModule
       unless (Api.isPublic bc) $ void $ addPrivateBinaryCacheNetRC maybeConfig bc NixConf.Global

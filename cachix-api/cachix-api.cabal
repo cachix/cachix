@@ -80,6 +80,7 @@ library
     , string-conv
     , swagger2
     , text
+    , time
     , transformers
 
 executable cachix-gen-swagger

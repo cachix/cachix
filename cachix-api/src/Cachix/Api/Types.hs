@@ -3,6 +3,7 @@ module Cachix.Api.Types where
 import Data.Aeson (FromJSON, ToJSON)
 import Data.Swagger (ToParamSchema, ToSchema)
 import Data.Text (dropEnd, takeEnd)
+import Data.Time.Clock (UTCTime)
 import Protolude
 import Servant.API
 
@@ -84,10 +85,19 @@ data User
         username :: Text,
         email :: Maybe Text,
         hasOrgsAcccess :: Bool,
-        activeSubscription :: SubscriptionType,
-        subscriptionAccountId :: Maybe Text
+        isLegacyPaymentProvider :: Bool,
+        subscriptionTrialStartedOn :: Maybe UTCTime,
+        subscriptionPlan :: SubscriptionPlan,
+        subscriptionStatus :: SubscriptionStatus,
+        subscriptionPlanId :: Maybe Integer,
+        subscriptionAccountId :: Maybe Text,
+        subscriptionUpdateURL :: Maybe Text,
+        subscriptionCancelURL :: Maybe Text
       }
   deriving (Generic, FromJSON, ToJSON, ToSchema)
 
-data SubscriptionType = Community | Starter | Basic | Pro
-  deriving (Generic, FromJSON, ToJSON, ToSchema, Show, Read)
+data SubscriptionPlan = Community | Starter | Basic | Pro
+  deriving (Generic, FromJSON, ToJSON, ToSchema, Show, Read, Eq)
+
+data SubscriptionStatus = NoSubscription | Trial | Subscribed | Cancelled
+  deriving (Generic, FromJSON, ToJSON, ToSchema, Show, Read, Eq)

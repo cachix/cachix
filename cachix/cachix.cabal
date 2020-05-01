@@ -4,6 +4,7 @@ version:            0.3.7
 license:            Apache-2.0
 license-file:       LICENSE
 copyright:          2018 Domen Kožar
+category:           Nix
 maintainer:         domen@enlambda.com
 author:             Domen Kožar
 homepage:           https://github.com/cachix/cachix#readme

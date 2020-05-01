@@ -39,6 +39,7 @@ library
   exposed-modules:
     Cachix.Api
     Cachix.Api.Error
+    Cachix.Api.NarInfo
     Cachix.Api.Signing
     Cachix.Api.Types
     Cachix.Types.BinaryCacheAuthenticated
@@ -69,6 +70,7 @@ library
     , jose
     , lens
     , memory
+    , nix-narinfo
     , protolude
     , resourcet
     , servant               >=0.14.1

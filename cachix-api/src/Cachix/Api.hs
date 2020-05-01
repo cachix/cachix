@@ -19,6 +19,7 @@ module Cachix.Api
   )
 where
 
+import Cachix.Api.NarInfo
 import Cachix.Api.Types
 import qualified Cachix.Types.BinaryCacheAuthenticated as BinaryCacheAuthenticated
 import qualified Cachix.Types.BinaryCacheCreate as BinaryCacheCreate
@@ -72,7 +73,7 @@ data BinaryCacheAPI route
           route
             :- CachixAuth
             :> Capture "narinfo" NarInfoC
-            :> Get '[XNixNarInfo, JSON] NarInfo,
+            :> Get '[XNixNarInfo, JSON] SimpleNarInfo,
         narinfoHead ::
           route
             :- CachixAuth

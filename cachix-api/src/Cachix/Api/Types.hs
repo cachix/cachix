@@ -14,38 +14,6 @@ data NixCacheInfo
       }
   deriving (Generic, Show, FromJSON, ToJSON, ToSchema)
 
--- narinfo url includes storePath hash and .narinfo suffix
-data NarInfo
-  = NarInfo
-      { -- | absolute path of the derivation in nix store
-        storePath :: Text,
-        -- | relative url (to current domain) to download nar file
-        url :: Text,
-        -- | name of the compression algorithm, eg. xz
-        compression :: Text,
-        -- | sha256 hash of the compressed nar file
-        -- NOTE: to compute use "nix-hash --type sha256 --flat"
-        fileHash :: Text,
-        -- | file size of compressed nar file
-        -- NOTE: du -b
-        fileSize :: Integer,
-        -- | sha256 hash of the decompressed nar file
-        -- NOTE: to compute use "nix-hash --type sha256 --flat --base32"
-        narHash :: Text,
-        -- | file size of decompressed nar file
-        -- NOTE: du -b
-        narSize :: Integer,
-        -- | immediate dependencies of the storePath
-        -- NOTE: nix-store -q --references
-        references :: [Text],
-        -- | relative store path (to nix store root) of the deriver
-        -- NOTE: nix-store -q --deriver
-        deriver :: Text,
-        -- | signature of fields: storePath, narHash, narSize, refs
-        sig :: Text
-      }
-  deriving (Generic, Show, FromJSON, ToJSON, ToSchema)
-
 data BinaryCache
   = BinaryCache
       { name :: Text,

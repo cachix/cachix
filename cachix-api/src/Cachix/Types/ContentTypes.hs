@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 
 module Cachix.Types.ContentTypes
@@ -10,6 +11,7 @@ where
 import Cachix.Api.Types
 import qualified Data.ByteString.Lazy as BSL
 import qualified Network.HTTP.Media as M
+import Nix.NarInfo (SimpleNarInfo)
 import Protolude
 import Servant.API
 
@@ -31,7 +33,7 @@ instance Accept XNixNar where
 instance MimeUnrender XNixCacheInfo NixCacheInfo where
   mimeUnrender _ _ = Left "TODO"
 
-instance MimeUnrender XNixNarInfo NarInfo where
+instance MimeUnrender XNixNarInfo SimpleNarInfo where
   mimeUnrender _ _ = Left "TODO"
 
 instance MimeRender XNixNar ByteString where

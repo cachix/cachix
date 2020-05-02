@@ -8,6 +8,7 @@ module Cachix.Api
     CachixAPI (..),
     CachixServantAPI,
     CachixAuth,
+    Permission (..),
     InstallAPI (..),
     GitHubAPI (..),
     BinaryCacheAPI (..),
@@ -27,6 +28,7 @@ import qualified Cachix.Types.CreateToken as CreateToken
 import qualified Cachix.Types.GitHubTeam as GitHubTeam
 import Cachix.Types.NarFileName (NarFileName (..))
 import qualified Cachix.Types.NarInfoCreate as NarInfoCreate
+import Cachix.Types.Permission
 import Cachix.Types.Servant (Get302, Head, Post302)
 import Cachix.Types.Session (Session)
 import qualified Cachix.Types.SigningKeyCreate as SigningKeyCreate

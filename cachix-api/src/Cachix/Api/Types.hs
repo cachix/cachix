@@ -1,5 +1,6 @@
 module Cachix.Api.Types where
 
+import Cachix.Types.Permission (Permission)
 import Data.Aeson (FromJSON, ToJSON)
 import Data.Swagger (ToParamSchema, ToSchema)
 import Data.Text (dropEnd, takeEnd)
@@ -46,9 +47,6 @@ data NarInfo
         sig :: Text
       }
   deriving (Generic, Show, FromJSON, ToJSON, ToSchema)
-
-data Permission = Read | Write | Admin
-  deriving (Generic, Show, FromJSON, ToJSON, ToSchema, NFData)
 
 data BinaryCache
   = BinaryCache

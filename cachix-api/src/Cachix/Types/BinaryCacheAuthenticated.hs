@@ -3,6 +3,7 @@ module Cachix.Types.BinaryCacheAuthenticated
   )
 where
 
+import Cachix.Types.Permission (Permission)
 import Data.Aeson
   ( FromJSON,
     ToJSON,
@@ -17,6 +18,7 @@ data BinaryCacheAuthenticated
         uri :: Text,
         publicSigningKeys :: [Text],
         isPublic :: Bool,
-        totalFileSize :: Integer
+        totalFileSize :: Integer,
+        permission :: Permission
       }
   deriving (Show, Generic, FromJSON, ToJSON, ToSchema)

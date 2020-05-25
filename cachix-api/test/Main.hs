@@ -2,7 +2,6 @@ module Main where
 
 import Protolude
 import qualified Spec
-import Test.Hspec.Formatters
 import Test.Hspec.Runner
 
 main :: IO ()

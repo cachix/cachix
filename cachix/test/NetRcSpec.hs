@@ -37,11 +37,11 @@ config =
 
 -- TODO: poor man's golden tests, use https://github.com/stackbuilders/hspec-golden
 test :: [BinaryCache] -> Text -> Expectation
-test binaryCaches goldenName = withSystemTempFile "hspec-netrc" $ \filepath _ -> do
+test caches goldenName = withSystemTempFile "hspec-netrc" $ \filepath _ -> do
   let input = "test/data/" <> toS goldenName <> ".input"
       output = "test/data/" <> toS goldenName <> ".output"
   copyFile input filepath
-  NetRc.add config binaryCaches filepath
+  NetRc.add config caches filepath
   real <- readFile filepath
   expected <- readFile output
   real `shouldBe` expected

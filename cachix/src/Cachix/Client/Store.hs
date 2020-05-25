@@ -15,6 +15,7 @@ module Cachix.Client.Store
     validPathInfoNarSize,
     validPathInfoNarHash,
     validPathInfoDeriver,
+    unknownDeriver,
     validPathInfoReferences,
 
     -- * Get closures
@@ -134,6 +135,8 @@ validPathInfoNarHash vpi =
       |]
 
 -- | Deriver field of a ValidPathInfo struct. Source: store-api.hh
+--
+-- Returns 'unknownDeriver' when missing.
 validPathInfoDeriver :: ForeignPtr (Ref ValidPathInfo) -> IO ByteString
 validPathInfoDeriver vpi =
   unsafePackMallocCString
@@ -143,6 +146,11 @@ validPathInfoDeriver vpi =
           return strdup((deriver == "" ? "unknown-deriver" : deriver->c_str()));
         }
       |]
+
+-- | String constant representing the case when the deriver of a store path does
+-- not exist or is not known. Value: @unknown-deriver@
+unknownDeriver :: Text
+unknownDeriver = "unknown-deriver"
 
 -- | References field of a ValidPathInfo struct. Source: store-api.hh
 validPathInfoReferences :: ForeignPtr (Ref ValidPathInfo) -> IO PathSet

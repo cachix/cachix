@@ -63,7 +63,8 @@ data PushStrategy m r
         on401 :: m r,
         onError :: ClientError -> m r,
         onDone :: m r,
-        withXzipCompressor :: forall a. (ConduitM ByteString ByteString (ResourceT IO) () -> m a) -> m a
+        withXzipCompressor :: forall a. (ConduitM ByteString ByteString (ResourceT IO) () -> m a) -> m a,
+        omitDeriver :: Bool
       }
 
 defaultWithXzipCompressor :: forall m a. (ConduitM ByteString ByteString (ResourceT IO) () -> m a) -> m a
@@ -165,7 +166,10 @@ uploadStorePath clientEnv store cache cb storePath retrystatus = do
       when (narHash /= toS narHashNix) $ throwM $ NarHashMismatch "Nar hash mismatch between nix-store --dump and nix db"
       fileHash <- readIORef fileHashRef
       fileSize <- readIORef fileSizeRef
-      deriver <- toS <$> Store.validPathInfoDeriver pathinfo
+      deriver <-
+        if omitDeriver cb
+          then pure Store.unknownDeriver
+          else toS <$> Store.validPathInfoDeriver pathinfo
       referencesPathSet <- Store.validPathInfoReferences pathinfo
       references <- sort <$> Store.traversePathSet (pure . toS) referencesPathSet
       let fp = fingerprint storePath narHash narSize references
@@ -180,7 +184,7 @@ uploadStorePath clientEnv store cache cb storePath retrystatus = do
                 Api.cFileHash = toS fileHash,
                 Api.cReferences = fmap (T.drop 11) references,
                 Api.cDeriver =
-                  if deriver == "unknown-deriver"
+                  if deriver == Store.unknownDeriver
                     then deriver
                     else T.drop 11 deriver,
                 Api.cSig = toS $ B64.encode $ unSignature sig

@@ -230,7 +230,8 @@ pushStrategy env opts name storePath =
         -- we append newline instead of putStrLn due to https://github.com/haskell/text/issues/242
         putStr $ retryText retrystatus <> "compressing and pushing " <> storePath <> " (" <> humanSize (fromIntegral size) <> ")\n",
       onDone = pass,
-      withXzipCompressor = defaultWithXzipCompressorWithLevel (compressionLevel opts)
+      withXzipCompressor = defaultWithXzipCompressorWithLevel (compressionLevel opts),
+      Cachix.Client.Push.omitDeriver = Cachix.Client.OptionsParser.omitDeriver opts
     }
 
 pushStorePath :: Env -> PushOptions -> Text -> Text -> IO ()

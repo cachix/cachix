@@ -77,7 +77,8 @@ data PushArguments
 data PushOptions
   = PushOptions
       { compressionLevel :: Int,
-        numJobs :: Int
+        numJobs :: Int,
+        omitDeriver :: Bool
       }
   deriving (Show)
 
@@ -118,6 +119,7 @@ parserCachixCommand =
               <> showDefault
               <> value 4
           )
+        <*> switch (long "omit-deriver" <> help "Do not publish which derivations built the store paths.")
     push = (\opts cache f -> Push $ f opts cache) <$> pushOptions <*> nameArg <*> (pushPaths <|> pushWatchStore)
     pushPaths =
       (\paths opts cache -> PushPaths opts cache paths)

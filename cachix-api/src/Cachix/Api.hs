@@ -93,6 +93,11 @@ data BinaryCacheAPI route
             :> "narurl"
             :> Capture "nar" NarFileName
             :> Get '[JSON] Text,
+        listContents ::
+          route
+            :- CachixAuth
+            :> "contents"
+            :> Get '[JSON] [Text],
         createNarinfo ::
           route
             :- CachixAuth

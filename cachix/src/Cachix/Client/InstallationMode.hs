@@ -71,7 +71,7 @@ getInstallationMode nixenv
 addBinaryCache :: Maybe Config -> Api.BinaryCache -> UseOptions -> InstallationMode -> IO ()
 addBinaryCache _ _ _ UntrustedRequiresSudo =
   throwIO $
-    MustBeRoot "Run command as root OR execute: $ echo \"trusted-users = root $USER\" | sudo tee -a /etc/nix/nix.conf && sudo pkill nix-daemon"
+    MustBeRoot "Run command as root OR execute: $ echo 'trusted-users = root $USER' | sudo tee -a /etc/nix/nix.conf && sudo pkill nix-daemon"
 addBinaryCache maybeConfig bc useOptions WriteNixOS =
   nixosBinaryCache maybeConfig bc useOptions
 addBinaryCache maybeConfig bc _ (Install ncl) = do

@@ -98,6 +98,11 @@ data BinaryCacheAPI route
             :- CachixAuth
             :> "contents"
             :> Get '[JSON] [Text],
+        clearContents ::
+          route
+            :- CachixAuth
+            :> "clear"
+            :> Post '[JSON] NoContent,
         createNarinfo ::
           route
             :- CachixAuth

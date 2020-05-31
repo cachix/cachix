@@ -20,7 +20,7 @@ spec = describe "parseNixVersion" $ do
       `shouldBe` Right ()
   it "parses 'nix-env (Nix) 2.0.1pre6053_444b921' as Nix201" $
     parseNixVersion "nix-env (Nix) 2.0.1pre6053_444b921"
-      `shouldBe` Right ()
+      `shouldBe` Left "Nix 2.0.2 or lower is not supported. Please upgrade: https://nixos.org/nix/"
   it "fails with unknown string 'foobar'" $
     parseNixVersion "foobar"
       `shouldBe` Left "Couldn't parse 'nix-env --version' output: foobar"

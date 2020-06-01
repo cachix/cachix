@@ -11,17 +11,6 @@
         "url": "https://github.com/hercules-ci/gitignore/archive/f9e996052b5af4032fe6150bba4a6fe4f7b9d698.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
-    "haskell.nix": {
-        "branch": "master",
-        "description": "Alternative Haskell Infrastructure for Nixpkgs",
-        "homepage": "https://input-output-hk.github.io/haskell.nix",
-        "owner": "input-output-hk",
-        "repo": "haskell.nix",
-        "rev": "0992ede70e4ea845751dcbcf89b62e5f3a92a30e",
-        "sha256": "0jj8smi1j8in8lb4bi2ffymkykf2s95ybmy5xdsxawyw3gvp6h6a",
-        "url": "https://github.com/input-output-hk/haskell.nix/archive/0992ede70e4ea845751dcbcf89b62e5f3a92a30e.tar.gz",
-        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
-    },
     "niv": {
         "branch": "master",
         "description": "Easy dependency management for Nix projects",
@@ -35,15 +24,15 @@
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "nixpkgs": {
-        "branch": "release-19.09",
+        "branch": "nixpkgs-unstable",
         "description": "A read-only mirror of NixOS/nixpkgs tracking the released channels. Send issues and PRs to",
         "homepage": "https://github.com/NixOS/nixpkgs",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "ce9f1aaa39ee2a5b76a9c9580c859a74de65ead5",
-        "sha256": "1s2b9rvpyamiagvpl5cggdb2nmx4f7lpylipd397wz8f0wngygpi",
+        "rev": "b6f084797a4f4e38b6fdca49c750f8ea017f3e0a",
+        "sha256": "02vm16m7n4hvg8j87ifh2bi5vanycypkld2srqpiybah7lm1g8p5",
         "type": "tarball",
-        "url": "https://github.com/NixOS/nixpkgs/archive/ce9f1aaa39ee2a5b76a9c9580c859a74de65ead5.tar.gz",
+        "url": "https://github.com/NixOS/nixpkgs/archive/b6f084797a4f4e38b6fdca49c750f8ea017f3e0a.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "pre-commit-hooks.nix": {

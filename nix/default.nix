@@ -3,7 +3,6 @@ let
   overlay = self: pkgs: {
     inherit (import sources.niv {}) niv;
     pre-commit-hooks-nix = import sources."pre-commit-hooks.nix";
-    haskellnix = import sources."haskell.nix" { pkgs = self; };
     inherit (import sources.gitignore { inherit (pkgs) lib; })
       gitignoreSource;
     nix-store = pkgs.nix;

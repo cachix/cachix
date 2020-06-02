@@ -30,7 +30,7 @@ import Control.Concurrent.Async (mapConcurrently)
 import qualified Control.Concurrent.QSem as QSem
 import Control.Exception.Safe (MonadMask, throwM)
 import Control.Monad.Trans.Resource (ResourceT)
-import Control.Retry (RetryPolicy, RetryStatus, constantDelay, limitRetries, recoverAll)
+import Control.Retry (RetryPolicy, RetryStatus, exponentialBackoff, limitRetries, recoverAll)
 import Crypto.Sign.Ed25519
 import qualified Data.ByteString.Base64 as B64
 import Data.Conduit
@@ -204,7 +204,7 @@ retryAll = recoverAll defaultRetryPolicy
   where
     defaultRetryPolicy :: RetryPolicy
     defaultRetryPolicy =
-      constantDelay 50000 <> limitRetries 3
+      exponentialBackoff 100000 <> limitRetries 3
 
 -- | Push an entire closure
 --

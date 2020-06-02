@@ -8,6 +8,7 @@ data CachixException
   | MustBeRoot Text
   | NixOSInstructions Text
   | AmbiguousInput Text
+  | NoSigningKey Text
   | NoInput Text
   | NoConfig Text
   | NetRcParseError Text
@@ -26,6 +27,7 @@ instance Exception CachixException where
   displayException (AmbiguousInput s) = toS s
   displayException (NoInput s) = toS s
   displayException (NoConfig s) = toS s
+  displayException (NoSigningKey s) = toS s
   displayException (NetRcParseError s) = toS s
   displayException (NarStreamingError _ s) = toS s
   displayException (NarHashMismatch s) = toS s

@@ -37,6 +37,7 @@ data NixEnv
 data InstallationMode
   = Install NixConf.NixConfLoc
   | WriteNixOS
+  | NixFlags
   | UntrustedRequiresSudo
   | UntrustedNixOS
   deriving (Show, Eq)
@@ -51,7 +52,8 @@ data UseOptions
 fromString :: String -> Maybe InstallationMode
 fromString "root-nixconf" = Just $ Install NixConf.Global
 fromString "user-nixconf" = Just $ Install NixConf.Local
-fromString "nixos" = Just WriteNixOS
+fromString "nixos" = Just NixFlags
+fromString "flags" = Just WriteNixOS
 fromString "untrusted-requires-sudo" = Just UntrustedRequiresSudo
 fromString _ = Nothing
 
@@ -59,6 +61,7 @@ toString :: InstallationMode -> String
 toString (Install NixConf.Global) = "root-nixconf"
 toString (Install NixConf.Local) = "user-nixconf"
 toString WriteNixOS = "nixos"
+toString NixFlags = "flags"
 toString UntrustedRequiresSudo = "untrusted-requires-sudo"
 toString UntrustedNixOS = "untrusted-nixos"
 
@@ -103,6 +106,12 @@ b) Run the following command to add your user as trusted
 
   echo "trusted-users = root ${user}" | sudo tee -a /etc/nix/nix.conf && sudo pkill nix-daemon
     |]
+addBinaryCache _ bc _ NixFlags = do
+  putText $ substituters <> keys <> netrc
+  where
+    substituters = "--option extra-substituters " <> Api.uri bc
+    keys = " --option trusted-public-keys " <> T.intercalate " " (Api.publicSigningKeys bc)
+    netrc = "" -- TODO
 addBinaryCache maybeConfig bc useOptions WriteNixOS =
   nixosBinaryCache maybeConfig bc useOptions
 addBinaryCache maybeConfig bc _ (Install ncl) = do

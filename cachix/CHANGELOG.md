@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
+## [0.3.8] - 2020-06-03
+
+### Added
+
+- `cachix push --omit-deriver` if you'd like not to reveal Deriver field to Cachix
+
+### Changed
+
+- Retries are now exponential to offload the server a bit
+
+### Fixed
+
+- #308: Test failure due to dependency bump
+
+- Pretty print exceptions
+
+- Create nixos directory before checking if it's writable
+
+- A number of error messaging improvements:
+
+  * Don't suggest creating a cache when generating keypair as it's the wrong order
+
+  * #290: Explain what is going on when there's no signing key
+
+  * #262: improve instructions when on NixOS and the user is untrusted
+
+
 ## [0.3.7] - 2020-03-12
 
 ### Added

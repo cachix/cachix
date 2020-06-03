@@ -15,22 +15,22 @@ spec = describe "getInstallationMode" $ do
               isNixOS = True
             }
      in getInstallationMode nixenv `shouldBe` WriteNixOS
-  it "NixOS without trust prints configuration plus trust" $
+  it "NixOS without trust prints steps to follow" $
     let nixenv =
           NixEnv
             { isTrusted = False,
               isRoot = False,
               isNixOS = True
             }
-     in getInstallationMode nixenv `shouldBe` UntrustedRequiresSudo
-  it "NixOS without trust prints configuration on older Nix" $
+     in getInstallationMode nixenv `shouldBe` UntrustedNixOS
+  it "NixOS without trust prints steps to follow" $
     let nixenv =
           NixEnv
             { isTrusted = False,
               isRoot = False,
               isNixOS = True
             }
-     in getInstallationMode nixenv `shouldBe` UntrustedRequiresSudo
+     in getInstallationMode nixenv `shouldBe` UntrustedNixOS
   it "NixOS non-root trusted results into local install" $
     let nixenv =
           NixEnv

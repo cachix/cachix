@@ -38,6 +38,7 @@ data InstallationMode
   = Install NixConf.NixConfLoc
   | WriteNixOS
   | UntrustedRequiresSudo
+  | UntrustedNixOS
   deriving (Show, Eq)
 
 data UseOptions
@@ -59,19 +60,49 @@ toString (Install NixConf.Global) = "root-nixconf"
 toString (Install NixConf.Local) = "user-nixconf"
 toString WriteNixOS = "nixos"
 toString UntrustedRequiresSudo = "untrusted-requires-sudo"
+toString UntrustedNixOS = "untrusted-nixos"
 
 getInstallationMode :: NixEnv -> InstallationMode
 getInstallationMode nixenv
   | isNixOS nixenv && isRoot nixenv = WriteNixOS
   | not (isNixOS nixenv) && isRoot nixenv = Install NixConf.Global
   | isTrusted nixenv = Install NixConf.Local
+  | isNixOS nixenv = UntrustedNixOS
   | otherwise = UntrustedRequiresSudo
 
 -- | Add a Binary cache to nix.conf, print nixos config or fail
 addBinaryCache :: Maybe Config -> Api.BinaryCache -> UseOptions -> InstallationMode -> IO ()
-addBinaryCache _ _ _ UntrustedRequiresSudo =
+addBinaryCache _ _ _ UntrustedNixOS = do
+  user <- getUser
   throwIO $
-    MustBeRoot "Run command as root OR execute: $ echo \"trusted-users = root $USER\" | sudo tee -a /etc/nix/nix.conf && sudo pkill nix-daemon"
+    MustBeRoot
+      [i|This user doesn't have permissions to configure binary caches.
+
+You can either:
+
+a) Run the same command as root to write NixOS configuration.
+
+b) Add the following to your configuration.nix to add your user as trusted 
+   and then try again:
+
+  trustedUsers = [ "root" "${user}" ];
+
+    |]
+addBinaryCache _ _ _ UntrustedRequiresSudo = do
+  user <- getUser
+  throwIO $
+    MustBeRoot
+      [i|This user doesn't have permissions to configure binary caches.
+
+You can either:
+
+a) Run the same command as root to configure them globally.
+
+b) Run the following command to add your user as trusted 
+   and then try again:
+
+  echo "trusted-users = root ${user}" | sudo tee -a /etc/nix/nix.conf && sudo pkill nix-daemon
+    |]
 addBinaryCache maybeConfig bc useOptions WriteNixOS =
   nixosBinaryCache maybeConfig bc useOptions
 addBinaryCache maybeConfig bc _ (Install ncl) = do

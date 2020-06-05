@@ -109,13 +109,14 @@ envToToken :: Env -> Token
 envToToken env =
   maybe (Token "") authToken (config env)
 
-notAuthenticatedBinaryCache :: CachixException
-notAuthenticatedBinaryCache =
-  AccessDeniedBinaryCache "You must first authenticate using:  $ cachix authtoken <token>"
+notAuthenticatedBinaryCache :: Text -> CachixException
+notAuthenticatedBinaryCache name =
+  AccessDeniedBinaryCache $
+    "Binary cache " <> name <> " doesn't exist or it's private and you must first authenticate using:  $ cachix authtoken <token>"
 
 accessDeniedBinaryCache :: Text -> CachixException
 accessDeniedBinaryCache name =
-  AccessDeniedBinaryCache $ "You don't seem to have API access to binary cache " <> name
+  AccessDeniedBinaryCache $ "Binary cache " <> name <> " doesn't exist or it's private and you don't have access it"
 
 use :: Env -> Text -> InstallationMode.UseOptions -> IO ()
 use env name useOptions = do
@@ -124,7 +125,7 @@ use env name useOptions = do
   case res of
     Left err
       | isErr err status401 && isJust (config env) -> throwM $ accessDeniedBinaryCache name
-      | isErr err status401 -> throwM notAuthenticatedBinaryCache
+      | isErr err status401 -> throwM $ notAuthenticatedBinaryCache name
       | isErr err status404 -> throwM $ BinaryCacheNotFound $ "Binary cache" <> name <> " does not exist."
       | otherwise -> throwM err
     Right binaryCache -> do
@@ -244,7 +245,7 @@ pushStrategy env opts name storePath =
       on401 =
         if isJust (config env)
           then throwM $ accessDeniedBinaryCache name
-          else throwM notAuthenticatedBinaryCache,
+          else throwM $ notAuthenticatedBinaryCache name,
       onError = throwM,
       onAttempt = \retrystatus size ->
         -- we append newline instead of putStrLn due to https://github.com/haskell/text/issues/242

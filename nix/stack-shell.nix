@@ -10,5 +10,6 @@ in pkgs.haskell.lib.buildStackProject {
     pkgs.zlib
     pkgs.nix
     pkgs.boost
+    pkgs.libsodium
   ];
 }

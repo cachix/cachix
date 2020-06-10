@@ -89,6 +89,7 @@ library
     , filepath
     , fsnotify
     , here
+    , hnix-store-core
     , http-client
     , http-client-tls
     , http-conduit

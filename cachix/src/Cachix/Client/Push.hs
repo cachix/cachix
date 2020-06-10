@@ -34,8 +34,8 @@ import Control.Retry (RetryPolicy, RetryStatus, exponentialBackoff, limitRetries
 import Crypto.Sign.Ed25519
 import qualified Data.ByteString.Base64 as B64
 import Data.Conduit
+import Data.Conduit.Combinators (sourceHandle)
 import Data.Conduit.Lzma (compress)
-import Data.Conduit.Process
 import Data.IORef
 import qualified Data.Set as Set
 import qualified Data.Text as T
@@ -46,7 +46,9 @@ import Servant.Auth ()
 import Servant.Auth.Client
 import Servant.Client.Streaming hiding (ClientError)
 import Servant.Conduit ()
+import qualified System.IO as IO
 import qualified System.Nix.Base32
+import System.Nix.Nar
 
 data PushCache
   = PushCache
@@ -118,7 +120,7 @@ uploadStorePath ::
   RetryStatus ->
   -- | r is determined by the 'PushStrategy'
   m r
-uploadStorePath clientEnv store cache cb storePath retrystatus = do
+uploadStorePath clientEnv store cache cb storePath retrystatus = IO.withFile (toS storePath) IO.WriteMode $ \handle -> do
   let (storeHash, storeSuffix) = splitStorePath $ toS storePath
       name = pushCacheName cache
   narSizeRef <- liftIO $ newIORef 0
@@ -127,15 +129,14 @@ uploadStorePath clientEnv store cache cb storePath retrystatus = do
   fileHashRef <- liftIO $ newIORef ("" :: ByteString)
   normalized <- liftIO $ Store.followLinksToStorePath store $ toS storePath
   pathinfo <- liftIO $ Store.queryPathInfo store normalized
-  -- stream store path as xz compressed nar file
-  let cmd = proc "nix-store" ["--dump", toS storePath]
-      storePathSize :: Int64
+  let storePathSize :: Int64
       storePathSize = Store.validPathInfoNarSize pathinfo
   onAttempt cb retrystatus storePathSize
-  (ClosedStream, stdoutStream, Inherited, cph) <- liftIO $ streamingProcess cmd
+  -- stream store path as xz compressed nar file
+  liftIO $ buildNarIO narEffectsIO (toS storePath) handle
   withXzipCompressor cb $ \xzCompressor -> do
     let stream' =
-          stdoutStream
+          sourceHandle handle
             .| passthroughSizeSink narSizeRef
             .| passthroughHashSink narHashRef
             .| xzCompressor
@@ -150,15 +151,10 @@ uploadStorePath clientEnv store cache cb storePath retrystatus = do
           clientEnv
             { baseUrl = (baseUrl clientEnv) {baseUrlHost = subdomain <> "." <> baseUrlHost (baseUrl clientEnv)}
             }
-    (_ :: NoContent) <-
-      liftIO
-        $ (`withClientM` newClientEnv)
+    (_ :: NoContent) <- liftIO $ do
+      escalate
+        <=< (`withClientM` newClientEnv)
           (Api.createNar (cachixBCStreamingClient name) stream')
-        $ escalate
-          >=> \NoContent -> do
-            exitcode <- waitForStreamingProcess cph
-            when (exitcode /= ExitSuccess) $ throwM $ NarStreamingError exitcode $ show cmd
-            return NoContent
     (_ :: NoContent) <- liftIO $ do
       narSize <- readIORef narSizeRef
       narHash <- ("sha256:" <>) . System.Nix.Base32.encode <$> readIORef narHashRef

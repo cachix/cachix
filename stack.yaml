@@ -4,6 +4,10 @@ packages:
 - cachix
 extra-deps:
 - servant-auth-client-0.4.0.0
+- git: https://github.com/haskell-nix/hnix-store
+  commit: 93d2ed5f065c966d02b317d7867da4327f554f76
+  subdirs:
+    - hnix-store-core
 nix:
     packages: []
     shell-file: ./nix/stack-shell.nix

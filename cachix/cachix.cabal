@@ -60,7 +60,6 @@ library
     Cachix.Client.Store
     Cachix.Client.Store.Context
     Cachix.Client.URI
-    System.Nix.Base32
 
   cc-options:        -Wall
   pkgconfig-depends: nix-store ==2.0 || >2.0, nix-main ==2.0 || >2.0
@@ -89,6 +88,7 @@ library
     , filepath
     , fsnotify
     , here
+    , hnix-store-core
     , http-client
     , http-client-tls
     , http-conduit

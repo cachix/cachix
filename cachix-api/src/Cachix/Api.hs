@@ -23,6 +23,7 @@ where
 import Cachix.Api.Types
 import qualified Cachix.Types.BinaryCacheAuthenticated as BinaryCacheAuthenticated
 import qualified Cachix.Types.BinaryCacheCreate as BinaryCacheCreate
+import qualified Cachix.Types.BinaryCacheSettings as BinaryCacheSettings
 import Cachix.Types.ContentTypes
 import qualified Cachix.Types.CreateToken as CreateToken
 import qualified Cachix.Types.GitHubTeam as GitHubTeam
@@ -114,7 +115,18 @@ data BinaryCacheAPI route
             :- CachixAuth
             :> "key"
             :> ReqBody '[JSON] SigningKeyCreate.SigningKeyCreate
-            :> Post '[JSON] NoContent
+            :> Post '[JSON] NoContent,
+        settings ::
+          route
+            :- CachixAuth
+            :> "settings"
+            :> Get '[JSON] BinaryCacheSettings.BinaryCacheSettings,
+        putSettings ::
+          route
+            :- CachixAuth
+            :> "settings"
+            :> ReqBody '[JSON] BinaryCacheSettings.BinaryCacheSettings
+            :> Put '[JSON] NoContent
       }
   deriving (Generic)
 

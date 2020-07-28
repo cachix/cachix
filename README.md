@@ -53,6 +53,7 @@ Install Cachix from master:
 
 ## Support
 
+- [Documentation][https://docs.cachix.org]
 - [#cachix@freenode](https://webchat.freenode.net/?channels=cachix) IRC
 - [support@cachix.org](mailto:support@cachix.org)
 - [Gitter](https://gitter.im/cachix/Lobby)

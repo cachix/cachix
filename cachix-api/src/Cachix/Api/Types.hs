@@ -86,6 +86,8 @@ data User
         isLegacyPaymentProvider :: Bool,
         subscriptionTrialStartedOn :: Maybe UTCTime,
         subscriptionPlan :: SubscriptionPlan,
+        subscriptionStorageLimit :: Integer,
+        subscriptionStorageUsage :: Integer,
         subscriptionStatus :: SubscriptionStatus,
         subscriptionPlanId :: Maybe Integer,
         subscriptionAccountId :: Maybe Text,

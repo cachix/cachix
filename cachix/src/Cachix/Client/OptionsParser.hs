@@ -66,6 +66,7 @@ data CachixCommand
   | GenerateKeypair BinaryCacheName
   | Push PushArguments
   | Use BinaryCacheName InstallationMode.UseOptions
+  | List
   | Version
   deriving (Show)
 
@@ -89,6 +90,7 @@ parserCachixCommand =
       <> command "create" (infoH create (progDesc "DEPRECATED: Go to https://cachix.org instead"))
       <> command "generate-keypair" (infoH generateKeypair (progDesc "Generate keypair for a binary cache"))
       <> command "push" (infoH push (progDesc "Upload Nix store paths to the binary cache"))
+      <> command "list" (infoH listCaches (progDesc "List binary caches in use"))
       <> command "use" (infoH use (progDesc "Configure nix.conf to enable binary cache during builds"))
   where
     nameArg = strArgument (metavar "NAME")
@@ -132,6 +134,7 @@ parserCachixCommand =
               <> short 'w'
               <> help "Run in daemon mode and push store paths as they are added to /nix/store"
           )
+    listCaches = pure List
     use =
       Use <$> nameArg
         <*> ( InstallationMode.UseOptions

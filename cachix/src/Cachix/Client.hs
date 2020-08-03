@@ -18,4 +18,5 @@ main = do
     GenerateKeypair name -> Commands.generateKeypair env name
     Push pushArgs -> Commands.push env pushArgs
     Use name useOptions -> Commands.use env name useOptions
+    List -> Commands.listCaches env
     Version -> putText cachixVersion

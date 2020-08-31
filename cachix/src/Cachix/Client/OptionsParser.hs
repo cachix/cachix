@@ -12,7 +12,8 @@ import qualified Cachix.Client.Config as Config
 import qualified Cachix.Client.InstallationMode as InstallationMode
 import Cachix.Client.URI (defaultCachixURI)
 import Options.Applicative
-import Protolude hiding (option)
+import Protolude hiding (option, toS)
+import Protolude.Conv
 import URI.ByteString
   ( Absolute,
     URIRef,

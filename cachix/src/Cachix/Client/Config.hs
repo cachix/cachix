@@ -22,7 +22,8 @@ import Cachix.Client.Exception (CachixException (..))
 import Data.String.Here
 import Dhall hiding (Text)
 import Dhall.Pretty (prettyExpr)
-import Protolude
+import Protolude hiding (toS)
+import Protolude.Conv
 import Servant.Auth.Client
 import System.Directory
   ( XdgDirectory (..),

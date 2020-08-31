@@ -8,7 +8,8 @@ module Cachix.Client.URI
   )
 where
 
-import Protolude
+import Protolude hiding (toS)
+import Protolude.Conv
 import Servant.Client
 import qualified URI.ByteString as UBS
 import URI.ByteString hiding (Scheme)

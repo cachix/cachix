@@ -48,7 +48,8 @@ import Data.List (isSuffixOf)
 import Data.String.Here
 import qualified Data.Text as T
 import Network.HTTP.Types (status401, status404)
-import Protolude
+import Protolude hiding (toS)
+import Protolude.Conv
 import Servant.API (NoContent)
 import Servant.Auth.Client
 import Servant.Client.Streaming

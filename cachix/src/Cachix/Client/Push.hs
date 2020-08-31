@@ -49,7 +49,8 @@ import qualified Data.Set as Set
 import Data.String.Here
 import qualified Data.Text as T
 import Network.HTTP.Types (status401, status404)
-import Protolude
+import Protolude hiding (toS)
+import Protolude.Conv
 import Servant.API
 import Servant.Auth ()
 import Servant.Auth.Client

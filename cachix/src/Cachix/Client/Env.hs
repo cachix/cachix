@@ -20,7 +20,8 @@ import Network.HTTP.Client
 import Network.HTTP.Client.TLS (newTlsManagerWith, tlsManagerSettings)
 import Network.HTTP.Simple (setRequestHeader)
 import Paths_cachix (version)
-import Protolude
+import Protolude hiding (toS)
+import Protolude.Conv
 import Servant.Client (ClientEnv, mkClientEnv)
 import System.Directory (canonicalizePath)
 

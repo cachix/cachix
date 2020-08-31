@@ -6,7 +6,7 @@ where
 
 import qualified Crypto.JWT as JWT
 import Protolude
-import Servant.Auth.Server (FromJWT (..), ToJWT (..))
+import Servant.Auth.JWT (FromJWT (..), ToJWT (..))
 
 data Session
   = JWTSession JWT.ClaimsSet

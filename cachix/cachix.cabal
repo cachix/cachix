@@ -62,16 +62,9 @@ library
     Cachix.Client.URI
     System.Nix.Base32
 
-  cc-options:        -Wall
-  pkgconfig-depends: nix-store ==2.0 || >2.0, nix-main ==2.0 || >2.0
   hs-source-dirs:    src
   other-modules:     Paths_cachix
   autogen-modules:   Paths_cachix
-  extra-libraries:
-    stdc++
-    boost_context
-
-  include-dirs:      cbits
   build-depends:
     , async
     , base                  >=4.7     && <5
@@ -83,7 +76,7 @@ library
     , containers
     , cookie
     , cryptonite
-    , dhall
+    , dhall                 >=1.28.0
     , directory
     , ed25519
     , filepath
@@ -118,7 +111,13 @@ library
     , vector
     , versions
 
-  ghc-options:       -optc=-std=c++17
+  extra-libraries:
+    stdc++
+    boost_context
+
+  include-dirs:      cbits
+  pkgconfig-depends: nix-store ==2.0 || >2.0, nix-main ==2.0 || >2.0
+  ghc-options:       -optcxx-std=c++17
 
   if os(osx)
     ghc-options: -pgmc=clang++

@@ -11,7 +11,8 @@ import qualified Data.ByteString as BS
 import Data.List (nubBy)
 import qualified Data.Text as T
 import Network.NetRc
-import Protolude
+import Protolude hiding (toS)
+import Protolude.Conv
 import Servant.Auth.Client (Token, getToken)
 import System.Directory (createDirectoryIfMissing, doesFileExist)
 import System.FilePath (takeDirectory)

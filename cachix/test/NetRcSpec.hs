@@ -1,7 +1,7 @@
 module NetRcSpec where
 
 import Cachix.Api (BinaryCache (..))
-import Cachix.Client.Config (Config (..))
+import Cachix.Client.Config (Config, mkConfig)
 import qualified Cachix.Client.NetRc as NetRc
 import Protolude
 import System.Directory (copyFile)
@@ -29,11 +29,7 @@ bc2 =
     }
 
 config :: Config
-config =
-  Config
-    { authToken = "token123",
-      binaryCaches = []
-    }
+config = mkConfig "token123"
 
 -- TODO: poor man's golden tests, use https://github.com/stackbuilders/hspec-golden
 test :: [BinaryCache] -> Text -> Expectation

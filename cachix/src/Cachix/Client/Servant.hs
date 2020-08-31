@@ -44,13 +44,6 @@ cachixBCStreamingClient :: Text -> Api.BinaryCacheStreamingAPI (AsClientT Client
 cachixBCStreamingClient name = fromServant $ client (Proxy :: Proxy Api.BinaryCachStreamingServantAPI) name
 
 runAuthenticatedClient :: NFData a => Env.Env -> (Token -> ClientM a) -> IO a
-runAuthenticatedClient env m = do
-  config <-
-    escalate $
-      maybeToEither
-        ( Exception.NoConfig
-            "Start with visiting https://cachix.org and copying the token to $ cachix authtoken <token>"
-        )
-        (Env.config env)
-  escalate <=< (`runClientM` Env.clientenv env) $
-    m (Config.authToken config)
+runAuthenticatedClient env action = do
+  cachixAuthToken <- Config.getAuthToken (Env.config env)
+  escalate <=< (`runClientM` Env.clientenv env) $ action cachixAuthToken

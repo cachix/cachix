@@ -91,8 +91,8 @@ parserCachixCommand =
       <> command "push" (infoH push (progDesc "Upload Nix store paths to the binary cache"))
       <> command "use" (infoH use (progDesc "Configure nix.conf to enable binary cache during builds"))
   where
-    nameArg = strArgument (metavar "NAME")
-    authtoken = AuthToken <$> strArgument (metavar "TOKEN")
+    nameArg = strArgument (metavar "CACHE-NAME")
+    authtoken = AuthToken <$> strArgument (metavar "AUTHTOKEN")
     create = Create <$> nameArg
     generateKeypair = GenerateKeypair <$> nameArg
     validatedLevel l =

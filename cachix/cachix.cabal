@@ -106,11 +106,11 @@ library
     , resourcet
     , retry
     , safe-exceptions
-    , servant               >=0.15
+    , servant               >=0.16
     , servant-auth
     , servant-auth-client   >=0.3.3.0
-    , servant-client        >=0.15
-    , servant-client-core   >=0.15
+    , servant-client        >=0.16
+    , servant-client-core   >=0.16
     , servant-conduit
     , text
     , unix

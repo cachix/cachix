@@ -44,7 +44,7 @@ import Protolude
 import Servant.API
 import Servant.Auth ()
 import Servant.Auth.Client
-import Servant.Client.Streaming hiding (ClientError)
+import Servant.Client.Streaming
 import Servant.Conduit ()
 import qualified System.Nix.Base32
 

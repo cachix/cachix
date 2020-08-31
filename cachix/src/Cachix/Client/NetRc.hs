@@ -6,14 +6,15 @@ where
 
 import qualified Cachix.Api as Api
 import Cachix.Api.Error (escalateAs)
-import Cachix.Client.Config (Config, authToken)
+import Cachix.Client.Config (Config)
+import qualified Cachix.Client.Config as Config
 import Cachix.Client.Exception (CachixException (NetRcParseError))
 import qualified Data.ByteString as BS
 import Data.List (nubBy)
 import qualified Data.Text as T
 import Network.NetRc
 import Protolude
-import Servant.Auth.Client (getToken)
+import Servant.Auth.Client (Token, getToken)
 import System.Directory (createDirectoryIfMissing, doesFileExist)
 import System.FilePath (takeDirectory)
 
@@ -27,29 +28,30 @@ add ::
   IO ()
 add config binarycaches filename = do
   doesExist <- doesFileExist filename
+  cachixAuthToken <- Config.getAuthToken (Just config)
   netrc <-
     if doesExist
       then BS.readFile filename >>= parse
       else return $ NetRc [] []
   createDirectoryIfMissing True (takeDirectory filename)
-  BS.writeFile filename $ netRcToByteString $ uniqueAppend netrc
+  BS.writeFile filename $ netRcToByteString $ uniqueAppend cachixAuthToken netrc
   where
     parse :: ByteString -> IO NetRc
     parse contents = escalateAs (NetRcParseError . show) $ parseNetRc filename contents
     -- O(n^2) but who cares?
-    uniqueAppend :: NetRc -> NetRc
-    uniqueAppend (NetRc hosts macdefs) =
+    uniqueAppend :: Token -> NetRc -> NetRc
+    uniqueAppend cachixAuthToken (NetRc hosts macdefs) =
       let f :: NetRcHost -> NetRcHost -> Bool
           f x y = nrhName x == nrhName y
-       in NetRc (nubBy f (new ++ hosts)) macdefs
-    new :: [NetRcHost]
-    new = map mkHost $ filter (not . Api.isPublic) binarycaches
-    mkHost :: Api.BinaryCache -> NetRcHost
-    mkHost bc =
+       in NetRc (nubBy f (new cachixAuthToken ++ hosts)) macdefs
+    new :: Token -> [NetRcHost]
+    new cachixAuthToken = map (mkHost cachixAuthToken) $ filter (not . Api.isPublic) binarycaches
+    mkHost :: Token -> Api.BinaryCache -> NetRcHost
+    mkHost cachixAuthToken bc =
       NetRcHost
         { nrhName = toS $ stripPrefix "http://" $ stripPrefix "https://" (Api.uri bc),
           nrhLogin = "",
-          nrhPassword = getToken (authToken config),
+          nrhPassword = getToken cachixAuthToken,
           nrhAccount = "",
           nrhMacros = []
         }

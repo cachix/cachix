@@ -1,7 +1,11 @@
 {-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE QuasiQuotes #-}
 
 module Cachix.Client.Config
-  ( Config (..),
+  ( Config (binaryCaches),
+    getAuthToken,
+    setAuthToken,
+    noAuthTokenError,
     BinaryCacheConfig (..),
     readConfig,
     writeConfig,
@@ -12,6 +16,8 @@ module Cachix.Client.Config
 where
 
 import Cachix.Client.Config.Orphans ()
+import Cachix.Client.Exception (CachixException (..))
+import Data.String.Here
 import Dhall hiding (Text)
 import Dhall.Pretty (prettyExpr)
 import Protolude
@@ -22,6 +28,7 @@ import System.Directory
     doesFileExist,
     getXdgDirectory,
   )
+import System.Environment (lookupEnv)
 import System.FilePath.Posix (takeDirectory)
 import System.Posix.Files
   ( ownerReadMode,
@@ -77,3 +84,28 @@ writeConfig filename config = do
 assureFilePermissions :: FilePath -> IO ()
 assureFilePermissions fp =
   setFileMode fp $ unionFileModes ownerReadMode ownerWriteMode
+
+getAuthToken :: Maybe Config -> IO Token
+getAuthToken maybeConfig = do
+  maybeAuthToken <- lookupEnv "CACHIX_AUTH_TOKEN"
+  case (maybeAuthToken, maybeConfig) of
+    (Just token, _) -> return $ Token $ toS token
+    (Nothing, Just cfg) -> return $ authToken cfg
+    (_, _) -> throwIO $ NoConfig $ toS noAuthTokenError
+
+noAuthTokenError :: Text
+noAuthTokenError =
+  [iTrim|
+Start by visiting https://app.cachix.org and either:
+
+a) Via environment variable: 
+
+$ export CACHIX_AUTH_TOKEN=<token...>
+
+b) Running:
+
+$ cachix authtoken <token...>
+  |]
+
+setAuthToken :: Config -> Token -> Config
+setAuthToken cfg token = cfg {authToken = token}

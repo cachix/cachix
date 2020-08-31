@@ -62,7 +62,7 @@ authtoken :: Env -> Text -> IO ()
 authtoken env token = do
   -- TODO: check that token actually authenticates!
   writeConfig (configPath (cachixoptions env)) $ case config env of
-    Just cfg -> cfg {authToken = Token (toS token)}
+    Just cfg -> Config.setAuthToken cfg $ Token (toS token)
     Nothing -> mkConfig token
 
 create :: Env -> Text -> IO ()
@@ -70,8 +70,9 @@ create _ _ =
   throwIO $ DeprecatedCommand "Create command has been deprecated. Please visit https://cachix.org to create a binary cache."
 
 generateKeypair :: Env -> Text -> IO ()
-generateKeypair Env {config = Nothing} _ = throwIO $ NoConfig "Start with visiting https://cachix.org and copying the token to $ cachix authtoken <token>"
+generateKeypair Env {config = Nothing} _ = throwIO $ NoConfig Config.noAuthTokenError
 generateKeypair env@Env {config = Just cfg} name = do
+  cachixAuthToken <- Config.getAuthToken (Just cfg)
   (PublicKey pk, sk) <- createKeypair
   let signingKey = exportSigningKey $ SigningKey sk
       signingKeyCreate = SigningKeyCreate.SigningKeyCreate (toS $ B64.encode pk)
@@ -79,7 +80,7 @@ generateKeypair env@Env {config = Just cfg} name = do
   -- we first validate if key can be added to the binary cache
   (_ :: NoContent) <-
     escalate <=< (`runClientM` clientenv env) $
-      Api.createKey (cachixBCClient name) (authToken cfg) signingKeyCreate
+      Api.createKey (cachixBCClient name) cachixAuthToken signingKeyCreate
   -- if key was successfully added, write it to the config
   -- TODO: warn if binary cache with the same key already exists
   writeConfig (configPath (cachixoptions env)) $
@@ -105,14 +106,10 @@ IMPORTANT: Make sure to make a backup for the signing key above, as you have the
         Text
     )
 
-envToToken :: Env -> Token
-envToToken env =
-  maybe (Token "") authToken (config env)
-
 notAuthenticatedBinaryCache :: Text -> CachixException
 notAuthenticatedBinaryCache name =
   AccessDeniedBinaryCache $
-    "Binary cache " <> name <> " doesn't exist or it's private and you must first authenticate using:  $ cachix authtoken <token>"
+    "Binary cache " <> name <> " doesn't exist or it's private. " <> Config.noAuthTokenError
 
 accessDeniedBinaryCache :: Text -> CachixException
 accessDeniedBinaryCache name =
@@ -120,8 +117,9 @@ accessDeniedBinaryCache name =
 
 use :: Env -> Text -> InstallationMode.UseOptions -> IO ()
 use env name useOptions = do
+  cachixAuthToken <- Config.getAuthToken (config env)
   -- 1. get cache public key
-  res <- (`runClientM` clientenv env) $ Api.get (cachixBCClient name) (envToToken env)
+  res <- (`runClientM` clientenv env) $ Api.get (cachixBCClient name) cachixAuthToken
   case res of
     Left err
       | isErr err status401 && isJust (config env) -> throwM $ accessDeniedBinaryCache name
@@ -158,6 +156,7 @@ push env (PushPaths opts name cliPaths) = do
       -- This is somewhat like the behavior of `cat` for example.
       (_, paths) -> return paths
   sk <- findSigningKey env name
+  cachixAuthToken <- Config.getAuthToken (config env)
   store <- wait (storeAsync env)
   void $
     pushClosure
@@ -165,7 +164,7 @@ push env (PushPaths opts name cliPaths) = do
       (clientenv env)
       store
       PushCache
-        { pushCacheToken = envToToken env,
+        { pushCacheToken = cachixAuthToken,
           pushCacheName = name,
           pushCacheSigningKey = sk
         }
@@ -261,11 +260,12 @@ pushStorePath env opts name storePath = do
   -- use secret key from config or env
   -- TODO: this shouldn't happen for each store path
   store <- wait (storeAsync env)
+  cachixAuthToken <- Config.getAuthToken (config env)
   pushSingleStorePath
     (clientenv env)
     store
     PushCache
-      { pushCacheToken = envToToken env,
+      { pushCacheToken = cachixAuthToken,
         pushCacheName = name,
         pushCacheSigningKey = sk
       }

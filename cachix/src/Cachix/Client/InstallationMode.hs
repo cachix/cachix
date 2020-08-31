@@ -15,6 +15,7 @@ where
 
 import qualified Cachix.Api as Api
 import Cachix.Client.Config (Config)
+import qualified Cachix.Client.Config as Config
 import Cachix.Client.Exception (CachixException (..))
 import qualified Cachix.Client.NetRc as NetRc
 import qualified Cachix.Client.NixConf as NixConf
@@ -209,7 +210,7 @@ addPrivateBinaryCacheNetRC :: Maybe Config -> Api.BinaryCache -> NixConf.NixConf
 addPrivateBinaryCacheNetRC maybeConfig bc nixconf = do
   filename <- (`replaceFileName` "netrc") <$> NixConf.getFilename nixconf
   case maybeConfig of
-    Nothing -> panic "Run $ cachix authtoken <token>"
+    Nothing -> throwIO $ NoConfig Config.noAuthTokenError
     Just config -> do
       let netrcfile = fromMaybe filename Nothing -- TODO: get netrc from nixconf
       NetRc.add config [bc] netrcfile

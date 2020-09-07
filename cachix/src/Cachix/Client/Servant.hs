@@ -45,5 +45,5 @@ cachixBCStreamingClient name = fromServant $ client (Proxy :: Proxy Api.BinaryCa
 
 runAuthenticatedClient :: NFData a => Env.Env -> (Token -> ClientM a) -> IO a
 runAuthenticatedClient env action = do
-  cachixAuthToken <- Config.getAuthToken (Env.config env)
+  cachixAuthToken <- Config.getAuthTokenOptional (Env.config env)
   escalate <=< (`runClientM` Env.clientenv env) $ action cachixAuthToken

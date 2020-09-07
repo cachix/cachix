@@ -28,7 +28,7 @@ add ::
   IO ()
 add config binarycaches filename = do
   doesExist <- doesFileExist filename
-  cachixAuthToken <- Config.getAuthToken (Just config)
+  cachixAuthToken <- Config.getAuthTokenRequired (Just config)
   netrc <-
     if doesExist
       then BS.readFile filename >>= parse

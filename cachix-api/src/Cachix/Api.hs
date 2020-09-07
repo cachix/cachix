@@ -93,7 +93,8 @@ data BinaryCacheAPI route
             :> Get '[JSON] Text,
         createNarinfo ::
           route
-            :- Capture "narinfo" NarInfoC
+            :- CachixAuth
+            :> Capture "narinfo" NarInfoC
             :> ReqBody '[JSON] NarInfoCreate.NarInfoCreate
             :> Post '[JSON] NoContent,
         createKey ::

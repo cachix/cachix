@@ -1,15 +1,19 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators #-}
 
+{- This is a standalone module so it shouldn't depend on any CLI state like Env -}
 module Cachix.Client.Push
   ( -- * Pushing a single path
     pushSingleStorePath,
     PushCache (..),
+    PushSecret (..),
     PushStrategy (..),
     defaultWithXzipCompressor,
     defaultWithXzipCompressorWithLevel,
+    findPushSecret,
 
     -- * Pushing a closure of store paths
     pushClosure,
@@ -20,6 +24,7 @@ where
 import qualified Cachix.Api as Api
 import Cachix.Api.Error
 import Cachix.Api.Signing (fingerprint, passthroughHashSink, passthroughHashSinkB16, passthroughSizeSink)
+import qualified Cachix.Client.Config as Config
 import Cachix.Client.Exception (CachixException (..))
 import Cachix.Client.Secrets
 import Cachix.Client.Servant
@@ -35,9 +40,10 @@ import Crypto.Sign.Ed25519
 import qualified Data.ByteString.Base64 as B64
 import Data.Conduit
 import Data.Conduit.Lzma (compress)
-import Data.Conduit.Process
+import Data.Conduit.Process hiding (env)
 import Data.IORef
 import qualified Data.Set as Set
+import Data.String.Here
 import qualified Data.Text as T
 import Network.HTTP.Types (status401, status404)
 import Protolude
@@ -46,13 +52,17 @@ import Servant.Auth ()
 import Servant.Auth.Client
 import Servant.Client.Streaming
 import Servant.Conduit ()
+import System.Environment (lookupEnv)
 import qualified System.Nix.Base32
+
+data PushSecret
+  = PushToken Token
+  | PushSigningKey SigningKey
 
 data PushCache
   = PushCache
       { pushCacheName :: Text,
-        pushCacheSigningKey :: SigningKey,
-        pushCacheToken :: Token
+        pushCacheSecret :: PushSecret
       }
 
 data PushStrategy m r
@@ -90,12 +100,11 @@ pushSingleStorePath clientEnv _store cache cb storePath = retryAll $ \retrystatu
   let storeHash = fst $ splitStorePath $ toS storePath
       name = pushCacheName cache
   -- Check if narinfo already exists
-  -- TODO: query also cache.nixos.org? server-side?
   res <-
     liftIO $ (`runClientM` clientEnv) $
       Api.narinfoHead
         (cachixBCClient name)
-        (pushCacheToken cache)
+        (getCacheAuthToken cache)
         (Api.NarInfoC storeHash)
   case res of
     Right NoContent -> onAlreadyPresent cb -- we're done as store path is already in the cache
@@ -103,6 +112,11 @@ pushSingleStorePath clientEnv _store cache cb storePath = retryAll $ \retrystatu
       | isErr err status404 -> uploadStorePath clientEnv _store cache cb storePath retrystatus
       | isErr err status401 -> on401 cb
       | otherwise -> onError cb err
+
+getCacheAuthToken :: PushCache -> Token
+getCacheAuthToken cache = case pushCacheSecret cache of
+  PushToken token -> token
+  PushSigningKey _ -> Token ""
 
 uploadStorePath ::
   (MonadMask m, MonadIO m) =>
@@ -173,7 +187,9 @@ uploadStorePath clientEnv store cache cb storePath retrystatus = do
       referencesPathSet <- Store.validPathInfoReferences pathinfo
       references <- sort <$> Store.traversePathSet (pure . toS) referencesPathSet
       let fp = fingerprint storePath narHash narSize references
-          sig = dsign (signingSecretKey $ pushCacheSigningKey cache) fp
+          (sig, authToken) = case pushCacheSecret cache of
+            PushToken token -> (Nothing, token)
+            PushSigningKey signKey -> (Just $ toS $ B64.encode $ unSignature $ dsign (signingSecretKey signKey) fp, Token "")
           nic =
             Api.NarInfoCreate
               { Api.cStoreHash = storeHash,
@@ -187,13 +203,14 @@ uploadStorePath clientEnv store cache cb storePath retrystatus = do
                   if deriver == Store.unknownDeriver
                     then deriver
                     else T.drop 11 deriver,
-                Api.cSig = toS $ B64.encode $ unSignature sig
+                Api.cSig = sig
               }
       escalate $ Api.isNarInfoCreateValid nic
       -- Upload narinfo with signature
       escalate <=< (`runClientM` clientEnv) $
         Api.createNarinfo
           (cachixBCClient name)
+          authToken
           (Api.NarInfoC storeHash)
           nic
     onDone cb
@@ -235,7 +252,6 @@ pushClosure traversal clientEnv store pushCache pushStrategy inputStorePaths = d
       closure <- Store.computeFSClosure store Store.defaultClosureParams inputs
       Store.traversePathSet (pure . toSL) closure
   -- Check what store paths are missing
-  -- TODO: query also cache.nixos.org? server-side?
   missingHashesList <-
     retryAll $ \_ ->
       escalate
@@ -243,13 +259,47 @@ pushClosure traversal clientEnv store pushCache pushStrategy inputStorePaths = d
           ( (`runClientM` clientEnv) $
               Api.narinfoBulk
                 (cachixBCClient (pushCacheName pushCache))
-                (pushCacheToken pushCache)
+                (getCacheAuthToken pushCache)
                 (fst . splitStorePath <$> paths)
           )
   let missingHashes = Set.fromList missingHashesList
       missingPaths = filter (\path -> Set.member (fst (splitStorePath path)) missingHashes) paths
-  -- TODO: make pool size configurable, on beefier machines this could be doubled
   traversal (\path -> retryAll $ \retrystatus -> uploadStorePath clientEnv store pushCache (pushStrategy path) path retrystatus) missingPaths
+
+-- TODO: move to a separate module specific to cli
+
+-- | Find auth token or signing key in the 'Config' or environment variable
+findPushSecret ::
+  Maybe Config.Config ->
+  -- | Cache name
+  Text ->
+  -- | Secret key or exception
+  IO PushSecret
+findPushSecret config name = do
+  maybeEnvSK <- lookupEnv "CACHIX_SIGNING_KEY"
+  -- we reverse list of caches to prioritize keys added as last
+  let matches c = filter (\bc -> Config.name bc == name) $ reverse $ Config.binaryCaches c
+      maybeBCSK = case config of
+        Nothing -> Nothing
+        Just c -> Config.secretKey <$> head (matches c)
+  case maybeBCSK <|> toS <$> maybeEnvSK of
+    Just signingKey -> escalateAs FatalError $ PushSigningKey <$> parseSigningKeyLenient signingKey
+    Nothing -> do
+      authtoken <- Config.getAuthTokenMaybe config
+      case authtoken of
+        Just at -> return $ PushToken at
+        Nothing -> throwIO $ NoSigningKey msg
+  where
+    msg :: Text
+    msg =
+      [iTrim|
+Neither auth token nor signing key are present.
+
+They are looked up via $CACHIX_AUTH_TOKEN and $CACHIX_SIGNING_KEY,
+and if missing also looked up from ~/.config/cachix/cachix.dhall
+
+Read https://mycache.cachix.org for instructions how to push to your binary cache.
+    |]
 
 mapConcurrentlyBounded :: Traversable t => Int -> (a -> IO b) -> t a -> IO (t b)
 mapConcurrentlyBounded bound action items = do

@@ -27,7 +27,7 @@ data NarInfoCreate
         cFileSize :: Integer,
         cReferences :: [Text],
         cDeriver :: Text,
-        cSig :: Text
+        cSig :: Maybe Text
       }
   deriving (Generic, Show, FromJSON, ToJSON, ToSchema)
 

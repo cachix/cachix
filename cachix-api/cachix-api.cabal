@@ -45,7 +45,6 @@ library
     Cachix.Types.BinaryCacheCreate
     Cachix.Types.BinaryCacheSettings
     Cachix.Types.ContentTypes
-    Cachix.Types.CreateToken
     Cachix.Types.GitHubTeam
     Cachix.Types.NarFileName
     Cachix.Types.NarInfoCreate

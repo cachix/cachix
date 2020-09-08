@@ -25,7 +25,6 @@ import qualified Cachix.Types.BinaryCacheAuthenticated as BinaryCacheAuthenticat
 import qualified Cachix.Types.BinaryCacheCreate as BinaryCacheCreate
 import qualified Cachix.Types.BinaryCacheSettings as BinaryCacheSettings
 import Cachix.Types.ContentTypes
-import qualified Cachix.Types.CreateToken as CreateToken
 import qualified Cachix.Types.GitHubTeam as GitHubTeam
 import Cachix.Types.NarFileName (NarFileName (..))
 import qualified Cachix.Types.NarInfoCreate as NarInfoCreate
@@ -216,12 +215,6 @@ data CachixAPI route
             :- CachixAuth
             :> "user"
             :> Get '[JSON] User,
-        createToken ::
-          route
-            :- CachixAuth
-            :> "token"
-            :> ReqBody '[JSON] CreateToken.CreateToken
-            :> Post '[JSON] Text,
         caches ::
           route
             :- CachixAuth

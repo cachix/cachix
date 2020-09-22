@@ -11,8 +11,6 @@ jobs:
     steps:
     - uses: actions/checkout@v2.3.2
     - uses: cachix/install-nix-action@v11
-      with:
-        skip_adding_nixpkgs_channel: true
     - uses: cachix/cachix-action@v6
       with:
         name: cachix

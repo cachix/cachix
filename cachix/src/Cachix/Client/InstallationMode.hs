@@ -25,6 +25,7 @@ import Protolude
 import System.Directory (Permissions, createDirectoryIfMissing, getPermissions, writable)
 import System.Environment (lookupEnv)
 import System.FilePath ((</>), replaceFileName)
+import System.Process (readProcessWithExitCode)
 import Prelude (String)
 
 data NixEnv
@@ -222,14 +223,19 @@ isTrustedUser users = do
   user <- getUser
   -- to detect single user installations
   permissions <- getPermissions "/nix/store"
-  let isTrustedU = writable permissions || user `elem` users
-  when (not (null groups) && not isTrustedU) $ do
-    -- TODO: support Nix group syntax
-    putText "Warn: cachix doesn't yet support checking if user is trusted via groups, so it will recommend sudo"
-    putStrLn $ "Warn: groups found " <> T.intercalate "," groups
-  return isTrustedU
+  isInAGroup <- userInAnyGroup user
+  return $ writable permissions || user `elem` users || isInAGroup
   where
-    groups = filter (\u -> T.head u == '@') users
+    groups :: [Text]
+    groups = map T.tail $ filter (\u -> T.head u == '@') users
+    userInAnyGroup :: Text -> IO Bool
+    userInAnyGroup user = do
+      isIn <- for groups $ checkUserInGroup user
+      return $ any identity isIn
+    checkUserInGroup :: Text -> Text -> IO Bool
+    checkUserInGroup user groupName = do
+      (_exitcode, out, _err) <- readProcessWithExitCode "id" ["-Gn", toS user] mempty
+      return $ groupName `T.isInfixOf` toS out
 
 getUser :: IO Text
 getUser = do

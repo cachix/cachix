@@ -5,4 +5,4 @@ import Data.Swagger (ToSchema)
 import Protolude
 
 data Permission = Read | Admin
-  deriving (Generic, Show, FromJSON, ToJSON, ToSchema, NFData)
+  deriving (Generic, Show, FromJSON, ToJSON, ToSchema, NFData, Eq)

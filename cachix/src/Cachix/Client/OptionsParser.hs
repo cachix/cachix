@@ -85,11 +85,11 @@ data PushOptions
 parserCachixCommand :: Parser CachixCommand
 parserCachixCommand =
   subparser $
-    command "authtoken" (infoH authtoken (progDesc "Configure token for authentication to cachix.org"))
+    command "authtoken" (infoH authtoken (progDesc "Configure authentication token for communication to cachix.org API"))
       <> command "create" (infoH create (progDesc "DEPRECATED: Go to https://cachix.org instead"))
       <> command "generate-keypair" (infoH generateKeypair (progDesc "Generate keypair for a binary cache"))
-      <> command "push" (infoH push (progDesc "Upload Nix store paths to the binary cache"))
-      <> command "use" (infoH use (progDesc "Configure nix.conf to enable binary cache during builds"))
+      <> command "push" (infoH push (progDesc "Upload Nix store paths to a binary cache"))
+      <> command "use" (infoH use (progDesc "Configure a binary cache by writing nix.conf and netrc files."))
   where
     nameArg = strArgument (metavar "CACHE-NAME")
     authtoken = AuthToken <$> strArgument (metavar "AUTHTOKEN")
@@ -146,9 +146,16 @@ parserCachixCommand =
                 <*> strOption
                   ( long "nixos-folder"
                       <> short 'd'
-                      <> help "Base directory for NixOS configuration"
+                      <> help "Base directory for NixOS configuration generation"
                       <> value "/etc/nixos/"
                       <> showDefault
+                  )
+                <*> optional
+                  ( strOption
+                      ( long "output-directory"
+                          <> short 'O'
+                          <> help "Output directory where nix.conf and netrc will be updated."
+                      )
                   )
             )
 

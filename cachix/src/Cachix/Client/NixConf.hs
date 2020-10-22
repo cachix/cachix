@@ -141,7 +141,7 @@ setNetRC netrc (NixConf nc) = NixConf $ filter noNetRc nc ++ [NetRcFile netrc]
     noNetRc (NetRcFile _) = False
     noNetRc _ = True
 
-data NixConfLoc = Global | Local
+data NixConfLoc = Global | Local | Custom FilePath
   deriving (Show, Eq)
 
 getFilename :: NixConfLoc -> IO FilePath
@@ -150,6 +150,7 @@ getFilename ncl = do
     case ncl of
       Global -> return "/etc/nix"
       Local -> getXdgDirectory XdgConfig "nix"
+      Custom filepath -> return filepath
   return $ dir <> "/nix.conf"
 
 -- nix.conf Parser

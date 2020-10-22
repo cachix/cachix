@@ -140,7 +140,7 @@ use env name useOptions = do
                 InstallationMode.isNixOS = isNixOS
               }
       InstallationMode.addBinaryCache (config env) binaryCache useOptions $
-        fromMaybe (InstallationMode.getInstallationMode nixEnv) (InstallationMode.useMode useOptions)
+        InstallationMode.getInstallationMode nixEnv useOptions
 
 -- TODO: lots of room for performance improvements
 push :: Env -> PushArguments -> IO ()

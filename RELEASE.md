@@ -1,5 +1,5 @@
-- cd cachix && nix-shell --run releaser
-- cd cachix-api && nix-shell --run releaser
+- nix-shell --run "cd cachix-api && releaser"
+- nix-shell --run "cd cachix && releaser"
 - README.md `cachix --help` changes
 - run functional&regression tests
 - bump link to https://cachix.org/api/v1/install

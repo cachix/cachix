@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
+## [0.5.0] - 2020-11-06
+
+### Added
+
+- Allow specifying output directory to write nix.conf and netrc files. 
+- Allow pushing without a Signing key using only auth token
+- Allow setting auth token via `$CACHIX_AUTH_TOKEN` shell variable
+
+### Fixed
+
+- Watch store command now pushes the full closure of each store path
+- Support groups when parsing trusted-users from nix.conf
+
 ## [0.3.8] - 2020-06-03
 
 ### Added

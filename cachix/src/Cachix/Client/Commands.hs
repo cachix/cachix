@@ -174,22 +174,24 @@ push env (PushWatchStore opts name) = withManager $ \mgr -> do
   store <- wait (storeAsync env)
   pushSecret <- findPushSecret (config env) name
   _ <- watchDir mgr "/nix/store" filterF (action store pushSecret)
-  putText "Watching /nix/store for new builds ..."
-  forever $ threadDelay 1000000
+  putText "Watching /nix/store for new paths ..."
+  forever $ threadDelay (1000 * 1000)
   where
     action :: Store -> PushSecret -> Action
     action store pushSecret (Removed fp _ _) =
       let storePath = toS $ dropEnd 5 fp
-       in Control.Exception.Safe.handle (logErr fp) $
-            pushSingleStorePath
+       in Control.Exception.Safe.handle (logErr fp) $ void $
+            pushClosure
+              (mapConcurrentlyBounded (numJobs opts))
               (clientenv env)
               store
-              PushCache
-                { pushCacheName = name,
-                  pushCacheSecret = pushSecret
-                }
-              (pushStrategy env opts name storePath)
-              storePath
+              ( PushCache
+                  { pushCacheName = name,
+                    pushCacheSecret = pushSecret
+                  }
+              )
+              (pushStrategy env opts name)
+              [storePath]
     action _ _ _ = return ()
     logErr :: FilePath -> SomeException -> IO ()
     logErr fp e = hPutStrLn stderr $ "Exception occured while pushing " <> fp <> ": " <> show e

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
+## [0.5.1] - 2020-11-09
+
+### Fixed
+
+- Regression: use auth token when using signing key with private caches 
+- Configure netrc even if cachix config doesn't exist
+
 ## [0.5.0] - 2020-11-06
 
 ### Added

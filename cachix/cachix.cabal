@@ -151,11 +151,12 @@ test-suite cachix-test
     Spec
 
   build-depends:
-    , base        >=4.7 && <5
+    , base                 >=4.7 && <5
     , cachix
     , cachix-api
     , directory
     , here
     , hspec
     , protolude
+    , servant-auth-client
     , temporary

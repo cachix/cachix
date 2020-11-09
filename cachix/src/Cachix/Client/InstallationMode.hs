@@ -218,13 +218,11 @@ in {
 addPrivateBinaryCacheNetRC :: Maybe Config -> BinaryCache.BinaryCache -> NixConf.NixConfLoc -> IO FilePath
 addPrivateBinaryCacheNetRC maybeConfig bc nixconf = do
   filename <- (`replaceFileName` "netrc") <$> NixConf.getFilename nixconf
-  case maybeConfig of
-    Nothing -> throwIO $ NoConfig Config.noAuthTokenError
-    Just config -> do
-      let netrcfile = fromMaybe filename Nothing -- TODO: get netrc from nixconf
-      NetRc.add config [bc] netrcfile
-      putErrText $ "Configured private read access credentials in " <> toS filename
-      pure filename
+  authToken <- Config.getAuthTokenRequired maybeConfig
+  let netrcfile = fromMaybe filename Nothing -- TODO: get netrc from nixconf
+  NetRc.add authToken [bc] netrcfile
+  putErrText $ "Configured private read access credentials in " <> toS filename
+  pure filename
 
 isTrustedUser :: [Text] -> IO Bool
 isTrustedUser users = do

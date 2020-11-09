@@ -5,8 +5,6 @@ module Cachix.Client.NetRc
 where
 
 import Cachix.API.Error (escalateAs)
-import Cachix.Client.Config (Config)
-import qualified Cachix.Client.Config as Config
 import Cachix.Client.Exception (CachixException (NetRcParseError))
 import qualified Cachix.Types.BinaryCache as BinaryCache
 import qualified Data.ByteString as BS
@@ -22,32 +20,31 @@ import System.FilePath (takeDirectory)
 --   Makes sure there are no duplicate entries (using domain as a key).
 --   If file under filename doesn't exist it's created.
 add ::
-  Config ->
+  Token ->
   [BinaryCache.BinaryCache] ->
   FilePath ->
   IO ()
-add config binarycaches filename = do
+add cachixAuthToken binarycaches filename = do
   doesExist <- doesFileExist filename
-  cachixAuthToken <- Config.getAuthTokenRequired (Just config)
   netrc <-
     if doesExist
       then BS.readFile filename >>= parse
       else return $ NetRc [] []
   createDirectoryIfMissing True (takeDirectory filename)
-  BS.writeFile filename $ netRcToByteString $ uniqueAppend cachixAuthToken netrc
+  BS.writeFile filename $ netRcToByteString $ uniqueAppend netrc
   where
     parse :: ByteString -> IO NetRc
     parse contents = escalateAs (NetRcParseError . show) $ parseNetRc filename contents
     -- O(n^2) but who cares?
-    uniqueAppend :: Token -> NetRc -> NetRc
-    uniqueAppend cachixAuthToken (NetRc hosts macdefs) =
+    uniqueAppend :: NetRc -> NetRc
+    uniqueAppend (NetRc hosts macdefs) =
       let f :: NetRcHost -> NetRcHost -> Bool
           f x y = nrhName x == nrhName y
-       in NetRc (nubBy f (new cachixAuthToken ++ hosts)) macdefs
-    new :: Token -> [NetRcHost]
-    new cachixAuthToken = map (mkHost cachixAuthToken) $ filter (not . BinaryCache.isPublic) binarycaches
-    mkHost :: Token -> BinaryCache.BinaryCache -> NetRcHost
-    mkHost cachixAuthToken bc =
+       in NetRc (nubBy f (new ++ hosts)) macdefs
+    new :: [NetRcHost]
+    new = map mkHost $ filter (not . BinaryCache.isPublic) binarycaches
+    mkHost :: BinaryCache.BinaryCache -> NetRcHost
+    mkHost bc =
       NetRcHost
         { nrhName = toS $ stripPrefix "http://" $ stripPrefix "https://" (BinaryCache.uri bc),
           nrhLogin = "",

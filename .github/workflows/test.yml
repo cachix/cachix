@@ -14,7 +14,11 @@ jobs:
     - uses: cachix/cachix-action@v7
       with:
         name: cachix
+    - uses: cachix/cachix-action@v7
+      with:
+        name: cachix
         installCommand: nix-env -if .
         signingKey: '${{ secrets.CACHIX_SIGNING_KEY }}'
-    - run: echo " " >> cachix/CHANGELOG.md
     - run: nix-build ci.nix
+    # make sure it's all uploaded to cachix
+    - run: sudo bash -c "echo > /tmp/store-path-pre-build" 

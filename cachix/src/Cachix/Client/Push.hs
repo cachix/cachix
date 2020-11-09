@@ -60,7 +60,7 @@ import qualified System.Nix.Base32
 
 data PushSecret
   = PushToken Token
-  | PushSigningKey SigningKey
+  | PushSigningKey Token SigningKey
 
 data PushCache
   = PushCache
@@ -120,7 +120,7 @@ pushSingleStorePath clientEnv _store cache cb storePath = retryAll $ \retrystatu
 getCacheAuthToken :: PushCache -> Token
 getCacheAuthToken cache = case pushCacheSecret cache of
   PushToken token -> token
-  PushSigningKey _ -> Token ""
+  PushSigningKey token _ -> token
 
 uploadStorePath ::
   (MonadMask m, MonadIO m) =>
@@ -193,7 +193,7 @@ uploadStorePath clientEnv store cache cb storePath retrystatus = do
       let fp = fingerprint storePath narHash narSize references
           (sig, authToken) = case pushCacheSecret cache of
             PushToken token -> (Nothing, token)
-            PushSigningKey signKey -> (Just $ toS $ B64.encode $ unSignature $ dsign (signingSecretKey signKey) fp, Token "")
+            PushSigningKey token signKey -> (Just $ toS $ B64.encode $ unSignature $ dsign (signingSecretKey signKey) fp, token)
           nic =
             Api.NarInfoCreate
               { Api.cStoreHash = storeHash,
@@ -282,20 +282,19 @@ findPushSecret ::
   -- | Secret key or exception
   IO PushSecret
 findPushSecret config name = do
-  maybeEnvSK <- lookupEnv "CACHIX_SIGNING_KEY"
-  -- we reverse list of caches to prioritize keys added as last
-  let matches c = filter (\bc -> Config.name bc == name) $ reverse $ Config.binaryCaches c
-      maybeBCSK = case config of
+  maybeSigningKeyEnv <- toS <<$>> lookupEnv "CACHIX_SIGNING_KEY"
+  maybeAuthToken <- Config.getAuthTokenMaybe config
+  let maybeSigningKeyConfig = case config of
         Nothing -> Nothing
-        Just c -> Config.secretKey <$> head (matches c)
-  case maybeBCSK <|> toS <$> maybeEnvSK of
-    Just signingKey -> escalateAs FatalError $ PushSigningKey <$> parseSigningKeyLenient signingKey
-    Nothing -> do
-      authtoken <- Config.getAuthTokenMaybe config
-      case authtoken of
-        Just at -> return $ PushToken at
-        Nothing -> throwIO $ NoSigningKey msg
+        Just cfg -> Config.secretKey <$> head (getBinaryCache cfg)
+  case maybeSigningKeyEnv <|> maybeSigningKeyConfig of
+    Just signingKey -> escalateAs FatalError $ PushSigningKey (fromMaybe (Token "") maybeAuthToken) <$> parseSigningKeyLenient signingKey
+    Nothing -> case maybeAuthToken of
+      Just authToken -> return $ PushToken authToken
+      Nothing -> throwIO $ NoSigningKey msg
   where
+    -- we reverse list of caches to prioritize keys added as last
+    getBinaryCache c = filter (\bc -> Config.name bc == name) $ reverse $ Config.binaryCaches c
     msg :: Text
     msg =
       [iTrim|

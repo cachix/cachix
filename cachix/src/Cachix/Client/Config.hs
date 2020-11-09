@@ -112,13 +112,15 @@ getAuthTokenMaybe maybeConfig = do
 noAuthTokenError :: Text
 noAuthTokenError =
   [iTrim|
-Start by visiting https://app.cachix.org and either:
+Start by visiting https://app.cachix.org and create a personal/cache auth token.
+
+To configure the token:
 
 a) Via environment variable: 
 
 $ export CACHIX_AUTH_TOKEN=<token...>
 
-b) Running:
+b) Via configuration file:
 
 $ cachix authtoken <token...>
   |]

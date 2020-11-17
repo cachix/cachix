@@ -2,15 +2,11 @@ cradle:
   stack:
     - path: "./cachix"
       component: "cachix:lib"
-    - path: "./cachix"
+    - path: "./cachix/cachix"
       component: "cachix:exe:cachix"
-    - path: "./cachix"
+    - path: "./cachix/test"
       component: "cachix:test:cachix-test"
     - path: "./cachix-api"
       component: "cachix-api:lib"
-    - path: "./cachix-api"
+    - path: "./cachix-api/test"
       component: "cachix-api:test:cachix-api-test"
-
-
-
-

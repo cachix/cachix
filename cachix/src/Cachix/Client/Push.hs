@@ -26,6 +26,7 @@ import Cachix.API.Error
 import Cachix.API.Signing (fingerprint, passthroughHashSink, passthroughHashSinkB16, passthroughSizeSink)
 import qualified Cachix.Client.Config as Config
 import Cachix.Client.Exception (CachixException (..))
+import Cachix.Client.Retry (retryAll)
 import Cachix.Client.Secrets
 import Cachix.Client.Servant
 import Cachix.Client.Store (Store)
@@ -37,7 +38,7 @@ import Control.Concurrent.Async (mapConcurrently)
 import qualified Control.Concurrent.QSem as QSem
 import Control.Exception.Safe (MonadMask, throwM)
 import Control.Monad.Trans.Resource (ResourceT)
-import Control.Retry (RetryPolicy, RetryStatus, exponentialBackoff, limitRetries, recoverAll)
+import Control.Retry (RetryStatus)
 import Crypto.Sign.Ed25519
 import qualified Data.ByteString.Base64 as B64
 import Data.Coerce (coerce)
@@ -220,14 +221,6 @@ uploadStorePath clientEnv store cache cb storePath retrystatus = do
           (NarInfoHash.NarInfoHash storeHash)
           nic
     onDone cb
-
--- Catches all exceptions except skipAsyncExceptions
-retryAll :: (MonadIO m, MonadMask m) => (RetryStatus -> m a) -> m a
-retryAll = recoverAll defaultRetryPolicy
-  where
-    defaultRetryPolicy :: RetryPolicy
-    defaultRetryPolicy =
-      exponentialBackoff 100000 <> limitRetries 3
 
 -- | Push an entire closure
 --

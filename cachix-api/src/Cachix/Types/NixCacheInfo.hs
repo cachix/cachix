@@ -10,4 +10,4 @@ data NixCacheInfo
         wantMassQuery :: Integer,
         priority :: Integer
       }
-  deriving (Generic, Show, FromJSON, ToJSON, ToSchema)
+  deriving (Generic, Show, FromJSON, ToJSON, ToSchema, NFData)

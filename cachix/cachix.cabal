@@ -55,6 +55,7 @@ library
     Cachix.Client.NixVersion
     Cachix.Client.OptionsParser
     Cachix.Client.Push
+    Cachix.Client.PushQueue
     Cachix.Client.Retry
     Cachix.Client.Secrets
     Cachix.Client.Servant
@@ -106,6 +107,7 @@ library
     , servant-client        >=0.16
     , servant-client-core   >=0.16
     , servant-conduit
+    , stm
     , text
     , unix
     , uri-bytestring

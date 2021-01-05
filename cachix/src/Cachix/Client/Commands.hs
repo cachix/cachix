@@ -33,14 +33,15 @@ import Cachix.Client.OptionsParser
     PushOptions (..),
   )
 import Cachix.Client.Push
+import qualified Cachix.Client.PushQueue as PushQueue
 import Cachix.Client.Retry (retryAll)
 import Cachix.Client.Secrets
   ( SigningKey (SigningKey),
     exportSigningKey,
   )
 import Cachix.Client.Servant
-import Cachix.Client.Store (Store)
 import qualified Cachix.Types.SigningKeyCreate as SigningKeyCreate
+import qualified Control.Concurrent.STM.TBQueue as TBQueue
 import Control.Exception.Safe (handle, throwM)
 import Control.Retry (RetryStatus (rsIterNumber))
 import Crypto.Sign.Ed25519
@@ -164,46 +165,49 @@ push env (PushPaths opts name cliPaths) = do
   void $
     pushClosure
       (mapConcurrentlyBounded (numJobs opts))
-      (clientenv env)
-      store
       PushCache
         { pushCacheName = name,
-          pushCacheSecret = cacheSecret
+          pushCacheSecret = cacheSecret,
+          pushCacheStore = store,
+          pushCacheClientEnv = clientenv env,
+          pushCacheStrategy = pushStrategy env opts name
         }
-      (pushStrategy env opts name)
       inputStorePaths
   putText "All done."
-push env (PushWatchStore opts name) = withManager $ \mgr -> do
-  store <- wait (storeAsync env)
+push env (PushWatchStore opts name) = do
   pushSecret <- findPushSecret (config env) name
-  _ <- watchDir mgr "/nix/store" filterF (action store pushSecret)
-  putText "Watching /nix/store for new paths ..."
-  forever $ threadDelay (1000 * 1000)
+  store <- wait (storeAsync env)
+  let pushCache =
+        PushCache
+          { pushCacheName = name,
+            pushCacheSecret = pushSecret,
+            pushCacheClientEnv = clientenv env,
+            pushCacheStrategy = pushStrategy env opts name,
+            pushCacheStore = store
+          }
+  withManager $ \mgr -> PushQueue.pushQueue (numJobs opts) (producer pushCache mgr) pushCache
   where
-    action :: Store -> PushSecret -> Action
-    action store pushSecret (Removed fp _ _) =
-      let storePath = toS $ dropEnd 5 fp
-       in Control.Exception.Safe.handle (logErr fp) $ void $
-            pushClosure
-              (mapConcurrentlyBounded (numJobs opts))
-              (clientenv env)
-              store
-              ( PushCache
-                  { pushCacheName = name,
-                    pushCacheSecret = pushSecret
-                  }
-              )
-              (pushStrategy env opts name)
-              [storePath]
+    producer :: PushCache IO () -> WatchManager -> PushQueue.Queue -> IO (IO ())
+    producer pushCache mgr queue = do
+      putText "Watching /nix/store for new paths ..."
+      watchDir mgr "/nix/store" filterF (action pushCache queue)
+    action :: PushCache IO () -> PushQueue.Queue -> Event -> IO ()
+    action pushCache queue (Removed lockFile _ _) = Control.Exception.Safe.handle (logErr lockFile) $ do
+      let storePath = toS $ dropLast 5 lockFile
+      storePaths <- getClosure pushCache [storePath]
+      -- TODO: this will queue lots of duplicates
+      atomically $ for_ storePaths $ TBQueue.writeTBQueue queue
     action _ _ _ = return ()
     logErr :: FilePath -> SomeException -> IO ()
-    logErr fp e = hPutStrLn stderr $ "Exception occured while pushing " <> fp <> ": " <> show e
+    logErr fp e = hPutStrLn stderr $ "Exception occured while queueing " <> fp <> ": " <> show e
+    -- we queue store paths after their lock has been removed
     filterF :: ActionPredicate
     filterF (Removed fp _ _)
+      | ".drv.lock" `isSuffixOf` fp = False
       | ".lock" `isSuffixOf` fp = True
     filterF _ = False
-    dropEnd :: Int -> [a] -> [a]
-    dropEnd index xs = take (length xs - index) xs
+    dropLast :: Int -> [a] -> [a]
+    dropLast index xs = take (length xs - index) xs
 
 retryText :: RetryStatus -> Text
 retryText retrystatus =

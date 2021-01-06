@@ -165,27 +165,27 @@ push env (PushPaths opts name cliPaths) = do
   void $
     pushClosure
       (mapConcurrentlyBounded (numJobs opts))
-      PushCache
-        { pushCacheName = name,
-          pushCacheSecret = cacheSecret,
-          pushCacheStore = store,
-          pushCacheClientEnv = clientenv env,
-          pushCacheStrategy = pushStrategy env opts name
+      PushParams
+        { pushParamsName = name,
+          pushParamsSecret = cacheSecret,
+          pushParamsStore = store,
+          pushParamsClientEnv = clientenv env,
+          pushParamsStrategy = pushStrategy env opts name
         }
       inputStorePaths
   putText "All done."
 push env (PushWatchStore opts name) = do
   pushSecret <- findPushSecret (config env) name
   store <- wait (storeAsync env)
-  let pushCache =
-        PushCache
-          { pushCacheName = name,
-            pushCacheSecret = pushSecret,
-            pushCacheClientEnv = clientenv env,
-            pushCacheStrategy = pushStrategy env opts name,
-            pushCacheStore = store
+  let pushParams =
+        PushParams
+          { pushParamsName = name,
+            pushParamsSecret = pushSecret,
+            pushParamsClientEnv = clientenv env,
+            pushParamsStrategy = pushStrategy env opts name,
+            pushParamsStore = store
           }
-  withManager $ \mgr -> PushQueue.startWorkers (numJobs opts) (producer mgr) pushCache
+  withManager $ \mgr -> PushQueue.startWorkers (numJobs opts) (producer mgr) pushParams
   where
     producer :: WatchManager -> PushQueue.Queue -> IO (IO ())
     producer mgr queue = do

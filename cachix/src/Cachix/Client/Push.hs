@@ -9,7 +9,7 @@ module Cachix.Client.Push
   ( -- * Pushing a single path
     pushSingleStorePath,
     uploadStorePath,
-    PushCache (..),
+    PushParams (..),
     PushSecret (..),
     PushStrategy (..),
     defaultWithXzipCompressor,
@@ -18,7 +18,7 @@ module Cachix.Client.Push
 
     -- * Pushing a closure of store paths
     pushClosure,
-    getClosure,
+    getMissingPathsForClosure,
     mapConcurrentlyBounded,
   )
 where
@@ -66,15 +66,15 @@ data PushSecret
   = PushToken Token
   | PushSigningKey Token SigningKey
 
-data PushCache m r
-  = PushCache
-      { pushCacheName :: Text,
-        pushCacheSecret :: PushSecret,
+data PushParams m r
+  = PushParams
+      { pushParamsName :: Text,
+        pushParamsSecret :: PushSecret,
         -- | how to report results, (some) errors, and do some things
-        pushCacheStrategy :: Text -> PushStrategy m r,
+        pushParamsStrategy :: Text -> PushStrategy m r,
         -- | cachix base url, connection manager, see 'Cachix.Client.URI.defaultCachixBaseUrl', 'Servant.Client.mkClientEnv'
-        pushCacheClientEnv :: ClientEnv,
-        pushCacheStore :: Store
+        pushParamsClientEnv :: ClientEnv,
+        pushParamsStore :: Store
       }
 
 data PushStrategy m r
@@ -98,21 +98,21 @@ defaultWithXzipCompressorWithLevel l = ($ compress (Just l))
 pushSingleStorePath ::
   (MonadMask m, MonadIO m) =>
   -- | details for pushing to cache
-  PushCache m r ->
+  PushParams m r ->
   -- | store path
   Text ->
   -- | r is determined by the 'PushStrategy'
   m r
 pushSingleStorePath cache storePath = retryAll $ \retrystatus -> do
   let storeHash = fst $ splitStorePath $ toS storePath
-      name = pushCacheName cache
-      strategy = pushCacheStrategy cache storePath
+      name = pushParamsName cache
+      strategy = pushParamsStrategy cache storePath
   -- Check if narinfo already exists
   res <-
-    liftIO $ (`runClientM` pushCacheClientEnv cache) $
+    liftIO $ (`runClientM` pushParamsClientEnv cache) $
       API.narinfoHead
         cachixClient
-        (getCacheAuthToken (pushCacheSecret cache))
+        (getCacheAuthToken (pushParamsSecret cache))
         name
         (NarInfoHash.NarInfoHash storeHash)
   case res of
@@ -129,17 +129,17 @@ getCacheAuthToken (PushSigningKey token _) = token
 uploadStorePath ::
   (MonadMask m, MonadIO m) =>
   -- | details for pushing to cache
-  PushCache m r ->
+  PushParams m r ->
   Text ->
   RetryStatus ->
   -- | r is determined by the 'PushStrategy'
   m r
 uploadStorePath cache storePath retrystatus = do
   let (storeHash, storeSuffix) = splitStorePath $ toS storePath
-      name = pushCacheName cache
-      store = pushCacheStore cache
-      clientEnv = pushCacheClientEnv cache
-      strategy = pushCacheStrategy cache storePath
+      name = pushParamsName cache
+      store = pushParamsStore cache
+      clientEnv = pushParamsClientEnv cache
+      strategy = pushParamsStrategy cache storePath
   narSizeRef <- liftIO $ newIORef 0
   fileSizeRef <- liftIO $ newIORef 0
   narHashRef <- liftIO $ newIORef ("" :: ByteString)
@@ -174,7 +174,7 @@ uploadStorePath cache storePath retrystatus = do
     (_ :: NoContent) <-
       liftIO
         $ (`withClientM` newClientEnv)
-          (API.createNar cachixClient (getCacheAuthToken (pushCacheSecret cache)) name (mapOutput coerce stream'))
+          (API.createNar cachixClient (getCacheAuthToken (pushParamsSecret cache)) name (mapOutput coerce stream'))
         $ escalate
           >=> \NoContent -> do
             exitcode <- waitForStreamingProcess cph
@@ -194,7 +194,7 @@ uploadStorePath cache storePath retrystatus = do
       referencesPathSet <- Store.validPathInfoReferences pathinfo
       references <- sort <$> Store.traversePathSet (pure . toS) referencesPathSet
       let fp = fingerprint storePath narHash narSize references
-          (sig, authToken) = case pushCacheSecret cache of
+          (sig, authToken) = case pushParamsSecret cache of
             PushToken token -> (Nothing, token)
             PushSigningKey token signKey -> (Just $ toS $ B64.encode $ unSignature $ dsign (signingSecretKey signKey) fp, token)
           nic =
@@ -232,19 +232,19 @@ pushClosure ::
   --
   -- For example: @'mapConcurrentlyBounded' 4@
   (forall a b. (a -> m b) -> [a] -> m [b]) ->
-  PushCache m r ->
+  PushParams m r ->
   -- | Initial store paths
   [Text] ->
   -- | Every @r@ per store path of the entire closure of store paths
   m [r]
-pushClosure traversal pushCache inputStorePaths = do
-  missingPaths <- getClosure pushCache inputStorePaths
-  traversal (\path -> retryAll $ \retrystatus -> uploadStorePath pushCache path retrystatus) missingPaths
+pushClosure traversal pushParams inputStorePaths = do
+  missingPaths <- getMissingPathsForClosure pushParams inputStorePaths
+  traversal (\path -> retryAll $ \retrystatus -> uploadStorePath pushParams path retrystatus) missingPaths
 
-getMissingPathsForClosure :: (MonadIO m, MonadMask m) => PushCache m r -> [Text] -> m [Text]
-getMissingPathsForClosure pushCache inputStorePaths = do
-  let store = pushCacheStore pushCache
-      clientEnv = pushCacheClientEnv pushCache
+getMissingPathsForClosure :: (MonadIO m, MonadMask m) => PushParams m r -> [Text] -> m [Text]
+getMissingPathsForClosure pushParams inputStorePaths = do
+  let store = pushParamsStore pushParams
+      clientEnv = pushParamsClientEnv pushParams
   -- Get the transitive closure of dependencies
   paths <-
     liftIO $ do
@@ -262,8 +262,8 @@ getMissingPathsForClosure pushCache inputStorePaths = do
           ( (`runClientM` clientEnv) $
               API.narinfoBulk
                 cachixClient
-                (getCacheAuthToken (pushCacheSecret pushCache))
-                (pushCacheName pushCache)
+                (getCacheAuthToken (pushParamsSecret pushParams))
+                (pushParamsName pushParams)
                 (fst . splitStorePath <$> paths)
           )
   return $ filter (\path -> Set.member (fst (splitStorePath path)) (Set.fromList missingHashesList)) paths

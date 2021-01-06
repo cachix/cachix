@@ -241,8 +241,8 @@ pushClosure traversal pushCache inputStorePaths = do
   missingPaths <- getClosure pushCache inputStorePaths
   traversal (\path -> retryAll $ \retrystatus -> uploadStorePath pushCache path retrystatus) missingPaths
 
-getClosure :: (MonadIO m, MonadMask m) => PushCache m r -> [Text] -> m [Text]
-getClosure pushCache inputStorePaths = do
+getMissingPathsForClosure :: (MonadIO m, MonadMask m) => PushCache m r -> [Text] -> m [Text]
+getMissingPathsForClosure pushCache inputStorePaths = do
   let store = pushCacheStore pushCache
       clientEnv = pushCacheClientEnv pushCache
   -- Get the transitive closure of dependencies

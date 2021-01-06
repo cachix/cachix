@@ -39,36 +39,36 @@ data QueryWorkerState
         lock :: Lock.Lock
       }
 
-worker :: Push.PushCache IO () -> PushWorkerState -> IO ()
-worker pushCache workerState = forever $ do
+worker :: Push.PushParams IO () -> PushWorkerState -> IO ()
+worker pushParams workerState = forever $ do
   storePath <- atomically $ TBQueue.readTBQueue $ pushQueue workerState
   bracket_ (inProgresModify (+ 1)) (inProgresModify (\x -> x - 1))
     $ retryAll
-    $ Push.uploadStorePath pushCache storePath
+    $ Push.uploadStorePath pushParams storePath
   where
     inProgresModify f =
       atomically $ modifyTVar' (inProgress workerState) f
 
 -- NOTE: producer is responsible for signaling SIGINT upon termination
 -- NOTE: producer should return an `IO ()` that should be a blocking operation for terminating it
-startWorkers :: Int -> (Queue -> IO (IO ())) -> Push.PushCache IO () -> IO ()
-startWorkers numWorkers mkProducer pushCache = do
+startWorkers :: Int -> (Queue -> IO (IO ())) -> Push.PushParams IO () -> IO ()
+startWorkers numWorkers mkProducer pushParams = do
   -- start query worker
   (newQueryQueue, newPushQueue, newLock) <-
     atomically $
       (,,) <$> TBQueue.newTBQueue 10000 <*> TBQueue.newTBQueue 10000 <*> Lock.new
   let queryWorkerState = QueryWorkerState newQueryQueue S.empty newLock
-  queryWorker <- async $ queryLoop queryWorkerState newPushQueue pushCache
+  queryWorker <- async $ queryLoop queryWorkerState newPushQueue pushParams
   -- start push workers
   stopProducerCallback <- mkProducer newQueryQueue
   progress <- newTVarIO 0
   let pushWorkerState = PushWorkerState newPushQueue progress
-  pushWorker <- async $ replicateConcurrently_ numWorkers $ worker pushCache pushWorkerState
+  pushWorker <- async $ replicateConcurrently_ numWorkers $ worker pushParams pushWorkerState
   void $ Signals.installHandler Signals.sigINT (Signals.CatchOnce (exitOnceQueueIsEmpty stopProducerCallback pushWorker queryWorker queryWorkerState pushWorkerState)) Nothing
   waitEither_ pushWorker queryWorker
 
-queryLoop :: QueryWorkerState -> Queue -> Push.PushCache IO () -> IO ()
-queryLoop workerState pushqueue pushCache = do
+queryLoop :: QueryWorkerState -> Queue -> Push.PushParams IO () -> IO ()
+queryLoop workerState pushqueue pushParams = do
   -- this blocks until item is available and doesn't remove it from the queue
   _ <- atomically $ TBQueue.peekTBQueue (queryQueue workerState)
   (missingStorePathsSet, alreadyQueuedSet) <- Lock.with (lock workerState) $ do
@@ -79,12 +79,12 @@ queryLoop workerState pushqueue pushCache = do
       if isEmpty
         then return S.empty
         else return $ alreadyQueued workerState
-    missingStorePaths <- Push.getClosure pushCache storePaths
+    missingStorePaths <- Push.getMissingPathsForClosure pushParams storePaths
     let missingStorePathsSet = S.fromList missingStorePaths
         uncachedMissingStorePaths = S.difference missingStorePathsSet alreadyQueuedSet
     atomically $ for_ uncachedMissingStorePaths $ TBQueue.writeTBQueue pushqueue
     return (missingStorePathsSet, alreadyQueuedSet)
-  queryLoop (workerState {alreadyQueued = S.union missingStorePathsSet alreadyQueuedSet}) pushqueue pushCache
+  queryLoop (workerState {alreadyQueued = S.union missingStorePathsSet alreadyQueuedSet}) pushqueue pushParams
 
 exitOnceQueueIsEmpty :: IO () -> Async () -> Async () -> QueryWorkerState -> PushWorkerState -> IO ()
 exitOnceQueueIsEmpty stopProducerCallback pushWorker queryWorker queryWorkerState pushWorkerState = do

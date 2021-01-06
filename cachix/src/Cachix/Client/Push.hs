@@ -151,7 +151,9 @@ uploadStorePath cache storePath retrystatus = do
       storePathSize :: Int64
       storePathSize = Store.validPathInfoNarSize pathinfo
   onAttempt strategy retrystatus storePathSize
-  (ClosedStream, stdoutStream, Inherited, cph) <- liftIO $ streamingProcess cmd
+  -- create_group makes subprocess ignore signals such as ctrl-c that we handle in haskell main thread
+  -- see https://github.com/haskell/process/issues/198
+  (ClosedStream, stdoutStream, Inherited, cph) <- liftIO $ streamingProcess (cmd {create_group = True})
   withXzipCompressor strategy $ \xzCompressor -> do
     let stream' =
           stdoutStream

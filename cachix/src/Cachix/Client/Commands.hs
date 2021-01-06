@@ -42,7 +42,7 @@ import Cachix.Client.Secrets
 import Cachix.Client.Servant
 import qualified Cachix.Types.SigningKeyCreate as SigningKeyCreate
 import qualified Control.Concurrent.STM.TBQueue as TBQueue
-import Control.Exception.Safe (handle, throwM)
+import Control.Exception.Safe (throwM)
 import Control.Retry (RetryStatus (rsIterNumber))
 import Crypto.Sign.Ed25519
 import qualified Data.ByteString.Base64 as B64
@@ -185,21 +185,15 @@ push env (PushWatchStore opts name) = do
             pushCacheStrategy = pushStrategy env opts name,
             pushCacheStore = store
           }
-  withManager $ \mgr -> PushQueue.pushQueue (numJobs opts) (producer pushCache mgr) pushCache
+  withManager $ \mgr -> PushQueue.startWorkers (numJobs opts) (producer mgr) pushCache
   where
-    producer :: PushCache IO () -> WatchManager -> PushQueue.Queue -> IO (IO ())
-    producer pushCache mgr queue = do
+    producer :: WatchManager -> PushQueue.Queue -> IO (IO ())
+    producer mgr queue = do
       putText "Watching /nix/store for new paths ..."
-      watchDir mgr "/nix/store" filterF (action pushCache queue)
-    action :: PushCache IO () -> PushQueue.Queue -> Event -> IO ()
-    action pushCache queue (Removed lockFile _ _) = Control.Exception.Safe.handle (logErr lockFile) $ do
-      let storePath = toS $ dropLast 5 lockFile
-      storePaths <- getClosure pushCache [storePath]
-      -- TODO: this will queue lots of duplicates
-      atomically $ for_ storePaths $ TBQueue.writeTBQueue queue
-    action _ _ _ = return ()
-    logErr :: FilePath -> SomeException -> IO ()
-    logErr fp e = hPutStrLn stderr $ "Exception occured while queueing " <> fp <> ": " <> show e
+      watchDir mgr "/nix/store" filterF (action queue)
+    action :: PushQueue.Queue -> Event -> IO ()
+    action queue (Removed lockFile _ _) = atomically $ TBQueue.writeTBQueue queue (toS $ dropLast 5 lockFile)
+    action _ _ = return ()
     -- we queue store paths after their lock has been removed
     filterF :: ActionPredicate
     filterF (Removed fp _ _)

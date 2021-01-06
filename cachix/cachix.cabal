@@ -73,6 +73,7 @@ library
     , base64-bytestring
     , bytestring
     , cachix-api
+    , concurrent-extra
     , conduit               >=1.3.0
     , conduit-extra
     , containers

@@ -178,8 +178,8 @@ optsInfo configpath = infoH parser desc
 desc :: InfoMod a
 desc =
   fullDesc
-    <> progDesc "Sign into https://cachix.org to get started."
-    <> header "cachix.org command interface"
+    <> progDesc "To get started log in to https://app.cachix.org"
+    <> header "https://cachix.org command line interface"
 
 -- TODO: usage footer
 infoH :: Parser a -> InfoMod a -> ParserInfo a

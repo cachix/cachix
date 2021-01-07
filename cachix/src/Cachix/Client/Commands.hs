@@ -5,7 +5,6 @@
 
 module Cachix.Client.Commands
   ( authtoken,
-    create,
     generateKeypair,
     push,
     use,
@@ -66,10 +65,6 @@ authtoken env token = do
   writeConfig (configPath (cachixoptions env)) $ case config env of
     Just cfg -> Config.setAuthToken cfg $ Token (toS token)
     Nothing -> mkConfig token
-
-create :: Env -> Text -> IO ()
-create _ _ =
-  throwIO $ DeprecatedCommand "Create command has been deprecated. Please visit https://app.cachix.org to create a binary cache."
 
 generateKeypair :: Env -> Text -> IO ()
 generateKeypair env name = do

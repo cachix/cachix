@@ -63,7 +63,6 @@ type BinaryCacheName = Text
 
 data CachixCommand
   = AuthToken Text
-  | Create BinaryCacheName
   | GenerateKeypair BinaryCacheName
   | Push PushArguments
   | Use BinaryCacheName InstallationMode.UseOptions
@@ -87,14 +86,12 @@ parserCachixCommand :: Parser CachixCommand
 parserCachixCommand =
   subparser $
     command "authtoken" (infoH authtoken (progDesc "Configure authentication token for communication to cachix.org API"))
-      <> command "create" (infoH create (progDesc "DEPRECATED: Go to https://cachix.org instead"))
       <> command "generate-keypair" (infoH generateKeypair (progDesc "Generate keypair for a binary cache"))
       <> command "push" (infoH push (progDesc "Upload Nix store paths to a binary cache"))
       <> command "use" (infoH use (progDesc "Configure a binary cache by writing nix.conf and netrc files."))
   where
     nameArg = strArgument (metavar "CACHE-NAME")
     authtoken = AuthToken <$> strArgument (metavar "AUTHTOKEN")
-    create = Create <$> nameArg
     generateKeypair = GenerateKeypair <$> nameArg
     validatedLevel l =
       l <$ unless (l `elem` [0 .. 9]) (readerError $ "value " <> show l <> " not in expected range: [0..9]")

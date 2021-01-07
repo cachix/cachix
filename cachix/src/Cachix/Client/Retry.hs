@@ -13,4 +13,4 @@ retryAll = recoverAll defaultRetryPolicy
   where
     defaultRetryPolicy :: RetryPolicy
     defaultRetryPolicy =
-      exponentialBackoff 100000 <> limitRetries 3
+      exponentialBackoff (1000 * 1000) <> limitRetries 5

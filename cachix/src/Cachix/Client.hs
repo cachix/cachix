@@ -16,5 +16,6 @@ main = do
     AuthToken token -> Commands.authtoken env token
     GenerateKeypair name -> Commands.generateKeypair env name
     Push pushArgs -> Commands.push env pushArgs
+    WatchStore watchArgs name -> Commands.watchStore env watchArgs name
     Use name useOptions -> Commands.use env name useOptions
     Version -> putText cachixVersion

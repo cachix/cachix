@@ -65,6 +65,7 @@ data CachixCommand
   = AuthToken Text
   | GenerateKeypair BinaryCacheName
   | Push PushArguments
+  | WatchStore PushOptions Text
   | Use BinaryCacheName InstallationMode.UseOptions
   | Version
   deriving (Show)
@@ -85,13 +86,14 @@ data PushOptions
 parserCachixCommand :: Parser CachixCommand
 parserCachixCommand =
   subparser $
-    command "authtoken" (infoH authtoken (progDesc "Configure authentication token for communication to cachix.org API"))
-      <> command "generate-keypair" (infoH generateKeypair (progDesc "Generate keypair for a binary cache"))
+    command "authtoken" (infoH authtoken (progDesc "Configure authentication token for communication to HTTP API"))
+      <> command "generate-keypair" (infoH generateKeypair (progDesc "Generate signing key pair for a binary cache"))
       <> command "push" (infoH push (progDesc "Upload Nix store paths to a binary cache"))
-      <> command "use" (infoH use (progDesc "Configure a binary cache by writing nix.conf and netrc files."))
+      <> command "watch-store" (infoH watchStore (progDesc "Watch /nix/store for newly added store paths and upload them to a binary cache"))
+      <> command "use" (infoH use (progDesc "Configure a binary cache by writing nix.conf and netrc files"))
   where
     nameArg = strArgument (metavar "CACHE-NAME")
-    authtoken = AuthToken <$> strArgument (metavar "AUTHTOKEN")
+    authtoken = AuthToken <$> strArgument (metavar "AUTH-TOKEN")
     generateKeypair = GenerateKeypair <$> nameArg
     validatedLevel l =
       l <$ unless (l `elem` [0 .. 9]) (readerError $ "value " <> show l <> " not in expected range: [0..9]")
@@ -122,13 +124,14 @@ parserCachixCommand =
     pushPaths =
       (\paths opts cache -> PushPaths opts cache paths)
         <$> many (strArgument (metavar "PATHS..."))
+    watchStore = WatchStore <$> pushOptions <*> nameArg
     pushWatchStore =
       (\() opts cache -> PushWatchStore opts cache)
         <$> flag'
           ()
           ( long "watch-store"
               <> short 'w'
-              <> help "Run in daemon mode and push store paths as they are added to /nix/store"
+              <> help "DEPRECATED: use watch-store command instead."
           )
     use =
       Use <$> nameArg

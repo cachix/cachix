@@ -7,6 +7,7 @@ module Cachix.Client.Commands
   ( authtoken,
     generateKeypair,
     push,
+    watchStore,
     use,
   )
 where
@@ -141,7 +142,6 @@ use env name useOptions = do
       InstallationMode.addBinaryCache (config env) binaryCache useOptions $
         InstallationMode.getInstallationMode nixEnv useOptions
 
--- TODO: lots of room for performance improvements
 push :: Env -> PushArguments -> IO ()
 push env (PushPaths opts name cliPaths) = do
   hasStdin <- not <$> hIsTerminalDevice stdin
@@ -169,7 +169,11 @@ push env (PushPaths opts name cliPaths) = do
         }
       inputStorePaths
   putText "All done."
-push env (PushWatchStore opts name) = do
+push _ _ = do
+  throwIO $ DeprecatedCommand "DEPRECATED: cachix watch-store has replaced cachix push --watch-store."
+
+watchStore :: Env -> PushOptions -> Text -> IO ()
+watchStore env opts name = do
   pushSecret <- findPushSecret (config env) name
   store <- wait (storeAsync env)
   let pushParams =

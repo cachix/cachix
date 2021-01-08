@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
+## [0.6.0] - 2021-01-08
+
+### Changed
+
+- Watching nix store doesn't push .drv files anymore
+- `cachix push -w` has been moved to `cachix watch-store`
+- `cachix create` has been removed
+- Retries now take a multiple of seconds instead of multiple of 100ms
+
+### Added
+
+- watch-exec allows to run a command and push all new store paths added meanwhile
+- GHC 8.10 support
+
+### Fixed
+
+- Watching /nix/store now uses queue to bulk query what is missing in binarycache and
+  a queue for pushing
+- Instructions for NixOS trusted users were inaccurate
+- Retry fetching binary cache
+
 ## [0.5.1] - 2020-11-09
 
 ### Fixed

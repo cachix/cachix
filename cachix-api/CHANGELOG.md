@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [0.6.0] - 2021-01-08
+
+- Support latest stackage nightly
+
 ## [0.5.0] - 2020-11-06
 
 - Rewrite, cachix-api now serves as the base for cachix package but doesn't contain the full HTTP API anymore.

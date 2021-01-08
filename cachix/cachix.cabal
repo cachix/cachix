@@ -62,6 +62,7 @@ library
     Cachix.Client.Store
     Cachix.Client.Store.Context
     Cachix.Client.URI
+    Cachix.Client.WatchStore
     System.Nix.Base32
 
   hs-source-dirs:    src

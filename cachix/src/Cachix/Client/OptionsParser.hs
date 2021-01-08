@@ -66,6 +66,7 @@ data CachixCommand
   | GenerateKeypair BinaryCacheName
   | Push PushArguments
   | WatchStore PushOptions Text
+  | WatchExec PushOptions Text Text [Text]
   | Use BinaryCacheName InstallationMode.UseOptions
   | Version
   deriving (Show)
@@ -89,7 +90,8 @@ parserCachixCommand =
     command "authtoken" (infoH authtoken (progDesc "Configure authentication token for communication to HTTP API"))
       <> command "generate-keypair" (infoH generateKeypair (progDesc "Generate signing key pair for a binary cache"))
       <> command "push" (infoH push (progDesc "Upload Nix store paths to a binary cache"))
-      <> command "watch-store" (infoH watchStore (progDesc "Watch /nix/store for newly added store paths and upload them to a binary cache"))
+      <> command "watch-exec" (infoH watchExec (progDesc "Run a command while it's running watch /nix/store for newly added store paths and upload them to a binary cache"))
+      <> command "watch-store" (infoH watchStore (progDesc "Indefinitely watch /nix/store for newly added store paths and upload them to a binary cache"))
       <> command "use" (infoH use (progDesc "Configure a binary cache by writing nix.conf and netrc files"))
   where
     nameArg = strArgument (metavar "CACHE-NAME")
@@ -124,6 +126,7 @@ parserCachixCommand =
     pushPaths =
       (\paths opts cache -> PushPaths opts cache paths)
         <$> many (strArgument (metavar "PATHS..."))
+    watchExec = WatchExec <$> pushOptions <*> nameArg <*> strArgument (metavar "CMD") <*> many (strArgument (metavar "-- ARGS"))
     watchStore = WatchStore <$> pushOptions <*> nameArg
     pushWatchStore =
       (\() opts cache -> PushWatchStore opts cache)

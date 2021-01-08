@@ -8,6 +8,7 @@ module Cachix.Client.Commands
     generateKeypair,
     push,
     watchStore,
+    watchExec,
     use,
   )
 where
@@ -33,20 +34,18 @@ import Cachix.Client.OptionsParser
     PushOptions (..),
   )
 import Cachix.Client.Push
-import qualified Cachix.Client.PushQueue as PushQueue
 import Cachix.Client.Retry (retryAll)
 import Cachix.Client.Secrets
   ( SigningKey (SigningKey),
     exportSigningKey,
   )
 import Cachix.Client.Servant
+import qualified Cachix.Client.WatchStore as WatchStore
 import qualified Cachix.Types.SigningKeyCreate as SigningKeyCreate
-import qualified Control.Concurrent.STM.TBQueue as TBQueue
 import Control.Exception.Safe (throwM)
 import Control.Retry (RetryStatus (rsIterNumber))
-import Crypto.Sign.Ed25519
+import Crypto.Sign.Ed25519 (PublicKey (PublicKey), createKeypair)
 import qualified Data.ByteString.Base64 as B64
-import Data.List (isSuffixOf)
 import Data.String.Here
 import qualified Data.Text as T
 import Network.HTTP.Types (status401, status404)
@@ -57,8 +56,9 @@ import Servant.Auth.Client
 import Servant.Client.Streaming
 import Servant.Conduit ()
 import System.Directory (doesFileExist)
-import System.FSNotify
 import System.IO (hIsTerminalDevice)
+import qualified System.Posix.Signals as Signals
+import qualified System.Process
 
 authtoken :: Env -> Text -> IO ()
 authtoken env token = do
@@ -155,18 +155,11 @@ push env (PushPaths opts name cliPaths) = do
       -- that may or may not be written to by the caller.
       -- This is somewhat like the behavior of `cat` for example.
       (_, paths) -> return paths
-  cacheSecret <- findPushSecret (config env) name
-  store <- wait (storeAsync env)
+  pushParams <- getPushParams env opts name
   void $
     pushClosure
       (mapConcurrentlyBounded (numJobs opts))
-      PushParams
-        { pushParamsName = name,
-          pushParamsSecret = cacheSecret,
-          pushParamsStore = store,
-          pushParamsClientEnv = clientenv env,
-          pushParamsStrategy = pushStrategy env opts name
-        }
+      pushParams
       inputStorePaths
   putText "All done."
 push _ _ = do
@@ -174,33 +167,22 @@ push _ _ = do
 
 watchStore :: Env -> PushOptions -> Text -> IO ()
 watchStore env opts name = do
-  pushSecret <- findPushSecret (config env) name
-  store <- wait (storeAsync env)
-  let pushParams =
-        PushParams
-          { pushParamsName = name,
-            pushParamsSecret = pushSecret,
-            pushParamsClientEnv = clientenv env,
-            pushParamsStrategy = pushStrategy env opts name,
-            pushParamsStore = store
-          }
-  withManager $ \mgr -> PushQueue.startWorkers (numJobs opts) (producer mgr) pushParams
+  pushParams <- getPushParams env opts name
+  WatchStore.startWorkers (numJobs opts) pushParams
+
+watchExec :: Env -> PushOptions -> Text -> Text -> [Text] -> IO ()
+watchExec env pushOpts name cmd args = do
+  pushParams <- getPushParams env pushOpts name
+  let watch = WatchStore.startWorkers (numJobs pushOpts) pushParams
+  (_, exitCode) <- concurrently watch run
+  exitWith exitCode
   where
-    producer :: WatchManager -> PushQueue.Queue -> IO (IO ())
-    producer mgr queue = do
-      putText "Watching /nix/store for new paths ..."
-      watchDir mgr "/nix/store" filterF (action queue)
-    action :: PushQueue.Queue -> Event -> IO ()
-    action queue (Removed lockFile _ _) = atomically $ TBQueue.writeTBQueue queue (toS $ dropLast 5 lockFile)
-    action _ _ = return ()
-    -- we queue store paths after their lock has been removed
-    filterF :: ActionPredicate
-    filterF (Removed fp _ _)
-      | ".drv.lock" `isSuffixOf` fp = False
-      | ".lock" `isSuffixOf` fp = True
-    filterF _ = False
-    dropLast :: Int -> [a] -> [a]
-    dropLast index xs = take (length xs - index) xs
+    process = System.Process.proc (toS cmd) (toS <$> args)
+    run = do
+      (_, _, _, processHandle) <- System.Process.createProcess process
+      exitCode <- System.Process.waitForProcess processHandle
+      Signals.raiseSignal Signals.sigINT
+      return exitCode
 
 retryText :: RetryStatus -> Text
 retryText retrystatus =
@@ -224,3 +206,16 @@ pushStrategy env opts name storePath =
       withXzipCompressor = defaultWithXzipCompressorWithLevel (compressionLevel opts),
       Cachix.Client.Push.omitDeriver = Cachix.Client.OptionsParser.omitDeriver opts
     }
+
+getPushParams :: Env -> PushOptions -> Text -> IO (PushParams IO ())
+getPushParams env pushOpts name = do
+  pushSecret <- findPushSecret (config env) name
+  store <- wait (storeAsync env)
+  return $
+    PushParams
+      { pushParamsName = name,
+        pushParamsSecret = pushSecret,
+        pushParamsClientEnv = clientenv env,
+        pushParamsStrategy = pushStrategy env pushOpts name,
+        pushParamsStore = store
+      }

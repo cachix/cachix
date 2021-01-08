@@ -65,7 +65,16 @@ startWorkers numWorkers mkProducer pushParams = do
   let pushWorkerState = PushWorkerState newPushQueue progress
   pushWorker <- async $ replicateConcurrently_ numWorkers $ worker pushParams pushWorkerState
   void $ Signals.installHandler Signals.sigINT (Signals.CatchOnce (exitOnceQueueIsEmpty stopProducerCallback pushWorker queryWorker queryWorkerState pushWorkerState)) Nothing
-  waitEither_ pushWorker queryWorker
+  (_, eitherException) <- waitAnyCatchCancel [pushWorker, queryWorker]
+  case eitherException of
+    Left exc | fromException exc == Just StopWorker -> return ()
+    Left exc -> throwIO exc
+    Right () -> return ()
+
+data StopWorker = StopWorker
+  deriving (Eq, Show)
+
+instance Exception StopWorker
 
 queryLoop :: QueryWorkerState -> Queue -> Push.PushParams IO () -> IO ()
 queryLoop workerState pushqueue pushParams = do
@@ -88,7 +97,7 @@ queryLoop workerState pushqueue pushParams = do
 
 exitOnceQueueIsEmpty :: IO () -> Async () -> Async () -> QueryWorkerState -> PushWorkerState -> IO ()
 exitOnceQueueIsEmpty stopProducerCallback pushWorker queryWorker queryWorkerState pushWorkerState = do
-  putText "Stopping producer of store paths and waiting for queue to empty ..."
+  putText "Stopped watching /nix/store and waiting for queue to empty ..."
   stopProducerCallback
   go
   where
@@ -102,9 +111,9 @@ exitOnceQueueIsEmpty stopProducerCallback pushWorker queryWorker queryWorkerStat
         return (isDone, inprogress, pushQueueLength)
       if isDone
         then do
-          putText "All done, exiting."
-          cancelWith pushWorker UserInterrupt
-          cancelWith queryWorker UserInterrupt
+          putText "Done."
+          cancelWith queryWorker StopWorker
+          cancelWith pushWorker StopWorker
         else do
           putText $ "Waiting to finish: " <> show inprogress <> " pushing, " <> show queueLength <> " in queue"
           threadDelay (1000 * 1000)

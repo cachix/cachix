@@ -5,30 +5,34 @@
 
 <img src="https://raw.githubusercontent.com/cachix/cachix/master/logo.png" width="200">
 
-# CLI interface
-
 ```
 $ cachix --help
-cachix.org command interface
+https://cachix.org command line interface
 
-Usage: cachix [--host URI] [-c|--config CONFIGPATH] [-v|--verbose] (COMMAND |
-              (-V|--version))
-  Sign into https://cachix.org to get started.
+Usage: cachix [--host URI] [-c|--config CONFIGPATH] [-v|--verbose] 
+              (COMMAND | (-V|--version))
+  To get started log in to https://app.cachix.org
 
 Available options:
   -h,--help                Show this help text
   --host URI               Host to connect to (default: https://cachix.org)
   -c,--config CONFIGPATH   Cachix configuration
-                           file (default: "~/.config/cachix/cachix.dhall")
+                           file (default: "/home/ielectric/.config/cachix/cachix.dhall")
   -v,--verbose             Verbose mode
   -V,--version             Show cachix version
 
 Available commands:
-  authtoken                Configure token for authentication to cachix.org
-  generate-keypair         Generate keypair for a binary cache
-  push                     Upload Nix store paths to the binary cache
-  use                      Configure nix.conf to enable binary cache during
-                           builds
+  authtoken                Configure authentication token for communication to
+                           HTTP API
+  generate-keypair         Generate signing key pair for a binary cache
+  push                     Upload Nix store paths to a binary cache
+  watch-exec               Run a command while it's running watch /nix/store for
+                           newly added store paths and upload them to a binary
+                           cache
+  watch-store              Indefinitely watch /nix/store for newly added store
+                           paths and upload them to a binary cache
+  use                      Configure a binary cache by writing nix.conf and
+                           netrc files
 
 ```
 

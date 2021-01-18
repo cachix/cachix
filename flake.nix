@@ -6,13 +6,7 @@
     forAllSystems = f: builtins.listToAttrs (map (name: { inherit name; value = f name; }) systems);
   in {
     packages = forAllSystems (system: {
-      cachix = let
-        pkgs = import ./nix {
-          inherit system;
-        };
-        cachix-api = pkgs.haskellPackages.callCabal2nix "cachix-api" (pkgs.gitignoreSource ./cachix-api) {};
-        cachix = pkgs.haskellPackages.callCabal2nix "cachix" (pkgs.gitignoreSource ./cachix) { inherit cachix-api; };
-      in pkgs.haskell.lib.disableLibraryProfiling cachix;
+      cachix = import ./. { inherit system; };
     });
 
     defaultPackage = forAllSystems (system: self.packages.${system}.cachix);

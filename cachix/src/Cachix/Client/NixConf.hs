@@ -32,7 +32,7 @@ module Cachix.Client.NixConf
   )
 where
 
-import qualified Cachix.Api as Api
+import qualified Cachix.Types.BinaryCache as BinaryCache
 import Data.Char (isSpace)
 import Data.List (nub)
 import qualified Data.Text as T
@@ -85,14 +85,14 @@ isTrustedUsers (TrustedUsers xs) = Just xs
 isTrustedUsers _ = Nothing
 
 -- | Pure version of addIO
-add :: Api.BinaryCache -> [NixConf] -> NixConf -> NixConf
+add :: BinaryCache.BinaryCache -> [NixConf] -> NixConf -> NixConf
 add bc toRead toWrite =
   writeLines isPublicKey (TrustedPublicKeys $ nub publicKeys) $
     writeLines isSubstituter (Substituters $ nub substituters) toWrite
   where
     -- Note: some defaults are always appended since overriding some setttings in nix.conf overrides defaults otherwise
-    substituters = (defaultPublicURI : readLines toRead isSubstituter) <> [Api.uri bc]
-    publicKeys = (defaultSigningKey : readLines toRead isPublicKey) <> Api.publicSigningKeys bc
+    substituters = (defaultPublicURI : readLines toRead isSubstituter) <> [BinaryCache.uri bc]
+    publicKeys = (defaultSigningKey : readLines toRead isPublicKey) <> BinaryCache.publicSigningKeys bc
 
 defaultPublicURI :: Text
 defaultPublicURI = "https://cache.nixos.org"
@@ -141,7 +141,7 @@ setNetRC netrc (NixConf nc) = NixConf $ filter noNetRc nc ++ [NetRcFile netrc]
     noNetRc (NetRcFile _) = False
     noNetRc _ = True
 
-data NixConfLoc = Global | Local
+data NixConfLoc = Global | Local | Custom FilePath
   deriving (Show, Eq)
 
 getFilename :: NixConfLoc -> IO FilePath
@@ -150,6 +150,7 @@ getFilename ncl = do
     case ncl of
       Global -> return "/etc/nix"
       Local -> getXdgDirectory XdgConfig "nix"
+      Custom filepath -> return filepath
   return $ dir <> "/nix.conf"
 
 -- nix.conf Parser

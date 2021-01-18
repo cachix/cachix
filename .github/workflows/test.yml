@@ -9,29 +9,17 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v2.3.2
-    - uses: cachix/install-nix-action@v10
-      with:
-        skip_adding_nixpkgs_channel: true
-    - uses: cachix/cachix-action@v6
+    - uses: actions/checkout@v2.3.4
+    - uses: cachix/install-nix-action@v12
+    - uses: cachix/cachix-action@v8
       with:
         name: cachix
-        signingKey: '${{ secrets.CACHIX_SIGNING_KEY }}'
-    - run: nix-build ci.nix
-  macos_perf_test:
-    runs-on: macos-latest
-    steps:
-    - name: Disable syspolicy assessments
-      run: |
-        spctl --status
-        sudo spctl --master-disable
-    - uses: actions/checkout@v2.3.2
-    - uses: cachix/install-nix-action@v10
-      with:
-        skip_adding_nixpkgs_channel: true
-    - uses: cachix/cachix-action@v6
+    - uses: cachix/cachix-action@v8
       with:
         name: cachix
+        installCommand: NIXPKGS_ALLOW_BROKEN=1 nix-env -if .
         signingKey: '${{ secrets.CACHIX_SIGNING_KEY }}'
-    - run: nix-build ci.nix
-      
+    # once nixpkgs is bumped we don't need this flag anymore
+    - run: NIXPKGS_ALLOW_BROKEN=1 nix-build ci.nix
+    # make sure it's all uploaded to cachix
+    - run: sudo bash -c "echo > /tmp/store-path-pre-build" 

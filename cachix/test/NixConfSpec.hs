@@ -2,8 +2,9 @@
 
 module NixConfSpec where
 
-import Cachix.Api (BinaryCache (..))
 import Cachix.Client.NixConf as NixConf
+import Cachix.Types.BinaryCache (BinaryCache (..))
+import Cachix.Types.Permission (Permission (..))
 import Data.String.Here
 import Protolude
 import Test.Hspec
@@ -17,6 +18,7 @@ bc =
     { name = "name",
       uri = "https://name.cachix.org",
       isPublic = True,
+      permission = Admin,
       publicSigningKeys = ["pub"],
       githubUsername = "foobar"
     }

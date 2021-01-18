@@ -1,6 +1,6 @@
 cabal-version:      2.2
 name:               cachix
-version:            0.3.8
+version:            0.6.0
 license:            Apache-2.0
 license-file:       LICENSE
 copyright:          2018 Domen Kožar
@@ -55,35 +55,32 @@ library
     Cachix.Client.NixVersion
     Cachix.Client.OptionsParser
     Cachix.Client.Push
+    Cachix.Client.PushQueue
+    Cachix.Client.Retry
     Cachix.Client.Secrets
     Cachix.Client.Servant
     Cachix.Client.Store
     Cachix.Client.Store.Context
     Cachix.Client.URI
+    Cachix.Client.WatchStore
     System.Nix.Base32
 
-  cc-options:        -Wall
-  pkgconfig-depends: nix-store ==2.0 || >2.0, nix-main ==2.0 || >2.0
   hs-source-dirs:    src
   other-modules:     Paths_cachix
   autogen-modules:   Paths_cachix
-  extra-libraries:
-    stdc++
-    boost_context
-
-  include-dirs:      cbits
   build-depends:
     , async
     , base                  >=4.7     && <5
     , base64-bytestring
     , bytestring
     , cachix-api
+    , concurrent-extra
     , conduit               >=1.3.0
     , conduit-extra
     , containers
     , cookie
     , cryptonite
-    , dhall
+    , dhall                 >=1.28.0
     , directory
     , ed25519
     , filepath
@@ -106,19 +103,26 @@ library
     , resourcet
     , retry
     , safe-exceptions
-    , servant               >=0.15
+    , servant               >=0.16
     , servant-auth
     , servant-auth-client   >=0.3.3.0
-    , servant-client        >=0.15
-    , servant-client-core   >=0.15
+    , servant-client        >=0.16
+    , servant-client-core   >=0.16
     , servant-conduit
+    , stm
     , text
     , unix
     , uri-bytestring
     , vector
     , versions
 
-  ghc-options:       -optc=-std=c++17
+  extra-libraries:
+    stdc++
+    boost_context
+
+  include-dirs:      cbits
+  pkgconfig-depends: nix-store ==2.0 || >2.0, nix-main ==2.0 || >2.0
+  ghc-options:       -optcxx-std=c++17
 
   if os(osx)
     ghc-options: -pgmc=clang++
@@ -151,11 +155,12 @@ test-suite cachix-test
     Spec
 
   build-depends:
-    , base        >=4.7 && <5
+    , base                 >=4.7 && <5
     , cachix
     , cachix-api
     , directory
     , here
     , hspec
     , protolude
+    , servant-auth-client
     , temporary

@@ -1,5 +1,6 @@
-- cd cachix && nix-shell --run releaser
-- cd cachix-api && nix-shell --run releaser
+- nix-shell --run "cd cachix-api && releaser"
+- nix-shell --run "cd cachix && releaser"
 - README.md `cachix --help` changes
-- run functional&regression tests
+- nix-shell -p lzma zlib nix pkgconfig boost --run "cabal haddock --haddock-for-hackage"
+- cabal upload --documentation --publish dist-newstyle/cachix-0.6.0-docs.tar.gz
 - bump link to https://cachix.org/api/v1/install

@@ -13,17 +13,20 @@ module Cachix.Client.InstallationMode
   )
 where
 
-import qualified Cachix.Api as Api
 import Cachix.Client.Config (Config)
+import qualified Cachix.Client.Config as Config
 import Cachix.Client.Exception (CachixException (..))
 import qualified Cachix.Client.NetRc as NetRc
 import qualified Cachix.Client.NixConf as NixConf
+import qualified Cachix.Types.BinaryCache as BinaryCache
+import qualified Data.Maybe
 import Data.String.Here
 import qualified Data.Text as T
 import Protolude
 import System.Directory (Permissions, createDirectoryIfMissing, getPermissions, writable)
 import System.Environment (lookupEnv)
 import System.FilePath ((</>), replaceFileName)
+import System.Process (readProcessWithExitCode)
 import Prelude (String)
 
 data NixEnv
@@ -44,7 +47,8 @@ data InstallationMode
 data UseOptions
   = UseOptions
       { useMode :: Maybe InstallationMode,
-        useNixOSFolder :: FilePath
+        useNixOSFolder :: FilePath,
+        useOutputDirectory :: Maybe FilePath
       }
   deriving (Show)
 
@@ -58,12 +62,15 @@ fromString _ = Nothing
 toString :: InstallationMode -> String
 toString (Install NixConf.Global) = "root-nixconf"
 toString (Install NixConf.Local) = "user-nixconf"
+toString (Install (NixConf.Custom _)) = "custom-nixconf"
 toString WriteNixOS = "nixos"
 toString UntrustedRequiresSudo = "untrusted-requires-sudo"
 toString UntrustedNixOS = "untrusted-nixos"
 
-getInstallationMode :: NixEnv -> InstallationMode
-getInstallationMode nixenv
+getInstallationMode :: NixEnv -> UseOptions -> InstallationMode
+getInstallationMode nixenv useOptions
+  | (isRoot nixenv || isTrusted nixenv) && isJust (useOutputDirectory useOptions) = Install (NixConf.Custom $ Data.Maybe.fromJust $ useOutputDirectory useOptions)
+  | isJust (useMode useOptions) = Data.Maybe.fromJust $ useMode useOptions
   | isNixOS nixenv && isRoot nixenv = WriteNixOS
   | not (isNixOS nixenv) && isRoot nixenv = Install NixConf.Global
   | isTrusted nixenv = Install NixConf.Local
@@ -71,7 +78,7 @@ getInstallationMode nixenv
   | otherwise = UntrustedRequiresSudo
 
 -- | Add a Binary cache to nix.conf, print nixos config or fail
-addBinaryCache :: Maybe Config -> Api.BinaryCache -> UseOptions -> InstallationMode -> IO ()
+addBinaryCache :: Maybe Config -> BinaryCache.BinaryCache -> UseOptions -> InstallationMode -> IO ()
 addBinaryCache _ _ _ UntrustedNixOS = do
   user <- getUser
   throwIO $
@@ -85,7 +92,7 @@ a) Run the same command as root to write NixOS configuration.
 b) Add the following to your configuration.nix to add your user as trusted 
    and then try again:
 
-  trustedUsers = [ "root" "${user}" ];
+  nix.trustedUsers = [ "root" "${user}" ];
 
     |]
 addBinaryCache _ _ _ UntrustedRequiresSudo = do
@@ -114,8 +121,11 @@ addBinaryCache maybeConfig bc _ (Install ncl) = do
       NixConf.Local -> do
         lnc <- NixConf.read NixConf.Local
         return ([gnc, lnc], lnc)
+      NixConf.Custom _ -> do
+        lnc <- NixConf.read ncl
+        return ([lnc], lnc)
   let nixconf = fromMaybe (NixConf.NixConf []) output
-  netrcLocMaybe <- forM (guard $ not (Api.isPublic bc)) $ const $ addPrivateBinaryCacheNetRC maybeConfig bc ncl
+  netrcLocMaybe <- forM (guard $ not (BinaryCache.isPublic bc)) $ const $ addPrivateBinaryCacheNetRC maybeConfig bc ncl
   let addNetRCLine :: NixConf.NixConf -> NixConf.NixConf
       addNetRCLine = fromMaybe identity $ do
         netrcLoc <- netrcLocMaybe :: Maybe FilePath
@@ -125,9 +135,9 @@ addBinaryCache maybeConfig bc _ (Install ncl) = do
         pure (NixConf.setNetRC $ toS netrcLoc)
   NixConf.write ncl $ addNetRCLine $ NixConf.add bc (catMaybes input) nixconf
   filename <- NixConf.getFilename ncl
-  putStrLn $ "Configured " <> Api.uri bc <> " binary cache in " <> toS filename
+  putStrLn $ "Configured " <> BinaryCache.uri bc <> " binary cache in " <> toS filename
 
-nixosBinaryCache :: Maybe Config -> Api.BinaryCache -> UseOptions -> IO ()
+nixosBinaryCache :: Maybe Config -> BinaryCache.BinaryCache -> UseOptions -> IO ()
 nixosBinaryCache maybeConfig bc UseOptions {useNixOSFolder = baseDirectory} = do
   _ <- try $ createDirectoryIfMissing True $ toS toplevel :: IO (Either SomeException ())
   eitherPermissions <- try $ getPermissions (toS toplevel) :: IO (Either SomeException Permissions)
@@ -140,7 +150,7 @@ nixosBinaryCache maybeConfig bc UseOptions {useNixOSFolder = baseDirectory} = do
     installFiles = do
       writeFile (toS glueModuleFile) glueModule
       writeFile (toS cacheModuleFile) cacheModule
-      unless (Api.isPublic bc) $ void $ addPrivateBinaryCacheNetRC maybeConfig bc NixConf.Global
+      unless (BinaryCache.isPublic bc) $ void $ addPrivateBinaryCacheNetRC maybeConfig bc NixConf.Global
       putText instructions
     configurationNix :: Text
     configurationNix = toS $ toS baseDirectory </> "configuration.nix"
@@ -151,7 +161,7 @@ nixosBinaryCache maybeConfig bc UseOptions {useNixOSFolder = baseDirectory} = do
     glueModuleFile :: Text
     glueModuleFile = toplevel <> ".nix"
     cacheModuleFile :: Text
-    cacheModuleFile = toplevel <> "/" <> toS (Api.name bc) <> ".nix"
+    cacheModuleFile = toplevel <> "/" <> toS (BinaryCache.name bc) <> ".nix"
     noEtcPermissionInstructions :: Text -> Text
     noEtcPermissionInstructions dir =
       [iTrim|
@@ -163,7 +173,7 @@ Pass `--nixos-folder /etc/mynixos/` as an alternative location with write permis
     instructions =
       [iTrim|
 Cachix configuration written to ${glueModuleFile}.
-Binary cache ${Api.name bc} configuration written to ${cacheModuleFile}.
+Binary cache ${BinaryCache.name bc} configuration written to ${cacheModuleFile}.
 
 To start using cachix add the following to your ${configurationNix}:
 
@@ -195,40 +205,43 @@ in {
 {
   nix = {
     binaryCaches = [
-      "${Api.uri bc}"
+      "${BinaryCache.uri bc}"
     ];
     binaryCachePublicKeys = [
-      ${T.intercalate " " (map (\s -> "\"" <> s <> "\"") (Api.publicSigningKeys bc))}
+      ${T.intercalate " " (map (\s -> "\"" <> s <> "\"") (BinaryCache.publicSigningKeys bc))}
     ];
   };
 }
     |]
 
 -- TODO: allow overriding netrc location
-addPrivateBinaryCacheNetRC :: Maybe Config -> Api.BinaryCache -> NixConf.NixConfLoc -> IO FilePath
+addPrivateBinaryCacheNetRC :: Maybe Config -> BinaryCache.BinaryCache -> NixConf.NixConfLoc -> IO FilePath
 addPrivateBinaryCacheNetRC maybeConfig bc nixconf = do
   filename <- (`replaceFileName` "netrc") <$> NixConf.getFilename nixconf
-  case maybeConfig of
-    Nothing -> panic "Run $ cachix authtoken <token>"
-    Just config -> do
-      let netrcfile = fromMaybe filename Nothing -- TODO: get netrc from nixconf
-      NetRc.add config [bc] netrcfile
-      putErrText $ "Configured private read access credentials in " <> toS filename
-      pure filename
+  authToken <- Config.getAuthTokenRequired maybeConfig
+  let netrcfile = fromMaybe filename Nothing -- TODO: get netrc from nixconf
+  NetRc.add authToken [bc] netrcfile
+  putErrText $ "Configured private read access credentials in " <> toS filename
+  pure filename
 
 isTrustedUser :: [Text] -> IO Bool
 isTrustedUser users = do
   user <- getUser
   -- to detect single user installations
   permissions <- getPermissions "/nix/store"
-  let isTrustedU = writable permissions || user `elem` users
-  when (not (null groups) && not isTrustedU) $ do
-    -- TODO: support Nix group syntax
-    putText "Warn: cachix doesn't yet support checking if user is trusted via groups, so it will recommend sudo"
-    putStrLn $ "Warn: groups found " <> T.intercalate "," groups
-  return isTrustedU
+  isInAGroup <- userInAnyGroup user
+  return $ writable permissions || user `elem` users || isInAGroup
   where
-    groups = filter (\u -> T.head u == '@') users
+    groups :: [Text]
+    groups = map T.tail $ filter (\u -> T.head u == '@') users
+    userInAnyGroup :: Text -> IO Bool
+    userInAnyGroup user = do
+      isIn <- for groups $ checkUserInGroup user
+      return $ any identity isIn
+    checkUserInGroup :: Text -> Text -> IO Bool
+    checkUserInGroup user groupName = do
+      (_exitcode, out, _err) <- readProcessWithExitCode "id" ["-Gn", toS user] mempty
+      return $ groupName `T.isInfixOf` toS out
 
 getUser :: IO Text
 getUser = do

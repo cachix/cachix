@@ -1,10 +1,13 @@
-resolver: lts-15.14
+resolver: nightly-2020-11-21
 packages:
 - cachix-api
 - cachix
 extra-deps:
-- servant-auth-client-0.4.0.0
+- netrc-0.2.0.0
+- servant-auth-swagger-0.2.10.1
+- servant-auth-0.4.0.0
+- servant-auth-client-0.4.1.0@rev:1
+- nix-narinfo-0.1.0.1
 nix:
-    packages: []
-    shell-file: ./nix/stack-shell.nix
-    pure: false
+  packages: []
+  shell-file: ./nix/stack-shell.nix

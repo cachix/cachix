@@ -4,16 +4,16 @@ module Cachix.Client.NetRc
   )
 where
 
-import qualified Cachix.Api as Api
-import Cachix.Api.Error (escalateAs)
-import Cachix.Client.Config (Config, authToken)
+import Cachix.API.Error (escalateAs)
 import Cachix.Client.Exception (CachixException (NetRcParseError))
+import qualified Cachix.Types.BinaryCache as BinaryCache
 import qualified Data.ByteString as BS
 import Data.List (nubBy)
 import qualified Data.Text as T
 import Network.NetRc
-import Protolude
-import Servant.Auth.Client (getToken)
+import Protolude hiding (toS)
+import Protolude.Conv
+import Servant.Auth.Client (Token, getToken)
 import System.Directory (createDirectoryIfMissing, doesFileExist)
 import System.FilePath (takeDirectory)
 
@@ -21,11 +21,11 @@ import System.FilePath (takeDirectory)
 --   Makes sure there are no duplicate entries (using domain as a key).
 --   If file under filename doesn't exist it's created.
 add ::
-  Config ->
-  [Api.BinaryCache] ->
+  Token ->
+  [BinaryCache.BinaryCache] ->
   FilePath ->
   IO ()
-add config binarycaches filename = do
+add cachixAuthToken binarycaches filename = do
   doesExist <- doesFileExist filename
   netrc <-
     if doesExist
@@ -43,13 +43,13 @@ add config binarycaches filename = do
           f x y = nrhName x == nrhName y
        in NetRc (nubBy f (new ++ hosts)) macdefs
     new :: [NetRcHost]
-    new = map mkHost $ filter (not . Api.isPublic) binarycaches
-    mkHost :: Api.BinaryCache -> NetRcHost
+    new = map mkHost $ filter (not . BinaryCache.isPublic) binarycaches
+    mkHost :: BinaryCache.BinaryCache -> NetRcHost
     mkHost bc =
       NetRcHost
-        { nrhName = toS $ stripPrefix "http://" $ stripPrefix "https://" (Api.uri bc),
+        { nrhName = toS $ stripPrefix "http://" $ stripPrefix "https://" (BinaryCache.uri bc),
           nrhLogin = "",
-          nrhPassword = getToken (authToken config),
+          nrhPassword = getToken cachixAuthToken,
           nrhAccount = "",
           nrhMacros = []
         }

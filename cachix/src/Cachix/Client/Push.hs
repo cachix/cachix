@@ -1,58 +1,80 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators #-}
 
+{- This is a standalone module so it shouldn't depend on any CLI state like Env -}
 module Cachix.Client.Push
   ( -- * Pushing a single path
     pushSingleStorePath,
-    PushCache (..),
+    uploadStorePath,
+    PushParams (..),
+    PushSecret (..),
     PushStrategy (..),
     defaultWithXzipCompressor,
     defaultWithXzipCompressorWithLevel,
+    findPushSecret,
 
     -- * Pushing a closure of store paths
     pushClosure,
+    getMissingPathsForClosure,
     mapConcurrentlyBounded,
   )
 where
 
-import qualified Cachix.Api as Api
-import Cachix.Api.Error
-import Cachix.Api.Signing (fingerprint, passthroughHashSink, passthroughHashSinkB16, passthroughSizeSink)
+import qualified Cachix.API as API
+import Cachix.API.Error
+import Cachix.API.Signing (fingerprint, passthroughHashSink, passthroughHashSinkB16, passthroughSizeSink)
+import qualified Cachix.Client.Config as Config
 import Cachix.Client.Exception (CachixException (..))
+import Cachix.Client.Retry (retryAll)
 import Cachix.Client.Secrets
 import Cachix.Client.Servant
 import Cachix.Client.Store (Store)
 import qualified Cachix.Client.Store as Store
+import qualified Cachix.Types.ByteStringStreaming
 import qualified Cachix.Types.NarInfoCreate as Api
+import qualified Cachix.Types.NarInfoHash as NarInfoHash
 import Control.Concurrent.Async (mapConcurrently)
 import qualified Control.Concurrent.QSem as QSem
 import Control.Exception.Safe (MonadMask, throwM)
 import Control.Monad.Trans.Resource (ResourceT)
-import Control.Retry (RetryPolicy, RetryStatus, exponentialBackoff, limitRetries, recoverAll)
+import Control.Retry (RetryStatus)
 import Crypto.Sign.Ed25519
 import qualified Data.ByteString.Base64 as B64
+import Data.Coerce (coerce)
 import Data.Conduit
 import Data.Conduit.Lzma (compress)
-import Data.Conduit.Process
+import Data.Conduit.Process hiding (env)
 import Data.IORef
 import qualified Data.Set as Set
+import Data.String.Here
 import qualified Data.Text as T
 import Network.HTTP.Types (status401, status404)
-import Protolude
+import Protolude hiding (toS)
+import Protolude.Conv
 import Servant.API
 import Servant.Auth ()
 import Servant.Auth.Client
-import Servant.Client.Streaming hiding (ClientError)
+import Servant.Client.Streaming
 import Servant.Conduit ()
+import System.Environment (lookupEnv)
 import qualified System.Nix.Base32
 
-data PushCache
-  = PushCache
-      { pushCacheName :: Text,
-        pushCacheSigningKey :: SigningKey,
-        pushCacheToken :: Token
+data PushSecret
+  = PushToken Token
+  | PushSigningKey Token SigningKey
+
+data PushParams m r
+  = PushParams
+      { pushParamsName :: Text,
+        pushParamsSecret :: PushSecret,
+        -- | how to report results, (some) errors, and do some things
+        pushParamsStrategy :: Text -> PushStrategy m r,
+        -- | cachix base url, connection manager, see 'Cachix.Client.URI.defaultCachixBaseUrl', 'Servant.Client.mkClientEnv'
+        pushParamsClientEnv :: ClientEnv,
+        pushParamsStore :: Store
       }
 
 data PushStrategy m r
@@ -75,52 +97,49 @@ defaultWithXzipCompressorWithLevel l = ($ compress (Just l))
 
 pushSingleStorePath ::
   (MonadMask m, MonadIO m) =>
-  -- | cachix base url, connection manager, see 'Cachix.Client.URI.defaultCachixBaseUrl', 'Servant.Client.mkClientEnv'
-  ClientEnv ->
-  Store ->
   -- | details for pushing to cache
-  PushCache ->
-  -- | how to report results, (some) errors, and do some things
-  PushStrategy m r ->
+  PushParams m r ->
   -- | store path
   Text ->
   -- | r is determined by the 'PushStrategy'
   m r
-pushSingleStorePath clientEnv _store cache cb storePath = retryAll $ \retrystatus -> do
+pushSingleStorePath cache storePath = retryAll $ \retrystatus -> do
   let storeHash = fst $ splitStorePath $ toS storePath
-      name = pushCacheName cache
+      name = pushParamsName cache
+      strategy = pushParamsStrategy cache storePath
   -- Check if narinfo already exists
-  -- TODO: query also cache.nixos.org? server-side?
   res <-
-    liftIO $ (`runClientM` clientEnv) $
-      Api.narinfoHead
-        (cachixBCClient name)
-        (pushCacheToken cache)
-        (Api.NarInfoC storeHash)
+    liftIO $ (`runClientM` pushParamsClientEnv cache) $
+      API.narinfoHead
+        cachixClient
+        (getCacheAuthToken (pushParamsSecret cache))
+        name
+        (NarInfoHash.NarInfoHash storeHash)
   case res of
-    Right NoContent -> onAlreadyPresent cb -- we're done as store path is already in the cache
+    Right NoContent -> onAlreadyPresent strategy -- we're done as store path is already in the cache
     Left err
-      | isErr err status404 -> uploadStorePath clientEnv _store cache cb storePath retrystatus
-      | isErr err status401 -> on401 cb
-      | otherwise -> onError cb err
+      | isErr err status404 -> uploadStorePath cache storePath retrystatus
+      | isErr err status401 -> on401 strategy
+      | otherwise -> onError strategy err
+
+getCacheAuthToken :: PushSecret -> Token
+getCacheAuthToken (PushToken token) = token
+getCacheAuthToken (PushSigningKey token _) = token
 
 uploadStorePath ::
   (MonadMask m, MonadIO m) =>
-  -- | cachix base url, connection manager, see 'Cachix.Client.URI.defaultCachixBaseUrl', 'Servant.Client.mkClientEnv'
-  ClientEnv ->
-  Store ->
   -- | details for pushing to cache
-  PushCache ->
-  -- | how to report results, (some) errors, and do some things
-  PushStrategy m r ->
-  -- | store path
+  PushParams m r ->
   Text ->
   RetryStatus ->
   -- | r is determined by the 'PushStrategy'
   m r
-uploadStorePath clientEnv store cache cb storePath retrystatus = do
+uploadStorePath cache storePath retrystatus = do
   let (storeHash, storeSuffix) = splitStorePath $ toS storePath
-      name = pushCacheName cache
+      name = pushParamsName cache
+      store = pushParamsStore cache
+      clientEnv = pushParamsClientEnv cache
+      strategy = pushParamsStrategy cache storePath
   narSizeRef <- liftIO $ newIORef 0
   fileSizeRef <- liftIO $ newIORef 0
   narHashRef <- liftIO $ newIORef ("" :: ByteString)
@@ -131,9 +150,11 @@ uploadStorePath clientEnv store cache cb storePath retrystatus = do
   let cmd = proc "nix-store" ["--dump", toS storePath]
       storePathSize :: Int64
       storePathSize = Store.validPathInfoNarSize pathinfo
-  onAttempt cb retrystatus storePathSize
-  (ClosedStream, stdoutStream, Inherited, cph) <- liftIO $ streamingProcess cmd
-  withXzipCompressor cb $ \xzCompressor -> do
+  onAttempt strategy retrystatus storePathSize
+  -- create_group makes subprocess ignore signals such as ctrl-c that we handle in haskell main thread
+  -- see https://github.com/haskell/process/issues/198
+  (ClosedStream, stdoutStream, Inherited, cph) <- liftIO $ streamingProcess (cmd {create_group = True})
+  withXzipCompressor strategy $ \xzCompressor -> do
     let stream' =
           stdoutStream
             .| passthroughSizeSink narSizeRef
@@ -153,7 +174,7 @@ uploadStorePath clientEnv store cache cb storePath retrystatus = do
     (_ :: NoContent) <-
       liftIO
         $ (`withClientM` newClientEnv)
-          (Api.createNar (cachixBCStreamingClient name) stream')
+          (API.createNar cachixClient (getCacheAuthToken (pushParamsSecret cache)) name (mapOutput coerce stream'))
         $ escalate
           >=> \NoContent -> do
             exitcode <- waitForStreamingProcess cph
@@ -167,13 +188,15 @@ uploadStorePath clientEnv store cache cb storePath retrystatus = do
       fileHash <- readIORef fileHashRef
       fileSize <- readIORef fileSizeRef
       deriver <-
-        if omitDeriver cb
+        if omitDeriver strategy
           then pure Store.unknownDeriver
           else toS <$> Store.validPathInfoDeriver pathinfo
       referencesPathSet <- Store.validPathInfoReferences pathinfo
       references <- sort <$> Store.traversePathSet (pure . toS) referencesPathSet
       let fp = fingerprint storePath narHash narSize references
-          sig = dsign (signingSecretKey $ pushCacheSigningKey cache) fp
+          (sig, authToken) = case pushParamsSecret cache of
+            PushToken token -> (Nothing, token)
+            PushSigningKey token signKey -> (Just $ toS $ B64.encode $ unSignature $ dsign (signingSecretKey signKey) fp, token)
           nic =
             Api.NarInfoCreate
               { Api.cStoreHash = storeHash,
@@ -187,24 +210,18 @@ uploadStorePath clientEnv store cache cb storePath retrystatus = do
                   if deriver == Store.unknownDeriver
                     then deriver
                     else T.drop 11 deriver,
-                Api.cSig = toS $ B64.encode $ unSignature sig
+                Api.cSig = sig
               }
       escalate $ Api.isNarInfoCreateValid nic
       -- Upload narinfo with signature
       escalate <=< (`runClientM` clientEnv) $
-        Api.createNarinfo
-          (cachixBCClient name)
-          (Api.NarInfoC storeHash)
+        API.createNarinfo
+          cachixClient
+          authToken
+          name
+          (NarInfoHash.NarInfoHash storeHash)
           nic
-    onDone cb
-
--- Catches all exceptions except skipAsyncExceptions
-retryAll :: (MonadIO m, MonadMask m) => (RetryStatus -> m a) -> m a
-retryAll = recoverAll defaultRetryPolicy
-  where
-    defaultRetryPolicy :: RetryPolicy
-    defaultRetryPolicy =
-      exponentialBackoff 100000 <> limitRetries 3
+    onDone strategy
 
 -- | Push an entire closure
 --
@@ -215,16 +232,19 @@ pushClosure ::
   --
   -- For example: @'mapConcurrentlyBounded' 4@
   (forall a b. (a -> m b) -> [a] -> m [b]) ->
-  -- | See 'pushSingleStorePath'
-  ClientEnv ->
-  Store ->
-  PushCache ->
-  (Text -> PushStrategy m r) ->
+  PushParams m r ->
   -- | Initial store paths
   [Text] ->
   -- | Every @r@ per store path of the entire closure of store paths
   m [r]
-pushClosure traversal clientEnv store pushCache pushStrategy inputStorePaths = do
+pushClosure traversal pushParams inputStorePaths = do
+  missingPaths <- getMissingPathsForClosure pushParams inputStorePaths
+  traversal (\path -> retryAll $ \retrystatus -> uploadStorePath pushParams path retrystatus) missingPaths
+
+getMissingPathsForClosure :: (MonadIO m, MonadMask m) => PushParams m r -> [Text] -> m [Text]
+getMissingPathsForClosure pushParams inputStorePaths = do
+  let store = pushParamsStore pushParams
+      clientEnv = pushParamsClientEnv pushParams
   -- Get the transitive closure of dependencies
   paths <-
     liftIO $ do
@@ -235,21 +255,52 @@ pushClosure traversal clientEnv store pushCache pushStrategy inputStorePaths = d
       closure <- Store.computeFSClosure store Store.defaultClosureParams inputs
       Store.traversePathSet (pure . toSL) closure
   -- Check what store paths are missing
-  -- TODO: query also cache.nixos.org? server-side?
   missingHashesList <-
     retryAll $ \_ ->
       escalate
         =<< liftIO
           ( (`runClientM` clientEnv) $
-              Api.narinfoBulk
-                (cachixBCClient (pushCacheName pushCache))
-                (pushCacheToken pushCache)
+              API.narinfoBulk
+                cachixClient
+                (getCacheAuthToken (pushParamsSecret pushParams))
+                (pushParamsName pushParams)
                 (fst . splitStorePath <$> paths)
           )
-  let missingHashes = Set.fromList missingHashesList
-      missingPaths = filter (\path -> Set.member (fst (splitStorePath path)) missingHashes) paths
-  -- TODO: make pool size configurable, on beefier machines this could be doubled
-  traversal (\path -> retryAll $ \retrystatus -> uploadStorePath clientEnv store pushCache (pushStrategy path) path retrystatus) missingPaths
+  return $ filter (\path -> Set.member (fst (splitStorePath path)) (Set.fromList missingHashesList)) paths
+
+-- TODO: move to a separate module specific to cli
+
+-- | Find auth token or signing key in the 'Config' or environment variable
+findPushSecret ::
+  Maybe Config.Config ->
+  -- | Cache name
+  Text ->
+  -- | Secret key or exception
+  IO PushSecret
+findPushSecret config name = do
+  maybeSigningKeyEnv <- toS <<$>> lookupEnv "CACHIX_SIGNING_KEY"
+  maybeAuthToken <- Config.getAuthTokenMaybe config
+  let maybeSigningKeyConfig = case config of
+        Nothing -> Nothing
+        Just cfg -> Config.secretKey <$> head (getBinaryCache cfg)
+  case maybeSigningKeyEnv <|> maybeSigningKeyConfig of
+    Just signingKey -> escalateAs FatalError $ PushSigningKey (fromMaybe (Token "") maybeAuthToken) <$> parseSigningKeyLenient signingKey
+    Nothing -> case maybeAuthToken of
+      Just authToken -> return $ PushToken authToken
+      Nothing -> throwIO $ NoSigningKey msg
+  where
+    -- we reverse list of caches to prioritize keys added as last
+    getBinaryCache c = filter (\bc -> Config.name bc == name) $ reverse $ Config.binaryCaches c
+    msg :: Text
+    msg =
+      [iTrim|
+Neither auth token nor signing key are present.
+
+They are looked up via $CACHIX_AUTH_TOKEN and $CACHIX_SIGNING_KEY,
+and if missing also looked up from ~/.config/cachix/cachix.dhall
+
+Read https://mycache.cachix.org for instructions how to push to your binary cache.
+    |]
 
 mapConcurrentlyBounded :: Traversable t => Int -> (a -> IO b) -> t a -> IO (t b)
 mapConcurrentlyBounded bound action items = do

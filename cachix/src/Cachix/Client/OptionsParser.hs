@@ -12,7 +12,8 @@ import qualified Cachix.Client.Config as Config
 import qualified Cachix.Client.InstallationMode as InstallationMode
 import Cachix.Client.URI (defaultCachixURI)
 import Options.Applicative
-import Protolude hiding (option)
+import Protolude hiding (option, toS)
+import Protolude.Conv
 import URI.ByteString
   ( Absolute,
     URIRef,
@@ -62,9 +63,10 @@ type BinaryCacheName = Text
 
 data CachixCommand
   = AuthToken Text
-  | Create BinaryCacheName
   | GenerateKeypair BinaryCacheName
   | Push PushArguments
+  | WatchStore PushOptions Text
+  | WatchExec PushOptions Text Text [Text]
   | Use BinaryCacheName InstallationMode.UseOptions
   | Version
   deriving (Show)
@@ -85,15 +87,15 @@ data PushOptions
 parserCachixCommand :: Parser CachixCommand
 parserCachixCommand =
   subparser $
-    command "authtoken" (infoH authtoken (progDesc "Configure token for authentication to cachix.org"))
-      <> command "create" (infoH create (progDesc "DEPRECATED: Go to https://cachix.org instead"))
-      <> command "generate-keypair" (infoH generateKeypair (progDesc "Generate keypair for a binary cache"))
-      <> command "push" (infoH push (progDesc "Upload Nix store paths to the binary cache"))
-      <> command "use" (infoH use (progDesc "Configure nix.conf to enable binary cache during builds"))
+    command "authtoken" (infoH authtoken (progDesc "Configure authentication token for communication to HTTP API"))
+      <> command "generate-keypair" (infoH generateKeypair (progDesc "Generate signing key pair for a binary cache"))
+      <> command "push" (infoH push (progDesc "Upload Nix store paths to a binary cache"))
+      <> command "watch-exec" (infoH watchExec (progDesc "Run a command while it's running watch /nix/store for newly added store paths and upload them to a binary cache"))
+      <> command "watch-store" (infoH watchStore (progDesc "Indefinitely watch /nix/store for newly added store paths and upload them to a binary cache"))
+      <> command "use" (infoH use (progDesc "Configure a binary cache by writing nix.conf and netrc files"))
   where
-    nameArg = strArgument (metavar "NAME")
-    authtoken = AuthToken <$> strArgument (metavar "TOKEN")
-    create = Create <$> nameArg
+    nameArg = strArgument (metavar "CACHE-NAME")
+    authtoken = AuthToken <$> strArgument (metavar "AUTH-TOKEN")
     generateKeypair = GenerateKeypair <$> nameArg
     validatedLevel l =
       l <$ unless (l `elem` [0 .. 9]) (readerError $ "value " <> show l <> " not in expected range: [0..9]")
@@ -124,13 +126,15 @@ parserCachixCommand =
     pushPaths =
       (\paths opts cache -> PushPaths opts cache paths)
         <$> many (strArgument (metavar "PATHS..."))
+    watchExec = WatchExec <$> pushOptions <*> nameArg <*> strArgument (metavar "CMD") <*> many (strArgument (metavar "-- ARGS"))
+    watchStore = WatchStore <$> pushOptions <*> nameArg
     pushWatchStore =
       (\() opts cache -> PushWatchStore opts cache)
         <$> flag'
           ()
           ( long "watch-store"
               <> short 'w'
-              <> help "Run in daemon mode and push store paths as they are added to /nix/store"
+              <> help "DEPRECATED: use watch-store command instead."
           )
     use =
       Use <$> nameArg
@@ -146,9 +150,16 @@ parserCachixCommand =
                 <*> strOption
                   ( long "nixos-folder"
                       <> short 'd'
-                      <> help "Base directory for NixOS configuration"
+                      <> help "Base directory for NixOS configuration generation"
                       <> value "/etc/nixos/"
                       <> showDefault
+                  )
+                <*> optional
+                  ( strOption
+                      ( long "output-directory"
+                          <> short 'O'
+                          <> help "Output directory where nix.conf and netrc will be updated."
+                      )
                   )
             )
 
@@ -173,8 +184,8 @@ optsInfo configpath = infoH parser desc
 desc :: InfoMod a
 desc =
   fullDesc
-    <> progDesc "Sign into https://cachix.org to get started."
-    <> header "cachix.org command interface"
+    <> progDesc "To get started log in to https://app.cachix.org"
+    <> header "https://cachix.org command line interface"
 
 -- TODO: usage footer
 infoH :: Parser a -> InfoMod a -> ParserInfo a

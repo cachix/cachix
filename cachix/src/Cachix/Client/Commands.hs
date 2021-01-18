@@ -5,15 +5,16 @@
 
 module Cachix.Client.Commands
   ( authtoken,
-    create,
     generateKeypair,
     push,
+    watchStore,
+    watchExec,
     use,
   )
 where
 
-import qualified Cachix.Api as Api
-import Cachix.Api.Error
+import qualified Cachix.API as API
+import Cachix.API.Error
 import Cachix.Client.Config
   ( BinaryCacheConfig (BinaryCacheConfig),
     Config (..),
@@ -33,55 +34,56 @@ import Cachix.Client.OptionsParser
     PushOptions (..),
   )
 import Cachix.Client.Push
+import Cachix.Client.Retry (retryAll)
 import Cachix.Client.Secrets
   ( SigningKey (SigningKey),
     exportSigningKey,
-    parseSigningKeyLenient,
   )
 import Cachix.Client.Servant
+import qualified Cachix.Client.WatchStore as WatchStore
 import qualified Cachix.Types.SigningKeyCreate as SigningKeyCreate
-import Control.Exception.Safe (handle, throwM)
+import Control.Exception.Safe (throwM)
 import Control.Retry (RetryStatus (rsIterNumber))
-import Crypto.Sign.Ed25519
+import Crypto.Sign.Ed25519 (PublicKey (PublicKey), createKeypair)
 import qualified Data.ByteString.Base64 as B64
-import Data.List (isSuffixOf)
 import Data.String.Here
 import qualified Data.Text as T
 import Network.HTTP.Types (status401, status404)
-import Protolude
+import Protolude hiding (toS)
+import Protolude.Conv
 import Servant.API (NoContent)
 import Servant.Auth.Client
 import Servant.Client.Streaming
 import Servant.Conduit ()
 import System.Directory (doesFileExist)
-import System.Environment (lookupEnv)
-import System.FSNotify
 import System.IO (hIsTerminalDevice)
+import qualified System.Posix.Signals as Signals
+import qualified System.Process
 
 authtoken :: Env -> Text -> IO ()
 authtoken env token = do
   -- TODO: check that token actually authenticates!
   writeConfig (configPath (cachixoptions env)) $ case config env of
-    Just cfg -> cfg {authToken = Token (toS token)}
+    Just cfg -> Config.setAuthToken cfg $ Token (toS token)
     Nothing -> mkConfig token
 
-create :: Env -> Text -> IO ()
-create _ _ =
-  throwIO $ DeprecatedCommand "Create command has been deprecated. Please visit https://cachix.org to create a binary cache."
-
 generateKeypair :: Env -> Text -> IO ()
-generateKeypair Env {config = Nothing} _ = throwIO $ NoConfig "Start with visiting https://cachix.org and copying the token to $ cachix authtoken <token>"
-generateKeypair env@Env {config = Just cfg} name = do
+generateKeypair env name = do
+  cachixAuthToken <- Config.getAuthTokenRequired (config env)
   (PublicKey pk, sk) <- createKeypair
   let signingKey = exportSigningKey $ SigningKey sk
       signingKeyCreate = SigningKeyCreate.SigningKeyCreate (toS $ B64.encode pk)
       bcc = BinaryCacheConfig name signingKey
   -- we first validate if key can be added to the binary cache
   (_ :: NoContent) <-
-    escalate <=< (`runClientM` clientenv env) $
-      Api.createKey (cachixBCClient name) (authToken cfg) signingKeyCreate
+    escalate <=< retryAll $ \_ ->
+      (`runClientM` clientenv env) $
+        API.createKey cachixClient cachixAuthToken name signingKeyCreate
   -- if key was successfully added, write it to the config
   -- TODO: warn if binary cache with the same key already exists
+  let cfg = case config env of
+        Just it -> it
+        Nothing -> Config.mkConfig $ toS $ getToken cachixAuthToken
   writeConfig (configPath (cachixoptions env)) $
     cfg {binaryCaches = binaryCaches cfg <> [bcc]}
   putStrLn
@@ -105,14 +107,10 @@ IMPORTANT: Make sure to make a backup for the signing key above, as you have the
         Text
     )
 
-envToToken :: Env -> Token
-envToToken env =
-  maybe (Token "") authToken (config env)
-
 notAuthenticatedBinaryCache :: Text -> CachixException
 notAuthenticatedBinaryCache name =
   AccessDeniedBinaryCache $
-    "Binary cache " <> name <> " doesn't exist or it's private and you must first authenticate using:  $ cachix authtoken <token>"
+    "Binary cache " <> name <> " doesn't exist or it's private. " <> Config.noAuthTokenError
 
 accessDeniedBinaryCache :: Text -> CachixException
 accessDeniedBinaryCache name =
@@ -120,8 +118,9 @@ accessDeniedBinaryCache name =
 
 use :: Env -> Text -> InstallationMode.UseOptions -> IO ()
 use env name useOptions = do
+  cachixAuthToken <- Config.getAuthTokenOptional (config env)
   -- 1. get cache public key
-  res <- (`runClientM` clientenv env) $ Api.get (cachixBCClient name) (envToToken env)
+  res <- retryAll $ \_ -> (`runClientM` clientenv env) $ API.getCache cachixClient cachixAuthToken name
   case res of
     Left err
       | isErr err status401 && isJust (config env) -> throwM $ accessDeniedBinaryCache name
@@ -141,9 +140,8 @@ use env name useOptions = do
                 InstallationMode.isNixOS = isNixOS
               }
       InstallationMode.addBinaryCache (config env) binaryCache useOptions $
-        fromMaybe (InstallationMode.getInstallationMode nixEnv) (InstallationMode.useMode useOptions)
+        InstallationMode.getInstallationMode nixEnv useOptions
 
--- TODO: lots of room for performance improvements
 push :: Env -> PushArguments -> IO ()
 push env (PushPaths opts name cliPaths) = do
   hasStdin <- not <$> hIsTerminalDevice stdin
@@ -157,80 +155,34 @@ push env (PushPaths opts name cliPaths) = do
       -- that may or may not be written to by the caller.
       -- This is somewhat like the behavior of `cat` for example.
       (_, paths) -> return paths
-  sk <- findSigningKey env name
-  store <- wait (storeAsync env)
+  pushParams <- getPushParams env opts name
   void $
     pushClosure
       (mapConcurrentlyBounded (numJobs opts))
-      (clientenv env)
-      store
-      PushCache
-        { pushCacheToken = envToToken env,
-          pushCacheName = name,
-          pushCacheSigningKey = sk
-        }
-      (pushStrategy env opts name)
+      pushParams
       inputStorePaths
   putText "All done."
-push env (PushWatchStore opts name) = withManager $ \mgr -> do
-  _ <- watchDir mgr "/nix/store" filterF action
-  _ <- wait (storeAsync env)
-  putText "Watching /nix/store for new builds ..."
-  forever $ threadDelay 1000000
+push _ _ = do
+  throwIO $ DeprecatedCommand "DEPRECATED: cachix watch-store has replaced cachix push --watch-store."
+
+watchStore :: Env -> PushOptions -> Text -> IO ()
+watchStore env opts name = do
+  pushParams <- getPushParams env opts name
+  WatchStore.startWorkers (numJobs opts) pushParams
+
+watchExec :: Env -> PushOptions -> Text -> Text -> [Text] -> IO ()
+watchExec env pushOpts name cmd args = do
+  pushParams <- getPushParams env pushOpts name
+  let watch = WatchStore.startWorkers (numJobs pushOpts) pushParams
+  (_, exitCode) <- concurrently watch run
+  exitWith exitCode
   where
-    logErr :: FilePath -> SomeException -> IO ()
-    logErr fp e = hPutStrLn stderr $ "Exception occured while pushing " <> fp <> ": " <> show e
-    action :: Action
-    action (Removed fp _ _) =
-      Control.Exception.Safe.handle (logErr fp)
-        $ pushStorePath env opts name
-        $ toS
-        $ dropEnd 5 fp
-    action _ = return ()
-    filterF :: ActionPredicate
-    filterF (Removed fp _ _)
-      | ".lock" `isSuffixOf` fp = True
-    filterF _ = False
-    dropEnd :: Int -> [a] -> [a]
-    dropEnd index xs = take (length xs - index) xs
-
--- | Find a secret key in the 'Config' or environment variable
-findSigningKey ::
-  Env ->
-  -- | Cache name
-  Text ->
-  -- | Secret key or exception
-  IO SigningKey
-findSigningKey env name = do
-  maybeEnvSK <- lookupEnv "CACHIX_SIGNING_KEY"
-  -- we reverse list of caches to prioritize keys added as last
-  let matches c = filter (\bc -> Config.name bc == name) $ reverse $ binaryCaches c
-      maybeBCSK = case config env of
-        Nothing -> Nothing
-        Just c -> Config.secretKey <$> head (matches c)
-  signingKey <- case maybeBCSK <|> toS <$> maybeEnvSK of
-    Just key -> return key
-    Nothing -> throwIO $ NoSigningKey msg
-  escalateAs FatalError $ parseSigningKeyLenient signingKey
-  where
-    msg :: Text
-    msg =
-      [iTrim|
-Signing key not found. 
-
-It is generated by `cachix generate-keypair <name>` and stored in ~/.config/cachix/cachix.dhall
-
-There are a few options why this happened:
-
-a) You haven't generated signing key yet for your cache 
-
-b) You have the key but you're pushing from a different machine. 
-   You can set it via $CACHIX_SIGNING_KEY environment variable.
-
-c) You've lost the signing key. In that case it's best to delete the cache and start again.
-   Note that everyone that configured the binary cache will have to do it again to set the new
-   public key.
-      |]
+    process = System.Process.proc (toS cmd) (toS <$> args)
+    run = do
+      (_, _, _, processHandle) <- System.Process.createProcess process
+      exitCode <- System.Process.waitForProcess processHandle
+      Signals.raiseSignal Signals.sigINT
+      return exitCode
 
 retryText :: RetryStatus -> Text
 retryText retrystatus =
@@ -255,19 +207,15 @@ pushStrategy env opts name storePath =
       Cachix.Client.Push.omitDeriver = Cachix.Client.OptionsParser.omitDeriver opts
     }
 
-pushStorePath :: Env -> PushOptions -> Text -> Text -> IO ()
-pushStorePath env opts name storePath = do
-  sk <- findSigningKey env name
-  -- use secret key from config or env
-  -- TODO: this shouldn't happen for each store path
+getPushParams :: Env -> PushOptions -> Text -> IO (PushParams IO ())
+getPushParams env pushOpts name = do
+  pushSecret <- findPushSecret (config env) name
   store <- wait (storeAsync env)
-  pushSingleStorePath
-    (clientenv env)
-    store
-    PushCache
-      { pushCacheToken = envToToken env,
-        pushCacheName = name,
-        pushCacheSigningKey = sk
+  return $
+    PushParams
+      { pushParamsName = name,
+        pushParamsSecret = pushSecret,
+        pushParamsClientEnv = clientenv env,
+        pushParamsStrategy = pushStrategy env pushOpts name,
+        pushParamsStore = store
       }
-    (pushStrategy env opts name storePath)
-    storePath

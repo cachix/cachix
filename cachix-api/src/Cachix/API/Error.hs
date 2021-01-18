@@ -1,4 +1,4 @@
-module Cachix.Api.Error
+module Cachix.API.Error
   ( escalate,
     escalateAs,
   )

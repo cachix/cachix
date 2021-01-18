@@ -1,9 +1,10 @@
 module NetRcSpec where
 
-import Cachix.Api (BinaryCache (..))
-import Cachix.Client.Config (Config (..))
 import qualified Cachix.Client.NetRc as NetRc
+import Cachix.Types.BinaryCache (BinaryCache (..))
+import Cachix.Types.Permission (Permission (..))
 import Protolude
+import Servant.Auth.Client (Token (..))
 import System.Directory (copyFile)
 import System.IO.Temp (withSystemTempFile)
 import Test.Hspec
@@ -15,7 +16,8 @@ bc1 =
       uri = "https://name.cachix.org",
       publicSigningKeys = ["pub"],
       isPublic = False,
-      githubUsername = "foobar"
+      githubUsername = "foobar",
+      permission = Read
     }
 
 bc2 :: BinaryCache
@@ -25,14 +27,8 @@ bc2 =
       uri = "https://name2.cachix.org",
       publicSigningKeys = ["pub2"],
       isPublic = False,
-      githubUsername = "foobar2"
-    }
-
-config :: Config
-config =
-  Config
-    { authToken = "token123",
-      binaryCaches = []
+      githubUsername = "foobar2",
+      permission = Read
     }
 
 -- TODO: poor man's golden tests, use https://github.com/stackbuilders/hspec-golden
@@ -41,7 +37,7 @@ test caches goldenName = withSystemTempFile "hspec-netrc" $ \filepath _ -> do
   let input = "test/data/" <> toS goldenName <> ".input"
       output = "test/data/" <> toS goldenName <> ".output"
   copyFile input filepath
-  NetRc.add config caches filepath
+  NetRc.add (Token "token123") caches filepath
   real <- readFile filepath
   expected <- readFile output
   real `shouldBe` expected

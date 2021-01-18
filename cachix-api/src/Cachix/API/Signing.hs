@@ -1,4 +1,4 @@
-module Cachix.Api.Signing
+module Cachix.API.Signing
   ( fingerprint,
     passthroughSizeSink,
     passthroughHashSinkB16,
@@ -14,7 +14,8 @@ import Data.Conduit
 import qualified Data.Conduit.Combinators as CC
 import Data.IORef
 import qualified Data.Text as T
-import Protolude
+import Protolude hiding (toS)
+import Protolude.Conv
 
 -- perl/lib/Nix/Manifest.pm:fingerprintPath
 -- NB: references must be sorted

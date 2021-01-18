@@ -1,7 +1,13 @@
 {-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE QuasiQuotes #-}
 
 module Cachix.Client.Config
-  ( Config (..),
+  ( Config (binaryCaches),
+    getAuthTokenRequired,
+    getAuthTokenOptional,
+    getAuthTokenMaybe,
+    setAuthToken,
+    noAuthTokenError,
     BinaryCacheConfig (..),
     readConfig,
     writeConfig,
@@ -12,9 +18,12 @@ module Cachix.Client.Config
 where
 
 import Cachix.Client.Config.Orphans ()
+import Cachix.Client.Exception (CachixException (..))
+import Data.String.Here
 import Dhall hiding (Text)
 import Dhall.Pretty (prettyExpr)
-import Protolude
+import Protolude hiding (toS)
+import Protolude.Conv
 import Servant.Auth.Client
 import System.Directory
   ( XdgDirectory (..),
@@ -22,6 +31,7 @@ import System.Directory
     doesFileExist,
     getXdgDirectory,
   )
+import System.Environment (lookupEnv)
 import System.FilePath.Posix (takeDirectory)
 import System.Posix.Files
   ( ownerReadMode,
@@ -77,3 +87,44 @@ writeConfig filename config = do
 assureFilePermissions :: FilePath -> IO ()
 assureFilePermissions fp =
   setFileMode fp $ unionFileModes ownerReadMode ownerWriteMode
+
+getAuthTokenRequired :: Maybe Config -> IO Token
+getAuthTokenRequired maybeConfig = do
+  authTokenMaybe <- getAuthTokenMaybe maybeConfig
+  case authTokenMaybe of
+    Just authtoken -> return authtoken
+    Nothing -> throwIO $ NoConfig $ toS noAuthTokenError
+
+-- TODO: https://github.com/haskell-servant/servant-auth/issues/173
+getAuthTokenOptional :: Maybe Config -> IO Token
+getAuthTokenOptional maybeConfig = do
+  authTokenMaybe <- getAuthTokenMaybe maybeConfig
+  return $ Protolude.maybe (Token "") identity authTokenMaybe
+
+-- get auth token from env variable or fallback to config
+getAuthTokenMaybe :: Maybe Config -> IO (Maybe Token)
+getAuthTokenMaybe maybeConfig = do
+  maybeAuthToken <- lookupEnv "CACHIX_AUTH_TOKEN"
+  case (maybeAuthToken, maybeConfig) of
+    (Just token, _) -> return $ Just $ Token $ toS token
+    (Nothing, Just cfg) -> return $ Just $ authToken cfg
+    (_, _) -> return Nothing
+
+noAuthTokenError :: Text
+noAuthTokenError =
+  [iTrim|
+Start by visiting https://app.cachix.org and create a personal/cache auth token.
+
+To configure the token:
+
+a) Via environment variable: 
+
+$ export CACHIX_AUTH_TOKEN=<token...>
+
+b) Via configuration file:
+
+$ cachix authtoken <token...>
+  |]
+
+setAuthToken :: Config -> Token -> Config
+setAuthToken cfg token = cfg {authToken = token}

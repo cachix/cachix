@@ -59,8 +59,6 @@ library
     Cachix.Client.Retry
     Cachix.Client.Secrets
     Cachix.Client.Servant
-    Cachix.Client.Store
-    Cachix.Client.Store.Context
     Cachix.Client.URI
     Cachix.Client.WatchStore
     System.Nix.Base32
@@ -86,12 +84,11 @@ library
     , filepath
     , fsnotify
     , here
+    , hercules-ci-cnix-store
     , http-client
     , http-client-tls
     , http-conduit
     , http-types
-    , inline-c
-    , inline-c-cpp
     , lzma-conduit
     , megaparsec            >=7.0.0
     , memory
@@ -115,17 +112,6 @@ library
     , uri-bytestring
     , vector
     , versions
-
-  extra-libraries:
-    stdc++
-    boost_context
-
-  include-dirs:      cbits
-  pkgconfig-depends: nix-store ==2.0 || >2.0, nix-main ==2.0 || >2.0
-  ghc-options:       -optcxx-std=c++17
-
-  if os(osx)
-    ghc-options: -pgmc=clang++
 
 executable cachix
   import:             defaults

@@ -31,8 +31,6 @@ import Cachix.Client.Exception (CachixException (..))
 import Cachix.Client.Retry (retryAll)
 import Cachix.Client.Secrets
 import Cachix.Client.Servant
-import Cachix.Client.Store (Store)
-import qualified Cachix.Client.Store as Store
 import qualified Cachix.Types.ByteStringStreaming
 import qualified Cachix.Types.NarInfoCreate as Api
 import qualified Cachix.Types.NarInfoHash as NarInfoHash
@@ -51,6 +49,8 @@ import Data.IORef
 import qualified Data.Set as Set
 import Data.String.Here
 import qualified Data.Text as T
+import Hercules.CNix.Store (Store)
+import qualified Hercules.CNix.Store as Store
 import Network.HTTP.Types (status401, status404)
 import Protolude hiding (toS)
 import Protolude.Conv

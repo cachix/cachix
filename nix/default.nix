@@ -5,9 +5,6 @@ let
     pre-commit-hooks-nix = import sources."pre-commit-hooks.nix";
     inherit (import sources.gitignore { inherit (pkgs) lib; })
       gitignoreSource;
-    nix-store = pkgs.nix;
-    nix-main = pkgs.nix;
-    boost_context = pkgs.boost;
     pre-commit-check = self.pre-commit-hooks-nix.run {
       hooks.cabal-fmt.enable = true;
       hooks.hlint.enable = true;

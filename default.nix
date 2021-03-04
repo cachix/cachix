@@ -9,4 +9,4 @@ let
   } + "/hercules-ci-cnix-store") {};
   cachix-api = pkgs.haskellPackages.callCabal2nix "cachix-api" (pkgs.gitignoreSource ./cachix-api) {};
   cachix = pkgs.haskellPackages.callCabal2nix "cachix" (pkgs.gitignoreSource ./cachix) { inherit cachix-api hercules-ci-cnix-store; };
-in pkgs.haskell.lib.disableLibraryProfiling cachix
+in cachix

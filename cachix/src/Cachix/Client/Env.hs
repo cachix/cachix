@@ -8,9 +8,9 @@ where
 
 import Cachix.Client.Config (Config, readConfig)
 import Cachix.Client.OptionsParser (CachixOptions (..))
-import Cachix.Client.Store (Store, openStore)
 import Cachix.Client.URI (getBaseUrl)
 import Data.Version (showVersion)
+import Hercules.CNix.Store (Store, openStore)
 import Network.HTTP.Client
   ( ManagerSettings,
     managerModifyRequest,

@@ -3,6 +3,7 @@ packages:
 - cachix-api
 - cachix
 extra-deps:
+- hercules-ci-cnix-store-0.1.0.0
 - netrc-0.2.0.0
 - servant-auth-swagger-0.2.10.1
 - servant-auth-0.4.0.0

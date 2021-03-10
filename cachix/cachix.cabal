@@ -16,7 +16,6 @@ build-type:         Simple
 extra-source-files:
   CHANGELOG.md
   README.md
-  cbits/aliases.h
   test/data/*.input
   test/data/*.output
 

@@ -233,7 +233,7 @@ isTrustedUser users = do
   return $ writable permissions || user `elem` users || isInAGroup
   where
     groups :: [Text]
-    groups = map T.tail $ filter (\u -> T.head u == '@') users
+    groups = map T.tail $ filter (\u -> (fst <$> T.uncons u) == Just '@') users
     userInAnyGroup :: Text -> IO Bool
     userInAnyGroup user = do
       isIn <- for groups $ checkUserInGroup user

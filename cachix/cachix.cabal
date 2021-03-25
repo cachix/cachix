@@ -39,7 +39,7 @@ source-repository head
   location: https://github.com/cachix/cachix
 
 library
-  import:          defaults
+  import:            defaults
   exposed-modules:
     Cachix.Client
     Cachix.Client.Commands
@@ -62,9 +62,9 @@ library
     Cachix.Client.WatchStore
     System.Nix.Base32
 
-  hs-source-dirs:  src
-  other-modules:   Paths_cachix
-  autogen-modules: Paths_cachix
+  hs-source-dirs:    src
+  other-modules:     Paths_cachix
+  autogen-modules:   Paths_cachix
   build-depends:
     , async
     , base                    >=4.7     && <5
@@ -111,6 +111,8 @@ library
     , uri-bytestring
     , vector
     , versions
+
+  pkgconfig-depends: nix-store ==2.0 || >2.0, nix-main ==2.0 || >2.0
 
 executable cachix
   import:             defaults

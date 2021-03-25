@@ -49,6 +49,7 @@ import qualified Data.ByteString.Base64 as B64
 import Data.String.Here
 import qualified Data.Text as T
 import qualified Data.Text.IO as T.IO
+import Hercules.CNix.Store (Store, StorePath, followLinksToStorePath, storePathToPath)
 import Network.HTTP.Types (status401, status404)
 import Protolude hiding (toS)
 import Protolude.Conv
@@ -158,11 +159,12 @@ push env (PushPaths opts name cliPaths) = do
       -- This is somewhat like the behavior of `cat` for example.
       (_, paths) -> return paths
   pushParams <- getPushParams env opts name
+  normalized <- liftIO $ for inputStorePaths (followLinksToStorePath (pushParamsStore pushParams) . encodeUtf8)
   void $
     pushClosure
       (mapConcurrentlyBounded (numJobs opts))
       pushParams
-      inputStorePaths
+      normalized
   putText "All done."
 push _ _ = do
   throwIO $ DeprecatedCommand "DEPRECATED: cachix watch-store has replaced cachix push --watch-store."
@@ -170,12 +172,12 @@ push _ _ = do
 watchStore :: Env -> PushOptions -> Text -> IO ()
 watchStore env opts name = do
   pushParams <- getPushParams env opts name
-  WatchStore.startWorkers (numJobs opts) pushParams
+  WatchStore.startWorkers (pushParamsStore pushParams) (numJobs opts) pushParams
 
 watchExec :: Env -> PushOptions -> Text -> Text -> [Text] -> IO ()
 watchExec env pushOpts name cmd args = do
   pushParams <- getPushParams env pushOpts name
-  let watch = WatchStore.startWorkers (numJobs pushOpts) pushParams
+  let watch = WatchStore.startWorkers (pushParamsStore pushParams) (numJobs pushOpts) pushParams
   (_, exitCode) <- concurrently watch run
   exitWith exitCode
   where
@@ -192,8 +194,8 @@ retryText retrystatus =
     then ""
     else "(retry #" <> show (rsIterNumber retrystatus) <> ") "
 
-pushStrategy :: Env -> PushOptions -> Text -> Text -> PushStrategy IO ()
-pushStrategy env opts name storePath =
+pushStrategy :: Store -> Env -> PushOptions -> Text -> StorePath -> PushStrategy IO ()
+pushStrategy store env opts name storePath =
   PushStrategy
     { onAlreadyPresent = pass,
       on401 =
@@ -201,9 +203,10 @@ pushStrategy env opts name storePath =
           then throwM $ accessDeniedBinaryCache name
           else throwM $ notAuthenticatedBinaryCache name,
       onError = throwM,
-      onAttempt = \retrystatus size ->
+      onAttempt = \retrystatus size -> do
+        path <- decodeUtf8With lenientDecode <$> storePathToPath store storePath
         -- we append newline instead of putStrLn due to https://github.com/haskell/text/issues/242
-        putStr $ retryText retrystatus <> "compressing and pushing " <> storePath <> " (" <> humanSize (fromIntegral size) <> ")\n",
+        putStr $ retryText retrystatus <> "compressing and pushing " <> path <> " (" <> humanSize (fromIntegral size) <> ")\n",
       onDone = pass,
       withXzipCompressor = defaultWithXzipCompressorWithLevel (compressionLevel opts),
       Cachix.Client.Push.omitDeriver = Cachix.Client.OptionsParser.omitDeriver opts
@@ -218,6 +221,6 @@ getPushParams env pushOpts name = do
       { pushParamsName = name,
         pushParamsSecret = pushSecret,
         pushParamsClientEnv = clientenv env,
-        pushParamsStrategy = pushStrategy env pushOpts name,
+        pushParamsStrategy = pushStrategy store env pushOpts name,
         pushParamsStore = store
       }

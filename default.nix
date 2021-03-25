@@ -4,8 +4,8 @@ let
   hercules-ci-cnix-store = pkgs.haskellPackages.callCabal2nix "hercules-ci-cnix-store" (pkgs.fetchFromGitHub {
     owner = "hercules-ci";
     repo = "hercules-ci-agent";
-    rev = "1af198dd5e9f0f895e52df03a4de46b1e9a98900";
-    sha256 = "0wbhycmh5pvk3c56x4gmdqshcww443mglb6hhy35xbqzpqvmnflm";
+    rev = "f44727ea5b9289d98e4976c634486cb15bcc6b52";
+    sha256 = "1pgm8mqdxj6sjc318vpifqslpfadwqj252xysf65w2iff2d9qbkz";
   } + "/hercules-ci-cnix-store") {};
   cachix-api = pkgs.haskellPackages.callCabal2nix "cachix-api" (pkgs.gitignoreSource ./cachix-api) {};
   cachix = pkgs.haskellPackages.callCabal2nix "cachix" (pkgs.gitignoreSource ./cachix) { inherit cachix-api hercules-ci-cnix-store; };

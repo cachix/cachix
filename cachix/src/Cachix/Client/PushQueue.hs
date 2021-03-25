@@ -19,10 +19,9 @@ import Control.Concurrent.STM (TVar, modifyTVar', newTVarIO, readTVar)
 import qualified Control.Concurrent.STM.Lock as Lock
 import qualified Control.Concurrent.STM.TBQueue as TBQueue
 import qualified Data.Set as S
+import Hercules.CNix.Store (StorePath)
 import Protolude
 import qualified System.Posix.Signals as Signals
-
-type StorePath = Text
 
 type Queue = TBQueue.TBQueue StorePath
 

@@ -67,7 +67,7 @@ authtoken env (Just token) = do
   writeConfig (configPath (cachixoptions env)) $ case config env of
     Just cfg -> Config.setAuthToken cfg $ Token (toS token)
     Nothing -> mkConfig token
-authtoken env Nothing = authtoken env . Just =<< T.IO.getContents
+authtoken env Nothing = authtoken env . Just . T.strip =<< T.IO.getContents
 
 generateKeypair :: Env -> Text -> IO ()
 generateKeypair env name = do

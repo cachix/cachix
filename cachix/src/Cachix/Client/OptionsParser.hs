@@ -62,7 +62,7 @@ uriOption = eitherReader $ \s ->
 type BinaryCacheName = Text
 
 data CachixCommand
-  = AuthToken Text
+  = AuthToken (Maybe Text)
   | GenerateKeypair BinaryCacheName
   | Push PushArguments
   | WatchStore PushOptions Text
@@ -95,7 +95,7 @@ parserCachixCommand =
       <> command "use" (infoH use (progDesc "Configure a binary cache by writing nix.conf and netrc files"))
   where
     nameArg = strArgument (metavar "CACHE-NAME")
-    authtoken = AuthToken <$> strArgument (metavar "AUTH-TOKEN")
+    authtoken = AuthToken <$> optional (strArgument (metavar "AUTH-TOKEN"))
     generateKeypair = GenerateKeypair <$> nameArg
     validatedLevel l =
       l <$ unless (l `elem` [0 .. 9]) (readerError $ "value " <> show l <> " not in expected range: [0..9]")

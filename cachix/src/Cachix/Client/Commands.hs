@@ -48,6 +48,7 @@ import Crypto.Sign.Ed25519 (PublicKey (PublicKey), createKeypair)
 import qualified Data.ByteString.Base64 as B64
 import Data.String.Here
 import qualified Data.Text as T
+import qualified Data.Text.IO as T.IO
 import Network.HTTP.Types (status401, status404)
 import Protolude hiding (toS)
 import Protolude.Conv
@@ -60,12 +61,13 @@ import System.IO (hIsTerminalDevice)
 import qualified System.Posix.Signals as Signals
 import qualified System.Process
 
-authtoken :: Env -> Text -> IO ()
-authtoken env token = do
+authtoken :: Env -> Maybe Text -> IO ()
+authtoken env (Just token) = do
   -- TODO: check that token actually authenticates!
   writeConfig (configPath (cachixoptions env)) $ case config env of
     Just cfg -> Config.setAuthToken cfg $ Token (toS token)
     Nothing -> mkConfig token
+authtoken env Nothing = authtoken env . Just =<< T.IO.getContents
 
 generateKeypair :: Env -> Text -> IO ()
 generateKeypair env name = do

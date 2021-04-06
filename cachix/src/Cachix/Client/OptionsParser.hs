@@ -95,7 +95,10 @@ parserCachixCommand =
       <> command "use" (infoH use (progDesc "Configure a binary cache by writing nix.conf and netrc files"))
   where
     nameArg = strArgument (metavar "CACHE-NAME")
-    authtoken = AuthToken <$> optional (strArgument (metavar "AUTH-TOKEN"))
+    authtoken = AuthToken <$> (stdinFlag <|> (Just <$> authTokenArg))
+      where
+        stdinFlag = flag' Nothing (long "stdin" <> help "Read the token from stdin rather than accepting it as an argument.")
+        authTokenArg = strArgument (metavar "AUTH-TOKEN")
     generateKeypair = GenerateKeypair <$> nameArg
     validatedLevel l =
       l <$ unless (l `elem` [0 .. 9]) (readerError $ "value " <> show l <> " not in expected range: [0..9]")

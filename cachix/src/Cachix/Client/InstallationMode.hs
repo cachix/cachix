@@ -94,7 +94,7 @@ b) Add the following to your configuration.nix to add your user as trusted
 
   nix.trustedUsers = [ "root" "${user}" ];
 
-    |]
+|]
 addBinaryCache _ _ _ UntrustedRequiresSudo = do
   user <- getUser
   throwIO $
@@ -109,7 +109,7 @@ b) Run the following command to add your user as trusted
    and then try again:
 
   echo "trusted-users = root ${user}" | sudo tee -a /etc/nix/nix.conf && sudo pkill nix-daemon
-    |]
+|]
 addBinaryCache maybeConfig bc useOptions WriteNixOS =
   nixosBinaryCache maybeConfig bc useOptions
 addBinaryCache maybeConfig bc _ (Install ncl) = do
@@ -168,7 +168,7 @@ nixosBinaryCache maybeConfig bc UseOptions {useNixOSFolder = baseDirectory} = do
 Could not install NixOS configuration to ${dir} due to lack of write permissions.
 
 Pass `--nixos-folder /etc/mynixos/` as an alternative location with write permissions.
-      |]
+|]
     instructions :: Text
     instructions =
       [iTrim|
@@ -182,7 +182,7 @@ To start using cachix add the following to your ${configurationNix}:
 Then run:
 
     $ sudo nixos-rebuild switch
-    |]
+|]
     glueModule :: Text
     glueModule =
       [i|
@@ -198,7 +198,7 @@ in {
   inherit imports;
   nix.binaryCaches = ["https://cache.nixos.org/"];
 }
-    |]
+|]
     cacheModule :: Text
     cacheModule =
       [i|
@@ -212,7 +212,7 @@ in {
     ];
   };
 }
-    |]
+|]
 
 -- TODO: allow overriding netrc location
 addPrivateBinaryCacheNetRC :: Maybe Config -> BinaryCache.BinaryCache -> NixConf.NixConfLoc -> IO FilePath

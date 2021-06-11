@@ -184,7 +184,7 @@ uploadStorePath cache storePath retrystatus = do
       narSize <- readIORef narSizeRef
       narHash <- ("sha256:" <>) . System.Nix.Base32.encode <$> readIORef narHashRef
       narHashNix <- Store.validPathInfoNarHash pathinfo
-      when (narHash /= toS narHashNix) $ throwM $ NarHashMismatch "Nar hash mismatch between nix-store --dump and nix db"
+      when (narHash /= toS narHashNix) $ throwM $ NarHashMismatch "Nar hash mismatch between nix-store --dump and nix db. You can repair db metadata by running as root: $ nix-store --verify --repair"
       fileHash <- readIORef fileHashRef
       fileSize <- readIORef fileSizeRef
       deriver <-

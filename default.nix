@@ -24,8 +24,8 @@ let
         pkgs.fetchFromGitHub {
           owner = "hercules-ci";
           repo = "hercules-ci-agent";
-          rev = "f44727ea5b9289d98e4976c634486cb15bcc6b52";
-          sha256 = "1pgm8mqdxj6sjc318vpifqslpfadwqj252xysf65w2iff2d9qbkz";
+          rev = "hercules-ci-cnix-store-0.2.0.1";
+          sha256 = "sha256-6XhE/2NeZufDMiniplYf8Om/igO1pIOPcenxZFPefhs=";
         } + "/hercules-ci-cnix-store"
       ) {}
     )

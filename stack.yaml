@@ -3,10 +3,7 @@ packages:
 - cachix-api
 - cachix
 extra-deps:
-- git: https://github.com/hercules-ci/hercules-ci-agent.git
-  commit: f44727ea5b9289d98e4976c634486cb15bcc6b52
-  subdirs:
-    - hercules-ci-cnix-store
+- hercules-ci-cnix-store-0.2.0.1
 - netrc-0.2.0.0
 - servant-auth-swagger-0.2.10.1
 - servant-auth-0.4.0.0

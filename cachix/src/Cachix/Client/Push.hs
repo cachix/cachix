@@ -68,28 +68,26 @@ data PushSecret
   = PushToken Token
   | PushSigningKey Token SigningKey
 
-data PushParams m r
-  = PushParams
-      { pushParamsName :: Text,
-        pushParamsSecret :: PushSecret,
-        -- | how to report results, (some) errors, and do some things
-        pushParamsStrategy :: StorePath -> PushStrategy m r,
-        -- | cachix base url, connection manager, see 'Cachix.Client.URI.defaultCachixBaseUrl', 'Servant.Client.mkClientEnv'
-        pushParamsClientEnv :: ClientEnv,
-        pushParamsStore :: Store
-      }
+data PushParams m r = PushParams
+  { pushParamsName :: Text,
+    pushParamsSecret :: PushSecret,
+    -- | how to report results, (some) errors, and do some things
+    pushParamsStrategy :: StorePath -> PushStrategy m r,
+    -- | cachix base url, connection manager, see 'Cachix.Client.URI.defaultCachixBaseUrl', 'Servant.Client.mkClientEnv'
+    pushParamsClientEnv :: ClientEnv,
+    pushParamsStore :: Store
+  }
 
-data PushStrategy m r
-  = PushStrategy
-      { -- | Called when a path is already in the cache.
-        onAlreadyPresent :: m r,
-        onAttempt :: RetryStatus -> Int64 -> m (),
-        on401 :: m r,
-        onError :: ClientError -> m r,
-        onDone :: m r,
-        withXzipCompressor :: forall a. (ConduitM ByteString ByteString (ResourceT IO) () -> m a) -> m a,
-        omitDeriver :: Bool
-      }
+data PushStrategy m r = PushStrategy
+  { -- | Called when a path is already in the cache.
+    onAlreadyPresent :: m r,
+    onAttempt :: RetryStatus -> Int64 -> m (),
+    on401 :: m r,
+    onError :: ClientError -> m r,
+    onDone :: m r,
+    withXzipCompressor :: forall a. (ConduitM ByteString ByteString (ResourceT IO) () -> m a) -> m a,
+    omitDeriver :: Bool
+  }
 
 defaultWithXzipCompressor :: forall m a. (ConduitM ByteString ByteString (ResourceT IO) () -> m a) -> m a
 defaultWithXzipCompressor = ($ compress (Just 2))
@@ -111,12 +109,13 @@ pushSingleStorePath cache storePath = retryAll $ \retrystatus -> do
       strategy = pushParamsStrategy cache storePath
   -- Check if narinfo already exists
   res <-
-    liftIO $ (`runClientM` pushParamsClientEnv cache) $
-      API.narinfoHead
-        cachixClient
-        (getCacheAuthToken (pushParamsSecret cache))
-        name
-        (NarInfoHash.NarInfoHash (decodeUtf8With lenientDecode storeHash))
+    liftIO $
+      (`runClientM` pushParamsClientEnv cache) $
+        API.narinfoHead
+          cachixClient
+          (getCacheAuthToken (pushParamsSecret cache))
+          name
+          (NarInfoHash.NarInfoHash (decodeUtf8With lenientDecode storeHash))
   case res of
     Right NoContent -> onAlreadyPresent strategy -- we're done as store path is already in the cache
     Left err
@@ -177,14 +176,14 @@ uploadStorePath cache storePath retrystatus = do
             { baseUrl = (baseUrl clientEnv) {baseUrlHost = subdomain <> "." <> baseUrlHost (baseUrl clientEnv)}
             }
     (_ :: NoContent) <-
-      liftIO
-        $ (`withClientM` newClientEnv)
+      liftIO $
+        (`withClientM` newClientEnv)
           (API.createNar cachixClient (getCacheAuthToken (pushParamsSecret cache)) name (mapOutput coerce stream'))
-        $ escalate
-          >=> \NoContent -> do
-            exitcode <- waitForStreamingProcess cph
-            when (exitcode /= ExitSuccess) $ throwM $ NarStreamingError exitcode $ show cmd
-            return NoContent
+          $ escalate
+            >=> \NoContent -> do
+              exitcode <- waitForStreamingProcess cph
+              when (exitcode /= ExitSuccess) $ throwM $ NarStreamingError exitcode $ show cmd
+              return NoContent
     (_ :: NoContent) <- liftIO $ do
       narSize <- readIORef narSizeRef
       narHash <- ("sha256:" <>) . System.Nix.Base32.encode <$> readIORef narHashRef
@@ -271,9 +270,10 @@ getMissingPathsForClosure pushParams inputPaths = do
                 hashes
           )
   let missingHashes = Set.fromList (encodeUtf8 <$> missingHashesList)
-  pathsAndHashes <- liftIO $ for paths $ \path -> do
-    hash_ <- Store.getStorePathHash path
-    pure (hash_, path)
+  pathsAndHashes <- liftIO $
+    for paths $ \path -> do
+      hash_ <- Store.getStorePathHash path
+      pure (hash_, path)
   return $ map snd $ filter (\(hash_, _path) -> Set.member hash_ missingHashes) pathsAndHashes
 
 -- TODO: move to a separate module specific to cli

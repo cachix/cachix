@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP #-}
+
 module Cachix.Client.NixVersion
   ( assertNixVersion,
     parseNixVersion,
@@ -22,14 +23,19 @@ parseNixVersion :: Text -> Either Text ()
 parseNixVersion output =
   let verStr = T.drop 14 $ T.strip output
       err = "Couldn't parse 'nix-env --version' output: " <> output
-#if MIN_VERSION_versions(0,5,0)
-      minimalVersion = SemVer 2 0 1 [] Nothing
-#else
-      minimalVersion = SemVer 2 0 1 [] []
-#endif
    in case versioning verStr of
         Left _ -> Left err
         Right ver
           | verStr == "" -> Left err
           | ver < Ideal minimalVersion -> Left "Nix 2.0.2 or lower is not supported. Please upgrade: https://nixos.org/nix/"
           | otherwise -> Right ()
+
+minimalVersion :: SemVer
+minimalVersion =
+  SemVer 2 0 1 []
+
+#if MIN_VERSION_versions(0,5,0)
+    Nothing
+#else
+    []
+#endif

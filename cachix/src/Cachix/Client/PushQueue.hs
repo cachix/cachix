@@ -25,25 +25,23 @@ import qualified System.Posix.Signals as Signals
 
 type Queue = TBQueue.TBQueue StorePath
 
-data PushWorkerState
-  = PushWorkerState
-      { pushQueue :: Queue,
-        inProgress :: TVar Int
-      }
+data PushWorkerState = PushWorkerState
+  { pushQueue :: Queue,
+    inProgress :: TVar Int
+  }
 
-data QueryWorkerState
-  = QueryWorkerState
-      { queryQueue :: Queue,
-        alreadyQueued :: S.Set StorePath,
-        lock :: Lock.Lock
-      }
+data QueryWorkerState = QueryWorkerState
+  { queryQueue :: Queue,
+    alreadyQueued :: S.Set StorePath,
+    lock :: Lock.Lock
+  }
 
 worker :: Push.PushParams IO () -> PushWorkerState -> IO ()
 worker pushParams workerState = forever $ do
   storePath <- atomically $ TBQueue.readTBQueue $ pushQueue workerState
-  bracket_ (inProgresModify (+ 1)) (inProgresModify (\x -> x - 1))
-    $ retryAll
-    $ Push.uploadStorePath pushParams storePath
+  bracket_ (inProgresModify (+ 1)) (inProgresModify (\x -> x - 1)) $
+    retryAll $
+      Push.uploadStorePath pushParams storePath
   where
     inProgresModify f =
       atomically $ modifyTVar' (inProgress workerState) f

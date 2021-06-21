@@ -40,18 +40,16 @@ import System.Posix.Files
     unionFileModes,
   )
 
-data BinaryCacheConfig
-  = BinaryCacheConfig
-      { name :: Text,
-        secretKey :: Text
-      }
+data BinaryCacheConfig = BinaryCacheConfig
+  { name :: Text,
+    secretKey :: Text
+  }
   deriving (Show, Generic, Interpret, Inject)
 
-data Config
-  = Config
-      { authToken :: Token,
-        binaryCaches :: [BinaryCacheConfig]
-      }
+data Config = Config
+  { authToken :: Token,
+    binaryCaches :: [BinaryCacheConfig]
+  }
   deriving (Show, Generic, Interpret, Inject)
 
 mkConfig :: Text -> Config

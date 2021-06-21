@@ -25,16 +25,15 @@ import qualified Data.Text as T
 import Protolude
 import System.Directory (Permissions, createDirectoryIfMissing, getPermissions, writable)
 import System.Environment (lookupEnv)
-import System.FilePath ((</>), replaceFileName)
+import System.FilePath (replaceFileName, (</>))
 import System.Process (readProcessWithExitCode)
 import Prelude (String)
 
-data NixEnv
-  = NixEnv
-      { isTrusted :: Bool,
-        isRoot :: Bool,
-        isNixOS :: Bool
-      }
+data NixEnv = NixEnv
+  { isTrusted :: Bool,
+    isRoot :: Bool,
+    isNixOS :: Bool
+  }
 
 -- NOTE: update the list of options for --mode argument in OptionsParser.hs
 data InstallationMode
@@ -44,12 +43,11 @@ data InstallationMode
   | UntrustedNixOS
   deriving (Show, Eq)
 
-data UseOptions
-  = UseOptions
-      { useMode :: Maybe InstallationMode,
-        useNixOSFolder :: FilePath,
-        useOutputDirectory :: Maybe FilePath
-      }
+data UseOptions = UseOptions
+  { useMode :: Maybe InstallationMode,
+    useNixOSFolder :: FilePath,
+    useOutputDirectory :: Maybe FilePath
+  }
   deriving (Show)
 
 fromString :: String -> Maybe InstallationMode

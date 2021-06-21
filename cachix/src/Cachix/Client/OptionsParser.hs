@@ -22,12 +22,11 @@ import URI.ByteString
     strictURIParserOptions,
   )
 
-data CachixOptions
-  = CachixOptions
-      { host :: URIRef Absolute,
-        configPath :: Config.ConfigPath,
-        verbose :: Bool
-      }
+data CachixOptions = CachixOptions
+  { host :: URIRef Absolute,
+    configPath :: Config.ConfigPath,
+    verbose :: Bool
+  }
   deriving (Show)
 
 parserCachixOptions :: Config.ConfigPath -> Parser CachixOptions
@@ -76,12 +75,11 @@ data PushArguments
   | PushWatchStore PushOptions Text
   deriving (Show)
 
-data PushOptions
-  = PushOptions
-      { compressionLevel :: Int,
-        numJobs :: Int,
-        omitDeriver :: Bool
-      }
+data PushOptions = PushOptions
+  { compressionLevel :: Int,
+    numJobs :: Int,
+    omitDeriver :: Bool
+  }
   deriving (Show)
 
 parserCachixCommand :: Parser CachixCommand

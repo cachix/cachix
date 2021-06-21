@@ -9,11 +9,10 @@ import Protolude
 import Servant.API
 
 -- | <hash>.nar.<extension> file
-data NarFileName
-  = NarFileName
-      { contentHash :: Text,
-        extension :: Text
-      }
+data NarFileName = NarFileName
+  { contentHash :: Text,
+    extension :: Text
+  }
   deriving (Generic)
 
 instance FromHttpApiData NarFileName where

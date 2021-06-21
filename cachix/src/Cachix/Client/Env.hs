@@ -25,13 +25,12 @@ import Protolude.Conv
 import Servant.Client (ClientEnv, mkClientEnv)
 import System.Directory (canonicalizePath)
 
-data Env
-  = Env
-      { config :: Maybe Config,
-        clientenv :: ClientEnv,
-        cachixoptions :: CachixOptions,
-        storeAsync :: Async Store
-      }
+data Env = Env
+  { config :: Maybe Config,
+    clientenv :: ClientEnv,
+    cachixoptions :: CachixOptions,
+    storeAsync :: Async Store
+  }
 
 mkEnv :: CachixOptions -> IO Env
 mkEnv rawcachixoptions = do

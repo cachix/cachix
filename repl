@@ -1,5 +1,6 @@
 #!/usr/bin/env nix-shell
 #!nix-shell -i bash
+# shellcheck shell=bash
 
 # A Haskell repl for hacking on the cachix library
 

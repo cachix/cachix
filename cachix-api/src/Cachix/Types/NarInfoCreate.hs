@@ -15,20 +15,19 @@ import Protolude
 -- TODO: get rid of c prefix
 
 -- | Client create type
-data NarInfoCreate
-  = NarInfoCreate
-      { -- | \$storePrefix / $storeHash - $storeSuffix
-        cStoreHash :: Text,
-        -- | \$storePrefix / $storeHash - $storeSuffix
-        cStoreSuffix :: Text,
-        cNarHash :: Text,
-        cNarSize :: Integer,
-        cFileHash :: Text,
-        cFileSize :: Integer,
-        cReferences :: [Text],
-        cDeriver :: Text,
-        cSig :: Maybe Text
-      }
+data NarInfoCreate = NarInfoCreate
+  { -- | \$storePrefix / $storeHash - $storeSuffix
+    cStoreHash :: Text,
+    -- | \$storePrefix / $storeHash - $storeSuffix
+    cStoreSuffix :: Text,
+    cNarHash :: Text,
+    cNarSize :: Integer,
+    cFileHash :: Text,
+    cFileSize :: Integer,
+    cReferences :: [Text],
+    cDeriver :: Text,
+    cSig :: Maybe Text
+  }
   deriving (Generic, Show, FromJSON, ToJSON, ToSchema)
 
 data NarInfoInvalid

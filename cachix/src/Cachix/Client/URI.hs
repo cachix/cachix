@@ -11,8 +11,8 @@ where
 import Protolude hiding (toS)
 import Protolude.Conv
 import Servant.Client
-import qualified URI.ByteString as UBS
 import URI.ByteString hiding (Scheme)
+import qualified URI.ByteString as UBS
 import URI.ByteString.QQ
 
 -- TODO: make getBaseUrl internal

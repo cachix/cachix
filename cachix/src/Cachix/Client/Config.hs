@@ -65,7 +65,7 @@ readConfig :: ConfigPath -> IO (Maybe Config)
 readConfig filename = do
   doesExist <- doesFileExist filename
   if doesExist
-    then Just <$> input auto (toS filename)
+    then Just <$> inputFile auto filename
     else return Nothing
 
 getDefaultFilename :: IO FilePath

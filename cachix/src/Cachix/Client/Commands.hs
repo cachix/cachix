@@ -49,6 +49,7 @@ import qualified Data.ByteString.Base64 as B64
 import Data.String.Here
 import qualified Data.Text as T
 import qualified Data.Text.IO as T.IO
+import GHC.IO.Handle (hDuplicate, hDuplicateTo)
 import Hercules.CNix.Store (Store, StorePath, followLinksToStorePath, storePathToPath)
 import Network.HTTP.Types (status401, status404)
 import Protolude hiding (toS)
@@ -177,16 +178,18 @@ watchStore env opts name = do
 watchExec :: Env -> PushOptions -> Text -> Text -> [Text] -> IO ()
 watchExec env pushOpts name cmd args = do
   pushParams <- getPushParams env pushOpts name
-  let watch = WatchStore.startWorkers (pushParamsStore pushParams) (numJobs pushOpts) pushParams
-  (_, exitCode) <- concurrently watch run
+  stdoutOriginal <- hDuplicate stdout
+  let process = (System.Process.proc (toS cmd) (toS <$> args)) {System.Process.std_out = System.Process.UseHandle stdoutOriginal}
+      watch = do
+        hDuplicateTo stderr stdout -- redirect all stdout to stderr
+        WatchStore.startWorkers (pushParamsStore pushParams) (numJobs pushOpts) pushParams
+
+  (_, exitCode) <- concurrently watch $ do
+    (_, _, _, processHandle) <- System.Process.createProcess process
+    exitCode <- System.Process.waitForProcess processHandle
+    Signals.raiseSignal Signals.sigINT
+    return exitCode
   exitWith exitCode
-  where
-    process = System.Process.proc (toS cmd) (toS <$> args)
-    run = do
-      (_, _, _, processHandle) <- System.Process.createProcess process
-      exitCode <- System.Process.waitForProcess processHandle
-      Signals.raiseSignal Signals.sigINT
-      return exitCode
 
 retryText :: RetryStatus -> Text
 retryText retrystatus =

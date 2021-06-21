@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
+## [0.6.1] - 2021-06-21
+
+### Fixed
+
+- Fix "Empty Stream" error
+- #379 & #362: redirect cachix output to stderr
+- #380: support having tilde in filepath of the config file
+
+### Changed
+
+- Factor out Store into hercules-ci-cnix-store
+- `cachix authtoken` reads from stdin if no token is provided
+- improved error message in case nar db hash mismatch happens
+- Support LTS-18.0 Stackage
+
 ## [0.6.0] - 2021-01-08
 
 ### Changed

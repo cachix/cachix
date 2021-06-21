@@ -19,16 +19,7 @@ let
       '';
     });
   hercules-ci-cnix-store = pkgs.haskell.lib.addBuildDepends (
-    addNixVersionFlag (
-      pkgs.haskellPackages.callCabal2nix "hercules-ci-cnix-store" (
-        pkgs.fetchFromGitHub {
-          owner = "hercules-ci";
-          repo = "hercules-ci-agent";
-          rev = "hercules-ci-cnix-store-0.2.0.1";
-          sha256 = "sha256-6XhE/2NeZufDMiniplYf8Om/igO1pIOPcenxZFPefhs=";
-        } + "/hercules-ci-cnix-store"
-      ) {}
-    )
+    addNixVersionFlag pkgs.haskellPackages.hercules-ci-cnix-store
   ) [ pkgs.nlohmann_json ];
 
 in cachix // { inherit withNixUnstable; }

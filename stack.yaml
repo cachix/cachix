@@ -1,13 +1,10 @@
-resolver: lts-17.5
+resolver: lts-18.0
 packages:
 - cachix-api
 - cachix
 extra-deps:
 - hercules-ci-cnix-store-0.2.0.1
 - netrc-0.2.0.0
-- servant-auth-swagger-0.2.10.1
-- servant-auth-0.4.0.0
-- servant-auth-client-0.4.1.0@rev:1
 - nix-narinfo-0.1.0.1
 nix:
   packages: []

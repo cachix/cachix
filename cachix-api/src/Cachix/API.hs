@@ -113,7 +113,7 @@ data BinaryCacheAPI route = BinaryCacheAPI
         :> Capture "storehash" Text
         :> CaptureAll "filepath" Text
         :> Summary "Serve a file from a given store path"
-        :> Get '[XNixNar] (Headers '[Header "X-Content-Type-Options" Text] ByteStringStreaming.LazyByteStringStreaming),
+        :> Get '[XNixNar] (Headers '[Header "X-Content-Type-Options" Text, Header "Cache-Control" Text] ByteStringStreaming.LazyByteStringStreaming),
     createKey ::
       route
         :- CachixAuth

@@ -161,12 +161,15 @@ push env (PushPaths opts name cliPaths) = do
       (_, paths) -> return paths
   pushParams <- getPushParams env opts name
   normalized <- liftIO $ for inputStorePaths (followLinksToStorePath (pushParamsStore pushParams) . encodeUtf8)
-  void $
+  pushedPaths <-
     pushClosure
       (mapConcurrentlyBounded (numJobs opts))
       pushParams
       normalized
-  putText "All done."
+  case (length normalized, length pushedPaths) of
+    (0, _) -> putText "Nothing to push."
+    (_, 0) -> putText "Nothing to push - all store paths are already on Cachix."
+    _ -> putText "All done."
 push _ _ = do
   throwIO $ DeprecatedCommand "DEPRECATED: cachix watch-store has replaced cachix push --watch-store."
 

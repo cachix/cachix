@@ -160,7 +160,9 @@ push env (PushPaths opts name cliPaths) = do
       -- This is somewhat like the behavior of `cat` for example.
       (_, paths) -> return paths
   pushParams <- getPushParams env opts name
-  normalized <- liftIO $ for inputStorePaths (followLinksToStorePath (pushParamsStore pushParams) . encodeUtf8)
+  normalized <-
+    liftIO $
+      for inputStorePaths (followLinksToStorePath (pushParamsStore pushParams) . encodeUtf8)
   pushedPaths <-
     pushClosure
       (mapConcurrentlyBounded (numJobs opts))
@@ -170,8 +172,9 @@ push env (PushPaths opts name cliPaths) = do
     (0, _) -> putText "Nothing to push."
     (_, 0) -> putText "Nothing to push - all store paths are already on Cachix."
     _ -> putText "All done."
-push _ _ = do
-  throwIO $ DeprecatedCommand "DEPRECATED: cachix watch-store has replaced cachix push --watch-store."
+push _ _ =
+  throwIO $
+    DeprecatedCommand "DEPRECATED: cachix watch-store has replaced cachix push --watch-store."
 
 watchStore :: Env -> PushOptions -> Text -> IO ()
 watchStore env opts name = do

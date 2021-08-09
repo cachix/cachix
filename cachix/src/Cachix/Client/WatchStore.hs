@@ -11,9 +11,11 @@ import Hercules.CNix.Store (Store)
 import qualified Hercules.CNix.Store as Store
 import Protolude
 import System.FSNotify
+import qualified System.Systemd.Daemon as Systemd
 
 startWorkers :: Store -> Int -> PushParams IO () -> IO ()
 startWorkers store numWorkers pushParams = do
+  Systemd.notifyReady
   withManager $ \mgr -> PushQueue.startWorkers numWorkers (producer store mgr) pushParams
 
 producer :: Store -> WatchManager -> PushQueue.Queue -> IO (IO ())

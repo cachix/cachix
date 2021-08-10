@@ -42,6 +42,7 @@ library
   import:            defaults
   exposed-modules:
     Cachix.Client
+    Cachix.Client.CNix
     Cachix.Client.Commands
     Cachix.Client.Config
     Cachix.Client.Config.Orphans
@@ -88,12 +89,14 @@ library
     , http-client-tls
     , http-conduit
     , http-types
+    , inline-c-cpp
     , lzma-conduit
     , megaparsec              >=7.0.0
     , memory
     , mmorph
     , netrc
     , optparse-applicative
+    , pretty-terminal
     , process
     , protolude
     , resourcet
@@ -124,9 +127,10 @@ executable cachix
   other-modules:      Paths_cachix
   autogen-modules:    Paths_cachix
   build-depends:
-    , base        >=4.7 && <5
+    , base             >=4.7 && <5
     , cachix
     , cachix-api
+    , safe-exceptions
 
 test-suite cachix-test
   import:         defaults

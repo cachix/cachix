@@ -2,7 +2,7 @@ module Main (main) where
 
 import qualified Cachix.Client as CC
 import Cachix.Client.Exception (CachixException)
-import Control.Exception (displayException, handle)
+import Control.Exception.Safe (displayException, handle)
 import GHC.IO.Encoding
 import System.Exit (exitFailure)
 import System.IO

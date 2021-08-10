@@ -15,6 +15,7 @@ where
 
 import qualified Cachix.API as API
 import Cachix.API.Error
+import Cachix.Client.CNix (handleInvalidPath)
 import Cachix.Client.Config
   ( BinaryCacheConfig (BinaryCacheConfig),
     Config (..),
@@ -162,12 +163,14 @@ push env (PushPaths opts name cliPaths) = do
   pushParams <- getPushParams env opts name
   normalized <-
     liftIO $
-      for inputStorePaths (followLinksToStorePath (pushParamsStore pushParams) . encodeUtf8)
+      for inputStorePaths $ \path ->
+        handleInvalidPath $
+          Just <$> followLinksToStorePath (pushParamsStore pushParams) (encodeUtf8 path)
   pushedPaths <-
     pushClosure
       (mapConcurrentlyBounded (numJobs opts))
       pushParams
-      normalized
+      (catMaybes normalized)
   case (length normalized, length pushedPaths) of
     (0, _) -> putText "Nothing to push."
     (_, 0) -> putText "Nothing to push - all store paths are already on Cachix."

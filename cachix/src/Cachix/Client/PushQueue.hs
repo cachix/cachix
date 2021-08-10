@@ -61,7 +61,9 @@ startWorkers numWorkers mkProducer pushParams = do
   progress <- newTVarIO 0
   let pushWorkerState = PushWorkerState newPushQueue progress
   pushWorker <- async $ replicateConcurrently_ numWorkers $ worker pushParams pushWorkerState
-  void $ Signals.installHandler Signals.sigINT (Signals.CatchOnce (exitOnceQueueIsEmpty stopProducerCallback pushWorker queryWorker queryWorkerState pushWorkerState)) Nothing
+  let signalset = Signals.CatchOnce (exitOnceQueueIsEmpty stopProducerCallback pushWorker queryWorker queryWorkerState pushWorkerState)
+  void $ Signals.installHandler Signals.sigINT signalset Nothing
+  void $ Signals.installHandler Signals.sigTERM signalset Nothing
   (_, eitherException) <- waitAnyCatchCancel [pushWorker, queryWorker]
   case eitherException of
     Left exc | fromException exc == Just StopWorker -> return ()

@@ -245,5 +245,5 @@ getUser :: IO Text
 getUser = do
   maybeUser <- lookupEnv "USER"
   case maybeUser of
-    Nothing -> throwIO $ UserEnvNotSet "$USER must be set"
+    Nothing -> throwIO $ UserEnvNotSet "$USER must be set. If running in a container, try setting USER=root."
     Just user -> return $ toS user

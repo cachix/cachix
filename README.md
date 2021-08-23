@@ -1,9 +1,9 @@
 [![Test](https://github.com/cachix/cachix/workflows/Test/badge.svg)](https://github.com/cachix/cachix/actions)
 [![Hackage](https://img.shields.io/hackage/v/cachix.svg)](https://hackage.haskell.org/package/cachix)
 
-## [Cachix](https://cachix.org) - Hosted Nix binary caches: Build Nix packages once and share them for good
+## [Cachix](https://cachix.org) - Nix binary cache hosting: Never build software twice.
 
-<img src="https://raw.githubusercontent.com/cachix/cachix/master/logo.png" width="200">
+<img src="https://user-images.githubusercontent.com/126339/130430964-7794b915-89d1-4b08-94be-3d32444dc8b2.png" width="200">
 
 ```
 $ cachix --help

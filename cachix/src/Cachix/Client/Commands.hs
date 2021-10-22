@@ -137,7 +137,7 @@ use env name useOptions = do
       user <- InstallationMode.getUser
       nc <- NixConf.read NixConf.Global
       isTrusted <- InstallationMode.isTrustedUser $ NixConf.readLines (catMaybes [nc]) NixConf.isTrustedUsers
-      isNixOS <- doesFileExist "/etc/NIXOS"
+      isNixOS <- doesFileExist "/run/current-system/nixos-version"
       let nixEnv =
             InstallationMode.NixEnv
               { InstallationMode.isRoot = user == "root",

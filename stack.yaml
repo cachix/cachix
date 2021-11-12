@@ -1,11 +1,12 @@
-resolver: lts-18.0
+resolver: lts-18.16
 packages:
 - cachix-api
 - cachix
 extra-deps:
-- hercules-ci-cnix-store-0.2.0.1
+- hercules-ci-cnix-store-0.2.1.0
 - netrc-0.2.0.0
 - nix-narinfo-0.1.0.1
+- jsonrpc-tinyclient-1.0.0.0
 nix:
   packages: []
   shell-file: ./nix/stack-shell.nix

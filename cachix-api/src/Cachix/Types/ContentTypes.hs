@@ -49,3 +49,9 @@ instance MimeUnrender XNixNar ByteStringStreaming.LazyByteStringStreaming where
 
 instance MimeRender XNixNar ByteStringStreaming.LazyByteStringStreaming where
   mimeRender _ = coerce
+
+instance MimeRender PlainText ByteStringStreaming.ByteStringStreaming where
+  mimeRender _ = BSL.fromStrict . coerce
+
+instance MimeUnrender PlainText ByteStringStreaming.ByteStringStreaming where
+  mimeUnrender _ = Right . coerce . BSL.toStrict

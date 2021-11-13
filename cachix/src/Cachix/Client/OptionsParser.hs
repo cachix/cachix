@@ -10,6 +10,7 @@ where
 
 import qualified Cachix.Client.Config as Config
 import qualified Cachix.Client.InstallationMode as InstallationMode
+
 import Cachix.Client.URI (defaultCachixURI)
 import Options.Applicative
 import Protolude hiding (option, toS)
@@ -21,6 +22,7 @@ import URI.ByteString
     serializeURIRef',
     strictURIParserOptions,
   )
+import qualified Cachix.Deploy.OptionsParser as DeployOptions
 
 data CachixOptions = CachixOptions
   { host :: URIRef Absolute,
@@ -67,6 +69,7 @@ data CachixCommand
   | WatchStore PushOptions Text
   | WatchExec PushOptions Text Text [Text]
   | Use BinaryCacheName InstallationMode.UseOptions
+  | DeployCommand DeployOptions.DeployCommand
   | Version
   deriving (Show)
 
@@ -91,6 +94,7 @@ parserCachixCommand =
       <> command "watch-exec" (infoH watchExec (progDesc "Run a command while it's running watch /nix/store for newly added store paths and upload them to a binary cache"))
       <> command "watch-store" (infoH watchStore (progDesc "Indefinitely watch /nix/store for newly added store paths and upload them to a binary cache"))
       <> command "use" (infoH use (progDesc "Configure a binary cache by writing nix.conf and netrc files"))
+      <> command "deploy" (infoH (DeployCommand <$> DeployOptions.parser) (progDesc "Cachix Deploy commands"))
   where
     nameArg = strArgument (metavar "CACHE-NAME")
     authtoken = AuthToken <$> (stdinFlag <|> (Just <$> authTokenArg))
@@ -163,6 +167,7 @@ parserCachixCommand =
                       )
                   )
             )
+    
 
 getOpts :: IO (CachixOptions, CachixCommand)
 getOpts = do

@@ -8,6 +8,7 @@
 module Cachix.Client.Servant
   ( isErr,
     cachixClient,
+    deployClient
   )
 where
 
@@ -16,11 +17,12 @@ import Network.HTTP.Types (Status)
 import Protolude
 import Servant.API.Generic
 import Servant.Auth.Client ()
+import Cachix.Types.ContentTypes ()
 import qualified Servant.Client
 import Servant.Client.Generic (AsClientT)
 import Servant.Client.Streaming
+import qualified Cachix.API.Deploy as Cachix.Deploy.API
 import Servant.Conduit ()
-
 
 isErr :: ClientError -> Status -> Bool
 isErr (Servant.Client.FailureResponse _ resp) status
@@ -29,3 +31,6 @@ isErr _ _ = False
 
 cachixClient :: Cachix.API.BinaryCacheAPI (AsClientT ClientM)
 cachixClient = fromServant $ client Cachix.API.api
+
+deployClient :: Cachix.Deploy.API.DeployAPI (AsClientT ClientM)
+deployClient = fromServant $ client Cachix.Deploy.API.api

@@ -1,7 +1,7 @@
 module Cachix.Client.Env
   ( Env (..),
     mkEnv,
-    cachixVersion,
+    createClientEnv,
     customManagerSettings,
   )
 where
@@ -9,7 +9,7 @@ where
 import Cachix.Client.Config (Config, readConfig)
 import Cachix.Client.OptionsParser (CachixOptions (..))
 import Cachix.Client.URI (getBaseUrl)
-import Data.Version (showVersion)
+import Cachix.Client.Version (cachixVersion)
 import Hercules.CNix.Store (Store, openStore)
 import Network.HTTP.Client
   ( ManagerSettings,
@@ -19,10 +19,9 @@ import Network.HTTP.Client
   )
 import Network.HTTP.Client.TLS (newTlsManagerWith, tlsManagerSettings)
 import Network.HTTP.Simple (setRequestHeader)
-import Paths_cachix (version)
 import Protolude hiding (toS)
 import Protolude.Conv
-import Servant.Client (ClientEnv, mkClientEnv)
+import Servant.Client.Streaming (ClientEnv, mkClientEnv)
 import System.Directory (canonicalizePath)
 
 data Env = Env
@@ -39,8 +38,7 @@ mkEnv rawcachixoptions = do
   canonicalConfigPath <- canonicalizePath (configPath rawcachixoptions)
   let cachixOptions = rawcachixoptions {configPath = canonicalConfigPath}
   cfg <- readConfig $ configPath cachixOptions
-  manager <- newTlsManagerWith customManagerSettings
-  let clientEnv = mkClientEnv manager $ getBaseUrl (host cachixOptions)
+  clientEnv <- createClientEnv cachixOptions
   return
     Env
       { config = cfg,
@@ -57,5 +55,7 @@ customManagerSettings =
       managerModifyRequest = return . setRequestHeader "User-Agent" [toS cachixVersion]
     }
 
-cachixVersion :: Text
-cachixVersion = "cachix " <> toS (showVersion version)
+createClientEnv :: CachixOptions -> IO ClientEnv
+createClientEnv cachixOptions = do
+  manager <- newTlsManagerWith customManagerSettings
+  return $ mkClientEnv manager $ getBaseUrl (host cachixOptions)

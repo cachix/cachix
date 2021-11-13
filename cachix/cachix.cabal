@@ -60,13 +60,19 @@ library
     Cachix.Client.Secrets
     Cachix.Client.Servant
     Cachix.Client.URI
+    Cachix.Client.Version
     Cachix.Client.WatchStore
+    Cachix.Deploy.Activate
+    Cachix.Deploy.ActivateCommand
+    Cachix.Deploy.Agent
+    Cachix.Deploy.OptionsParser
     System.Nix.Base32
 
   hs-source-dirs:    src
   other-modules:     Paths_cachix
   autogen-modules:   Paths_cachix
   build-depends:
+    , aeson
     , async
     , base                    >=4.7     && <5
     , base64-bytestring
@@ -90,6 +96,7 @@ library
     , http-conduit
     , http-types
     , inline-c-cpp
+    , katip
     , lzma-conduit
     , megaparsec              >=7.0.0
     , memory
@@ -109,12 +116,18 @@ library
     , servant-client-core     >=0.16
     , servant-conduit
     , stm
+    , stm-conduit
     , systemd
     , text
+    , time
     , unix
+    , unordered-containers
     , uri-bytestring
+    , uuid
     , vector
     , versions
+    , websockets
+    , wuss
 
   pkgconfig-depends: nix-store ==2.0 || >2.0, nix-main ==2.0 || >2.0
 

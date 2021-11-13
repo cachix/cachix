@@ -38,11 +38,15 @@ library
   import:          defaults
   exposed-modules:
     Cachix.API
+    Cachix.API.Deploy
     Cachix.API.Error
     Cachix.API.Signing
+    Cachix.API.WebSocketSubprotocol
     Cachix.Types.BinaryCache
     Cachix.Types.ByteStringStreaming
     Cachix.Types.ContentTypes
+    Cachix.Types.Deploy
+    Cachix.Types.DeployResponse
     Cachix.Types.NarFileName
     Cachix.Types.NarInfo
     Cachix.Types.NarInfoCreate
@@ -56,6 +60,7 @@ library
   hs-source-dirs:  src
   build-depends:
     , aeson
+    , async
     , base                  >=4.7    && <5
     , base16-bytestring
     , bytestring
@@ -81,6 +86,9 @@ library
     , text
     , time
     , transformers
+    , unordered-containers
+    , uuid
+    , websockets
 
 test-suite cachix-api-test
   import:             defaults

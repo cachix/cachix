@@ -24,15 +24,15 @@
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "nixpkgs": {
-        "branch": "release-21.05",
+        "branch": "release-21.11",
         "description": "A read-only mirror of NixOS/nixpkgs tracking the released channels. Send issues and PRs to",
         "homepage": "https://github.com/NixOS/nixpkgs",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "69caefdbc691850f37148ca0dd16dfd649d66fd9",
-        "sha256": "0ijcfp8ni153m624x5dbnafniv8hdy71f9j8fjbm3jiiyr7asmh1",
+        "rev": "92204897f3d80e7034168d883741dffae99ede5c",
+        "sha256": "0vnrn5504436k9f3337j4drng14crr53qc86wsh2a19jlmn5fp9m",
         "type": "tarball",
-        "url": "https://github.com/NixOS/nixpkgs/archive/69caefdbc691850f37148ca0dd16dfd649d66fd9.tar.gz",
+        "url": "https://github.com/NixOS/nixpkgs/archive/92204897f3d80e7034168d883741dffae99ede5c.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "pre-commit-hooks.nix": {

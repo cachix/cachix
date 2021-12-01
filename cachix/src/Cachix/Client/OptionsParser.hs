@@ -10,8 +10,8 @@ where
 
 import qualified Cachix.Client.Config as Config
 import qualified Cachix.Client.InstallationMode as InstallationMode
-
 import Cachix.Client.URI (defaultCachixURI)
+import qualified Cachix.Deploy.OptionsParser as DeployOptions
 import Options.Applicative
 import Protolude hiding (option, toS)
 import Protolude.Conv
@@ -22,7 +22,6 @@ import URI.ByteString
     serializeURIRef',
     strictURIParserOptions,
   )
-import qualified Cachix.Deploy.OptionsParser as DeployOptions
 
 data CachixOptions = CachixOptions
   { host :: URIRef Absolute,
@@ -167,7 +166,6 @@ parserCachixCommand =
                       )
                   )
             )
-    
 
 getOpts :: IO (CachixOptions, CachixCommand)
 getOpts = do

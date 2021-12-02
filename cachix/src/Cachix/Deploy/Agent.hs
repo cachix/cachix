@@ -81,7 +81,7 @@ run cachixOptions agentOpts = withKatip (CachixOptions.verbose cachixOptions) $ 
                 Nothing -> K.logLocM K.InfoS $ K.ls $ "Ignoring deployment #" <> index <> " as agent isn't registered yet."
                 Just agentInformation -> do
                   queue <- liftIO $ atomically TQueue.newTQueue
-                  liftIO $ Async.concurrently_ (runLogStreaming runKatip host headers queue deploymentID) $ runKatip $ Activate.activate cachixOptions agentOpts connection (Conduit.sinkTQueue queue) deploymentDetails agentInformation
+                  liftIO $ Async.race_ (runLogStreaming runKatip host headers queue deploymentID) $ runKatip $ Activate.activate cachixOptions agentOpts connection (Conduit.sinkTQueue queue) deploymentDetails agentInformation
 
     runLogStreaming :: (KatipContextT IO () -> IO ()) -> String -> RequestHeaders -> Conduit.TQueue ByteString -> UUID -> IO ()
     runLogStreaming runKatip host headers queue deploymentID = do

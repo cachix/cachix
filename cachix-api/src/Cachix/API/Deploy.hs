@@ -21,16 +21,7 @@ data DeployAPI route = DeployAPI
         :> "deploy"
         :> "activate"
         :> ReqBody '[JSON] Deploy.Deploy
-        :> Post '[JSON] DeployResponse.DeployResponse,
-    -- hardcoded in the app
-    streamLog ::
-      route
-        :- CachixAuth
-        :> "deploy"
-        :> "log"
-        :> Capture "deployment" UUID.UUID
-        :> StreamBody NoFraming PlainText (ConduitT () ByteStringStreaming.ByteStringStreaming (ResourceT IO) ())
-        :> Post '[JSON] NoContent
+        :> Post '[JSON] DeployResponse.DeployResponse
   }
   deriving (Generic)
 

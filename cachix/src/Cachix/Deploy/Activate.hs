@@ -3,6 +3,8 @@
 module Cachix.Deploy.Activate where
 
 import qualified Cachix.API.WebSocketSubprotocol as WSS
+import qualified Cachix.Client.OptionsParser as CachixOptions
+import Cachix.Client.URI (getBaseUrl)
 import qualified Cachix.Deploy.OptionsParser as AgentOptions
 import qualified Data.Conduit as Conduit
 import qualified Data.Conduit.Combinators as Conduit
@@ -13,25 +15,33 @@ import qualified Katip as K
 import qualified Network.WebSockets as WS
 import Protolude hiding (log, toS)
 import Protolude.Conv (toS)
+import qualified Servant.Client as Servant
 import System.Directory (doesPathExist)
 import System.Process
 
+-- TODO: duplicated in Agent.hs
+host cachixOptions = Servant.baseUrlHost $ getBaseUrl $ CachixOptions.host cachixOptions
+
 -- TODO: what if websocket gets closed while deploying?
 activate ::
+  CachixOptions.CachixOptions ->
   AgentOptions.AgentOptions ->
   WS.Connection ->
   Conduit.ConduitT ByteString Void IO () ->
   WSS.DeploymentDetails ->
   WSS.AgentInformation ->
   K.KatipContextT IO ()
-activate agentArgs connection sourceStream deploymentDetails agentInfo = do
+activate cachixOptions agentArgs connection sourceStream deploymentDetails agentInfo = do
   let storePath = WSS.storePath deploymentDetails
       cachesArgs = case WSS.cache agentInfo of
         Just cache ->
-          let substituters = ["--option", "extra-substituters", toS $ WSS.cacheName cache]
-              key = ["--option", "trusted-public-keys", toS $ WSS.publicKey cache]
+          let domain = toS (WSS.cacheName cache) <> "." <> toS (host cachixOptions)
+              officialCache = "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+              -- TODO: get uri scheme
+              substituters = ["--option", "extra-substituters", "https://" <> domain]
+              sigs = ["--option", "trusted-public-keys", officialCache <> " " <> domain <> "-1:" <> toS (WSS.publicKey cache)]
            in -- TODO: netrc if WSS.isPublic
-              substituters ++ key
+              substituters ++ sigs
         Nothing -> []
       deploymentID = WSS.id (deploymentDetails :: WSS.DeploymentDetails)
       deploymentFinished hasSucceeded now =
@@ -84,6 +94,8 @@ activate agentArgs connection sourceStream deploymentDetails agentInfo = do
               now <- liftIO getCurrentTime
               sendMessage $ deploymentFinished True now
 
+              liftIO $ log "Successfully activated the deployment."
+
               K.logLocM K.InfoS $ K.ls $ "Deployment #" <> index <> " finished"
   where
     -- TODO: prevent service from being restarted while deploying
@@ -93,11 +105,11 @@ activate agentArgs connection sourceStream deploymentDetails agentInfo = do
     index = show $ WSS.index deploymentDetails
 
     shellOut cmd args = do
-      log $ "Running: $ " <> toS cmd <> " " <> toS (unwords $ fmap toS args)
+      log $ "\nRunning: $ " <> toS cmd <> " " <> toS (unwords $ fmap toS args)
       Conduit.sourceProcessWithStreams (proc cmd args) Conduit.sinkNull sourceStream sourceStream
 
     log :: ByteString -> IO ()
-    log msg = Conduit.connect (Conduit.yieldMany [msg]) sourceStream
+    log msg = Conduit.connect (Conduit.yieldMany [msg <> "\n"]) sourceStream
 
     sendMessage cmd = liftIO $ do
       command <- createMessage cmd
@@ -119,7 +131,7 @@ activate agentArgs connection sourceStream deploymentDetails agentInfo = do
 
     getActivationScript :: Text -> IO (Maybe (IO (ExitCode, (), ())))
     getActivationScript storePath = do
-      isNixOS <- doesPathExist $ toS $ storePath <> "nixos-version"
+      isNixOS <- doesPathExist $ toS $ storePath <> "/nixos-version"
       if isNixOS
         then return $ Just $ shellOut (toS $ storePath <> "/bin/switch-to-configuration") ["switch"]
         else return Nothing

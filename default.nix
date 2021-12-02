@@ -5,7 +5,7 @@
 let
 
   cachix-api = pkgs.haskellPackages.callCabal2nix "cachix-api" (pkgs.gitignoreSource ./cachix-api) {};
-  cachix = pkgs.haskellPackages.callCabal2nix "cachix" (pkgs.gitignoreSource ./cachix) { inherit cachix-api hercules-ci-cnix-store; nix = pkgs.nix_2_3;};
+  cachix = pkgs.haskellPackages.callCabal2nix "cachix" (pkgs.gitignoreSource ./cachix) { inherit cachix-api hercules-ci-cnix-store; nix = pkgs.nix_2_3 or pkgs.nix;};
 
   withNixUnstable =
     import ./default.nix { pkgs = pkgs.extend (self: super: { nix = self.nixUnstable; }); };
@@ -22,4 +22,4 @@ let
     addNixVersionFlag pkgs.haskellPackages.hercules-ci-cnix-store
   ) [ pkgs.nlohmann_json ];
 
-in cachix // { inherit withNixUnstable; }
+in pkgs.haskell.lib.justStaticExecutables cachix // { inherit withNixUnstable; }

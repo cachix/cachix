@@ -19,6 +19,7 @@ import qualified Data.Conduit.Combinators as Conduit
 import qualified Data.Conduit.TQueue as Conduit
 import Data.IORef
 import Data.String (String)
+import Data.Time.Clock (UTCTime, getCurrentTime)
 import Data.UUID (UUID)
 import qualified Data.UUID as UUID
 import Katip (KatipContextT)
@@ -93,9 +94,7 @@ run cachixOptions agentOpts = withKatip (CachixOptions.verbose cachixOptions) $ 
             Conduit.runConduit $
               Conduit.sourceTQueue queue
                 .| Conduit.linesUnboundedAscii
-                .|
-                -- TODO: prepend timestamp
-                websocketSend connection
+                .| websocketSend connection
 
 handler :: (KatipContextT IO () -> IO ()) -> Exception.SomeException -> IO ()
 handler runKatip e = do
@@ -115,9 +114,11 @@ websocketSend :: WS.Connection -> Conduit.ConduitT ByteString Conduit.Void IO ()
 websocketSend connection = Conduit.mapM_ f
   where
     f = \bs -> do
-      WS.sendTextData connection $ Aeson.encode $ Log $ toS bs
+      now <- getCurrentTime
+      WS.sendTextData connection $ Aeson.encode $ Log {line = toS bs, time = now}
 
 data Log = Log
-  { line :: Text
+  { line :: Text,
+    time :: UTCTime
   }
   deriving (Generic, Show, Aeson.ToJSON)

@@ -57,13 +57,13 @@ run cachixOptions agentOpts = withKatip (CachixOptions.verbose cachixOptions) $ 
             WS.withPingThread connection 30 (runKatip $ K.logLocM K.DebugS "WebSocket keep-alive ping") $ do
               WSS.recieveDataConcurrently
                 connection
-                (\message -> Exception.handle (handler runKatip) $ runKatip (handleMessage runKatip host headers message connection agentState))
+                (\message -> Exception.handle (handler runKatip) $ runKatip (handleMessage runKatip host headers message connection agentState (toS agentToken)))
   where
     name = toS (AgentOptions.name agentOpts)
     agentIdentifier = name <> " " <> toS versionNumber
     logger runKatip _ exception _ = runKatip $ K.logLocM K.ErrorS $ K.ls $ "Retrying due to an exception:" <> displayException exception
-    handleMessage :: (KatipContextT IO () -> IO ()) -> String -> RequestHeaders -> ByteString -> WS.Connection -> AgentState -> KatipContextT IO ()
-    handleMessage runKatip host headers payload connection agentState = do
+    handleMessage :: (KatipContextT IO () -> IO ()) -> String -> RequestHeaders -> ByteString -> WS.Connection -> AgentState -> ByteString -> KatipContextT IO ()
+    handleMessage runKatip host headers payload connection agentState agentToken = do
       case WSS.parseMessage payload of
         (Left err) ->
           -- TODO: show the bytestring?
@@ -82,7 +82,7 @@ run cachixOptions agentOpts = withKatip (CachixOptions.verbose cachixOptions) $ 
                 Nothing -> K.logLocM K.InfoS $ K.ls $ "Ignoring deployment #" <> index <> " as agent isn't registered yet."
                 Just agentInformation -> do
                   queue <- liftIO $ atomically TQueue.newTQueue
-                  liftIO $ Async.race_ (runLogStreaming runKatip host headers queue deploymentID) $ runKatip $ Activate.activate cachixOptions agentOpts connection (Conduit.sinkTQueue queue) deploymentDetails agentInformation
+                  liftIO $ Async.race_ (runLogStreaming runKatip host headers queue deploymentID) $ runKatip $ Activate.activate cachixOptions agentOpts connection (Conduit.sinkTQueue queue) deploymentDetails agentInformation agentToken
 
     runLogStreaming :: (KatipContextT IO () -> IO ()) -> String -> RequestHeaders -> Conduit.TQueue ByteString -> UUID -> IO ()
     runLogStreaming runKatip host headers queue deploymentID = do

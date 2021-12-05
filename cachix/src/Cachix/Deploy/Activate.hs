@@ -3,9 +3,12 @@
 module Cachix.Deploy.Activate where
 
 import qualified Cachix.API.WebSocketSubprotocol as WSS
+import qualified Cachix.Client.NetRc as NetRc
 import qualified Cachix.Client.OptionsParser as CachixOptions
 import Cachix.Client.URI (getBaseUrl)
 import qualified Cachix.Deploy.OptionsParser as AgentOptions
+import qualified Cachix.Types.BinaryCache as BinaryCache
+import Cachix.Types.Permission (Permission (..))
 import qualified Data.Conduit as Conduit
 import qualified Data.Conduit.Combinators as Conduit
 import qualified Data.Conduit.Process as Conduit
@@ -15,12 +18,22 @@ import qualified Katip as K
 import qualified Network.WebSockets as WS
 import Protolude hiding (log, toS)
 import Protolude.Conv (toS)
+import Servant.Auth.Client (Token (..))
 import qualified Servant.Client as Servant
 import System.Directory (doesPathExist)
+import System.IO.Temp (withSystemTempDirectory)
 import System.Process
+import Prelude (String)
 
 -- TODO: duplicated in Agent.hs
 host cachixOptions = Servant.baseUrlHost $ getBaseUrl $ CachixOptions.host cachixOptions
+
+domain :: CachixOptions.CachixOptions -> WSS.Cache -> Text
+domain cachixOptions cache = toS (WSS.cacheName cache) <> "." <> toS (host cachixOptions)
+
+-- TODO: get uri scheme
+uri :: CachixOptions.CachixOptions -> WSS.Cache -> Text
+uri cachixOptions cache = "https://" <> uri cachixOptions cache
 
 -- TODO: what if websocket gets closed while deploying?
 activate ::
@@ -30,18 +43,17 @@ activate ::
   Conduit.ConduitT ByteString Void IO () ->
   WSS.DeploymentDetails ->
   WSS.AgentInformation ->
+  ByteString ->
   K.KatipContextT IO ()
-activate cachixOptions agentArgs connection sourceStream deploymentDetails agentInfo = do
+activate cachixOptions agentArgs connection sourceStream deploymentDetails agentInfo agentToken = do
   let storePath = WSS.storePath deploymentDetails
+      cachesArgs :: [String]
       cachesArgs = case WSS.cache agentInfo of
         Just cache ->
-          let domain = toS (WSS.cacheName cache) <> "." <> toS (host cachixOptions)
-              officialCache = "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
-              -- TODO: get uri scheme
-              substituters = ["--option", "extra-substituters", "https://" <> domain]
-              sigs = ["--option", "trusted-public-keys", officialCache <> " " <> domain <> "-1:" <> toS (WSS.publicKey cache)]
-           in -- TODO: netrc if WSS.isPublic
-              substituters ++ sigs
+          let officialCache = "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+              substituters = ["--option", "extra-substituters", toS (uri cachixOptions cache)]
+              sigs = ["--option", "trusted-public-keys", officialCache <> " " <> toS (domain cachixOptions cache) <> "-1:" <> toS (WSS.publicKey cache)]
+           in substituters ++ sigs
         Nothing -> []
       deploymentID = WSS.id (deploymentDetails :: WSS.DeploymentDetails)
       deploymentFinished hasSucceeded now =
@@ -55,7 +67,6 @@ activate cachixOptions agentArgs connection sourceStream deploymentDetails agent
         K.logLocM K.InfoS $ K.ls $ "Deploying #" <> index <> " failed."
         sendMessage $ deploymentFinished False now
 
-  -- TODO: full url to the deployment page
   K.logLocM K.InfoS $ K.ls $ "Deploying #" <> index <> ": " <> WSS.storePath deploymentDetails
 
   -- notify the service deployment started
@@ -66,8 +77,28 @@ activate cachixOptions agentArgs connection sourceStream deploymentDetails agent
         WSS.time = now
       }
 
+  -- TODO: don't create tmpfile for public caches
   -- get the store path using caches
-  (downloadExitCode, _, _) <- liftIO $ shellOut "nix-store" (["-r", toS storePath] <> cachesArgs)
+  (downloadExitCode, _, _) <- liftIO $
+    withSystemTempDirectory "netrc" $ \tmpdir -> do
+      let filepath = tmpdir <> "/netrc"
+      args <- case WSS.cache agentInfo of
+        Just cache -> do
+          -- TODO: ugh
+          let bc =
+                BinaryCache.BinaryCache
+                  { BinaryCache.name = "",
+                    BinaryCache.uri = toS (uri cachixOptions cache),
+                    BinaryCache.publicSigningKeys = [],
+                    BinaryCache.isPublic = WSS.isPublic cache,
+                    BinaryCache.githubUsername = "",
+                    BinaryCache.permission = Read
+                  }
+          NetRc.add (Token agentToken) [bc] filepath
+          return $ cachesArgs <> ["--option", "netrc-file", filepath]
+        Nothing ->
+          return cachesArgs
+      shellOut "nix-store" (["-r", toS storePath] <> args)
 
   -- TODO: use exceptions to simplify this code
   case downloadExitCode of

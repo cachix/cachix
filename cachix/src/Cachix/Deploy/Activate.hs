@@ -26,6 +26,7 @@ import System.Process
 import Prelude (String)
 
 -- TODO: duplicated in Agent.hs
+host :: CachixOptions.CachixOptions -> String
 host cachixOptions = Servant.baseUrlHost $ getBaseUrl $ CachixOptions.host cachixOptions
 
 domain :: CachixOptions.CachixOptions -> WSS.Cache -> Text

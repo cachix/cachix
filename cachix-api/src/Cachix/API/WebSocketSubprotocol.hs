@@ -56,8 +56,8 @@ parseMessage body =
     Right message -> Right message
 
 sendMessage :: Aeson.ToJSON cmd => WS.Connection -> Message cmd -> IO ()
-sendMessage connection command =
-  WS.sendTextData connection $ Aeson.encode command
+sendMessage connection cmd =
+  WS.sendTextData connection $ Aeson.encode cmd
 
 -- TODO: use Async.replicateConcurrently
 recieveDataConcurrently :: WS.Connection -> (ByteString -> IO ()) -> IO ()
@@ -71,3 +71,9 @@ recieveDataConcurrently connection m = do
     consumer channel = forever $ do
       payload <- Chan.readChan channel
       m payload
+
+data Log = Log
+  { line :: Text,
+    time :: UTCTime
+  }
+  deriving (Generic, Show, Aeson.ToJSON)

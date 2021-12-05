@@ -19,7 +19,7 @@ import qualified Data.Conduit.Combinators as Conduit
 import qualified Data.Conduit.TQueue as Conduit
 import Data.IORef
 import Data.String (String)
-import Data.Time.Clock (UTCTime, getCurrentTime)
+import Data.Time.Clock (getCurrentTime)
 import Data.UUID (UUID)
 import qualified Data.UUID as UUID
 import Katip (KatipContextT)
@@ -115,10 +115,4 @@ websocketSend connection = Conduit.mapM_ f
   where
     f = \bs -> do
       now <- getCurrentTime
-      WS.sendTextData connection $ Aeson.encode $ Log {line = toS bs, time = now}
-
-data Log = Log
-  { line :: Text,
-    time :: UTCTime
-  }
-  deriving (Generic, Show, Aeson.ToJSON)
+      WS.sendTextData connection $ Aeson.encode $ WSS.Log {line = toS bs, time = now}

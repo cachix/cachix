@@ -118,6 +118,7 @@ library
     , stm
     , stm-conduit
     , systemd
+    , temporary
     , text
     , time
     , unix

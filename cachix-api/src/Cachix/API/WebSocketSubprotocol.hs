@@ -76,4 +76,4 @@ data Log = Log
   { line :: Text,
     time :: UTCTime
   }
-  deriving (Generic, Show, Aeson.ToJSON)
+  deriving (Generic, Show, Aeson.ToJSON, Aeson.FromJSON)

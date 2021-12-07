@@ -80,9 +80,10 @@ activate cachixOptions agentArgs connection sourceStream deploymentDetails agent
 
   -- TODO: don't create tmpfile for public caches
   -- get the store path using caches
+  K.logLocM K.DebugS "netrc setup"
   (downloadExitCode, _, _) <- liftIO $
     withSystemTempDirectory "netrc" $ \dir -> do
-      let filepath = dir <> "netrc"
+      let filepath = dir <> "/netrc"
       args <- case WSS.cache agentInfo of
         Just cache -> do
           -- TODO: ugh
@@ -95,21 +96,28 @@ activate cachixOptions agentArgs connection sourceStream deploymentDetails agent
                     BinaryCache.githubUsername = "",
                     BinaryCache.permission = Read
                   }
+
           NetRc.add (Token agentToken) [bc] filepath
           return $ cachesArgs <> ["--option", "netrc-file", filepath]
         Nothing ->
           return cachesArgs
-      shellOut "nix-store" (["-r", toS storePath] <> args)
+      putText "netrc setup4"
+      a <- shellOut "nix-store" (["-r", toS storePath] <> args)
+      putText "netrc setup4.5"
+      return a
 
+  K.logLocM K.DebugS "netrc setup5"
   -- TODO: use exceptions to simplify this code
   case downloadExitCode of
     ExitFailure _ -> deploymentFailed
     ExitSuccess -> do
+      K.logLocM K.DebugS "netrc setup5"
       let profile = AgentOptions.getProfile agentArgs
       -- TODO: document what happens if wrong user is used for the agent
 
       -- set the new profile
       (activateProfileExitCode, _, _) <- liftIO $ shellOut "nix-env" ["-p", toS profile, "--set", toS storePath]
+      K.logLocM K.DebugS "netrc setup6"
       case activateProfileExitCode of
         ExitFailure _ -> deploymentFailed
         ExitSuccess -> do
@@ -137,11 +145,15 @@ activate cachixOptions agentArgs connection sourceStream deploymentDetails agent
     index = show $ WSS.index deploymentDetails
 
     shellOut cmd args = do
+      putText $ "logging " <> toS cmd
       log $ "Running: $ " <> toS cmd <> " " <> toS (unwords $ fmap toS args)
+      putText $ " running " <> toS cmd
       Conduit.sourceProcessWithStreams (proc cmd args) Conduit.sinkNull sourceStream sourceStream
 
     log :: ByteString -> IO ()
-    log msg = Conduit.connect (Conduit.yieldMany ["\n" <> msg <> "\n"]) sourceStream
+    log msg = do
+      --K.logLocM K.DebugS $ K.ls msg
+      Conduit.connect (Conduit.yieldMany ["\n" <> msg <> "\n"]) sourceStream
 
     sendMessage cmd = liftIO $ do
       command <- createMessage cmd

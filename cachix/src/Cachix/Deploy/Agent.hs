@@ -91,11 +91,11 @@ run cachixOptions agentOpts = withKatip (CachixOptions.verbose cachixOptions) $ 
       retryAllWithLogging endlessRetryPolicy (logger runKatip) $ do
         liftIO $
           Wuss.runSecureClientWith host 443 (toS path) WS.defaultConnectionOptions headers $ \connection ->
-            bracket_ (return ()) (WS.sendClose connection ("Closing." :: ByteString)) $
-              Conduit.runConduit $
-                Conduit.sourceTQueue queue
-                  .| Conduit.linesUnboundedAscii
-                  .| websocketSend connection
+            --bracket_ (return ()) (WS.sendClose connection ("Closing." :: ByteString)) $
+            Conduit.runConduit $
+              Conduit.sourceTQueue queue
+                .| Conduit.linesUnboundedAscii
+                .| websocketSend connection
 
 handler :: (KatipContextT IO () -> IO ()) -> Exception.SomeException -> IO ()
 handler runKatip e = do
@@ -115,5 +115,8 @@ websocketSend :: WS.Connection -> Conduit.ConduitT ByteString Conduit.Void IO ()
 websocketSend connection = Conduit.mapM_ f
   where
     f = \bs -> do
+      print "getting time"
       now <- getCurrentTime
+      print "sending"
       WS.sendTextData connection $ Aeson.encode $ WSS.Log {line = toS bs, time = now}
+      print "done"

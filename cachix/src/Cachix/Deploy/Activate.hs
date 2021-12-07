@@ -21,7 +21,7 @@ import Protolude.Conv (toS)
 import Servant.Auth.Client (Token (..))
 import qualified Servant.Client as Servant
 import System.Directory (doesPathExist)
-import System.IO.Temp (withSystemTempFile)
+import System.IO.Temp (withSystemTempDirectory)
 import System.Process
 import Prelude (String)
 
@@ -81,7 +81,8 @@ activate cachixOptions agentArgs connection sourceStream deploymentDetails agent
   -- TODO: don't create tmpfile for public caches
   -- get the store path using caches
   (downloadExitCode, _, _) <- liftIO $
-    withSystemTempFile "netrc" $ \filepath handle -> do
+    withSystemTempDirectory "netrc" $ \dir -> do
+      let filepath = dir <> "netrc"
       args <- case WSS.cache agentInfo of
         Just cache -> do
           -- TODO: ugh

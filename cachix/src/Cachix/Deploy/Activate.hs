@@ -140,7 +140,7 @@ activate cachixOptions agentArgs connection sourceStream deploymentDetails agent
     index = show $ WSS.index deploymentDetails
 
     shellOut cmd args = do
-      log $ "Running: $ " <> toS cmd <> " " <> toS (unwords $ fmap toS args)
+      log $ "$ " <> toS cmd <> " " <> toS (unwords $ fmap toS args)
       Conduit.sourceProcessWithStreams (proc cmd args) Conduit.sinkNull sourceStream sourceStream
 
     log :: ByteString -> IO ()

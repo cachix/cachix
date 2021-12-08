@@ -128,6 +128,9 @@ activate cachixOptions agentArgs connection sourceStream deploymentDetails agent
 
               liftIO $ log "Successfully activated the deployment."
 
+              -- TODO: this is a hack to make sure the deployment is finished
+              liftIO $ threadDelay (2 * 1000 * 1000)
+
               K.logLocM K.InfoS $ K.ls $ "Deployment #" <> index <> " finished"
   where
     -- TODO: prevent service from being restarted while deploying

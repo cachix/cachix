@@ -79,6 +79,7 @@ activate cachixOptions agentArgs connection sourceStream deploymentDetails agent
       }
 
   -- TODO: don't create tmpfile for public caches
+  -- TODO: add GC root so it's preserved for the next command
   -- get the store path using caches
   (downloadExitCode, _, _) <- liftIO $
     withSystemTempDirectory "netrc" $ \dir -> do

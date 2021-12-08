@@ -41,7 +41,7 @@ run cachixOptions agentOpts = withKatip (CachixOptions.verbose cachixOptions) $ 
   agentState <- newIORef Nothing
   let runKatip = K.runKatipContextT logEnv () "agent"
       headers =
-        [ ("Authorization", "Basic " <> toS agentToken),
+        [ ("Authorization", "Bearer " <> toS agentToken),
           ("name", name),
           ("version", toS versionNumber)
         ]

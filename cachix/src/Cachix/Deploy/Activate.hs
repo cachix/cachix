@@ -34,7 +34,7 @@ domain cachixOptions cache = toS (WSS.cacheName cache) <> "." <> toS (host cachi
 
 -- TODO: get uri scheme
 uri :: CachixOptions.CachixOptions -> WSS.Cache -> Text
-uri cachixOptions cache = "https://" <> uri cachixOptions cache
+uri cachixOptions cache = "https://" <> domain cachixOptions cache
 
 -- TODO: what if websocket gets closed while deploying?
 activate ::

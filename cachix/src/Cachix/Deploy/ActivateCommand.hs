@@ -20,7 +20,7 @@ import System.Environment (getEnv)
 
 run :: CachixOptions.CachixOptions -> DeployOptions.ActivateOptions -> IO ()
 run cachixOptions DeployOptions.ActivateOptions {DeployOptions.payloadPath} = do
-  agentToken <- getEnv "CACHIX_DEPLOY_TOKEN"
+  agentToken <- getEnv "CACHIX_ACTIVATE_TOKEN"
   clientEnv <- Env.createClientEnv cachixOptions
   payloadEither <- Aeson.eitherDecodeFileStrict' payloadPath
   case payloadEither of

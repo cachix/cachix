@@ -15,11 +15,11 @@ parser =
       [ command "activate" $
           info
             (helper <*> activate)
-            (progDesc "Deploy a new configuration to agents using CACHIX_AGENT_TOKEN."),
+            (progDesc "Deploy a new configuration to agents using CACHIX_ACTIVATE_TOKEN."),
         command "agent" $
           info
             (helper <*> agent)
-            (progDesc "Run an agent in foreground.")
+            (progDesc "Run an agent in foreground using CACHIX_AGENT_TOKEN.")
       ]
   where
     activate = Activate <$> parserActivateOptions

@@ -55,6 +55,12 @@ Install Cachix from master:
     $ nix-env -if https://github.com/cachix/cachix/tarball/master --substituters 'https://cache.nixos.org https://cachix.cachix.org' --trusted-public-keys 'cachix.cachix.org-1:eWNHQldwUO7G2VkjpnjDbWwy4KQ/HNxht7H4SSoMckM= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY='
 ```
 
+Or with Nix 2.4+:
+
+```
+    $ nix profile install github:cachix/cachix/latest
+```
+
 ## Support
 
 - [Documentation](https://docs.cachix.org)

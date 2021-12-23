@@ -67,6 +67,8 @@ activate cachixOptions agentArgs connection sourceStream deploymentDetails agent
         now <- liftIO getCurrentTime
         K.logLocM K.InfoS $ K.ls $ "Deploying #" <> index <> " failed."
         sendMessage $ deploymentFinished False now
+        -- hack to flush logs
+        liftIO $ threadDelay (1 * 1000 * 1000)
 
   K.logLocM K.InfoS $ K.ls $ "Deploying #" <> index <> ": " <> WSS.storePath deploymentDetails
 

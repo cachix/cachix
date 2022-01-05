@@ -3,6 +3,7 @@
 module Cachix.Deploy.Activate where
 
 import qualified Cachix.API.WebSocketSubprotocol as WSS
+import qualified Cachix.Client.InstallationMode as InstallationMode
 import qualified Cachix.Client.NetRc as NetRc
 import qualified Cachix.Client.OptionsParser as CachixOptions
 import Cachix.Client.URI (getBaseUrl)
@@ -108,7 +109,7 @@ activate cachixOptions agentArgs connection sourceStream deploymentDetails agent
   case downloadExitCode of
     ExitFailure _ -> deploymentFailed
     ExitSuccess -> do
-      let profile = AgentOptions.getProfile agentArgs
+      (profile, activationScripts) <- liftIO $ getActivationScript storePath (AgentOptions.profile agentArgs)
       -- TODO: document what happens if wrong user is used for the agent
 
       -- set the new profile
@@ -117,15 +118,13 @@ activate cachixOptions agentArgs connection sourceStream deploymentDetails agent
         ExitFailure _ -> deploymentFailed
         ExitSuccess -> do
           -- activate configuration
-          maybeActivationScript <- liftIO $ getActivationScript storePath
+          exitCodes <- for activationScripts $ \(cmd, args) -> do
+            (activateScriptExitCode, _, _) <- liftIO $ shellOut cmd args
+            return activateScriptExitCode
 
-          (activateScriptExitCode, _, _) <- case maybeActivationScript of
-            Nothing -> return (ExitSuccess, (), ())
-            Just activationScript -> liftIO activationScript
-
-          case activateScriptExitCode of
-            ExitFailure _ -> deploymentFailed
-            ExitSuccess -> do
+          if not (all (== ExitSuccess) exitCodes)
+            then deploymentFailed
+            else do
               now <- liftIO getCurrentTime
               sendMessage $ deploymentFinished True now
 
@@ -167,11 +166,25 @@ activate cachixOptions agentArgs connection sourceStream deploymentDetails agent
           WSS.DeploymentStarted {} -> "DeploymentStarted"
           WSS.DeploymentFinished {} -> "DeploymentFinished"
 
-    getActivationScript :: Text -> IO (Maybe (IO (ExitCode, (), ())))
-    getActivationScript storePath = do
+    getActivationScript :: Text -> Text -> IO (Text, [Command])
+    getActivationScript storePath profile = do
       isNixOS <- doesPathExist $ toS $ storePath <> "/nixos-version"
-      if isNixOS
-        then return $ Just $ shellOut (toS $ storePath <> "/bin/switch-to-configuration") ["switch"]
-        else return Nothing
+      isNixDarwin <- doesPathExist $ toS $ storePath <> "/darwin-version"
+      user <- InstallationMode.getUser
+      (systemProfile, cmds) <- case (isNixOS, isNixDarwin) of
+        (True, _) -> return ("system", [(toS storePath <> "/bin/switch-to-configuration", ["switch"])])
+        (_, True) ->
+          -- https://github.com/LnL7/nix-darwin/blob/master/pkgs/nix-tools/darwin-rebuild.sh
+          return
+            ( "system-profiles/system",
+              [ ("mkdir", ["-p", "-m", "0755", "/nix/var/nix/profiles/system-profiles"]),
+                (toS storePath <> "/activate-user", []),
+                (toS storePath <> "/activate", [])
+              ]
+            )
+        (_, _) -> return ("system", [])
+      return ("/nix/var/nix/profiles/" <> if profile == "" then systemProfile else profile, cmds)
 
--- TODO: nix-darwin, home-manager
+type Command = (String, [String])
+
+-- TODO: home-manager

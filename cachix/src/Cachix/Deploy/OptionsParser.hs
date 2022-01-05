@@ -44,9 +44,9 @@ parserAgentOptions =
           <> help "Unique identifier (usually hostname)."
       )
     <*> strArgument
-      ( value "system"
-          <> metavar "PROFILE"
-          <> help "Nix profile to manage. Defaults to 'system' (NixOS)."
+      ( value ""
+          <> metavar "NIX-PROFILE"
+          <> help "Nix profile to manage. Defaults to 'system' on NixOS and 'system-profiles/system' on nix-darwin."
       )
 
 parserActivateOptions :: Parser ActivateOptions
@@ -56,7 +56,3 @@ parserActivateOptions =
       ( metavar "DEPLOY-SPEC.JSON"
           <> help "https://docs.cachix.org/deploy/reference.html#deploy-json"
       )
-
-getProfile :: AgentOptions -> Text
-getProfile agentOptions =
-  "/nix/var/nix/profiles/" <> profile agentOptions

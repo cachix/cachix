@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
+## [0.7.0] - 2022-01-12
+
+### Added 
+
+- Cachix Deploy support
+
+### Fixed
+
+- #386: use /run/current-system/nixos-version to check if we're running NixOS
+- Filter out invalid paths when pushing
+
+### Changed
+
+- watch-store command: use systemd notifications while shutting down
+
 ## [0.6.1] - 2021-06-21
 
 ### Fixed

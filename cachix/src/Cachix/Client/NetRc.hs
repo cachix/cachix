@@ -48,7 +48,8 @@ add cachixAuthToken binarycaches filename = do
     mkHost bc =
       NetRcHost
         { nrhName = toS $ stripPrefix "http://" $ stripPrefix "https://" (BinaryCache.uri bc),
-          nrhLogin = "",
+          -- See #406 why we need a space here
+          nrhLogin = " ",
           nrhPassword = getToken cachixAuthToken,
           nrhAccount = "",
           nrhMacros = []

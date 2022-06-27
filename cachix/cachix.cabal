@@ -155,9 +155,7 @@ test-suite cachix-test
   other-modules:
     InstallationModeSpec
     NetRcSpec
-    NixConfSpec
     NixVersionSpec
-    Paths_cachix
     Spec
 
   build-depends:

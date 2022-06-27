@@ -241,7 +241,9 @@ pushClosure ::
   -- | Every @r@ per store path of the entire closure of store paths
   m [r]
 pushClosure traversal pushParams inputStorePaths = do
+  print "before"
   missingPaths <- getMissingPathsForClosure pushParams inputStorePaths
+  print "after"
   traversal (\path -> retryAll $ \retrystatus -> uploadStorePath pushParams path retrystatus) missingPaths
 
 getMissingPathsForClosure :: (MonadIO m, MonadMask m) => PushParams m r -> [StorePath] -> m [StorePath]
@@ -254,7 +256,9 @@ getMissingPathsForClosure pushParams inputPaths = do
       inputs <- Std.Set.new
       for_ inputPaths $ \path -> do
         Std.Set.insertFP inputs path
+      print "before1"
       closure <- Store.computeFSClosure store Store.defaultClosureParams inputs
+      print "before2"
       Std.Set.toListFP closure
   hashes <- for paths (liftIO . fmap (decodeUtf8With lenientDecode) . Store.getStorePathHash)
   -- Check what store paths are missing

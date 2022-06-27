@@ -15,7 +15,7 @@ where
 
 import qualified Cachix.API as API
 import Cachix.API.Error
-import Cachix.Client.CNix (handleInvalidPath)
+import Cachix.Client.CNix (filterInvalidStorePath)
 import Cachix.Client.Config
   ( BinaryCacheConfig (BinaryCacheConfig),
     Config (..),
@@ -51,7 +51,7 @@ import Data.String.Here
 import qualified Data.Text as T
 import qualified Data.Text.IO as T.IO
 import GHC.IO.Handle (hDuplicate, hDuplicateTo)
-import Hercules.CNix.Store (Store, StorePath, followLinksToStorePath, storePathToPath)
+import Hercules.CNix.Store (Store, StorePath, followLinksToStorePath, isValidPath, storePathToPath)
 import Network.HTTP.Types (status401, status404)
 import Protolude hiding (toS)
 import Protolude.Conv
@@ -163,9 +163,10 @@ push env (PushPaths opts name cliPaths) = do
   pushParams <- getPushParams env opts name
   normalized <-
     liftIO $
-      for inputStorePaths $ \path ->
-        handleInvalidPath $
-          Just <$> followLinksToStorePath (pushParamsStore pushParams) (encodeUtf8 path)
+      for inputStorePaths $ \path -> do 
+        storePath <- followLinksToStorePath (pushParamsStore pushParams) (encodeUtf8 path)
+        filterInvalidStorePath (pushParamsStore pushParams) storePath
+
   pushedPaths <-
     pushClosure
       (mapConcurrentlyBounded (numJobs opts))

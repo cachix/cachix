@@ -12,7 +12,7 @@ module Cachix.Client.PushQueue
   )
 where
 
-import Cachix.Client.CNix (handleInvalidPath)
+import Cachix.Client.CNix (filterInvalidStorePath)
 import qualified Cachix.Client.Push as Push
 import Cachix.Client.Retry (retryAll)
 import Control.Concurrent.Async
@@ -43,10 +43,9 @@ worker pushParams workerState = forever $ do
   storePath <- atomically $ TBQueue.readTBQueue $ pushQueue workerState
   bracket_ (inProgresModify (+ 1)) (inProgresModify (\x -> x - 1)) $
     retryAll $ \retrystatus ->
-      void $
-        handleInvalidPath $
-          Just
-            <$> Push.uploadStorePath pushParams storePath retrystatus
+      void $ do 
+        maybeStorePath <- filterInvalidStorePath (Push.pushParamsStore pushParams) storePath
+        for maybeStorePath $ \validatedStorePath -> Push.uploadStorePath pushParams validatedStorePath retrystatus
   where
     inProgresModify f =
       atomically $ modifyTVar' (inProgress workerState) f

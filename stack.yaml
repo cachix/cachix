@@ -1,9 +1,9 @@
-resolver: nightly-2022-06-06
+resolver: nightly-2022-06-20
 packages:
 - cachix-api
 - cachix
 extra-deps:
-- hercules-ci-cnix-store-0.3.2.0
+- hercules-ci-cnix-store-0.3.3.0
 - netrc-0.2.0.0
 - nix-narinfo-0.1.0.1
 - protolude-0.3.2

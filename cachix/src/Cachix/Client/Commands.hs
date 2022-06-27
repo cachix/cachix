@@ -163,7 +163,7 @@ push env (PushPaths opts name cliPaths) = do
   pushParams <- getPushParams env opts name
   normalized <-
     liftIO $
-      for inputStorePaths $ \path -> do 
+      for inputStorePaths $ \path -> do
         storePath <- followLinksToStorePath (pushParamsStore pushParams) (encodeUtf8 path)
         filterInvalidStorePath (pushParamsStore pushParams) storePath
 

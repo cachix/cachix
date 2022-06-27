@@ -155,6 +155,7 @@ test-suite cachix-test
   other-modules:
     InstallationModeSpec
     NetRcSpec
+    NixConfSpec
     NixVersionSpec
     Spec
 

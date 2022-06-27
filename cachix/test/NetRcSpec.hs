@@ -46,7 +46,7 @@ spec :: Spec
 spec =
   describe "add" $ do
     -- TODO: not easy to test this with temp files as they are *created*
-    --it "populates non-existent netrc file" $ test [bc1, bc2] "fresh"
+    -- it "populates non-existent netrc file" $ test [bc1, bc2] "fresh"
     it "populates empty netrc file" $ test [bc1, bc2] "empty"
     it "populates netrc file with one additional entry" $ test [bc2] "add"
     it "populates netrc file with one overriden entry" $ test [bc2] "override"

@@ -100,7 +100,7 @@ queryLoop workerState pushqueue pushParams = do
 
 exitOnceQueueIsEmpty :: IO () -> Async () -> Async () -> QueryWorkerState -> PushWorkerState -> IO ()
 exitOnceQueueIsEmpty stopProducerCallback pushWorker queryWorker queryWorkerState pushWorkerState = do
-  putText "Stopped watching /nix/store and waiting for queue to empty ..."
+  putTextError "Stopped watching /nix/store and waiting for queue to empty ..."
   Systemd.notifyStopping
   stopProducerCallback
   go
@@ -115,12 +115,15 @@ exitOnceQueueIsEmpty stopProducerCallback pushWorker queryWorker queryWorkerStat
         return (isDone, inprogress, pushQueueLength)
       if isDone
         then do
-          putText "Done."
+          putTextError "Done."
           cancelWith queryWorker StopWorker
           cancelWith pushWorker StopWorker
         else do
           -- extend shutdown for another 90s
           Systemd.notify False $ "EXTEND_TIMEOUT_USEC=" <> show (90 * 1000 * 1000)
-          putText $ "Waiting to finish: " <> show inprogress <> " pushing, " <> show queueLength <> " in queue"
+          putTextError $ "Waiting to finish: " <> show inprogress <> " pushing, " <> show queueLength <> " in queue"
           threadDelay (1000 * 1000)
           go
+
+putTextError :: Text -> IO ()
+putTextError = hPutStrLn stderr

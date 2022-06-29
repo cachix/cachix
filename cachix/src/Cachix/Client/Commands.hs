@@ -173,12 +173,15 @@ push env (PushPaths opts name cliPaths) = do
       pushParams
       (catMaybes normalized)
   case (length normalized, length pushedPaths) of
-    (0, _) -> putText "Nothing to push."
-    (_, 0) -> putText "Nothing to push - all store paths are already on Cachix."
-    _ -> putText "All done."
+    (0, _) -> putTextError "Nothing to push."
+    (_, 0) -> putTextError "Nothing to push - all store paths are already on Cachix."
+    _ -> putTextError "All done."
 push _ _ =
   throwIO $
     DeprecatedCommand "DEPRECATED: cachix watch-store has replaced cachix push --watch-store."
+
+putTextError :: Text -> IO ()
+putTextError = hPutStrLn stderr
 
 watchStore :: Env -> PushOptions -> Text -> IO ()
 watchStore env opts name = do

@@ -9,6 +9,7 @@ import Cachix.Client.URI (getBaseUrl)
 import Cachix.Client.Version (versionNumber)
 import qualified Cachix.Deploy.Activate as Activate
 import qualified Cachix.Deploy.OptionsParser as AgentOptions
+import qualified Cachix.Deploy.WebsocketPong as WebsocketPong
 import Conduit ((.|))
 import qualified Control.Concurrent.Async as Async
 import qualified Control.Concurrent.STM.TQueue as TQueue
@@ -39,6 +40,7 @@ run cachixOptions agentOpts = withKatip (CachixOptions.verbose cachixOptions) $ 
   agentToken <- getEnv "CACHIX_AGENT_TOKEN"
   -- TODO: error if token is missing
   agentState <- newIORef Nothing
+  pongState <- WebsocketPong.newState
   let runKatip = K.runKatipContextT logEnv () "agent"
       headers =
         [ ("Authorization", "Bearer " <> toS agentToken),
@@ -47,14 +49,22 @@ run cachixOptions agentOpts = withKatip (CachixOptions.verbose cachixOptions) $ 
         ]
       host = Servant.baseUrlHost $ getBaseUrl $ CachixOptions.host cachixOptions
       path = "/ws"
+      pingEvery = 30
+      pongTimeout = pingEvery * 2
+      pingHandler = do
+        runKatip $ K.logLocM K.DebugS "WebSocket keep-alive ping"
+        WebsocketPong.pingHandler pongState pongTimeout
+      connectionOptions = WebsocketPong.installPongHandler pongState WS.defaultConnectionOptions
   runKatip $
     retryAllWithLogging endlessRetryPolicy (logger runKatip) $ do
       K.logLocM K.InfoS $ K.ls ("Agent " <> agentIdentifier <> " connecting to " <> toS host <> toS path)
-      liftIO $
-        Wuss.runSecureClientWith host 443 path WS.defaultConnectionOptions headers $ \connection -> runKatip $ do
+      liftIO $ do
+        -- refresh pong state in case we're reconnecting
+        WebsocketPong.pongHandler pongState
+        Wuss.runSecureClientWith host 443 path connectionOptions headers $ \connection -> runKatip $ do
           K.logLocM K.InfoS "Connected to Cachix Deploy service"
           liftIO $
-            WS.withPingThread connection 30 (runKatip $ K.logLocM K.DebugS "WebSocket keep-alive ping") $ do
+            WS.withPingThread connection pingEvery pingHandler $ do
               WSS.recieveDataConcurrently
                 connection
                 (\message -> Exception.handle (handler runKatip) $ runKatip (handleMessage runKatip host headers message connection agentState (toS agentToken)))

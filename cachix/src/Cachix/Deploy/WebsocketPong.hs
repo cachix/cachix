@@ -3,7 +3,7 @@
 module Cachix.Deploy.WebsocketPong where
 
 import Data.IORef
-import Data.Time.Clock (UTCTime, diffUTCTime, getCurrentTime, secondsToNominalDiffTime)
+import Data.Time.Clock (UTCTime, diffUTCTime, getCurrentTime, nominalDiffTimeToSeconds)
 import qualified Network.WebSockets as WS
 import Protolude
 
@@ -23,11 +23,15 @@ newState = do
 -- everytime we send a ping we check if we also got a pong back
 pingHandler :: LastPongState -> Int -> IO ()
 pingHandler state maxLastPing = do
+  last <- secondsSinceLastPong state
+  when (last > maxLastPing) $ do
+    throwIO WebsocketPongTimeout
+
+secondsSinceLastPong :: LastPongState -> IO Int
+secondsSinceLastPong state = do
   now <- getCurrentTime
   last <- readIORef state
-  let diff = diffUTCTime now last
-  when (diff > secondsToNominalDiffTime (fromIntegral maxLastPing)) $ do
-    throwIO WebsocketPongTimeout
+  return $ ceiling $ nominalDiffTimeToSeconds $ diffUTCTime now last
 
 pongHandler :: LastPongState -> IO ()
 pongHandler state = do

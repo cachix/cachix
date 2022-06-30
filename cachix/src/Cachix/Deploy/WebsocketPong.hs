@@ -21,11 +21,11 @@ newState = do
   newIORef now
 
 -- everytime we send a ping we check if we also got a pong back
-pingHandler :: LastPongState -> Int -> IO ()
-pingHandler state maxLastPing = do
+pingHandler :: LastPongState -> ThreadId -> Int -> IO ()
+pingHandler state threadID maxLastPing = do
   last <- secondsSinceLastPong state
   when (last > maxLastPing) $ do
-    throwIO WebsocketPongTimeout
+    throwTo threadID WebsocketPongTimeout
 
 secondsSinceLastPong :: LastPongState -> IO Int
 secondsSinceLastPong state = do

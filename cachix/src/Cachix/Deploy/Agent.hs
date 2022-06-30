@@ -41,6 +41,7 @@ run cachixOptions agentOpts = withKatip (CachixOptions.verbose cachixOptions) $ 
   -- TODO: error if token is missing
   agentState <- newIORef Nothing
   pongState <- WebsocketPong.newState
+  mainThreadID <- myThreadId
   let runKatip = K.runKatipContextT logEnv () "agent"
       headers =
         [ ("Authorization", "Bearer " <> toS agentToken),
@@ -54,7 +55,7 @@ run cachixOptions agentOpts = withKatip (CachixOptions.verbose cachixOptions) $ 
       pingHandler = do
         last <- WebsocketPong.secondsSinceLastPong pongState
         runKatip $ K.logLocM K.DebugS $ K.ls $ "Sending WebSocket keep-alive ping, last pong was " <> (show last :: Text) <> " seconds ago"
-        WebsocketPong.pingHandler pongState pongTimeout
+        WebsocketPong.pingHandler pongState mainThreadID pongTimeout
       connectionOptions = WebsocketPong.installPongHandler pongState WS.defaultConnectionOptions
   runKatip $
     retryAllWithLogging endlessRetryPolicy (logger runKatip) $ do

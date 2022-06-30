@@ -52,7 +52,8 @@ run cachixOptions agentOpts = withKatip (CachixOptions.verbose cachixOptions) $ 
       pingEvery = 30
       pongTimeout = pingEvery * 2
       pingHandler = do
-        runKatip $ K.logLocM K.DebugS "WebSocket keep-alive ping"
+        last <- WebsocketPong.secondsSinceLastPong pongState
+        runKatip $ K.logLocM K.DebugS $ K.ls $ "Sending WebSocket keep-alive ping, last pong was " <> (show last :: Text) <> " seconds ago"
         WebsocketPong.pingHandler pongState pongTimeout
       connectionOptions = WebsocketPong.installPongHandler pongState WS.defaultConnectionOptions
   runKatip $

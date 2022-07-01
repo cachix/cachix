@@ -66,6 +66,7 @@ library
     Cachix.Deploy.ActivateCommand
     Cachix.Deploy.Agent
     Cachix.Deploy.OptionsParser
+    Cachix.Deploy.Websocket
     Cachix.Deploy.WebsocketPong
     System.Nix.Base32
 

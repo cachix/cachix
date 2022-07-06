@@ -66,6 +66,7 @@ library
     Cachix.Deploy.ActivateCommand
     Cachix.Deploy.Agent
     Cachix.Deploy.OptionsParser
+    Cachix.Deploy.StdinProcess
     Cachix.Deploy.Websocket
     Cachix.Deploy.WebsocketPong
     System.Nix.Base32
@@ -147,6 +148,32 @@ executable cachix
     , cachix
     , cachix-api
     , safe-exceptions
+
+executable .cachix-deployment
+  import:             defaults
+  main-is:            Main.hs
+  build-tool-depends: hspec-discover:hspec-discover -any
+  ghc-options:        -threaded -rtsopts -with-rtsopts=-maxN8
+  hs-source-dirs:     cachix-deployment
+  other-modules:      Paths_cachix
+  autogen-modules:    Paths_cachix
+  build-depends:
+    , aeson
+    , async
+    , base             >=4.7 && <5
+    , cachix
+    , cachix-api
+    , conduit
+    , http-conduit
+    , katip
+    , protolude
+    , safe-exceptions
+    , stm
+    , stm-conduit
+    , time
+    , uuid
+    , websockets
+    , wuss
 
 test-suite cachix-test
   import:         defaults

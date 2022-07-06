@@ -6,8 +6,8 @@ import qualified Cachix.API.WebSocketSubprotocol as WSS
 import qualified Cachix.Client.InstallationMode as InstallationMode
 import qualified Cachix.Client.NetRc as NetRc
 import qualified Cachix.Client.OptionsParser as CachixOptions
-import Cachix.Client.URI (getBaseUrl)
 import qualified Cachix.Deploy.OptionsParser as AgentOptions
+import qualified Cachix.Deploy.Websocket as CachixWebsocket
 import qualified Cachix.Types.BinaryCache as BinaryCache
 import Cachix.Types.Permission (Permission (..))
 import qualified Data.Conduit as Conduit
@@ -20,41 +20,35 @@ import qualified Network.WebSockets as WS
 import Protolude hiding (log, toS)
 import Protolude.Conv (toS)
 import Servant.Auth.Client (Token (..))
-import qualified Servant.Client as Servant
 import System.Directory (doesPathExist)
 import System.IO.Temp (withSystemTempDirectory)
 import System.Process
 import Prelude (String)
 
--- TODO: duplicated in Agent.hs
-host :: CachixOptions.CachixOptions -> String
-host cachixOptions = Servant.baseUrlHost $ getBaseUrl $ CachixOptions.host cachixOptions
-
-domain :: CachixOptions.CachixOptions -> WSS.Cache -> Text
-domain cachixOptions cache = toS (WSS.cacheName cache) <> "." <> toS (host cachixOptions)
+domain :: CachixWebsocket.Options -> WSS.Cache -> Text
+domain options cache = toS (WSS.cacheName cache) <> "." <> toS (CachixWebsocket.host options)
 
 -- TODO: get uri scheme
-uri :: CachixOptions.CachixOptions -> WSS.Cache -> Text
-uri cachixOptions cache = "https://" <> domain cachixOptions cache
+uri :: CachixWebsocket.Options -> WSS.Cache -> Text
+uri options cache = "https://" <> domain options cache
 
 -- TODO: what if websocket gets closed while deploying?
 activate ::
-  CachixOptions.CachixOptions ->
-  AgentOptions.AgentOptions ->
+  CachixWebsocket.Options ->
   WS.Connection ->
   Conduit.ConduitT ByteString Void IO () ->
   WSS.DeploymentDetails ->
   WSS.AgentInformation ->
   ByteString ->
   K.KatipContextT IO ()
-activate cachixOptions agentArgs connection sourceStream deploymentDetails agentInfo agentToken = do
+activate options connection sourceStream deploymentDetails agentInfo agentToken = do
   let storePath = WSS.storePath deploymentDetails
       cachesArgs :: [String]
       cachesArgs = case WSS.cache agentInfo of
         Just cache ->
           let officialCache = "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
-              substituters = ["--option", "extra-substituters", toS (uri cachixOptions cache)]
-              sigs = ["--option", "trusted-public-keys", officialCache <> " " <> toS (domain cachixOptions cache) <> "-1:" <> toS (WSS.publicKey cache)]
+              substituters = ["--option", "extra-substituters", toS (uri options cache)]
+              sigs = ["--option", "trusted-public-keys", officialCache <> " " <> toS (domain options cache) <> "-1:" <> toS (WSS.publicKey cache)]
            in substituters ++ sigs
         Nothing -> []
       deploymentID = WSS.id (deploymentDetails :: WSS.DeploymentDetails)
@@ -93,7 +87,7 @@ activate cachixOptions agentArgs connection sourceStream deploymentDetails agent
           let bc =
                 BinaryCache.BinaryCache
                   { BinaryCache.name = "",
-                    BinaryCache.uri = toS (uri cachixOptions cache),
+                    BinaryCache.uri = toS (uri options cache),
                     BinaryCache.publicSigningKeys = [],
                     BinaryCache.isPublic = WSS.isPublic cache,
                     BinaryCache.githubUsername = "",
@@ -109,7 +103,7 @@ activate cachixOptions agentArgs connection sourceStream deploymentDetails agent
   case downloadExitCode of
     ExitFailure _ -> deploymentFailed
     ExitSuccess -> do
-      (profile, activationScripts) <- liftIO $ getActivationScript storePath (AgentOptions.profile agentArgs)
+      (profile, activationScripts) <- liftIO $ getActivationScript storePath (CachixWebsocket.profile options)
       -- TODO: document what happens if wrong user is used for the agent
 
       -- set the new profile

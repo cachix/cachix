@@ -56,6 +56,7 @@ handleMessage input payload runKatip connection _ agentToken =
           activateThread = runKatip $ do
             Activate.activate options connection (Conduit.sinkTQueue queue) deploymentDetails agentInformation agentToken
       liftIO $ Async.race_ streamingThread activateThread
+      throwIO ExitSuccess
     runLogStreaming :: String -> RequestHeaders -> Conduit.TQueue ByteString -> UUID -> IO ()
     runLogStreaming host headers queue deploymentID = do
       let path = "/api/v1/deploy/log/" <> UUID.toText deploymentID

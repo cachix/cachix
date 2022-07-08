@@ -5,8 +5,6 @@ module Cachix.Deploy.Activate where
 import qualified Cachix.API.WebSocketSubprotocol as WSS
 import qualified Cachix.Client.InstallationMode as InstallationMode
 import qualified Cachix.Client.NetRc as NetRc
-import qualified Cachix.Client.OptionsParser as CachixOptions
-import qualified Cachix.Deploy.OptionsParser as AgentOptions
 import qualified Cachix.Deploy.Websocket as CachixWebsocket
 import qualified Cachix.Types.BinaryCache as BinaryCache
 import Cachix.Types.Permission (Permission (..))
@@ -63,7 +61,7 @@ activate options connection sourceStream deploymentDetails agentInfo agentToken 
         K.logLocM K.InfoS $ K.ls $ "Deploying #" <> index <> " failed."
         sendMessage $ deploymentFinished False now
         -- hack to flush logs
-        liftIO $ threadDelay (1 * 1000 * 1000)
+        liftIO $ threadDelay (5 * 1000 * 1000)
   K.logLocM K.InfoS $ K.ls $ "Deploying #" <> index <> ": " <> WSS.storePath deploymentDetails
   -- notify the service deployment started
   now <- liftIO getCurrentTime
@@ -96,7 +94,6 @@ activate options connection sourceStream deploymentDetails agentInfo agentToken 
           Nothing ->
             return cachesArgs
         shellOut "nix-store" (["-r", toS storePath] <> args)
-
   -- TODO: use exceptions to simplify this code
   case downloadExitCode of
     ExitFailure _ -> deploymentFailed
@@ -120,7 +117,7 @@ activate options connection sourceStream deploymentDetails agentInfo agentToken 
               sendMessage $ deploymentFinished True now
               liftIO $ log "Successfully activated the deployment."
               -- TODO: this is a hack to make sure the deployment is finished
-              liftIO $ threadDelay (2 * 1000 * 1000)
+              liftIO $ threadDelay (5 * 1000 * 1000)
               K.logLocM K.InfoS $ K.ls $ "Deployment #" <> index <> " finished"
   where
     -- TODO: prevent service from being restarted while deploying

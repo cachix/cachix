@@ -1,3 +1,5 @@
+{-# LANGUAGE ScopedTypeVariables #-}
+
 module Cachix.Client.Retry
   ( retryAll,
     retryAllWithLogging,
@@ -5,9 +7,9 @@ module Cachix.Client.Retry
   )
 where
 
-import Control.Exception.Safe (MonadMask, isSyncException)
+import Control.Exception.Safe (Handler (..), MonadMask, isSyncException)
 import Control.Retry (RetryPolicy, RetryPolicyM, RetryStatus, exponentialBackoff, limitRetries, logRetries, recoverAll, recovering, skipAsyncExceptions)
-import Protolude
+import Protolude hiding (Handler (..))
 
 retryAll :: (MonadIO m, MonadMask m) => (RetryStatus -> m a) -> m a
 retryAll =
@@ -17,7 +19,9 @@ retryAll =
 retryAllWithLogging :: (MonadIO m, MonadMask m) => RetryPolicyM m -> (Bool -> SomeException -> RetryStatus -> m ()) -> m a -> m a
 retryAllWithLogging retryPolicy logger action = recovering retryPolicy handlers $ const action
   where
-    handlers = skipAsyncExceptions ++ [loggingHandler]
+    handlers = skipAsyncExceptions ++ [exitSuccessHandler, loggingHandler]
+    exitSuccessHandler :: MonadIO m => RetryStatus -> Handler m Bool
+    exitSuccessHandler _ = Handler $ \(_ :: ExitCode) -> return False
     loggingHandler = logRetries exceptionPredicate logger
     exceptionPredicate = return . isSyncException
 

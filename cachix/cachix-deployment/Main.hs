@@ -60,16 +60,16 @@ handleMessage input payload runKatip connection _ agentToken =
     runLogStreaming host headers queue deploymentID = do
       let path = "/api/v1/deploy/log/" <> UUID.toText deploymentID
       retryAllWithLogging endlessRetryPolicy (CachixWebsocket.logger runKatip) $ do
-        liftIO
-          $ Wuss.runSecureClientWith host 443 (toS path) WS.defaultConnectionOptions headers
-          $ \conn ->
-            bracket_ (return ()) (WS.sendClose connection ("Closing." :: ByteString))
-              $ Conduit.runConduit
-              $ Conduit.sourceTQueue queue
-                .| Conduit.linesUnboundedAscii
-                -- TODO: prepend katip-like format to each line
-                -- .| (if CachixWebsocket.isVerbose options then Conduit.print else mempty)
-                .| sendLog conn
+        liftIO $
+          Wuss.runSecureClientWith host 443 (toS path) WS.defaultConnectionOptions headers $
+            \conn ->
+              bracket_ (return ()) (WS.sendClose connection ("Closing." :: ByteString)) $
+                Conduit.runConduit $
+                  Conduit.sourceTQueue queue
+                    .| Conduit.linesUnboundedAscii
+                    -- TODO: prepend katip-like format to each line
+                    -- .| (if CachixWebsocket.isVerbose options then Conduit.print else mempty)
+                    .| sendLog conn
 
 sendLog :: WS.Connection -> Conduit.ConduitT ByteString Conduit.Void IO ()
 sendLog connection = Conduit.mapM_ f

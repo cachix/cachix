@@ -64,9 +64,7 @@ activate options connection sourceStream deploymentDetails agentInfo agentToken 
         sendMessage $ deploymentFinished False now
         -- hack to flush logs
         liftIO $ threadDelay (1 * 1000 * 1000)
-
   K.logLocM K.InfoS $ K.ls $ "Deploying #" <> index <> ": " <> WSS.storePath deploymentDetails
-
   -- notify the service deployment started
   now <- liftIO getCurrentTime
   sendMessage $
@@ -74,30 +72,30 @@ activate options connection sourceStream deploymentDetails agentInfo agentToken 
       { WSS.id = deploymentID,
         WSS.time = now
       }
-
   -- TODO: don't create tmpfile for public caches
   -- TODO: add GC root so it's preserved for the next command
   -- get the store path using caches
   (downloadExitCode, _, _) <- liftIO $
-    withSystemTempDirectory "netrc" $ \dir -> do
-      let filepath = dir <> "netrc"
-      args <- case WSS.cache agentInfo of
-        Just cache -> do
-          -- TODO: ugh
-          let bc =
-                BinaryCache.BinaryCache
-                  { BinaryCache.name = "",
-                    BinaryCache.uri = toS (uri options cache),
-                    BinaryCache.publicSigningKeys = [],
-                    BinaryCache.isPublic = WSS.isPublic cache,
-                    BinaryCache.githubUsername = "",
-                    BinaryCache.permission = Read
-                  }
-          NetRc.add (Token agentToken) [bc] filepath
-          return $ cachesArgs <> ["--option", "netrc-file", filepath]
-        Nothing ->
-          return cachesArgs
-      shellOut "nix-store" (["-r", toS storePath] <> args)
+    withSystemTempDirectory "netrc" $
+      \dir -> do
+        let filepath = dir <> "netrc"
+        args <- case WSS.cache agentInfo of
+          Just cache -> do
+            -- TODO: ugh
+            let bc =
+                  BinaryCache.BinaryCache
+                    { BinaryCache.name = "",
+                      BinaryCache.uri = toS (uri options cache),
+                      BinaryCache.publicSigningKeys = [],
+                      BinaryCache.isPublic = WSS.isPublic cache,
+                      BinaryCache.githubUsername = "",
+                      BinaryCache.permission = Read
+                    }
+            NetRc.add (Token agentToken) [bc] filepath
+            return $ cachesArgs <> ["--option", "netrc-file", filepath]
+          Nothing ->
+            return cachesArgs
+        shellOut "nix-store" (["-r", toS storePath] <> args)
 
   -- TODO: use exceptions to simplify this code
   case downloadExitCode of
@@ -115,18 +113,14 @@ activate options connection sourceStream deploymentDetails agentInfo agentToken 
           exitCodes <- for activationScripts $ \(cmd, args) -> do
             (activateScriptExitCode, _, _) <- liftIO $ shellOut cmd args
             return activateScriptExitCode
-
           if not (all (== ExitSuccess) exitCodes)
             then deploymentFailed
             else do
               now <- liftIO getCurrentTime
               sendMessage $ deploymentFinished True now
-
               liftIO $ log "Successfully activated the deployment."
-
               -- TODO: this is a hack to make sure the deployment is finished
               liftIO $ threadDelay (2 * 1000 * 1000)
-
               K.logLocM K.InfoS $ K.ls $ "Deployment #" <> index <> " finished"
   where
     -- TODO: prevent service from being restarted while deploying
@@ -134,18 +128,14 @@ activate options connection sourceStream deploymentDetails agentInfo agentToken 
 
     index :: Text
     index = show $ WSS.index deploymentDetails
-
     shellOut cmd args = do
       log $ "$ " <> toS cmd <> " " <> toS (unwords $ fmap toS args)
       Conduit.sourceProcessWithStreams (proc cmd args) Conduit.sinkNull sourceStream sourceStream
-
     log :: ByteString -> IO ()
     log msg = Conduit.connect (Conduit.yieldMany ["\n" <> msg <> "\n"]) sourceStream
-
     sendMessage cmd = liftIO $ do
       command <- createMessage cmd
       WSS.sendMessage connection command
-
     createMessage command = do
       uuid <- UUID.nextRandom
       return $
@@ -159,7 +149,6 @@ activate options connection sourceStream deploymentDetails agentInfo agentToken 
         method = case command of
           WSS.DeploymentStarted {} -> "DeploymentStarted"
           WSS.DeploymentFinished {} -> "DeploymentFinished"
-
     getActivationScript :: Text -> Text -> IO (Text, [Command])
     getActivationScript storePath profile = do
       isNixOS <- doesPathExist $ toS $ storePath <> "/nixos-version"

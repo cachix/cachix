@@ -42,10 +42,11 @@ worker :: Push.PushParams IO () -> PushWorkerState -> IO ()
 worker pushParams workerState = forever $ do
   storePath <- atomically $ TBQueue.readTBQueue $ pushQueue workerState
   bracket_ (inProgresModify (+ 1)) (inProgresModify (\x -> x - 1)) $
-    retryAll $ \retrystatus ->
-      void $ do
-        maybeStorePath <- filterInvalidStorePath (Push.pushParamsStore pushParams) storePath
-        for maybeStorePath $ \validatedStorePath -> Push.uploadStorePath pushParams validatedStorePath retrystatus
+    retryAll $
+      \retrystatus ->
+        void $ do
+          maybeStorePath <- filterInvalidStorePath (Push.pushParamsStore pushParams) storePath
+          for maybeStorePath $ \validatedStorePath -> Push.uploadStorePath pushParams validatedStorePath retrystatus
   where
     inProgresModify f =
       atomically $ modifyTVar' (inProgress workerState) f

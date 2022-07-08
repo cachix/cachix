@@ -12,7 +12,7 @@ import Protolude.Conv
 import Servant.Auth.Client
 
 instance FromDhall Token where
-  autoWith _ = strictText { extract = ex }
+  autoWith _ = strictText {extract = ex}
     where
       ex (TextLit (Chunks [] t)) = pure (Token (toS t))
       ex _ = panic "Unexpected Dhall value. Did it typecheck?"

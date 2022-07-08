@@ -6,7 +6,6 @@ import qualified Cachix.API.WebSocketSubprotocol as WSS
 import Cachix.Client.Retry
 import Cachix.Client.Version (versionNumber)
 import qualified Cachix.Deploy.WebsocketPong as WebsocketPong
-import qualified Control.Exception.Safe as Exception
 import Data.Aeson (FromJSON, ToJSON)
 import Data.IORef
 import qualified Katip as K
@@ -61,7 +60,7 @@ runForever options cmd = withKatip (isVerbose options) $ \logEnv -> do
                 do
                   WSS.recieveDataConcurrently
                     connection
-                    (\message -> Exception.handle (handler runKatip) $ runKatip (cmd message runKatip connection agentState (toS agentToken)))
+                    (\message -> runKatip (cmd message runKatip connection agentState (toS agentToken)))
   where
     agentIdentifier = name options <> " " <> toS versionNumber
     pingEvery = 30
@@ -75,10 +74,6 @@ headers options agentToken =
   ]
 
 -- TODO: log the exception
-handler :: (K.KatipContextT IO () -> IO ()) -> Exception.SomeException -> IO ()
-handler runKatip e = do
-  runKatip $ K.logLocM K.ErrorS $ "Unexpected exception: " <> K.ls (Exception.displayException e)
-
 logger runKatip _ exception _ = runKatip $ K.logLocM K.ErrorS $ K.ls $ "Retrying due to an exception:" <> displayException exception
 
 withKatip :: Bool -> (K.LogEnv -> IO a) -> IO a

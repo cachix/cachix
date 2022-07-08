@@ -30,8 +30,6 @@ import Protolude.Conv
 import System.IO (BufferMode (..), hSetBuffering)
 import qualified Wuss
 
--- TODO: https://superuser.com/questions/1333069/how-to-track-all-child-processes-spawned-by-a-systemctl-service
-
 main :: IO ()
 main = do
   setLocaleEncoding utf8

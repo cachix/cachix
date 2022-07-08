@@ -48,18 +48,20 @@ runForever options cmd = withKatip (isVerbose options) $ \logEnv -> do
         WebsocketPong.pingHandler pongState mainThreadID pongTimeout
       connectionOptions = WebsocketPong.installPongHandler pongState WS.defaultConnectionOptions
   runKatip $
-    retryAllWithLogging endlessRetryPolicy (logger runKatip) $ do
-      K.logLocM K.InfoS $ K.ls ("Agent " <> agentIdentifier <> " connecting to " <> toS (host options) <> toS (path options))
-      liftIO $ do
-        -- refresh pong state in case we're reconnecting
-        WebsocketPong.pongHandler pongState
-        Wuss.runSecureClientWith (toS $ host options) 443 (toS $ path options) connectionOptions (headers options (toS agentToken)) $ \connection -> runKatip $ do
-          K.logLocM K.InfoS "Connected to Cachix Deploy service"
-          liftIO $
-            WS.withPingThread connection pingEvery pingHandler $ do
-              WSS.recieveDataConcurrently
-                connection
-                (\message -> Exception.handle (handler runKatip) $ runKatip (cmd message runKatip connection agentState (toS agentToken)))
+    retryAllWithLogging endlessRetryPolicy (logger runKatip) $
+      do
+        K.logLocM K.InfoS $ K.ls ("Agent " <> agentIdentifier <> " connecting to " <> toS (host options) <> toS (path options))
+        liftIO $ do
+          -- refresh pong state in case we're reconnecting
+          WebsocketPong.pongHandler pongState
+          Wuss.runSecureClientWith (toS $ host options) 443 (toS $ path options) connectionOptions (headers options (toS agentToken)) $ \connection -> runKatip $ do
+            K.logLocM K.InfoS "Connected to Cachix Deploy service"
+            liftIO $
+              WS.withPingThread connection pingEvery pingHandler $
+                do
+                  WSS.recieveDataConcurrently
+                    connection
+                    (\message -> Exception.handle (handler runKatip) $ runKatip (cmd message runKatip connection agentState (toS agentToken)))
   where
     agentIdentifier = name options <> " " <> toS versionNumber
     pingEvery = 30

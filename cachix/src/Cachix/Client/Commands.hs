@@ -163,10 +163,10 @@ push env (PushPaths opts name cliPaths) = do
   pushParams <- getPushParams env opts name
   normalized <-
     liftIO $
-      for inputStorePaths $ \path -> do
-        storePath <- followLinksToStorePath (pushParamsStore pushParams) (encodeUtf8 path)
-        filterInvalidStorePath (pushParamsStore pushParams) storePath
-
+      for inputStorePaths $
+        \path -> do
+          storePath <- followLinksToStorePath (pushParamsStore pushParams) (encodeUtf8 path)
+          filterInvalidStorePath (pushParamsStore pushParams) storePath
   pushedPaths <-
     pushClosure
       (mapConcurrentlyBounded (numJobs opts))
@@ -196,7 +196,6 @@ watchExec env pushOpts name cmd args = do
       watch = do
         hDuplicateTo stderr stdout -- redirect all stdout to stderr
         WatchStore.startWorkers (pushParamsStore pushParams) (numJobs pushOpts) pushParams
-
   (_, exitCode) <- concurrently watch $ do
     (_, _, _, processHandle) <- System.Process.createProcess process
     exitCode <- System.Process.waitForProcess processHandle

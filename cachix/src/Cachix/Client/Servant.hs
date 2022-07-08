@@ -8,20 +8,20 @@
 module Cachix.Client.Servant
   ( isErr,
     cachixClient,
-    deployClient
+    deployClient,
   )
 where
 
 import qualified Cachix.API
+import qualified Cachix.API.Deploy as Cachix.Deploy.API
+import Cachix.Types.ContentTypes ()
 import Network.HTTP.Types (Status)
 import Protolude
 import Servant.API.Generic
 import Servant.Auth.Client ()
-import Cachix.Types.ContentTypes ()
 import qualified Servant.Client
 import Servant.Client.Generic (AsClientT)
 import Servant.Client.Streaming
-import qualified Cachix.API.Deploy as Cachix.Deploy.API
 import Servant.Conduit ()
 
 isErr :: ClientError -> Status -> Bool

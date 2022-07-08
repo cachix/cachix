@@ -18,9 +18,7 @@ retryAllWithLogging :: (MonadIO m, MonadMask m) => RetryPolicyM m -> (Bool -> So
 retryAllWithLogging retryPolicy logger action = recovering retryPolicy handlers $ const action
   where
     handlers = skipAsyncExceptions ++ [loggingHandler]
-
     loggingHandler = logRetries exceptionPredicate logger
-
     exceptionPredicate = return . isSyncException
 
 defaultRetryPolicy :: RetryPolicy

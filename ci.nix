@@ -15,6 +15,6 @@ let
     "x86_64-darwin" = {};
   };
 in
-  if multiSystemBuild
-  then builtins.mapAttrs ci ciSystems
-  else ci system {}
+if multiSystemBuild
+then builtins.mapAttrs ci ciSystems
+else ci system {}

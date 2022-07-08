@@ -271,9 +271,10 @@ getMissingPathsForClosure pushParams inputPaths = do
           )
   let missingHashes = Set.fromList (encodeUtf8 <$> missingHashesList)
   pathsAndHashes <- liftIO $
-    for paths $ \path -> do
-      hash_ <- Store.getStorePathHash path
-      pure (hash_, path)
+    for paths $
+      \path -> do
+        hash_ <- Store.getStorePathHash path
+        pure (hash_, path)
   return $ map snd $ filter (\(hash_, _path) -> Set.member hash_ missingHashes) pathsAndHashes
 
 -- TODO: move to a separate module specific to cli

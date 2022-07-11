@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
+## [0.8.0] - 2022-07-10
+
+### Fixed
+
+- Cachix Deploy: properly fix disconnection issues
+- Cachix Deploy: deployments are now a separate process so cachix agent can be upgraded at any time
+
+
 ## [0.7.1] - 2022-06-27
 
 ### Fixed

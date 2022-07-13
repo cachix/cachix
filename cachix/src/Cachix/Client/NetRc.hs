@@ -48,7 +48,9 @@ add cachixAuthToken binarycaches filename = do
     mkHost bc =
       NetRcHost
         { nrhName = toS $ stripPrefix "http://" $ stripPrefix "https://" (BinaryCache.uri bc),
-          nrhLogin = "",
+          -- Workaround for bug in libcurl where netrc is not respected
+          -- in the absence of the login token.
+          nrhLogin = "\"\"",
           nrhPassword = getToken cachixAuthToken,
           nrhAccount = "",
           nrhMacros = []

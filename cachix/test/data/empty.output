@@ -1,3 +1,3 @@
-machine name.cachix.org password token123
+machine name.cachix.org login "" password token123
 
-machine name2.cachix.org password token123
+machine name2.cachix.org login "" password token123

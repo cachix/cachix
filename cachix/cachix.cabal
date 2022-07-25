@@ -153,7 +153,7 @@ executable .cachix-deployment
   import:             defaults
   main-is:            Main.hs
   build-tool-depends: hspec-discover:hspec-discover -any
-  ghc-options:        -threaded -rtsopts -with-rtsopts=-maxN8
+  ghc-options:        -g -threaded -rtsopts -with-rtsopts=-maxN8
   hs-source-dirs:     cachix-deployment
   other-modules:      Paths_cachix
   autogen-modules:    Paths_cachix

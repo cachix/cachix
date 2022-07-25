@@ -74,7 +74,7 @@ headers options agentToken =
   ]
 
 -- TODO: log the exception
-logger runKatip _ exception _ = runKatip $ K.logLocM K.ErrorS $ K.ls $ "Retrying due to an exception:" <> displayException exception
+logger runKatip _ exception _ = runKatip $ K.logLocM K.ErrorS $ K.ls $ "Retrying due to an exception: " <> displayException exception
 
 withKatip :: Bool -> (K.LogEnv -> IO a) -> IO a
 withKatip isVerbose =

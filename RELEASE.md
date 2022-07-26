@@ -1,3 +1,5 @@
+- bump cabal version
+- edit CHANGELOG
 - nix-shell --run "cd cachix-api && releaser"
 - nix-shell --run "cd cachix && releaser"
 - README.md `cachix --help` changes

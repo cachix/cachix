@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
+## [0.8.1] - 2022-07-26
+
+- Cachix Deploy: retry exceptions every 1s instead of exponentially 
+
+### Fixed
+
 ## [0.8.0] - 2022-07-10
 
 ### Fixed

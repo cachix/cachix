@@ -1,11 +1,11 @@
 cabal-version:      2.2
 name:               cachix
-version:            0.8.0
+version:            0.8.1
 license:            Apache-2.0
 license-file:       LICENSE
 copyright:          2018 Domen Kožar
 category:           Nix
-maintainer:         domen@enlambda.com
+maintainer:         domen@cachix.org
 author:             Domen Kožar
 homepage:           https://github.com/cachix/cachix#readme
 bug-reports:        https://github.com/cachix/cachix/issues

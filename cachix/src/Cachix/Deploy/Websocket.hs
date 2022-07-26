@@ -56,6 +56,7 @@ runForever options cmd = withKatip (isVerbose options) $ \logEnv -> do
         liftIO $ do
           -- refresh pong state in case we're reconnecting
           WebsocketPong.pongHandler pongState
+          -- TODO: https://github.com/jaspervdj/websockets/issues/229
           Wuss.runSecureClientWith (toS $ host options) 443 (toS $ path options) connectionOptions (headers options (toS agentToken)) $ \connection -> runKatip $ do
             K.logLocM K.InfoS "Connected to Cachix Deploy service"
             liftIO $

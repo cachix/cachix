@@ -4,11 +4,12 @@ module Cachix.Client.Retry
   ( retryAll,
     retryAllWithLogging,
     endlessRetryPolicy,
+    endlessConstantRetryPolicy,
   )
 where
 
 import Control.Exception.Safe (Handler (..), MonadMask, isSyncException)
-import Control.Retry (RetryPolicy, RetryPolicyM, RetryStatus, exponentialBackoff, limitRetries, logRetries, recoverAll, recovering, skipAsyncExceptions)
+import Control.Retry (RetryPolicy, RetryPolicyM, RetryStatus, constantDelay, exponentialBackoff, limitRetries, logRetries, recoverAll, recovering, skipAsyncExceptions)
 import Protolude hiding (Handler (..))
 
 retryAll :: (MonadIO m, MonadMask m) => (RetryStatus -> m a) -> m a
@@ -28,6 +29,10 @@ retryAllWithLogging retryPolicy logger action = recovering retryPolicy handlers 
 defaultRetryPolicy :: RetryPolicy
 defaultRetryPolicy =
   exponentialBackoff (1000 * 1000) <> limitRetries 5
+
+endlessConstantRetryPolicy :: RetryPolicy
+endlessConstantRetryPolicy =
+  constantDelay (1000 * 1000)
 
 endlessRetryPolicy :: RetryPolicy
 endlessRetryPolicy =

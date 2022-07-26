@@ -6,8 +6,10 @@ import qualified Cachix.API.WebSocketSubprotocol as WSS
 import Cachix.Client.Retry
 import Cachix.Client.Version (versionNumber)
 import qualified Cachix.Deploy.WebsocketPong as WebsocketPong
+import Control.Retry (RetryStatus (..))
 import Data.Aeson (FromJSON, ToJSON)
 import Data.IORef
+import Data.String (String)
 import qualified Katip as K
 import Network.HTTP.Types (Header)
 import qualified Network.WebSockets as WS
@@ -47,7 +49,8 @@ runForever options cmd = withKatip (isVerbose options) $ \logEnv -> do
         WebsocketPong.pingHandler pongState mainThreadID pongTimeout
       connectionOptions = WebsocketPong.installPongHandler pongState WS.defaultConnectionOptions
   runKatip $
-    retryAllWithLogging endlessRetryPolicy (logger runKatip) $
+    -- TODO: use exponential retry with reset: https://github.com/Soostone/retry/issues/25
+    retryAllWithLogging endlessConstantRetryPolicy (logger runKatip) $
       do
         K.logLocM K.InfoS $ K.ls ("Agent " <> agentIdentifier <> " connecting to " <> toS (host options) <> toS (path options))
         liftIO $ do

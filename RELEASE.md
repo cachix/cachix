@@ -1,7 +1,9 @@
-- bump cabal version
 - edit CHANGELOG
-- nix-shell --run "cd cachix-api && releaser"
-- nix-shell --run "cd cachix && releaser"
+- git commit -m "prepare v0.X.X"
+- git tag v0.X.X
+- git push
+- hkgr publish
+- bump cabal version
 - README.md `cachix --help` changes
 - nix-shell -p lzma zlib nix pkgconfig boost --run "cabal haddock --haddock-for-hackage"
 - cabal upload --documentation --publish dist-newstyle/cachix-0.6.0-docs.tar.gz

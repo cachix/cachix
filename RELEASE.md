@@ -2,7 +2,8 @@
 - git commit -m "prepare v0.X.X"
 - git tag v0.X.X
 - git push
-- hkgr publish
+- cabal v2-sdist
+- cabal upload --publish dist-newstyle/sdist/cachix-0.X.X.tar.gz
 - bump cabal version
 - README.md `cachix --help` changes
 - nix-shell -p lzma zlib nix pkgconfig boost --run "cabal haddock --haddock-for-hackage"

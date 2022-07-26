@@ -84,7 +84,7 @@ logger runKatip _ exception retryStatus =
   where
     delay :: Maybe Int -> String
     delay Nothing = "0 seconds"
-    delay (Just s) = show (floor (fromIntegral s / 1000)) <> " seconds"
+    delay (Just s) = show (floor (fromIntegral s / 1000 / 1000)) <> " seconds"
 
 withKatip :: Bool -> (K.LogEnv -> IO a) -> IO a
 withKatip isVerbose =

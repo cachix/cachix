@@ -93,7 +93,8 @@ activate options connection sourceStream deploymentDetails agentInfo agentToken 
             return $ cachesArgs <> ["--option", "netrc-file", filepath]
           Nothing ->
             return cachesArgs
-        shellOut "nix-store" (["-r", toS storePath] <> args)
+        -- don't do negative caching of narinfos
+        shellOut "nix-store" (["-r", toS storePath] <> args <> ["--option", "narinfo-cache-negative-ttl", "0"])
   -- TODO: use exceptions to simplify this code
   case downloadExitCode of
     ExitFailure _ -> deploymentFailed

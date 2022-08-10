@@ -169,6 +169,7 @@ executable .cachix-deployment
     , protolude
     , safe-exceptions
     , stm
+    , stm-chans
     , stm-conduit
     , time
     , uuid

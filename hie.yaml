@@ -1,14 +1,39 @@
-cradle: 
-  stack:
-    - path: "./cachix"
-      component: "cachix:lib"
-    - path: "./cachix/cachix"
-      component: "cachix:exe:cachix"
-    - path: "./cachix/cachix-deployment"
-      component: "cachix:exe:.cachix-deployment"
-    - path: "./cachix/test"
-      component: "cachix:test:cachix-test"
-    - path: "./cachix-api"
-      component: "cachix-api:lib"
-    - path: "./cachix-api/test"
-      component: "cachix-api:test:cachix-api-test"
+cradle:
+  multi:
+    - path: "."
+      config:
+        cradle:
+          stack:
+            - path: "cachix/src"
+              component: "cachix:lib"
+
+            - path: "cachix/cachix/Main.hs"
+              component: "cachix:exe:cachix"
+
+            - path: "cachix/cachix-deployment/Main.hs"
+              component: "cachix:exe:.cachix-deployment"
+
+            - path: "cachix/test"
+              component: "cachix:test:cachix-test"
+
+            - path: "cachix-api/src"
+              component: "cachix-api:lib"
+
+            - path: "cachix-api/test"
+              component: "cachix-api:test:cachix-api-test"
+              
+    - path: "./cachix-api/Setup.hs"
+      config:
+        cradle:
+          direct:
+            arguments:
+              - "-package Cabal"
+              - "-package base"
+    
+    - path: "./cachix/Setup.hs"
+      config:
+        cradle:
+          direct:
+            arguments:
+              - "-package Cabal"
+              - "-package base"

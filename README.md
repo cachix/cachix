@@ -41,8 +41,8 @@ Available commands:
 
 1. Install Cachix client using Nix:
 
-```
-    $ nix-env -iA cachix -f https://cachix.org/api/v1/install
+```sh
+nix-env -iA cachix -f https://cachix.org/api/v1/install
 ```
 
 2. Login via https://www.cachix.org/api/v1/login to start using the service
@@ -51,15 +51,44 @@ Available commands:
 
 Install Cachix from master:
 
-```
-    $ nix-env -if https://github.com/cachix/cachix/tarball/master --substituters 'https://cache.nixos.org https://cachix.cachix.org' --trusted-public-keys 'cachix.cachix.org-1:eWNHQldwUO7G2VkjpnjDbWwy4KQ/HNxht7H4SSoMckM= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY='
+```sh
+nix-env -if https://github.com/cachix/cachix/tarball/master --substituters 'https://cache.nixos.org https://cachix.cachix.org' --trusted-public-keys 'cachix.cachix.org-1:eWNHQldwUO7G2VkjpnjDbWwy4KQ/HNxht7H4SSoMckM= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY='
 ```
 
 Or with Nix 2.4+:
 
+```sh
+nix profile install github:cachix/cachix/latest
 ```
-    $ nix profile install github:cachix/cachix/latest
-```
+
+### Dev setup for VSCodium
+
+1. [Enable flakes](https://nixos.wiki/wiki/Flakes#Enable_flakes)
+
+1. Set up [direnv](https://nix.dev/tutorials/declarative-and-reproducible-developer-environments#setting-up-direnv) - complete steps `1` and `2`. 
+
+1. Enter this repo:
+    ```sh
+    git clone https://github.com/cachix/cachix
+    cd cachix
+    ```
+
+1. Allow `direnv` work here. This will trigger `nix develop` when you `cd` into the directory:
+    ```sh
+    direnv allow
+    ```
+
+1. Build the project with stack for the first time (required for HLS to work):
+    ```sh
+    stack build
+    ```
+
+1. Open [VSCodium](https://vscodium.com/) with necessary extensions, shell tools, and settings:
+    ```sh
+    codium .
+    ```
+
+1. You may want to check the installed extensions to find out how to use them
 
 ## Support
 

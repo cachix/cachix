@@ -4,8 +4,8 @@
 }:
 let
   ci = system: _: {
-    cachix = import ./default.nix { inherit system; };
-    pre-commit-check = (import ./nix { inherit system; }).pre-commit-check;
+    cachix = import ./default.nix;
+    inherit (cachix.${system}.pre-commit-check);
     recurseForDerivations = true;
   };
 

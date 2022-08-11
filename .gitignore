@@ -8,3 +8,6 @@ result-*
 
 # stack.yaml provides sufficient pinning the way we use it. This lock file doesn't seem to be worth the hassle.
 /stack.yaml.lock
+.direnv
+
+dev-profile*

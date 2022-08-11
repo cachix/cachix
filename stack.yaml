@@ -1,9 +1,10 @@
-resolver: nightly-2022-06-20
+resolver: nightly-2022-08-04
+
 packages:
 - cachix-api
 - cachix
 extra-deps:
-- hercules-ci-cnix-store-0.3.3.0
+- hercules-ci-cnix-store-0.3.3.1
 - netrc-0.2.0.0
 - nix-narinfo-0.1.0.1
 - protolude-0.3.2
@@ -12,5 +13,9 @@ extra-deps:
 # https://github.com/haskell-hvr/netrc/issues/5
 allow-newer: true
 nix:
-  packages: []
-  shell-file: ./nix/stack-shell.nix
+  enable: true
+  shell-file: ./stack.nix
+
+ghc-options:
+  cachix: -fobject-code -lnixstore
+  "$everything": -haddock

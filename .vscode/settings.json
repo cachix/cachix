@@ -1,3 +1,29 @@
 {
-    "nixEnvSelector.nixFile": "${workspaceRoot}/shell.nix"
+    "editor.formatOnSave": true,
+    "files.autoSave": "afterDelay",
+    "files.refactoring.autoSave": true,
+    "files.watcherExclude": {
+        "**/.spago/**": true
+    },
+    "git.autofetch": true,
+    "gitlens.codeLens.authors.enabled": false,
+    "gitlens.codeLens.enabled": false,
+    "gitlens.codeLens.recentChange.enabled": false,
+    "gitlens.currentLine.enabled": false,
+    "gitlens.currentLine.pullRequests.enabled": false,
+    "gitlens.hovers.currentLine.over": "line",
+    "gitlens.hovers.enabled": false,
+    "gitlens.statusBar.enabled": false,
+    "haskell.manageHLS": "PATH",
+    "haskell.serverExecutablePath": "haskell-language-server",
+    "nix.enableLanguageServer": true,
+    "nix.serverPath": "rnix-lsp",
+    "purescript.formatter": "purs-tidy",
+    "purescript.outputDirectory": "./front/output/",
+    "purescript.packagePath": "./front",
+    "purescript.sourcePath": "./front/src",
+    "todo-tree.regex.regex": "((--\\s*($TAGS))|\\{-\\s($TAGS).*(\\n.*)*-})",
+    "vscode-dhall-lsp-server.executable": "dhall-lsp-server",
+    "window.zoomLevel": 0.3,
+    "workbench.sideBar.location": "right"
 }

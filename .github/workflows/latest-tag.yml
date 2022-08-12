@@ -1,8 +1,8 @@
 name: "Latest tag"
 on:
   push:
-    branches:
-      - master
+    tags:
+      - v**
 jobs:
   latest-tag:
     runs-on: ubuntu-latest

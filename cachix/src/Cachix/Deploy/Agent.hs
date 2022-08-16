@@ -5,6 +5,7 @@ module Cachix.Deploy.Agent where
 import qualified Cachix.API.WebSocketSubprotocol as WSS
 import qualified Cachix.Client.OptionsParser as CachixOptions
 import Cachix.Client.URI (getBaseUrl)
+import qualified Cachix.Deploy.Lock as Lock
 import qualified Cachix.Deploy.OptionsParser as AgentOptions
 import Cachix.Deploy.StdinProcess (readProcess)
 import qualified Cachix.Deploy.Websocket as CachixWebsocket
@@ -17,7 +18,7 @@ import Protolude.Conv
 import qualified Servant.Client as Servant
 
 run :: CachixOptions.CachixOptions -> AgentOptions.AgentOptions -> IO ()
-run cachixOptions agentOpts = do
+run cachixOptions agentOpts =
   CachixWebsocket.runForever options handleMessage
   where
     host = toS $ Servant.baseUrlHost $ getBaseUrl $ CachixOptions.host cachixOptions
@@ -31,15 +32,17 @@ run cachixOptions agentOpts = do
           CachixWebsocket.isVerbose = CachixOptions.verbose cachixOptions
         }
     handleMessage :: ByteString -> (K.KatipContextT IO () -> IO ()) -> WS.Connection -> CachixWebsocket.AgentState -> ByteString -> K.KatipContextT IO ()
-    handleMessage payload _ _ agentState _ = do
+    handleMessage payload _ _ agentState _ =
       CachixWebsocket.parseMessage payload (handleCommand . WSS.command)
       where
         handleCommand :: WSS.BackendCommand -> K.KatipContextT IO ()
-        handleCommand (WSS.AgentRegistered agentInformation) = do
+        handleCommand (WSS.AgentRegistered agentInformation) =
           CachixWebsocket.registerAgent agentState agentInformation
-        handleCommand (WSS.Deployment deploymentDetails) = do
-          -- TODO: lock to ensure one deployment at the time
-          let input =
+        handleCommand (WSS.Deployment deploymentDetails) =
+          liftIO $ do
+            binDir <- toS <$> getBinDir
+            readProcess (binDir <> "/.cachix-deployment") [] $
+              toS . Aeson.encode $
                 CachixWebsocket.Input
                   { deploymentDetails = deploymentDetails,
                     websocketOptions =
@@ -51,5 +54,3 @@ run cachixOptions agentOpts = do
                           isVerbose = CachixOptions.verbose cachixOptions
                         }
                   }
-          binDir <- toS <$> liftIO getBinDir
-          liftIO $ readProcess (binDir <> "/.cachix-deployment") [] (toS $ Aeson.encode input)

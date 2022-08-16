@@ -9,6 +9,7 @@ import Cachix.API.Error (escalateAs)
 import qualified Cachix.API.WebSocketSubprotocol as WSS
 import Cachix.Client.Retry
 import qualified Cachix.Deploy.Activate as Activate
+import qualified Cachix.Deploy.Lock as Lock
 import qualified Cachix.Deploy.Websocket as CachixWebsocket
 import Conduit ((.|))
 import qualified Control.Concurrent.Async as Async
@@ -36,7 +37,9 @@ main = do
   hSetBuffering stdout LineBuffering
   hSetBuffering stderr LineBuffering
   input <- escalateAs (FatalError . toS) . Aeson.eitherDecode . toS =<< getContents
-  CachixWebsocket.runForever (CachixWebsocket.websocketOptions input) (handleMessage input)
+  let store = toS . WSS.storePath . CachixWebsocket.deploymentDetails $ input
+  Lock.withLock store $
+    CachixWebsocket.runForever (CachixWebsocket.websocketOptions input) (handleMessage input)
 
 handleMessage :: CachixWebsocket.Input -> ByteString -> (K.KatipContextT IO () -> IO ()) -> WS.Connection -> CachixWebsocket.AgentState -> ByteString -> K.KatipContextT IO ()
 handleMessage input payload runKatip connection _ agentToken =
@@ -75,8 +78,6 @@ handleMessage input payload runKatip connection _ agentToken =
                   .| sendLog conn
 
 sendLog :: WS.Connection -> Conduit.ConduitT ByteString Conduit.Void IO ()
-sendLog connection = Conduit.mapM_ f
-  where
-    f = \bs -> do
-      now <- getCurrentTime
-      WS.sendTextData connection $ Aeson.encode $ WSS.Log {WSS.line = toS bs, WSS.time = now}
+sendLog connection = Conduit.mapM_ $ \bs -> do
+  now <- getCurrentTime
+  WS.sendTextData connection $ Aeson.encode $ WSS.Log {WSS.line = toS bs, WSS.time = now}

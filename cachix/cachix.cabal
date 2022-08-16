@@ -65,6 +65,7 @@ library
     Cachix.Deploy.Activate
     Cachix.Deploy.ActivateCommand
     Cachix.Deploy.Agent
+    Cachix.Deploy.Lock
     Cachix.Deploy.OptionsParser
     Cachix.Deploy.StdinProcess
     Cachix.Deploy.Websocket
@@ -101,6 +102,7 @@ library
     , http-types
     , inline-c-cpp
     , katip
+    , lukko
     , lzma-conduit
     , megaparsec              >=7.0.0
     , memory

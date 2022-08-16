@@ -1,10 +1,10 @@
 {- Implements a queue with the following properties:
 
-- waits for queue to be fully pushed when exiting using ctrl-c (SIGINT)
+- waits for the queue to be fully pushed when exiting using ctrl-c (SIGINT)
 - allows stopping the producer
-- avoid duplicate pushing of the same store paths
+- avoids pushing duplicate store paths
 
-To safetly exit on demand, signal SIGINT.
+Use SIGINT to safely exit on demand.
 -}
 module Cachix.Client.PushQueue
   ( startWorkers,
@@ -42,14 +42,14 @@ data QueryWorkerState = QueryWorkerState
 worker :: Push.PushParams IO () -> PushWorkerState -> IO ()
 worker pushParams workerState = forever $ do
   storePath <- atomically $ TBQueue.readTBQueue $ pushQueue workerState
-  bracket_ (inProgresModify (+ 1)) (inProgresModify (\x -> x - 1)) $
+  bracket_ (inProgressModify (+ 1)) (inProgressModify (\x -> x - 1)) $
     retryAll $
-      \retrystatus ->
-        void $ do
-          maybeStorePath <- filterInvalidStorePath (Push.pushParamsStore pushParams) storePath
-          for maybeStorePath $ \validatedStorePath -> Push.uploadStorePath pushParams validatedStorePath retrystatus
+      \retrystatus -> do
+        maybeStorePath <- filterInvalidStorePath (Push.pushParamsStore pushParams) storePath
+        for_ maybeStorePath $ \validatedStorePath ->
+          Push.uploadStorePath pushParams validatedStorePath retrystatus
   where
-    inProgresModify f =
+    inProgressModify f =
       atomically $ modifyTVar' (inProgress workerState) f
 
 -- NOTE: producer is responsible for signaling SIGINT upon termination
@@ -108,7 +108,7 @@ exitOnceQueueIsEmpty :: IO () -> Async () -> Async () -> QueryWorkerState -> Pus
 exitOnceQueueIsEmpty stopProducerCallback pushWorker queryWorker queryWorkerState pushWorkerState =
   join . once $ do
     putTextError "Stopped watching /nix/store and waiting for queue to empty ..."
-    Systemd.notifyStopping
+    void Systemd.notifyStopping
     stopProducerCallback
     go
   where
@@ -127,7 +127,7 @@ exitOnceQueueIsEmpty stopProducerCallback pushWorker queryWorker queryWorkerStat
           cancelWith pushWorker StopWorker
         else do
           -- extend shutdown for another 90s
-          Systemd.notify False $ "EXTEND_TIMEOUT_USEC=" <> show (90 * 1000 * 1000)
+          void $ Systemd.notify False $ "EXTEND_TIMEOUT_USEC=" <> show (90 * 1000 * 1000)
           putTextError $ "Waiting to finish: " <> show inprogress <> " pushing, " <> show queueLength <> " in queue"
           threadDelay (1000 * 1000)
           go

@@ -6,7 +6,6 @@ where
 import Cachix.Client.Push
 import qualified Cachix.Client.PushQueue as PushQueue
 import qualified Control.Concurrent.STM.TBQueue as TBQueue
-import Data.List (isSuffixOf)
 import Hercules.CNix.Store (Store)
 import qualified Hercules.CNix.Store as Store
 import Protolude
@@ -15,7 +14,7 @@ import qualified System.Systemd.Daemon as Systemd
 
 startWorkers :: Store -> Int -> PushParams IO () -> IO ()
 startWorkers store numWorkers pushParams = do
-  Systemd.notifyReady
+  void Systemd.notifyReady
   withManager $ \mgr -> PushQueue.startWorkers numWorkers (producer store mgr) pushParams
 
 producer :: Store -> WatchManager -> PushQueue.Queue -> IO (IO ())

@@ -90,6 +90,7 @@ library
     , dhall                   >=1.28.0
     , directory
     , ed25519
+    , extra
     , filepath
     , fsnotify
     , hercules-ci-cnix-store

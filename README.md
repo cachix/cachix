@@ -64,7 +64,7 @@ Or with Nix 2.4+:
 ## Support
 
 - [Documentation](https://docs.cachix.org)
-- [#cachix@matrix.org](https://matrix.to/#/#cachix:matrix.org) IRC
+- [#cachix@matrix.org](https://matrix.to/#/#cachix:matrix.org)
 - [support@cachix.org](mailto:support@cachix.org)
 
 ## Changelog

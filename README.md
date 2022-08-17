@@ -64,9 +64,8 @@ Or with Nix 2.4+:
 ## Support
 
 - [Documentation](https://docs.cachix.org)
-- [#cachix@freenode](https://webchat.freenode.net/?channels=cachix) IRC
+- [#cachix@matrix.org](https://matrix.to/#/#cachix:matrix.org) IRC
 - [support@cachix.org](mailto:support@cachix.org)
-- [Gitter](https://gitter.im/cachix/Lobby)
 
 ## Changelog
 

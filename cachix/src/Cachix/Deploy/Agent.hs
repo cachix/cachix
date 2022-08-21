@@ -5,7 +5,6 @@ module Cachix.Deploy.Agent where
 import qualified Cachix.API.WebSocketSubprotocol as WSS
 import qualified Cachix.Client.OptionsParser as CachixOptions
 import Cachix.Client.URI (getBaseUrl)
-import qualified Cachix.Deploy.Lock as Lock
 import qualified Cachix.Deploy.OptionsParser as AgentOptions
 import Cachix.Deploy.StdinProcess (readProcess)
 import qualified Cachix.Deploy.Websocket as CachixWebsocket

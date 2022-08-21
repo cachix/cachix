@@ -1,6 +1,4 @@
-{-# LANGUAGE ScopedTypeVariables #-}
-
-module Cachix.Deploy.Lock (withLock) where
+module Cachix.Deploy.Lock (withTryLock) where
 
 import qualified Lukko as Lock
 import Protolude hiding ((<.>))
@@ -23,14 +21,14 @@ getLockDirectoryFromProfile profile = do
     isRoot :: Posix.UserID -> Bool
     isRoot = (==) 0
 
--- | Run an IO action with an acquired profile lock.
+-- | Run an IO action with an acquired profile lock. Returns immediately if the profile is already locked.
 --
 -- Lock files are stored in either the user’s or system’s cache directory,
 -- depending on the ownership of the profile.
 --
 -- Lock files are not deleted after use.
-withLock :: forall a. FilePath -> IO a -> IO a
-withLock path action = do
+withTryLock :: FilePath -> IO a -> IO (Maybe a)
+withTryLock path action = do
   lockDirectory <- getLockDirectoryFromProfile path
 
   Directory.createDirectoryIfMissing True lockDirectory
@@ -46,13 +44,8 @@ withLock path action = do
   bracket
     (Lock.fdOpen lockFile)
     (Lock.fdUnlock *> Lock.fdClose)
-    loop
-  where
-    loop :: Lock.FD -> IO a
-    loop fd = do
-      lock <- Lock.fdTryLock fd Lock.ExclusiveLock
-      if lock
-        then action
-        else do
-          threadDelay (1 * 1000 * 1000)
-          loop fd
+    $ \fd -> do
+      isLocked <- Lock.fdTryLock fd Lock.ExclusiveLock
+      if isLocked
+        then Just <$> action
+        else pure Nothing

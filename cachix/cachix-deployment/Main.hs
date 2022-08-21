@@ -31,6 +31,10 @@ import Protolude.Conv
 import System.IO (BufferMode (..), hSetBuffering)
 import qualified Wuss
 
+-- | Activate the new deployment.
+--
+-- If the target profile is already locked by another deployment, exit
+-- immediately and rely on the backend to reschedule.
 main :: IO ()
 main = do
   setLocaleEncoding utf8
@@ -38,8 +42,9 @@ main = do
   hSetBuffering stderr LineBuffering
   input <- escalateAs (FatalError . toS) . Aeson.eitherDecode . toS =<< getContents
   let store = toS . WSS.storePath . CachixWebsocket.deploymentDetails $ input
-  Lock.withLock store $
-    CachixWebsocket.runForever (CachixWebsocket.websocketOptions input) (handleMessage input)
+  void $
+    Lock.withTryLock store $
+      CachixWebsocket.runForever (CachixWebsocket.websocketOptions input) (handleMessage input)
 
 handleMessage :: CachixWebsocket.Input -> ByteString -> (K.KatipContextT IO () -> IO ()) -> WS.Connection -> CachixWebsocket.AgentState -> ByteString -> K.KatipContextT IO ()
 handleMessage input payload runKatip connection _ agentToken =
@@ -47,6 +52,7 @@ handleMessage input payload runKatip connection _ agentToken =
   where
     deploymentDetails = CachixWebsocket.deploymentDetails input
     options = CachixWebsocket.websocketOptions input
+
     handleCommand :: WSS.BackendCommand -> K.KatipContextT IO ()
     handleCommand (WSS.Deployment _) =
       K.logLocM K.ErrorS "cachix-deployment should have never gotten a deployment command directly."
@@ -63,6 +69,7 @@ handleMessage input payload runKatip connection _ agentToken =
         -- TODO: move this into a `finally` after refactoring
         WS.sendClose connection ("Closing." :: ByteString)
         throwIO ExitSuccess
+
     runLogStreaming :: String -> RequestHeaders -> TMQueue.TMQueue ByteString -> UUID -> IO ()
     runLogStreaming host headers queue deploymentID = do
       let path = "/api/v1/deploy/log/" <> UUID.toText deploymentID

@@ -11,6 +11,7 @@ import Cachix.Client.Retry
 import qualified Cachix.Deploy.Activate as Activate
 import qualified Cachix.Deploy.Lock as Lock
 import qualified Cachix.Deploy.Websocket as CachixWebsocket
+import qualified Cachix.Deploy.Websocket as Input
 import Conduit ((.|))
 import qualified Control.Concurrent.Async as Async
 import qualified Control.Concurrent.STM.TMQueue as TMQueue
@@ -40,10 +41,11 @@ main = do
   setLocaleEncoding utf8
   hSetBuffering stdout LineBuffering
   hSetBuffering stderr LineBuffering
+
   input <- escalateAs (FatalError . toS) . Aeson.eitherDecode . toS =<< getContents
-  let store = toS . WSS.storePath . CachixWebsocket.deploymentDetails $ input
+  let profile = toS . CachixWebsocket.profile . Input.websocketOptions $ input
   void $
-    Lock.withTryLock store $
+    Lock.withTryLock profile $
       CachixWebsocket.runForever (CachixWebsocket.websocketOptions input) (handleMessage input)
 
 handleMessage :: CachixWebsocket.Input -> ByteString -> (K.KatipContextT IO () -> IO ()) -> WS.Connection -> CachixWebsocket.AgentState -> ByteString -> K.KatipContextT IO ()

@@ -22,12 +22,13 @@ run cachixOptions agentOpts =
   where
     host = toS $ Servant.baseUrlHost $ getBaseUrl $ CachixOptions.host cachixOptions
     name = AgentOptions.name agentOpts
+    profile = fromMaybe "system" (AgentOptions.profile agentOpts)
     options =
       CachixWebsocket.Options
         { CachixWebsocket.host = host,
           CachixWebsocket.name = name,
           CachixWebsocket.path = "/ws",
-          CachixWebsocket.profile = AgentOptions.profile agentOpts,
+          CachixWebsocket.profile = profile,
           CachixWebsocket.isVerbose = CachixOptions.verbose cachixOptions
         }
     handleMessage :: ByteString -> (K.KatipContextT IO () -> IO ()) -> WS.Connection -> CachixWebsocket.AgentState -> ByteString -> K.KatipContextT IO ()
@@ -49,7 +50,7 @@ run cachixOptions agentOpts =
                         { host = host,
                           name = name,
                           path = "/ws-deployment",
-                          profile = AgentOptions.profile agentOpts,
+                          profile = profile,
                           isVerbose = CachixOptions.verbose cachixOptions
                         }
                   }

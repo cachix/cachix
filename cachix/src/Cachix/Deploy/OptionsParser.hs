@@ -27,7 +27,7 @@ parser =
 
 data AgentOptions = AgentOptions
   { name :: Text,
-    profile :: Text
+    profile :: Maybe Text
   }
   deriving (Show)
 
@@ -43,10 +43,11 @@ parserAgentOptions =
       ( metavar "AGENT-NAME"
           <> help "Unique identifier (usually hostname)."
       )
-    <*> strArgument
-      ( value ""
-          <> metavar "NIX-PROFILE"
-          <> help "Nix profile to manage. Defaults to 'system' on NixOS and 'system-profiles/system' on nix-darwin."
+    <*> optional
+      ( strArgument
+          ( metavar "NIX-PROFILE"
+              <> help "Nix profile to manage. Defaults to 'system' on NixOS and 'system-profiles/system' on nix-darwin."
+          )
       )
 
 parserActivateOptions :: Parser ActivateOptions

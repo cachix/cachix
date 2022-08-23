@@ -11,10 +11,13 @@ import qualified System.Posix.Types as Posix
 defaultLockDirectory :: FilePath
 defaultLockDirectory = "cachix" </> "deploy" </> "locks"
 
--- | Get a path to the lock directory
+-- | Get the path to the lock directory based on the ownership of the profile.
+--
+-- For user-owned profiles: $XDG_CACHE_DIR/cachix/deploy/locks
+-- For root-owned profiles: /var/run/cachix/deploy/locks
 getLockDirectoryFromProfile :: FilePath -> IO FilePath
-getLockDirectoryFromProfile profile = do
-  userId <- Files.fileOwner <$> Files.getFileStatus profile
+getLockDirectoryFromProfile profilePath = do
+  userId <- Files.fileOwner <$> Files.getFileStatus (FilePath.takeDirectory profilePath)
   if isRoot userId
     then pure $ "/var/run" </> defaultLockDirectory
     else Directory.getXdgDirectory Directory.XdgCache defaultLockDirectory

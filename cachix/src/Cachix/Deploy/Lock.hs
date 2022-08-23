@@ -4,6 +4,7 @@ import qualified Lukko as Lock
 import Protolude hiding ((<.>))
 import qualified System.Directory as Directory
 import System.FilePath ((<.>), (</>))
+import qualified System.FilePath as FilePath
 import qualified System.Posix.Files as Files
 import qualified System.Posix.Types as Posix
 
@@ -28,8 +29,8 @@ getLockDirectoryFromProfile profile = do
 --
 -- Lock files are not deleted after use.
 withTryLock :: FilePath -> IO a -> IO (Maybe a)
-withTryLock path action = do
-  lockDirectory <- getLockDirectoryFromProfile path
+withTryLock profilePath action = do
+  lockDirectory <- getLockDirectoryFromProfile profilePath
 
   Directory.createDirectoryIfMissing True lockDirectory
   Directory.setPermissions lockDirectory $
@@ -39,7 +40,8 @@ withTryLock path action = do
       & Directory.setOwnerExecutable True
       & Directory.setOwnerSearchable True
 
-  let lockFile = lockDirectory </> path <.> "lock"
+  let profile = FilePath.takeFileName profilePath
+  let lockFile = lockDirectory </> profile <.> "lock"
 
   bracket
     (Lock.fdOpen lockFile)

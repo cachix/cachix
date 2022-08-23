@@ -45,7 +45,7 @@ main = do
   input <- escalateAs (FatalError . toS) . Aeson.eitherDecode . toS =<< getContents
   let profile = toS . CachixWebsocket.profile . Input.websocketOptions $ input
   void $
-    Lock.withTryLock profile $
+    Lock.withTryLock ("/nix/var/nix/profiles/" <> profile) $
       CachixWebsocket.runForever (CachixWebsocket.websocketOptions input) (handleMessage input)
 
 handleMessage :: CachixWebsocket.Input -> ByteString -> (K.KatipContextT IO () -> IO ()) -> WS.Connection -> CachixWebsocket.AgentState -> ByteString -> K.KatipContextT IO ()

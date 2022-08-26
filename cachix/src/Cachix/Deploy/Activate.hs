@@ -122,9 +122,6 @@ activate options connection sourceStream deploymentDetails agentInfo agentToken 
               K.logLocM K.InfoS $ K.ls $ "Deployment #" <> index <> " finished"
               hackFlush
   where
-    -- TODO: prevent service from being restarted while deploying
-    -- TODO: upgrade agent
-
     index :: Text
     index = show $ WSS.index deploymentDetails
     shellOut cmd args = do

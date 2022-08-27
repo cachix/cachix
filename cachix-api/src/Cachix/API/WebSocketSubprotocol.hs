@@ -45,7 +45,7 @@ data BackendCommand
   deriving (Show, Eq, Generic, Aeson.FromJSON, Aeson.ToJSON)
 
 data AgentCommand
-  = DeploymentStarted {id :: UUID, time :: UTCTime}
+  = DeploymentStarted {id :: UUID, time :: UTCTime, closureSize :: Maybe Int64}
   | DeploymentFinished {id :: UUID, time :: UTCTime, hasSucceeded :: Bool}
   deriving (Show, Eq, Generic, Aeson.FromJSON, Aeson.ToJSON)
 

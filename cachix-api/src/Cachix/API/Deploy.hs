@@ -5,11 +5,8 @@
 module Cachix.API.Deploy where
 
 import Cachix.API (CachixAuth)
-import qualified Cachix.Types.ByteStringStreaming as ByteStringStreaming
 import qualified Cachix.Types.Deploy as Deploy
 import qualified Cachix.Types.DeployResponse as DeployResponse
-import Conduit (ConduitT, ResourceT)
-import qualified Data.UUID as UUID
 import Protolude
 import Servant.API
 import Servant.API.Generic

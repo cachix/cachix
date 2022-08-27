@@ -30,6 +30,9 @@ domain options cache = toS (WSS.cacheName cache) <> "." <> toS (CachixWebsocket.
 uri :: CachixWebsocket.Options -> WSS.Cache -> Text
 uri options cache = "https://" <> domain options cache
 
+hackFlush :: K.KatipContextT IO ()
+hackFlush = liftIO $ threadDelay (5 * 1000 * 1000)
+
 -- TODO: what if websocket gets closed while deploying?
 activate ::
   CachixWebsocket.Options ->
@@ -60,6 +63,7 @@ activate options connection sourceStream deploymentDetails agentInfo agentToken 
         now <- liftIO getCurrentTime
         K.logLocM K.InfoS $ K.ls $ "Deploying #" <> index <> " failed."
         sendMessage $ deploymentFinished False now
+        hackFlush
   K.logLocM K.InfoS $ K.ls $ "Deploying #" <> index <> ": " <> WSS.storePath deploymentDetails
   -- notify the service deployment started
   now <- liftIO getCurrentTime
@@ -116,6 +120,7 @@ activate options connection sourceStream deploymentDetails agentInfo agentToken 
               sendMessage $ deploymentFinished True now
               liftIO $ log "Successfully activated the deployment."
               K.logLocM K.InfoS $ K.ls $ "Deployment #" <> index <> " finished"
+              hackFlush
   where
     -- TODO: prevent service from being restarted while deploying
     -- TODO: upgrade agent

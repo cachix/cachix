@@ -42,8 +42,7 @@ run cachixOptions agentOpts =
         { CachixWebsocket.host = host,
           CachixWebsocket.name = name,
           CachixWebsocket.path = "/ws",
-          CachixWebsocket.profile = profile,
-          CachixWebsocket.isVerbose = Config.verbose cachixOptions
+          CachixWebsocket.profile = profile
         }
 
     handleMessage :: ByteString -> Log.WithLog -> WS.Connection -> CachixWebsocket.AgentState -> ByteString -> K.KatipContextT IO ()
@@ -66,7 +65,6 @@ run cachixOptions agentOpts =
                         { host = host,
                           name = name,
                           path = "/ws-deployment",
-                          profile = profile,
-                          isVerbose = Config.verbose cachixOptions
+                          profile = profile
                         }
                   }

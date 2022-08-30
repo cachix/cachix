@@ -3,10 +3,10 @@
 
 module Cachix.Deploy.Log where
 
+import Control.Exception.Safe (MonadMask, bracket)
 import qualified Data.Aeson as Aeson
 import qualified Katip
 import Protolude hiding (bracket)
-import UnliftIO (MonadUnliftIO, bracket)
 
 -- A temporary crutch while we fix up the types
 type WithLog = Katip.KatipContextT IO () -> IO ()
@@ -29,7 +29,7 @@ data Verbosity
   deriving anyclass (Aeson.ToJSON, Aeson.FromJSON)
 
 withLog ::
-  MonadUnliftIO m =>
+  (MonadIO m, MonadMask m) =>
   Options ->
   (Katip.LogEnv -> m a) ->
   m a

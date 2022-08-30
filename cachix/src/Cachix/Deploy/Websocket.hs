@@ -30,7 +30,6 @@ data Options = Options
   { host :: Text,
     path :: Text,
     name :: Text,
-    isVerbose :: Bool,
     profile :: Text
   }
   deriving (Show, Generic, ToJSON, FromJSON)

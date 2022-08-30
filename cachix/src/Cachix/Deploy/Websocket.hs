@@ -18,6 +18,7 @@ import Protolude hiding (catch, onException, toS)
 import Protolude.Conv
 import qualified System.Directory as Directory
 import System.Environment (getEnv, lookupEnv)
+import qualified System.Info
 import qualified System.Posix.Files as Posix.Files
 import qualified System.Posix.User as Posix.User
 import qualified Wuss
@@ -38,6 +39,9 @@ data Input = Input
     websocketOptions :: Options
   }
   deriving (Show, Generic, ToJSON, FromJSON)
+
+system :: String
+system = System.Info.arch <> "-" <> System.Info.os
 
 runForever :: Options -> (ByteString -> (K.KatipContextT IO () -> IO ()) -> WS.Connection -> AgentState -> ByteString -> K.KatipContextT IO ()) -> IO ()
 runForever options cmd = withKatip (isVerbose options) $ \logEnv -> do
@@ -85,7 +89,8 @@ headers :: Options -> ByteString -> [Header]
 headers options agentToken =
   [ ("Authorization", "Bearer " <> toS agentToken),
     ("name", toS (name options)),
-    ("version", toS versionNumber)
+    ("version", toS versionNumber),
+    ("system", toS system)
   ]
 
 -- TODO: log the exception

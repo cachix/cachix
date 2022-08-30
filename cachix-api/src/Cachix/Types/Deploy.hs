@@ -10,7 +10,8 @@ import Data.HashMap.Strict
 import Data.Swagger (ToSchema)
 import Protolude
 
-newtype Deploy = Deploy
-  { agents :: HashMap Text Text
+data Deploy = Deploy
+  { agents :: HashMap Text Text,
+    rollbackScript :: HashMap Text Text
   }
   deriving (Show, Generic, FromJSON, ToJSON, ToSchema)

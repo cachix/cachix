@@ -41,30 +41,16 @@ data Input = Input
   }
   deriving (Show, Generic, ToJSON, FromJSON)
 
-<<<<<<< HEAD
 system :: String
 system = System.Info.arch <> "-" <> System.Info.os
 
-runForever :: Options -> (ByteString -> (K.KatipContextT IO () -> IO ()) -> WS.Connection -> AgentState -> ByteString -> K.KatipContextT IO ()) -> IO ()
-runForever options cmd =
-  runOnce options f
-  where
-    f runKatip connection agentState agentToken =
-      liftIO $
-        WSS.recieveDataConcurrently
-          connection
-          (\message -> runKatip (cmd message runKatip connection agentState agentToken))
-
-runOnce :: Options -> ((K.KatipContextT IO () -> IO ()) -> WS.Connection -> AgentState -> ByteString -> K.KatipContextT IO ()) -> IO ()
-runOnce options cmd = withKatip (isVerbose options) $ \logEnv -> do
-=======
-runForever :: K.LogEnv -> Options -> (ByteString -> Log.WithLog -> WS.Connection -> AgentState -> ByteString -> K.KatipContextT IO ()) -> IO ()
+runForever :: K.LogEnv -> Options -> (ByteString -> Log.WithLog -> WS.Connection -> AgentState -> ByteString -> IO ()) -> IO ()
 runForever logEnv options cmd = do
->>>>>>> 654e5d5 (Separate log and websocket setup)
-  let runKatip = K.runKatipContextT logEnv () "agent"
+  -- TODO: do we need the context part, or is KatipT enough for us?
+  let withLog = K.runKatipContextT logEnv () "agent"
 
   checkUserOwnsHome `catchAny` \e -> do
-    runKatip $ K.logLocM K.ErrorS $ K.ls (displayException e)
+    withLog $ K.logLocM K.ErrorS $ K.ls (displayException e)
     exitFailure
 
   -- TODO: error if token is missing
@@ -76,24 +62,24 @@ runForever logEnv options cmd = do
 
   let pingHandler = do
         last <- WebsocketPong.secondsSinceLastPong pongState
-        runKatip $ K.logLocM K.DebugS $ K.ls $ "Sending WebSocket keep-alive ping, last pong was " <> (show last :: Text) <> " seconds ago"
+        withLog $ K.logLocM K.DebugS $ K.ls $ "Sending WebSocket keep-alive ping, last pong was " <> (show last :: Text) <> " seconds ago"
         WebsocketPong.pingHandler pongState mainThreadID pongTimeout
       connectionOptions = WebsocketPong.installPongHandler pongState WS.defaultConnectionOptions
-  runKatip $
-    -- TODO: use exponential retry with reset: https://github.com/Soostone/retry/issues/25
-    retryAllWithLogging endlessConstantRetryPolicy logRetry $
-      do
-        K.logLocM K.InfoS $ K.ls ("Agent " <> agentIdentifier <> " connecting to " <> toS (host options) <> toS (path options))
-        liftIO $ do
-          -- refresh pong state in case we're reconnecting
-          WebsocketPong.pongHandler pongState
 
-          -- TODO: https://github.com/jaspervdj/websockets/issues/229
-          Wuss.runSecureClientWith (toS $ host options) 443 (toS $ path options) connectionOptions (headers options (toS agentToken)) $ \connection -> runKatip $ do
-            K.logLocM K.InfoS "Connected to Cachix Deploy service"
-            liftIO $
-              WS.withPingThread connection pingEvery pingHandler $
-                runKatip $ cmd runKatip connection agentState (toS agentToken)
+  -- TODO: use exponential retry with reset: https://github.com/Soostone/retry/issues/25
+  retryAllWithLogging endlessConstantRetryPolicy (logRetry withLog) $ do
+    withLog $ K.logLocM K.InfoS $ K.ls ("Agent " <> agentIdentifier <> " connecting to " <> toS (host options) <> toS (path options))
+
+    -- refresh pong state in case we're reconnecting
+    WebsocketPong.pongHandler pongState
+
+    -- TODO: https://github.com/jaspervdj/websockets/issues/229
+    Wuss.runSecureClientWith (toS $ host options) 443 (toS $ path options) connectionOptions (headers options (toS agentToken)) $ \connection -> do
+      withLog $ K.logLocM K.InfoS "Connected to Cachix Deploy service"
+      WS.withPingThread connection pingEvery pingHandler $
+        WSS.recieveDataConcurrently
+          connection
+          (\message -> cmd message withLog connection agentState (toS agentToken))
   where
     agentIdentifier = name options <> " " <> toS versionNumber
     pingEvery = 30
@@ -108,9 +94,9 @@ headers options agentToken =
   ]
 
 -- TODO: log the exception
-logRetry :: Bool -> SomeException -> RetryStatus -> K.KatipContextT IO ()
-logRetry _ exception retryStatus =
-  K.logLocM K.ErrorS $ K.ls $ "Retrying in " <> delay (rsPreviousDelay retryStatus) <> " due to an exception: " <> displayException exception
+logRetry :: Log.WithLog -> Bool -> SomeException -> RetryStatus -> IO ()
+logRetry withLog _ exception retryStatus =
+  withLog $ K.logLocM K.ErrorS $ K.ls $ "Retrying in " <> delay (rsPreviousDelay retryStatus) <> " due to an exception: " <> displayException exception
   where
     delay :: Maybe Int -> String
     delay Nothing = "0 seconds"

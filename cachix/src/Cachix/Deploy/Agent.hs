@@ -45,26 +45,31 @@ run cachixOptions agentOpts =
           CachixWebsocket.profile = profile
         }
 
-    handleMessage :: ByteString -> Log.WithLog -> WS.Connection -> CachixWebsocket.AgentState -> ByteString -> K.KatipContextT IO ()
-    handleMessage payload _ _ agentState _ = do
-      CachixWebsocket.parseMessage payload (handleCommand . WSS.command)
+    handleMessage :: ByteString -> Log.WithLog -> WS.Connection -> CachixWebsocket.AgentState -> ByteString -> IO ()
+    handleMessage payload withLog _ agentState _ =
+      case WSS.parseMessage payload of
+        Left err ->
+          -- TODO: show the bytestring?
+          withLog $ K.logLocM K.ErrorS $ K.ls $ "Failed to parse websocket payload: " <> err
+        Right message ->
+          handleCommand (WSS.command message)
       where
-        handleCommand :: WSS.BackendCommand -> K.KatipContextT IO ()
+        handleCommand :: WSS.BackendCommand -> IO ()
         handleCommand (WSS.AgentRegistered agentInformation) =
-          CachixWebsocket.registerAgent agentState agentInformation
-        handleCommand (WSS.Deployment deploymentDetails) =
-          liftIO $ do
-            binDir <- toS <$> getBinDir
-            readProcess (binDir <> "/.cachix-deployment") [] $
-              toS . Aeson.encode $
-                CachixWebsocket.Input
-                  { deploymentDetails = deploymentDetails,
-                    logOptions = logOptions,
-                    websocketOptions =
-                      CachixWebsocket.Options
-                        { host = host,
-                          name = name,
-                          path = "/ws-deployment",
-                          profile = profile
-                        }
-                  }
+          withLog $ CachixWebsocket.registerAgent agentState agentInformation
+
+        handleCommand (WSS.Deployment deploymentDetails) = do
+          binDir <- toS <$> getBinDir
+          readProcess (binDir <> "/.cachix-deployment") [] $
+            toS . Aeson.encode $
+              CachixWebsocket.Input
+                { deploymentDetails = deploymentDetails,
+                  logOptions = logOptions,
+                  websocketOptions =
+                    CachixWebsocket.Options
+                      { host = host,
+                        name = name,
+                        path = "/ws-deployment",
+                        profile = profile
+                      }
+                }

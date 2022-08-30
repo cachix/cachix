@@ -52,42 +52,48 @@ main = do
     void . Lock.withTryLock profile $
       CachixWebsocket.runForever logEnv websocketOptions (handleMessage input)
 
-handleMessage :: CachixWebsocket.Input -> ByteString -> Log.WithLog -> WS.Connection -> CachixWebsocket.AgentState -> ByteString -> K.KatipContextT IO ()
-handleMessage input payload runKatip connection _ agentToken =
-  CachixWebsocket.parseMessage payload (handleCommand . WSS.command)
+handleMessage :: CachixWebsocket.Input -> ByteString -> Log.WithLog -> WS.Connection -> CachixWebsocket.AgentState -> ByteString -> IO ()
+handleMessage input payload withLog connection _ agentToken =
+  case WSS.parseMessage payload of
+    Left err ->
+      -- TODO: show the bytestring?
+      withLog $ K.logLocM K.ErrorS $ K.ls $ "Failed to parse websocket payload: " <> err
+    Right message ->
+      handleCommand (WSS.command message)
   where
     deploymentDetails = CachixWebsocket.deploymentDetails input
     options = CachixWebsocket.websocketOptions input
 
-    handleCommand :: WSS.BackendCommand -> K.KatipContextT IO ()
+    handleCommand :: WSS.BackendCommand -> IO ()
     handleCommand (WSS.Deployment _) =
-      K.logLocM K.ErrorS "cachix-deployment should have never gotten a deployment command directly."
+      withLog $ K.logLocM K.ErrorS "cachix-deployment should have never gotten a deployment command directly."
+
     handleCommand (WSS.AgentRegistered agentInformation) = do
-      queue <- liftIO $ atomically TMQueue.newTMQueue
+      queue <- atomically TMQueue.newTMQueue
+
       let deploymentID = WSS.id (deploymentDetails :: WSS.DeploymentDetails)
-          streamingThread = runKatip $ runLogStreaming (toS $ CachixWebsocket.host options) (CachixWebsocket.headers options agentToken) queue deploymentID
+          streamingThread = runLogStreaming (toS $ CachixWebsocket.host options) (CachixWebsocket.headers options agentToken) queue deploymentID
           activateThread =
-            runKatip (Activate.activate options connection (Conduit.sinkTMQueue queue) deploymentDetails agentInformation agentToken)
+            withLog (Activate.activate options connection (Conduit.sinkTMQueue queue) deploymentDetails agentInformation agentToken)
               `finally` atomically (TMQueue.closeTMQueue queue)
-      liftIO $ do
-        Async.concurrently_ streamingThread activateThread
-        -- TODO: move this into a `finally` after refactoring
-        WS.sendClose connection ("Closing." :: ByteString)
-        throwIO ExitSuccess
+
+      Async.concurrently_ streamingThread activateThread
+      -- TODO: move this into a `finally` after refactoring
+      WS.sendClose connection ("Closing." :: ByteString)
+      throwIO ExitSuccess
 
     runLogStreaming :: String -> RequestHeaders -> TMQueue.TMQueue ByteString -> UUID -> IO ()
     runLogStreaming host headers queue deploymentID = do
       let path = "/api/v1/deploy/log/" <> UUID.toText deploymentID
-      retryAllWithLogging endlessRetryPolicy CachixWebsocket.logRetry $ do
-        liftIO $
-          Wuss.runSecureClientWith host 443 (toS path) WS.defaultConnectionOptions headers $
-            \conn ->
-              Conduit.runConduit $
-                Conduit.sourceTMQueue queue
-                  .| Conduit.linesUnboundedAscii
-                  -- TODO: prepend katip-like format to each line
-                  -- .| (if CachixWebsocket.isVerbose options then Conduit.print else mempty)
-                  .| sendLog conn
+      retryAllWithLogging endlessRetryPolicy (CachixWebsocket.logRetry withLog) $
+        Wuss.runSecureClientWith host 443 (toS path) WS.defaultConnectionOptions headers $
+          \conn ->
+            Conduit.runConduit $
+              Conduit.sourceTMQueue queue
+                .| Conduit.linesUnboundedAscii
+                -- TODO: prepend katip-like format to each line
+                -- .| (if CachixWebsocket.isVerbose options then Conduit.print else mempty)
+                .| sendLog conn
 
 sendLog :: WS.Connection -> Conduit.ConduitT ByteString Conduit.Void IO ()
 sendLog connection = Conduit.mapM_ $ \bs -> do

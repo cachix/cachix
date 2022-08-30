@@ -5,6 +5,7 @@ import Cachix.API.WebSocketSubprotocol (AgentInformation)
 import qualified Cachix.API.WebSocketSubprotocol as WSS
 import Cachix.Client.Retry
 import Cachix.Client.Version (versionNumber)
+import qualified Cachix.Deploy.Log as Log
 import qualified Cachix.Deploy.WebsocketPong as WebsocketPong
 import Control.Exception.Safe (catchAny, onException)
 import Control.Retry (RetryStatus (..))
@@ -36,10 +37,12 @@ data Options = Options
 
 data Input = Input
   { deploymentDetails :: WSS.DeploymentDetails,
+    logOptions :: Log.Options,
     websocketOptions :: Options
   }
   deriving (Show, Generic, ToJSON, FromJSON)
 
+<<<<<<< HEAD
 system :: String
 system = System.Info.arch <> "-" <> System.Info.os
 
@@ -55,6 +58,10 @@ runForever options cmd =
 
 runOnce :: Options -> ((K.KatipContextT IO () -> IO ()) -> WS.Connection -> AgentState -> ByteString -> K.KatipContextT IO ()) -> IO ()
 runOnce options cmd = withKatip (isVerbose options) $ \logEnv -> do
+=======
+runForever :: K.LogEnv -> Options -> (ByteString -> Log.WithLog -> WS.Connection -> AgentState -> ByteString -> K.KatipContextT IO ()) -> IO ()
+runForever logEnv options cmd = do
+>>>>>>> 654e5d5 (Separate log and websocket setup)
   let runKatip = K.runKatipContextT logEnv () "agent"
 
   checkUserOwnsHome `catchAny` \e -> do
@@ -75,12 +82,13 @@ runOnce options cmd = withKatip (isVerbose options) $ \logEnv -> do
       connectionOptions = WebsocketPong.installPongHandler pongState WS.defaultConnectionOptions
   runKatip $
     -- TODO: use exponential retry with reset: https://github.com/Soostone/retry/issues/25
-    retryAllWithLogging endlessConstantRetryPolicy (logger runKatip) $
+    retryAllWithLogging endlessConstantRetryPolicy logRetry $
       do
         K.logLocM K.InfoS $ K.ls ("Agent " <> agentIdentifier <> " connecting to " <> toS (host options) <> toS (path options))
         liftIO $ do
           -- refresh pong state in case we're reconnecting
           WebsocketPong.pongHandler pongState
+
           -- TODO: https://github.com/jaspervdj/websockets/issues/229
           Wuss.runSecureClientWith (toS $ host options) 443 (toS $ path options) connectionOptions (headers options (toS agentToken)) $ \connection -> runKatip $ do
             K.logLocM K.InfoS "Connected to Cachix Deploy service"
@@ -101,31 +109,23 @@ headers options agentToken =
   ]
 
 -- TODO: log the exception
-logger runKatip _ exception retryStatus =
-  runKatip $
-    K.logLocM K.ErrorS $ K.ls $ "Retrying in " <> delay (rsPreviousDelay retryStatus) <> " due to an exception: " <> displayException exception
+logRetry :: Bool -> SomeException -> RetryStatus -> K.KatipContextT IO ()
+logRetry _ exception retryStatus =
+  K.logLocM K.ErrorS $ K.ls $ "Retrying in " <> delay (rsPreviousDelay retryStatus) <> " due to an exception: " <> displayException exception
   where
     delay :: Maybe Int -> String
     delay Nothing = "0 seconds"
     delay (Just s) = show (floor (fromIntegral s / 1000 / 1000)) <> " seconds"
 
-withKatip :: Bool -> (K.LogEnv -> IO a) -> IO a
-withKatip isVerbose =
-  bracket createLogEnv K.closeScribes
-  where
-    permit = if isVerbose then K.DebugS else K.InfoS
-    createLogEnv = do
-      logEnv <- K.initLogEnv "agent" "production"
-      stdoutScribe <- K.mkHandleScribe K.ColorIfTerminal stdout (K.permitItem permit) K.V2
-      K.registerScribe "stdout" stdoutScribe K.defaultScribeSettings logEnv
-
-parseMessage :: FromJSON cmd => ByteString -> (WSS.Message cmd -> K.KatipContextT IO ()) -> K.KatipContextT IO ()
+-- TODO: Move to the agent. If the websocket is going to parse messages then it
+-- can’t also swallow errors like this.
+parseMessage :: K.KatipContext m => FromJSON cmd => ByteString -> (WSS.Message cmd -> m ()) -> m ()
 parseMessage payload m = do
   case WSS.parseMessage payload of
-    (Left err) ->
+    Left err ->
       -- TODO: show the bytestring?
       K.logLocM K.ErrorS $ K.ls $ "Failed to parse websocket payload: " <> err
-    (Right message) ->
+    Right message ->
       m message
 
 -- commands

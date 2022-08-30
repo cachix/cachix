@@ -10,8 +10,8 @@ import qualified Cachix.API.WebSocketSubprotocol as WSS
 import Cachix.Client.Retry
 import qualified Cachix.Deploy.Activate as Activate
 import qualified Cachix.Deploy.Lock as Lock
+import qualified Cachix.Deploy.Log as Log
 import qualified Cachix.Deploy.Websocket as CachixWebsocket
-import qualified Cachix.Deploy.Websocket as Input
 import Conduit ((.|))
 import qualified Control.Concurrent.Async as Async
 import qualified Control.Concurrent.STM.TMQueue as TMQueue
@@ -43,11 +43,16 @@ main = do
   hSetBuffering stderr LineBuffering
 
   input <- escalateAs (FatalError . toS) . Aeson.eitherDecode . toS =<< getContents
-  let profile = CachixWebsocket.profile . Input.websocketOptions $ input
-  void . Lock.withTryLock profile $
-    CachixWebsocket.runForever (CachixWebsocket.websocketOptions input) (handleMessage input)
 
-handleMessage :: CachixWebsocket.Input -> ByteString -> (K.KatipContextT IO () -> IO ()) -> WS.Connection -> CachixWebsocket.AgentState -> ByteString -> K.KatipContextT IO ()
+  let logOptions = CachixWebsocket.logOptions input
+  let websocketOptions = CachixWebsocket.websocketOptions input
+  let profile = CachixWebsocket.profile websocketOptions
+
+  Log.withLog logOptions $ \logEnv ->
+    void . Lock.withTryLock profile $
+      CachixWebsocket.runForever logEnv websocketOptions (handleMessage input)
+
+handleMessage :: CachixWebsocket.Input -> ByteString -> Log.WithLog -> WS.Connection -> CachixWebsocket.AgentState -> ByteString -> K.KatipContextT IO ()
 handleMessage input payload runKatip connection _ agentToken =
   CachixWebsocket.parseMessage payload (handleCommand . WSS.command)
   where
@@ -60,10 +65,9 @@ handleMessage input payload runKatip connection _ agentToken =
     handleCommand (WSS.AgentRegistered agentInformation) = do
       queue <- liftIO $ atomically TMQueue.newTMQueue
       let deploymentID = WSS.id (deploymentDetails :: WSS.DeploymentDetails)
-          streamingThread = runLogStreaming (toS $ CachixWebsocket.host options) (CachixWebsocket.headers options agentToken) queue deploymentID
+          streamingThread = runKatip $ runLogStreaming (toS $ CachixWebsocket.host options) (CachixWebsocket.headers options agentToken) queue deploymentID
           activateThread =
-            runKatip
-              (Activate.activate options connection (Conduit.sinkTMQueue queue) deploymentDetails agentInformation agentToken)
+            runKatip (Activate.activate options connection (Conduit.sinkTMQueue queue) deploymentDetails agentInformation agentToken)
               `finally` atomically (TMQueue.closeTMQueue queue)
       liftIO $ do
         Async.concurrently_ streamingThread activateThread
@@ -74,7 +78,7 @@ handleMessage input payload runKatip connection _ agentToken =
     runLogStreaming :: String -> RequestHeaders -> TMQueue.TMQueue ByteString -> UUID -> IO ()
     runLogStreaming host headers queue deploymentID = do
       let path = "/api/v1/deploy/log/" <> UUID.toText deploymentID
-      retryAllWithLogging endlessRetryPolicy (CachixWebsocket.logger runKatip) $ do
+      retryAllWithLogging endlessRetryPolicy CachixWebsocket.logRetry $ do
         liftIO $
           Wuss.runSecureClientWith host 443 (toS path) WS.defaultConnectionOptions headers $
             \conn ->

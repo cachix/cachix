@@ -35,7 +35,8 @@ data AgentInformation = AgentInformation
 data DeploymentDetails = DeploymentDetails
   { storePath :: Text,
     id :: UUID,
-    index :: Int64
+    index :: Int64,
+    rollbackScript :: Maybe Text
   }
   deriving (Show, Eq, Generic, Aeson.FromJSON, Aeson.ToJSON)
 

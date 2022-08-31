@@ -1,5 +1,3 @@
-{-# LANGUAGE RecordWildCards #-}
-
 -- high level interface for websocket clients
 module Cachix.Deploy.Websocket where
 
@@ -136,19 +134,28 @@ checkUserOwnsHome = do
   when (userId /= Posix.Files.fileOwner stat) $ do
     userName <- Posix.User.userName <$> Posix.User.getUserEntryForID userId
     sudoUser <- lookupEnv "SUDO_USER"
-    throwIO $ UserDoesNotOwnHome {..}
+    throwIO $
+      UserDoesNotOwnHome
+        { userName = userName,
+          sudoUser = sudoUser,
+          home = home
+        }
 
 data Error
   = -- | No home directory.
     NoHomeFound
   | -- | Safeguard against creating root-owned files in user directories.
     -- This is an issue on macOS, where, by default, sudo does not reset $HOME.
-    UserDoesNotOwnHome {userName :: String, sudoUser :: Maybe String, home :: FilePath}
+    UserDoesNotOwnHome
+      { userName :: String,
+        sudoUser :: Maybe String,
+        home :: FilePath
+      }
   deriving (Show)
 
 instance Exception Error where
   displayException NoHomeFound = "Could not find the user’s home directory. Make sure to set the $HOME variable."
-  displayException UserDoesNotOwnHome {..} =
+  displayException UserDoesNotOwnHome {userName = userName, sudoUser = sudoUser, home = home} =
     if isJust sudoUser
       then toS $ unlines [warningMessage, suggestSudoFlagH]
       else toS warningMessage

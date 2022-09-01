@@ -18,10 +18,7 @@ import qualified Data.HashMap.Strict as HM
 import qualified Data.Conduit as Conduit
 import qualified Data.Conduit.Combinators as Conduit
 import qualified Data.Conduit.Process as Conduit
-import Data.Time.Clock (getCurrentTime)
-import qualified Data.UUID.V4 as UUID
 import qualified Data.Vector as Vector
-import qualified Network.WebSockets as WS
 import Protolude hiding (log, toS)
 import Protolude.Conv (toS)
 import Servant.Auth.Client (Token (..))
@@ -29,142 +26,50 @@ import System.Directory (canonicalizePath, doesPathExist)
 import System.FilePath ((</>))
 import System.IO.Temp (withSystemTempDirectory)
 import System.Process
-import System.Timeout (timeout)
-import Prelude (String)
+import Prelude (String, userError)
 
-domain :: CachixWebsocket.Options -> WSS.Cache -> Text
-domain options cache = toS (WSS.cacheName cache) <> "." <> toS (CachixWebsocket.host options)
-
--- TODO: get uri scheme
-uri :: CachixWebsocket.Options -> WSS.Cache -> Text
-uri options cache = "https://" <> domain options cache
-
--- TODO: what if websocket gets closed while deploying?
 activate ::
-  CachixWebsocket.Options ->
-  WS.Connection -> -- REMOVE
   Conduit.ConduitT ByteString Void IO () ->
+  CachixWebsocket.Options ->
   WSS.DeploymentDetails ->
-  WSS.AgentInformation ->
-  ByteString ->
+  -- | Binary cache args
+  [String] ->
   IO ()
-activate options connection logStream deploymentDetails agentInfo agentToken =
-  withCacheArgs options agentInfo agentToken $ \cacheArgs -> do
-    (_, pathInfoJSON, _) <- shellNoStream "nix" (cacheArgs <> ["--extra-experimental-features", "nix-command", "path-info", "-S", "--json", toS storePath])
+activate logStream options deploymentDetails cacheArgs = do
+  -- Download the store path from the binary cache
+  -- TODO: add GC root so it's preserved for the next command
+  shellOut "nix-store" (["-r", toS storePath] <> cacheArgs)
 
-    -- Notify the service that the deployment started
-    getCurrentTime >>= \now ->
-      sendMessage $
-        WSS.DeploymentStarted
-          { WSS.id = deploymentID,
-            WSS.time = now,
-            WSS.closureSize = extractClosureSize =<< Aeson.decode (toS pathInfoJSON)
-          }
+  (profile, activationScripts) <- getActivationScript storePath (CachixWebsocket.profile options)
 
-    -- TODO: add GC root so it's preserved for the next command
-    -- Get the store path using caches
-    (downloadExitCode, _, _) <-
-      shellOut "nix-store" (["-r", toS storePath] <> cacheArgs)
+  -- Set the new profile
+  -- TODO: document what happens if the wrong user is used for the agent
+  shellOut "nix-env" ["-p", toS profile, "--set", toS storePath]
 
-    (profile, activationScripts) <- getActivationScript storePath (CachixWebsocket.profile options)
-
-    -- Set the new profile
-    -- TODO: document what happens if the wrong user is used for the agent
-    (activateProfileExitCode, _, _) <- shellOut "nix-env" ["-p", toS profile, "--set", toS storePath]
-
-    -- Activate the configuration
-    exitCodes <- for activationScripts $ \(cmd, args) -> do
-      (activateScriptExitCode, _, _) <- shellOut cmd args
-      return activateScriptExitCode
-
-    if not (all (== ExitSuccess) exitCodes)
-      then deploymentFailed
-      else do
-        -- K.logLocM K.InfoS $ K.ls $ "Deployment #" <> index <> " finished"
-        now <- getCurrentTime
-        sendMessage $ deploymentFinished True now
-        log "Successfully activated the deployment."
+  -- Activate the configuration
+  -- TODO: Check with Domen whether we can exit early here
+  mapM_ (uncurry shellOut) activationScripts
   where
-    -- TODO: use exceptions to simplify this code
-    -- case downloadExitCode of
-    --   ExitFailure _ -> deploymentFailed
-    --   ExitSuccess -> do
-    --     (profile, activationScripts) <- getActivationScript storePath (CachixWebsocket.profile options)
-    --     -- TODO: document what happens if wrong user is used for the agent
-
-    --     -- set the new profile
-    --     (activateProfileExitCode, _, _) <- shellOut "nix-env" ["-p", toS profile, "--set", toS storePath]
-    --     case activateProfileExitCode of
-    --       ExitFailure _ -> deploymentFailed
-    --       ExitSuccess -> do
-    --         -- activate configuration
-    --         exitCodes <- for activationScripts $ \(cmd, args) -> do
-    --           (activateScriptExitCode, _, _) <- shellOut cmd args
-    --           return activateScriptExitCode
-    --         if not (all (== ExitSuccess) exitCodes)
-    --           then deploymentFailed
-    --           else do
-    --             -- K.logLocM K.InfoS $ K.ls $ "Deployment #" <> index <> " finished"
-    --             now <- getCurrentTime
-    --             sendMessage $ deploymentFinished True now
-    --             log "Successfully activated the deployment."
-
     storePath = WSS.storePath deploymentDetails
-    deploymentID = WSS.id (deploymentDetails :: WSS.DeploymentDetails)
 
-    -- Move to Main.hs
-    deploymentFinished hasSucceeded now =
-      WSS.DeploymentFinished
-        { WSS.id = deploymentID,
-          WSS.time = now,
-          WSS.hasSucceeded = hasSucceeded
-        }
+    shellOut :: FilePath -> [String] -> IO ()
+    shellOut cmd args = shellOutWithExitCode cmd args >>= handleError
+      where
+        handleError (ExitFailure code) = ioError $ userError (show code)
+        handleError ExitSuccess = pure ()
 
-    -- Move to Main.hs
-    deploymentFailed = do
-      -- K.logLocM K.InfoS $ K.ls $ "Deploying #" <> index <> " failed."
-      now <- getCurrentTime
-      sendMessage $ deploymentFinished False now
-
-    -- TODO: it would be better to stream and also return the text
-    shellNoStream :: FilePath -> [String] -> IO (ExitCode, String, String)
-    shellNoStream cmd args = do
+    shellOutWithExitCode :: FilePath -> [String] -> IO ExitCode
+    shellOutWithExitCode cmd args = do
       log $ "$ " <> toS cmd <> " " <> toS (unwords $ fmap toS args)
-      (exitCode, procstdout, procstderr) <- readProcessWithExitCode cmd args ""
-      log $ toS procstderr
-      return (exitCode, toS procstdout, toS procstderr)
-
-    shellOut :: FilePath -> [String] -> IO (ExitCode, (), ())
-    shellOut cmd args = do
-      log $ "$ " <> toS cmd <> " " <> toS (unwords $ fmap toS args)
-      Conduit.sourceProcessWithStreams (proc cmd args) Conduit.sinkNull logStream logStream
+      (exitCode, _, _) <- Conduit.sourceProcessWithStreams (proc cmd args) Conduit.sinkNull logStream logStream
+      pure exitCode
 
     -- Move to Main.hs
     log :: ByteString -> IO ()
     log msg = Conduit.connect (Conduit.yieldMany ["\n" <> msg <> "\n"]) logStream
 
-    -- Move to WebSocket
-    sendMessage cmd = do
-      command <- createMessage cmd
-      WSS.sendMessage connection command
-
-    createMessage :: WSS.AgentCommand -> IO (WSS.Message WSS.AgentCommand)
-    createMessage command = do
-      uuid <- UUID.nextRandom
-      return $
-        WSS.Message
-          { WSS.method = method,
-            WSS.command = command,
-            WSS.id = uuid,
-            WSS.agent = Just $ WSS.id (agentInfo :: WSS.AgentInformation)
-          }
-      where
-        -- TODO: move to WSS
-        method = case command of
-          WSS.DeploymentStarted {} -> "DeploymentStarted"
-          WSS.DeploymentFinished {} -> "DeploymentFinished"
-
     -- TODO: home-manager
+    -- TODO: move out of where clause
     getActivationScript :: Text -> Text -> IO (FilePath, [Command])
     getActivationScript storePath profile = do
       isNixOS <- doesPathExist $ toS storePath </> "nixos-version"
@@ -186,6 +91,15 @@ activate options connection logStream deploymentDetails agentInfo agentToken =
 
 type Command = (String, [String])
 
+-- TODO: send errors as well
+-- TODO: fix either/maybe types
+getClosureSize :: [String] -> Text -> IO (Either Text (Maybe Int64))
+getClosureSize cacheArgs storePath = do
+  (exitCode, pathInfoJSON, nixError) <- readProcessWithExitCode "nix" (cacheArgs <> ["--extra-experimental-features", "nix-command", "path-info", "-S", "--json", toS storePath]) ""
+  case exitCode of
+    ExitFailure _ -> pure $ Left (toS nixError)
+    ExitSuccess -> pure $ Right $ Aeson.decode (toS pathInfoJSON) >>= extractClosureSize
+
 extractClosureSize :: Aeson.Value -> Maybe Int64
 extractClosureSize (Aeson.Array vector) = case Vector.toList vector of
   [Aeson.Object obj] -> case HM.lookup "closureSize" obj of
@@ -194,8 +108,15 @@ extractClosureSize (Aeson.Array vector) = case Vector.toList vector of
   _ -> Nothing
 extractClosureSize _ = Nothing
 
+domain :: CachixWebsocket.Options -> WSS.Cache -> Text
+domain options cache = toS (WSS.cacheName cache) <> "." <> toS (CachixWebsocket.host options)
+
+-- TODO: get uri scheme
+uri :: CachixWebsocket.Options -> WSS.Cache -> Text
+uri options cache = "https://" <> domain options cache
+
 -- TODO: don't create tmpfile for public caches
-withCacheArgs :: CachixWebsocket.Options -> WSS.AgentInformation -> ByteString -> ([String] -> IO ()) -> IO ()
+withCacheArgs :: CachixWebsocket.Options -> WSS.AgentInformation -> ByteString -> ([String] -> IO a) -> IO a
 withCacheArgs options agentInfo agentToken m =
   withSystemTempDirectory "netrc" $ \dir -> do
     let filepath = dir </> "netrc"

@@ -63,37 +63,54 @@ handleMessage input payload withLog connection _ agentToken =
   where
     deploymentDetails = CachixWebsocket.deploymentDetails input
     options = CachixWebsocket.websocketOptions input
+    host = toS $ CachixWebsocket.host options
+    headers = CachixWebsocket.headers options agentToken
+
+    index :: Text
+    index = show $ WSS.index deploymentDetails
 
     handleCommand :: WSS.BackendCommand -> IO ()
     handleCommand (WSS.Deployment _) =
       withLog $ K.logLocM K.ErrorS "cachix-deployment should have never gotten a deployment command directly."
-
     handleCommand (WSS.AgentRegistered agentInformation) = do
       queue <- atomically TMQueue.newTMQueue
 
       let deploymentID = WSS.id (deploymentDetails :: WSS.DeploymentDetails)
-          streamingThread = runLogStreaming (toS $ CachixWebsocket.host options) (CachixWebsocket.headers options agentToken) queue deploymentID
-          activateThread =
-            withLog (Activate.activate options connection (Conduit.sinkTMQueue queue) deploymentDetails agentInformation agentToken)
-              `finally` atomically (TMQueue.closeTMQueue queue)
+      let streamingThread = runLogStreaming withLog host headers queue deploymentID
+      let activateThread = activate queue options connection deploymentDetails agentInformation agentToken
 
+      withLog $ K.logLocM K.InfoS $ K.ls $ "Deploying #" <> index <> ": " <> WSS.storePath deploymentDetails
       Async.concurrently_ streamingThread activateThread
+
+      -- Hack to give the deployment messages time to go through
+      threadDelay (5 * 1000 * 1000)
+
       -- TODO: move this into a `finally` after refactoring
       WS.sendClose connection ("Closing." :: ByteString)
       throwIO ExitSuccess
 
-    runLogStreaming :: String -> RequestHeaders -> TMQueue.TMQueue ByteString -> UUID -> IO ()
-    runLogStreaming host headers queue deploymentID = do
-      let path = "/api/v1/deploy/log/" <> UUID.toText deploymentID
-      retryAllWithLogging endlessRetryPolicy (CachixWebsocket.logRetry withLog) $
-        Wuss.runSecureClientWith host 443 (toS path) WS.defaultConnectionOptions headers $
-          \conn ->
-            Conduit.runConduit $
-              Conduit.sourceTMQueue queue
-                .| Conduit.linesUnboundedAscii
-                -- TODO: prepend katip-like format to each line
-                -- .| (if CachixWebsocket.isVerbose options then Conduit.print else mempty)
-                .| sendLog conn
+activate queue options connection deploymentDetails agentInformation agentToken = do
+  Activate.activate options connection (Conduit.sinkTMQueue queue) deploymentDetails agentInformation agentToken
+    `finally` atomically (TMQueue.closeTMQueue queue)
+
+-- return ()
+-- `finally` atomically (TMQueue.closeTMQueue queue)
+
+runLogStreaming :: Log.WithLog -> String -> RequestHeaders -> TMQueue.TMQueue ByteString -> UUID -> IO ()
+runLogStreaming withLog host headers queue deploymentID = do
+  let path = "/api/v1/deploy/log/" <> UUID.toText deploymentID
+  retryAllWithLogging endlessRetryPolicy (CachixWebsocket.logRetry withLog) $
+    Wuss.runSecureClientWith host 443 (toS path) WS.defaultConnectionOptions headers $
+      \conn ->
+        Conduit.runConduit $
+          Conduit.sourceTMQueue queue
+            .| Conduit.linesUnboundedAscii
+            -- TODO: prepend katip-like format to each line
+            -- .| (if CachixWebsocket.isVerbose options then Conduit.print else mempty)
+            .| sendLog conn
+
+logLine :: Conduit.ConduitT ByteString Conduit.Void IO () -> ByteString -> IO ()
+logLine logStream msg = Conduit.connect (Conduit.yield $ "\n" <> msg <> "\n") logStream
 
 sendLog :: WS.Connection -> Conduit.ConduitT ByteString Conduit.Void IO ()
 sendLog connection = Conduit.mapM_ $ \bs -> do

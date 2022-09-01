@@ -9,6 +9,7 @@ import qualified Cachix.Deploy.Log as Log
 import qualified Cachix.Deploy.WebsocketPong as WebsocketPong
 import Control.Exception.Safe (catchAny, onException)
 import Control.Retry (RetryStatus (..))
+import qualified Control.Retry as Retry
 import Data.Aeson (FromJSON, ToJSON)
 import Data.IORef
 import Data.String (String)
@@ -67,23 +68,27 @@ runForever logEnv options cmd = do
       connectionOptions = WebsocketPong.installPongHandler pongState WS.defaultConnectionOptions
 
   -- TODO: use exponential retry with reset: https://github.com/Soostone/retry/issues/25
-  retryAllWithLogging endlessConstantRetryPolicy (logRetry withLog) $ do
-    withLog $ K.logLocM K.InfoS $ K.ls ("Agent " <> agentIdentifier <> " connecting to " <> toS (host options) <> toS (path options))
+  -- retryWithLogging endlessConstantRetryPolicy (logRetry withLog) $ do
+  withLog $ K.logLocM K.InfoS $ K.ls ("Agent " <> agentIdentifier <> " connecting to " <> toS (host options) <> toS (path options))
 
-    -- refresh pong state in case we're reconnecting
-    WebsocketPong.pongHandler pongState
+  -- refresh pong state in case we're reconnecting
+  WebsocketPong.pongHandler pongState
 
-    -- TODO: https://github.com/jaspervdj/websockets/issues/229
-    Wuss.runSecureClientWith (toS $ host options) 443 (toS $ path options) connectionOptions (headers options (toS agentToken)) $ \connection -> do
-      withLog $ K.logLocM K.InfoS "Connected to Cachix Deploy service"
-      WS.withPingThread connection pingEvery pingHandler $
-        WSS.recieveDataConcurrently
-          connection
-          (\message -> cmd message withLog connection agentState (toS agentToken))
+  -- TODO: https://github.com/jaspervdj/websockets/issues/229
+  Wuss.runSecureClientWith (toS $ host options) 443 (toS $ path options) connectionOptions (headers options (toS agentToken)) $ \connection -> do
+    withLog $ K.logLocM K.InfoS "Connected to Cachix Deploy service"
+    WS.withPingThread connection pingEvery pingHandler $
+      WSS.recieveDataConcurrently
+        connection
+        (\message -> cmd message withLog connection agentState (toS agentToken))
   where
     agentIdentifier = name options <> " " <> toS versionNumber
     pingEvery = 30
     pongTimeout = pingEvery * 2
+
+exitWithCloseRequest :: WS.ConnectionException -> IO ()
+exitWithCloseRequest (WS.CloseRequest _ _) = return ()
+exitWithCloseRequest e = throwIO e
 
 headers :: Options -> ByteString -> [Header]
 headers options agentToken =

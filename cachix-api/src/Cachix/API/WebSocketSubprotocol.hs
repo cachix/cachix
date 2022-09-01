@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Cachix.API.WebSocketSubprotocol where
 
@@ -62,9 +63,16 @@ sendMessage connection cmd =
 
 -- TODO: use Async.replicateConcurrently
 recieveDataConcurrently :: WS.Connection -> (ByteString -> IO ()) -> IO ()
-recieveDataConcurrently connection m = do
-  channel <- Chan.newChan
-  Async.race_ (producer channel) (consumer channel)
+recieveDataConcurrently connection m =
+  do
+    channel <- Chan.newChan
+    Async.race_ (producer channel) (consumer channel)
+    `catch` ( \(e :: WS.ConnectionException) -> do
+                case e of
+                  WS.CloseRequest _ _ -> return ()
+                  WS.ConnectionClosed -> return ()
+                  _ -> throwIO e
+            )
   where
     producer channel = forever $ do
       payload <- WS.receiveData connection

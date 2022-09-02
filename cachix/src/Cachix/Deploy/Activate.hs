@@ -29,6 +29,7 @@ import Servant.Auth.Client (Token (..))
 import System.Directory (doesPathExist)
 import System.IO.Temp (withSystemTempDirectory)
 import System.Process
+import System.Timeout (timeout)
 import Prelude (String)
 
 domain :: CachixWebsocket.Options -> WSS.Cache -> Text
@@ -52,18 +53,6 @@ activate ::
   K.KatipContextT IO ()
 activate options connection sourceStream deploymentDetails agentInfo agentToken = withCacheArgs options agentInfo agentToken $ \cacheArgs -> do
   let storePath = WSS.storePath deploymentDetails
-      deploymentID = WSS.id (deploymentDetails :: WSS.DeploymentDetails)
-      deploymentFinished hasSucceeded now =
-        WSS.DeploymentFinished
-          { WSS.id = deploymentID,
-            WSS.time = now,
-            WSS.hasSucceeded = hasSucceeded
-          }
-      deploymentFailed = do
-        now <- liftIO getCurrentTime
-        K.logLocM K.InfoS $ K.ls $ "Deploying #" <> index <> " failed."
-        sendMessage $ deploymentFinished False now
-        hackFlush
   K.logLocM K.InfoS $ K.ls $ "Deploying #" <> index <> ": " <> WSS.storePath deploymentDetails
   -- notify the service deployment started
   (_, pathInfoJSON, _) <- liftIO $ shellNoStream "nix" (cacheArgs <> ["--extra-experimental-features", "nix-command", "path-info", "-S", "--json", toS storePath])
@@ -83,11 +72,51 @@ activate options connection sourceStream deploymentDetails agentInfo agentToken 
   case downloadExitCode of
     ExitFailure _ -> deploymentFailed
     ExitSuccess -> do
-      (profile, activationScripts) <- liftIO $ getActivationScript storePath (CachixWebsocket.profile options)
-      -- TODO: document what happens if wrong user is used for the agent
+      activateProfile storePath $ \profilePath -> do
+        -- connect the the backend to see if we broke networking
+        websocketSucceeded <- liftIO $ timeout (10 * 1000 * 1000) $ CachixWebsocket.runOnce options $ \_ _ _ _ -> return ()
+        case websocketSucceeded of
+          Nothing -> rollback profilePath
+          Just () -> do
+            case WSS.rollbackScript deploymentDetails of
+              Just script -> do
+                (downloadRollbackExitCode, _, _) <- liftIO $ shellOut "nix-store" (["-r", toS script] <> cacheArgs)
+                case downloadRollbackExitCode of
+                  ExitFailure _ -> deploymentFailed
+                  ExitSuccess -> do
+                    (rollbackExitCode, _, _) <- liftIO $ shellOut (toS script) []
+                    case rollbackExitCode of
+                      ExitFailure _ -> rollback profilePath
+                      ExitSuccess -> return ()
+              Nothing -> return ()
+            now <- liftIO getCurrentTime
+            sendMessage $ deploymentFinished True now
+            liftIO $ log "Successfully activated the deployment."
+            K.logLocM K.InfoS $ K.ls $ "Deployment #" <> index <> " finished"
+            hackFlush
+  where
+    deploymentID = WSS.id (deploymentDetails :: WSS.DeploymentDetails)
+    deploymentFinished hasSucceeded now =
+      WSS.DeploymentFinished
+        { WSS.id = deploymentID,
+          WSS.time = now,
+          WSS.hasSucceeded = hasSucceeded
+        }
+    deploymentFailed = do
+      now <- liftIO getCurrentTime
+      K.logLocM K.InfoS $ K.ls $ "Deploying #" <> index <> " failed."
+      sendMessage $ deploymentFinished False now
+      hackFlush
+    rollback profilePath = do
+      (rollbackExitCode, _, _) <- liftIO $ shellOut "nix-env" ["-p", toS profilePath, "--rollback"]
+      case rollbackExitCode of
+        ExitFailure _ -> deploymentFailed
+        ExitSuccess -> do
+          activateProfile profilePath $ const deploymentFailed
+    activateProfile path action = do
+      (profilePath, activationScripts) <- liftIO $ getActivationScript path (CachixWebsocket.profile options)
 
-      -- set the new profile
-      (activateProfileExitCode, _, _) <- liftIO $ shellOut "nix-env" ["-p", toS profile, "--set", toS storePath]
+      (activateProfileExitCode, _, _) <- liftIO $ shellOut "nix-env" ["-p", toS profilePath, "--set", toS path]
       case activateProfileExitCode of
         ExitFailure _ -> deploymentFailed
         ExitSuccess -> do
@@ -97,13 +126,7 @@ activate options connection sourceStream deploymentDetails agentInfo agentToken 
             return activateScriptExitCode
           if not (all (== ExitSuccess) exitCodes)
             then deploymentFailed
-            else do
-              now <- liftIO getCurrentTime
-              sendMessage $ deploymentFinished True now
-              liftIO $ log "Successfully activated the deployment."
-              K.logLocM K.InfoS $ K.ls $ "Deployment #" <> index <> " finished"
-              hackFlush
-  where
+            else action profilePath
     index :: Text
     index = show $ WSS.index deploymentDetails
     -- TODO: it would be better to stream and also return the text

@@ -44,7 +44,17 @@ system :: String
 system = System.Info.arch <> "-" <> System.Info.os
 
 runForever :: Options -> (ByteString -> (K.KatipContextT IO () -> IO ()) -> WS.Connection -> AgentState -> ByteString -> K.KatipContextT IO ()) -> IO ()
-runForever options cmd = withKatip (isVerbose options) $ \logEnv -> do
+runForever options cmd =
+  runOnce options f
+  where
+    f runKatip connection agentState agentToken =
+      liftIO $
+        WSS.recieveDataConcurrently
+          connection
+          (\message -> runKatip (cmd message runKatip connection agentState agentToken))
+
+runOnce :: Options -> ((K.KatipContextT IO () -> IO ()) -> WS.Connection -> AgentState -> ByteString -> K.KatipContextT IO ()) -> IO ()
+runOnce options cmd = withKatip (isVerbose options) $ \logEnv -> do
   let runKatip = K.runKatipContextT logEnv () "agent"
 
   checkUserOwnsHome `catchAny` \e -> do
@@ -76,10 +86,7 @@ runForever options cmd = withKatip (isVerbose options) $ \logEnv -> do
             K.logLocM K.InfoS "Connected to Cachix Deploy service"
             liftIO $
               WS.withPingThread connection pingEvery pingHandler $
-                do
-                  WSS.recieveDataConcurrently
-                    connection
-                    (\message -> runKatip (cmd message runKatip connection agentState (toS agentToken)))
+                runKatip $ cmd runKatip connection agentState (toS agentToken)
   where
     agentIdentifier = name options <> " " <> toS versionNumber
     pingEvery = 30

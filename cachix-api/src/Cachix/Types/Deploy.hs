@@ -12,6 +12,6 @@ import Protolude
 
 data Deploy = Deploy
   { agents :: HashMap Text Text,
-    rollbackScript :: HashMap Text Text
+    rollbackScript :: Maybe (HashMap Text Text)
   }
-  deriving (Show, Generic, FromJSON, ToJSON, ToSchema)
+  deriving (Show, Eq, Generic, FromJSON, ToJSON, ToSchema)

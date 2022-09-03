@@ -94,7 +94,10 @@ test-suite cachix-api-test
   import:             defaults
   type:               exitcode-stdio-1.0
   main-is:            Main.hs
-  other-modules:      Spec
+  other-modules:
+    DeploySpec
+    Spec
+
   hs-source-dirs:     test
   build-depends:
     , aeson
@@ -120,5 +123,6 @@ test-suite cachix-api-test
     , swagger2
     , text
     , transformers
+    , unordered-containers
 
   build-tool-depends: hspec-discover:hspec-discover -any

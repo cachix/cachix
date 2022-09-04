@@ -65,7 +65,9 @@ run cachixOptions agentOpts =
                 WebSocket.agentIdentifier = agentIdentifier agentName
               }
 
-      WebSocket.runForever withLog websocketOptions (handleMessage withLog agentState agentName agentToken)
+      WebSocket.withConnection withLog websocketOptions $ \connection ->
+        WSS.recieveDataConcurrently connection $ \message ->
+          handleMessage withLog agentState agentName agentToken connection message
   where
     host = toS $ Servant.baseUrlHost $ getBaseUrl $ Config.host cachixOptions
     profileName = fromMaybe "system" (AgentOptions.profile agentOpts)

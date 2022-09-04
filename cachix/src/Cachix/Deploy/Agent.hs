@@ -20,7 +20,7 @@ import qualified Servant.Client as Servant
 run :: Config.CachixOptions -> AgentOptions.AgentOptions -> IO ()
 run cachixOptions agentOpts =
   Log.withLog logOptions $ \withLog -> do
-    CachixWebsocket.runForever withLog options handleMessage
+    CachixWebsocket.runForever withLog options (handleMessage withLog)
   where
     verbosity =
       if Config.verbose cachixOptions
@@ -45,8 +45,8 @@ run cachixOptions agentOpts =
           CachixWebsocket.profile = profile
         }
 
-    handleMessage :: ByteString -> Log.WithLog -> WS.Connection -> CachixWebsocket.AgentState -> ByteString -> IO ()
-    handleMessage payload withLog _ agentState _ =
+    handleMessage :: Log.WithLog -> WS.Connection -> ByteString -> CachixWebsocket.AgentState -> ByteString -> IO ()
+    handleMessage withLog _ payload agentState _ =
       case WSS.parseMessage payload of
         Left err ->
           -- TODO: show the bytestring?

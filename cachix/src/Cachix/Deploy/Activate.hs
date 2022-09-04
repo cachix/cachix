@@ -29,22 +29,25 @@ import System.Process
 import Prelude (String, userError)
 
 activate ::
+  -- | Logging context
   Conduit.ConduitT ByteString Void IO () ->
-  CachixWebsocket.Options ->
+  -- | Profile name
+  Text ->
+  -- | Deployment details
   WSS.DeploymentDetails ->
   -- | Binary cache args
   [String] ->
   IO ()
-activate logStream options deploymentDetails cacheArgs = do
+activate logStream profileName deploymentDetails cacheArgs = do
   -- Download the store path from the binary cache
   -- TODO: add GC root so it's preserved for the next command
   shellOut "nix-store" (["-r", toS storePath] <> cacheArgs)
 
-  (profile, activationScripts) <- getActivationScript storePath (CachixWebsocket.profile options)
+  (profilePath, activationScripts) <- getActivationScript storePath profileName
 
   -- Set the new profile
   -- TODO: document what happens if the wrong user is used for the agent
-  shellOut "nix-env" ["-p", toS profile, "--set", toS storePath]
+  shellOut "nix-env" ["-p", toS profilePath, "--set", toS storePath]
 
   -- Activate the configuration
   -- TODO: Check with Domen whether we can exit early here
@@ -108,16 +111,16 @@ extractClosureSize (Aeson.Array vector) = case Vector.toList vector of
   _ -> Nothing
 extractClosureSize _ = Nothing
 
-domain :: CachixWebsocket.Options -> WSS.Cache -> Text
-domain options cache = toS (WSS.cacheName cache) <> "." <> toS (CachixWebsocket.host options)
+domain :: Text -> WSS.Cache -> Text
+domain host cache = toS (WSS.cacheName cache) <> "." <> toS host
 
 -- TODO: get uri scheme
-uri :: CachixWebsocket.Options -> WSS.Cache -> Text
-uri options cache = "https://" <> domain options cache
+uri :: Text -> WSS.Cache -> Text
+uri host cache = "https://" <> domain host cache
 
 -- TODO: don't create tmpfile for public caches
-withCacheArgs :: CachixWebsocket.Options -> WSS.AgentInformation -> ByteString -> ([String] -> IO a) -> IO a
-withCacheArgs options agentInfo agentToken m =
+withCacheArgs :: Text -> WSS.AgentInformation -> ByteString -> ([String] -> IO a) -> IO a
+withCacheArgs host agentInfo agentToken m =
   withSystemTempDirectory "netrc" $ \dir -> do
     let filepath = dir </> "netrc"
     args <- case WSS.cache agentInfo of
@@ -126,7 +129,7 @@ withCacheArgs options agentInfo agentToken m =
         let bc =
               BinaryCache.BinaryCache
                 { BinaryCache.name = "",
-                  BinaryCache.uri = toS (uri options cache),
+                  BinaryCache.uri = toS (uri host cache),
                   BinaryCache.publicSigningKeys = [],
                   BinaryCache.isPublic = WSS.isPublic cache,
                   BinaryCache.githubUsername = "",
@@ -142,8 +145,8 @@ withCacheArgs options agentInfo agentToken m =
     cachesArgs = case WSS.cache agentInfo of
       Just cache ->
         let officialCache = "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
-            substituters = ["--option", "extra-substituters", toS (uri options cache)]
+            substituters = ["--option", "extra-substituters", toS (uri host cache)]
             noNegativeCaching = ["--option", "narinfo-cache-negative-ttl", "0"]
-            sigs = ["--option", "trusted-public-keys", officialCache <> " " <> toS (domain options cache) <> "-1:" <> toS (WSS.publicKey cache)]
+            sigs = ["--option", "trusted-public-keys", officialCache <> " " <> toS (domain host cache) <> "-1:" <> toS (WSS.publicKey cache)]
          in substituters ++ sigs ++ noNegativeCaching
       Nothing -> []

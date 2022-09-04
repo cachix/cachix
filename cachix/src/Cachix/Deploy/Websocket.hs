@@ -30,15 +30,7 @@ type AgentState = IORef (Maybe WSS.AgentInformation)
 data Options = Options
   { host :: Text,
     path :: Text,
-    name :: Text,
-    profile :: Text
-  }
-  deriving (Show, Generic, ToJSON, FromJSON)
-
-data Input = Input
-  { deploymentDetails :: WSS.DeploymentDetails,
-    logOptions :: Log.Options,
-    websocketOptions :: Options
+    name :: Text
   }
   deriving (Show, Generic, ToJSON, FromJSON)
 

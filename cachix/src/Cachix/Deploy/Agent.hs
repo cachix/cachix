@@ -8,7 +8,7 @@ import Cachix.Client.URI (getBaseUrl)
 import qualified Cachix.Deploy.Log as Log
 import qualified Cachix.Deploy.OptionsParser as AgentOptions
 import Cachix.Deploy.StdinProcess (readProcess)
-import qualified Cachix.Deploy.Websocket as CachixWebsocket
+import qualified Cachix.Deploy.Websocket as WebSocket
 import qualified Data.Aeson as Aeson
 import qualified Katip as K
 import qualified Network.WebSockets as WS
@@ -17,10 +17,18 @@ import Protolude hiding (toS)
 import Protolude.Conv
 import qualified Servant.Client as Servant
 
+data Deployment = Deployment
+  { profileName :: Text,
+    deploymentDetails :: WSS.DeploymentDetails,
+    logOptions :: Log.Options,
+    websocketOptions :: WebSocket.Options
+  }
+  deriving (Show, Generic, Aeson.ToJSON, Aeson.FromJSON)
+
 run :: Config.CachixOptions -> AgentOptions.AgentOptions -> IO ()
 run cachixOptions agentOpts =
   Log.withLog logOptions $ \withLog -> do
-    CachixWebsocket.runForever withLog options (handleMessage withLog)
+    WebSocket.runForever withLog options (handleMessage withLog)
   where
     verbosity =
       if Config.verbose cachixOptions
@@ -36,16 +44,15 @@ run cachixOptions agentOpts =
 
     host = toS $ Servant.baseUrlHost $ getBaseUrl $ Config.host cachixOptions
     name = AgentOptions.name agentOpts
-    profile = fromMaybe "system" (AgentOptions.profile agentOpts)
+    profileName = fromMaybe "system" (AgentOptions.profile agentOpts)
     options =
-      CachixWebsocket.Options
-        { CachixWebsocket.host = host,
-          CachixWebsocket.name = name,
-          CachixWebsocket.path = "/ws",
-          CachixWebsocket.profile = profile
+      WebSocket.Options
+        { WebSocket.host = host,
+          WebSocket.name = name,
+          WebSocket.path = "/ws"
         }
 
-    handleMessage :: Log.WithLog -> WS.Connection -> ByteString -> CachixWebsocket.AgentState -> ByteString -> IO ()
+    handleMessage :: Log.WithLog -> WS.Connection -> ByteString -> WebSocket.AgentState -> ByteString -> IO ()
     handleMessage withLog _ payload agentState _ =
       case WSS.parseMessage payload of
         Left err ->
@@ -56,19 +63,19 @@ run cachixOptions agentOpts =
       where
         handleCommand :: WSS.BackendCommand -> IO ()
         handleCommand (WSS.AgentRegistered agentInformation) =
-          withLog $ CachixWebsocket.registerAgent agentState agentInformation
+          withLog $ WebSocket.registerAgent agentState agentInformation
         handleCommand (WSS.Deployment deploymentDetails) = do
           binDir <- toS <$> getBinDir
           readProcess (binDir <> "/.cachix-deployment") [] $
             toS . Aeson.encode $
-              CachixWebsocket.Input
-                { deploymentDetails = deploymentDetails,
+              Deployment
+                { profileName = profileName,
+                  deploymentDetails = deploymentDetails,
                   logOptions = logOptions,
                   websocketOptions =
-                    CachixWebsocket.Options
+                    WebSocket.Options
                       { host = host,
                         name = name,
-                        path = "/ws-deployment",
-                        profile = profile
+                        path = "/ws-deployment"
                       }
                 }

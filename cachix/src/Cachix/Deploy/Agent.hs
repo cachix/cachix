@@ -19,8 +19,8 @@ import qualified Servant.Client as Servant
 
 run :: Config.CachixOptions -> AgentOptions.AgentOptions -> IO ()
 run cachixOptions agentOpts =
-  Log.withLog logOptions $ \logEnv -> do
-    CachixWebsocket.runForever logEnv options handleMessage
+  Log.withLog logOptions $ \withLog -> do
+    CachixWebsocket.runForever withLog options handleMessage
   where
     verbosity =
       if Config.verbose cachixOptions
@@ -57,7 +57,6 @@ run cachixOptions agentOpts =
         handleCommand :: WSS.BackendCommand -> IO ()
         handleCommand (WSS.AgentRegistered agentInformation) =
           withLog $ CachixWebsocket.registerAgent agentState agentInformation
-
         handleCommand (WSS.Deployment deploymentDetails) = do
           binDir <- toS <$> getBinDir
           readProcess (binDir <> "/.cachix-deployment") [] $

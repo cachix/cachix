@@ -9,10 +9,25 @@ import Test.Hspec
 spec :: Spec
 spec =
   describe "Deploy" $ do
-    it "parses a simple deploy" test
+    it "parses a simple deploy" testSimple
+    it "prases rollbackScript" testRollback
 
-test :: Expectation
-test = do
+testSimple :: Expectation
+testSimple = do
   let input = "{ \"agents\": { \"myagent\": \"/nix/store/blabla\" } }"
-  let output = Deploy {agents = fromList [("myagent", "/nix/store/blabla")], rollbackScript = Nothing}
+  let output =
+        Deploy
+          { agents = fromList [("myagent", "/nix/store/blabla")],
+            rollbackScript = Nothing
+          }
+  eitherDecode input `shouldBe` Right output
+
+testRollback :: Expectation
+testRollback = do
+  let input = "{ \"agents\": { \"myagent\": \"/nix/store/blabla\" }, \"rollbackScript\": {\"x86_64-linux\": \"/nix/store/rollback.sh\" }}"
+  let output =
+        Deploy
+          { agents = fromList [("myagent", "/nix/store/blabla")],
+            rollbackScript = Just (fromList [("x86_64-linux", "/nix/store/rollback.sh")])
+          }
   eitherDecode input `shouldBe` Right output

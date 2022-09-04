@@ -1,4 +1,5 @@
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Main
@@ -46,20 +47,28 @@ main = do
   hSetBuffering stdout LineBuffering
   hSetBuffering stderr LineBuffering
 
-  input <- escalateAs (FatalError . toS) . Aeson.eitherDecode . toS =<< getContents
+  deployment <- escalateAs (FatalError . toS) . Aeson.eitherDecode . toS =<< getContents
 
-  let agentName = Agent.agentName input
-  let agentToken = Agent.agentToken input
-  let profileName = Agent.profileName input
-  let logOptions = Agent.logOptions input
+  let Agent.Deployment
+        { agentName,
+          agentToken,
+          profileName,
+          host,
+          logOptions
+        } = deployment
 
-  let host = Agent.host input
   let headers = WebSocket.createHeaders agentName agentToken
-  let websocketOptions = WebSocket.Options {WebSocket.host = host, WebSocket.path = "/ws-deployment", WebSocket.headers = headers, WebSocket.agentIdentifier = Agent.agentIdentifier agentName}
+  let websocketOptions =
+        WebSocket.Options
+          { WebSocket.host = host,
+            WebSocket.path = "/ws-deployment",
+            WebSocket.headers = headers,
+            WebSocket.agentIdentifier = Agent.agentIdentifier agentName
+          }
 
   Log.withLog logOptions $ \withLog ->
     void . Lock.withTryLock profileName $
-      WebSocket.runForever withLog websocketOptions (handleMessage withLog input websocketOptions)
+      WebSocket.runForever withLog websocketOptions (handleMessage withLog deployment websocketOptions)
 
 handleMessage ::
   -- | Logging context
@@ -73,7 +82,7 @@ handleMessage ::
   -- | Message from the backend
   ByteString ->
   IO ()
-handleMessage withLog input websocketOptions connection payload =
+handleMessage withLog deployment websocketOptions connection payload =
   case WSS.parseMessage payload of
     Left err ->
       -- TODO: show the bytestring?
@@ -85,11 +94,11 @@ handleMessage withLog input websocketOptions connection payload =
 
     -- Deployment details
     storePath = WSS.storePath deploymentDetails
-    deploymentDetails = Agent.deploymentDetails input
+    deploymentDetails = Agent.deploymentDetails deployment
     deploymentID = WSS.id (deploymentDetails :: WSS.DeploymentDetails)
     index = show $ WSS.index deploymentDetails
-    profileName = Agent.profileName input
-    agentToken = Agent.agentToken input
+    profileName = Agent.profileName deployment
+    agentToken = Agent.agentToken deployment
 
     -- WebSocket options
     host = WebSocket.host websocketOptions

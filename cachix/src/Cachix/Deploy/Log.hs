@@ -3,11 +3,19 @@
 
 module Cachix.Deploy.Log where
 
+import qualified Cachix.API.WebSocketSubprotocol as WSS
+import qualified Control.Concurrent.STM.TMQueue as TMQueue
 import Control.Exception.Safe (MonadMask, bracket)
 import qualified Data.Aeson as Aeson
-import Data.Functor.Contravariant
+import Data.Conduit ((.|))
+import qualified Data.Conduit as Conduit
+import qualified Data.Conduit.Combinators as Conduit
+import qualified Data.Conduit.TQueue as Conduit
+import Data.Time.Clock (getCurrentTime)
 import qualified Katip
-import Protolude hiding (bracket)
+import qualified Network.WebSockets as WS
+import Protolude hiding (bracket, toS)
+import Protolude.Conv (toS)
 
 -- A temporary crutch while we fix up the types
 type WithLog = Katip.KatipContextT IO () -> IO ()
@@ -48,3 +56,30 @@ withLog Options {..} inner =
 
       closeLog = liftIO . Katip.closeScribes
    in bracket createLogEnv closeLog $ inner . createContext
+
+-- Streaming log
+
+type LogStream = Conduit.ConduitT ByteString Conduit.Void IO ()
+
+-- TODO: prepend katip-like format to each line
+streamLog :: WithLog -> WS.Connection -> TMQueue.TMQueue ByteString -> IO ()
+streamLog logger connection queue = do
+  Conduit.runConduit $
+    Conduit.sourceTMQueue queue
+      .| Conduit.linesUnboundedAscii
+      .| logLocal logger
+      .| sendLog connection
+
+streamLine :: LogStream -> ByteString -> IO ()
+streamLine logStream msg = Conduit.connect (Conduit.yield $ "\n" <> msg <> "\n") logStream
+
+logLocal :: WithLog -> Conduit.ConduitT ByteString ByteString IO ()
+logLocal logger =
+  Conduit.mapM $ \bs -> do
+    logger . Katip.logLocM Katip.DebugS . Katip.ls $ bs
+    return bs
+
+sendLog :: WS.Connection -> LogStream
+sendLog connection = Conduit.mapM_ $ \bs -> do
+  now <- getCurrentTime
+  WS.sendTextData connection $ Aeson.encode $ WSS.Log {WSS.line = toS bs, WSS.time = now}

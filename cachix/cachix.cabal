@@ -127,6 +127,7 @@ library
     , servant-client-core     >=0.16
     , servant-conduit
     , stm
+    , stm-chans
     , stm-conduit
     , systemd
     , temporary

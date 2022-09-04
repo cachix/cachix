@@ -6,6 +6,7 @@ module Cachix.Deploy.Activate where
 import qualified Cachix.API.WebSocketSubprotocol as WSS
 import qualified Cachix.Client.InstallationMode as InstallationMode
 import qualified Cachix.Client.NetRc as NetRc
+import qualified Cachix.Deploy.Log as Log
 import qualified Cachix.Deploy.Websocket as CachixWebsocket
 import qualified Cachix.Types.BinaryCache as BinaryCache
 import Cachix.Types.Permission (Permission (..))
@@ -63,13 +64,9 @@ activate logStream profileName deploymentDetails cacheArgs = do
 
     shellOutWithExitCode :: FilePath -> [String] -> IO ExitCode
     shellOutWithExitCode cmd args = do
-      log $ "$ " <> toS cmd <> " " <> toS (unwords $ fmap toS args)
+      Log.streamLine logStream $ "$ " <> toS cmd <> " " <> toS (unwords $ fmap toS args)
       (exitCode, _, _) <- Conduit.sourceProcessWithStreams (proc cmd args) Conduit.sinkNull logStream logStream
       pure exitCode
-
-    -- Move to Main.hs
-    log :: ByteString -> IO ()
-    log msg = Conduit.connect (Conduit.yieldMany ["\n" <> msg <> "\n"]) logStream
 
     -- TODO: home-manager
     -- TODO: move out of where clause

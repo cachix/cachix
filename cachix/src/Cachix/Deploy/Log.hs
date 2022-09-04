@@ -5,6 +5,7 @@ module Cachix.Deploy.Log where
 
 import Control.Exception.Safe (MonadMask, bracket)
 import qualified Data.Aeson as Aeson
+import Data.Functor.Contravariant
 import qualified Katip
 import Protolude hiding (bracket)
 
@@ -31,9 +32,9 @@ data Verbosity
 withLog ::
   (MonadIO m, MonadMask m) =>
   Options ->
-  (Katip.LogEnv -> m a) ->
+  (WithLog -> m a) ->
   m a
-withLog Options {..} =
+withLog Options {..} inner =
   let permit = case verbosity of
         Verbose -> Katip.DebugS
         Normal -> Katip.InfoS
@@ -43,5 +44,7 @@ withLog Options {..} =
         stdoutScribe <- Katip.mkHandleScribe Katip.ColorIfTerminal stdout (Katip.permitItem permit) Katip.V2
         Katip.registerScribe "stdout" stdoutScribe Katip.defaultScribeSettings logEnv
 
+      createContext logEnv = Katip.runKatipContextT logEnv () namespace
+
       closeLog = liftIO . Katip.closeScribes
-   in bracket createLogEnv closeLog
+   in bracket createLogEnv closeLog $ inner . createContext

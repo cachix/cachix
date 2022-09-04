@@ -45,11 +45,8 @@ data Input = Input
 system :: String
 system = System.Info.arch <> "-" <> System.Info.os
 
-runForever :: K.LogEnv -> Options -> (ByteString -> Log.WithLog -> WS.Connection -> AgentState -> ByteString -> IO ()) -> IO ()
-runForever logEnv options cmd = do
-  -- TODO: do we need the context part, or is KatipT enough for us?
-  let withLog = K.runKatipContextT logEnv () "agent"
-
+runForever :: Log.WithLog -> Options -> (ByteString -> Log.WithLog -> WS.Connection -> AgentState -> ByteString -> IO ()) -> IO ()
+runForever withLog options cmd = do
   checkUserOwnsHome `catchAny` \e -> do
     withLog $ K.logLocM K.ErrorS $ K.ls (displayException e)
     exitFailure

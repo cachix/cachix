@@ -41,6 +41,8 @@ import qualified Wuss
 --
 -- If the target profile is already locked by another deployment, exit
 -- immediately and rely on the backend to reschedule.
+--
+-- TODO: what if websocket gets closed while deploying?
 main :: IO ()
 main = do
   setLocaleEncoding utf8
@@ -53,11 +55,9 @@ main = do
   let websocketOptions = CachixWebsocket.websocketOptions input
   let profile = CachixWebsocket.profile websocketOptions
 
-  Log.withLog logOptions $ \logEnv ->
+  Log.withLog logOptions $ \withLog ->
     void . Lock.withTryLock profile $
-      -- TODO: what if websocket gets closed while deploying?
-      CachixWebsocket.runForever logEnv websocketOptions (handleMessage input)
-        `Exception.withException` (\e -> K.runKatipContextT logEnv () "agent" $ K.logLocM K.InfoS $ K.ls $ displayException (e :: SomeException))
+      CachixWebsocket.runForever withLog websocketOptions (handleMessage input)
 
 handleMessage :: CachixWebsocket.Input -> ByteString -> Log.WithLog -> WS.Connection -> CachixWebsocket.AgentState -> ByteString -> IO ()
 handleMessage input payload withLog connection _ agentToken =

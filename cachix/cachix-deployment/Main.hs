@@ -57,10 +57,23 @@ main = do
 
   Log.withLog logOptions $ \withLog ->
     void . Lock.withTryLock profile $
-      CachixWebsocket.runForever withLog websocketOptions (handleMessage input)
+      CachixWebsocket.runForever withLog websocketOptions (handleMessage withLog input)
 
-handleMessage :: CachixWebsocket.Input -> ByteString -> Log.WithLog -> WS.Connection -> CachixWebsocket.AgentState -> ByteString -> IO ()
-handleMessage input payload withLog connection _ agentToken =
+handleMessage ::
+  -- | Logging context
+  Log.WithLog ->
+  -- | Deployment information passed from the agent
+  CachixWebsocket.Input ->
+  -- | Backend WebSocket connection
+  WS.Connection ->
+  -- | Message from the backend
+  ByteString ->
+  -- | Agent information
+  CachixWebsocket.AgentState ->
+  -- | Agent token
+  ByteString ->
+  IO ()
+handleMessage withLog input connection payload _ agentToken =
   case WSS.parseMessage payload of
     Left err ->
       -- TODO: show the bytestring?

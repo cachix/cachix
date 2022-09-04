@@ -45,8 +45,14 @@ data Input = Input
 system :: String
 system = System.Info.arch <> "-" <> System.Info.os
 
-runForever :: Log.WithLog -> Options -> (ByteString -> Log.WithLog -> WS.Connection -> AgentState -> ByteString -> IO ()) -> IO ()
-runForever withLog options cmd = do
+runForever ::
+  -- | Logging context for logging socket status
+  Log.WithLog ->
+  -- | WebSocket options
+  Options ->
+  (WS.Connection -> ByteString -> AgentState -> ByteString -> IO ()) ->
+  IO ()
+runForever withLog options inner = do
   checkUserOwnsHome `catchAny` \e -> do
     withLog $ K.logLocM K.ErrorS $ K.ls (displayException e)
     exitFailure
@@ -77,7 +83,7 @@ runForever withLog options cmd = do
     WS.withPingThread connection pingEvery pingHandler $
       WSS.recieveDataConcurrently
         connection
-        (\message -> cmd message withLog connection agentState (toS agentToken))
+        (\message -> inner connection message agentState (toS agentToken))
   where
     agentIdentifier = name options <> " " <> toS versionNumber
     pingEvery = 30

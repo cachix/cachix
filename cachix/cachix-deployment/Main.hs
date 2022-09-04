@@ -14,20 +14,17 @@ import qualified Cachix.Deploy.Agent as Agent
 import qualified Cachix.Deploy.Lock as Lock
 import qualified Cachix.Deploy.Log as Log
 import qualified Cachix.Deploy.Websocket as WebSocket
-import Conduit ((.|))
 import qualified Control.Concurrent.Async as Async
 import qualified Control.Concurrent.STM.TMQueue as TMQueue
 import qualified Control.Exception.Safe as Exception
 import qualified Data.Aeson as Aeson
-import qualified Data.Conduit as Conduit
-import qualified Data.Conduit.Combinators as Conduit
 import qualified Data.Conduit.TQueue as Conduit
 import Data.Time.Clock (getCurrentTime)
 import qualified Data.UUID as UUID
 import qualified Data.UUID.V4 as UUID
 import GHC.IO.Encoding
 import qualified Katip as K
-import Network.HTTP.Simple (RequestHeaders)
+import qualified Network.HTTP.Simple as HTTP
 import qualified Network.WebSockets as WS
 import Protolude hiding (toS)
 import Protolude.Conv
@@ -125,7 +122,7 @@ handleMessage withLog deployment websocketOptions connection payload =
 
       let hasSucceeded = isRight result
       when hasSucceeded $
-        logLine logStream "Successfully activated the deployment."
+        Log.streamLine logStream "Successfully activated the deployment."
 
       endDeployment hasSucceeded
 
@@ -143,7 +140,7 @@ handleMessage withLog deployment websocketOptions connection payload =
       atomically (TMQueue.closeTMQueue logQueue)
       wait logThread
 
-      WS.sendClose connection ("Closing." :: ByteString)
+      WebSocket.gracefulShutdown connection
       where
         startDeployment closureSize = do
           now <- getCurrentTime
@@ -185,29 +182,23 @@ handleMessage withLog deployment websocketOptions connection payload =
               WSS.DeploymentStarted {} -> "DeploymentStarted"
               WSS.DeploymentFinished {} -> "DeploymentFinished"
 
--- Logs
+-- Log
 
-type LogStream = Conduit.ConduitT ByteString Conduit.Void IO ()
-
-streamLog :: Log.WithLog -> Text -> Text -> RequestHeaders -> TMQueue.TMQueue ByteString -> IO ()
+-- TODO: prepend katip-like format to each line
+streamLog ::
+  -- | Logging context
+  Log.WithLog ->
+  -- | Host
+  Text ->
+  -- | Path
+  Text ->
+  -- | HTTP headers
+  HTTP.RequestHeaders ->
+  -- | Queue of messages to stream
+  TMQueue.TMQueue ByteString ->
+  IO ()
 streamLog withLog host path headers queue = do
   WebSocket.reconnectWithLog withLog $
-    Wuss.runSecureClientWith (toS host) 443 (toS path) WS.defaultConnectionOptions headers $
-      \conn -> do
-        Conduit.runConduit $
-          Conduit.sourceTMQueue queue
-            .| Conduit.linesUnboundedAscii
-            -- TODO: prepend katip-like format to each line
-            .| Conduit.mapM (\bs -> (withLog . K.logLocM K.DebugS . K.ls) bs >> return bs)
-            .| sendLog conn
-
-        WS.sendClose conn ("" :: ByteString)
-        threadDelay (2 * 1000 * 1000)
-
-logLine :: LogStream -> ByteString -> IO ()
-logLine logStream msg = Conduit.connect (Conduit.yield $ "\n" <> msg <> "\n") logStream
-
-sendLog :: WS.Connection -> LogStream
-sendLog connection = Conduit.mapM_ $ \bs -> do
-  now <- getCurrentTime
-  WS.sendTextData connection $ Aeson.encode $ WSS.Log {WSS.line = toS bs, WSS.time = now}
+    Wuss.runSecureClientWith (toS host) 443 (toS path) WS.defaultConnectionOptions headers $ \connection -> do
+      Log.streamLog withLog connection queue
+      WebSocket.gracefulShutdown connection

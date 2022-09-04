@@ -13,7 +13,7 @@ import qualified Control.Retry as Retry
 import qualified Data.Aeson as Aeson
 import Data.String (String)
 import qualified Katip as K
-import Network.HTTP.Types (Header)
+import qualified Network.HTTP.Simple as HTTP
 import qualified Network.WebSockets as WS
 import Protolude hiding (Handler, toS)
 import Protolude.Conv
@@ -23,7 +23,7 @@ import qualified Wuss
 data Options = Options
   { host :: Text,
     path :: Text,
-    headers :: [Header],
+    headers :: HTTP.RequestHeaders,
     -- | The identifier used when logging. Usually a combination of the agent
     -- name and the CLI version.
     agentIdentifier :: Text
@@ -96,12 +96,25 @@ reconnectWithLog withLog inner =
     delay Nothing = "0 seconds"
     delay (Just s) = show (floor (fromIntegral s / 1000 / 1000)) <> " seconds"
 
+-- | Try to gracefully close the WebSocket.
+--
+-- We send a close request to the peer and continue processing
+-- any incoming messages until the server replies with its own
+-- close control message.
+gracefulShutdown :: WS.Connection -> IO ()
+gracefulShutdown connection = do
+  WS.sendClose connection ("Closing." :: ByteString)
+
+  -- Grace period
+  threadDelay (5 * 1000 * 1000)
+  throwIO $ WS.CloseRequest 1000 "No response to close request"
+
 createHeaders ::
   -- | Agent name
   Text ->
   -- | Agent Token
   Text ->
-  [Header]
+  HTTP.RequestHeaders
 createHeaders agentName agentToken =
   [ ("Authorization", "Bearer " <> toS agentToken),
     ("name", toS agentName),

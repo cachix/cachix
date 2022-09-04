@@ -1,19 +1,21 @@
+{-# LANGUAGE ScopedTypeVariables #-}
+
 -- high level interface for websocket clients
 module Cachix.Deploy.Websocket where
 
 import qualified Cachix.API.WebSocketSubprotocol as WSS
-import Cachix.Client.Retry
+import qualified Cachix.Client.Retry as Retry
 import Cachix.Client.Version (versionNumber)
 import qualified Cachix.Deploy.Log as Log
 import qualified Cachix.Deploy.WebsocketPong as WebsocketPong
-import Control.Retry (RetryStatus (..))
+import Control.Exception.Safe (Handler (..), MonadMask, isSyncException)
 import qualified Control.Retry as Retry
 import qualified Data.Aeson as Aeson
 import Data.String (String)
 import qualified Katip as K
 import Network.HTTP.Types (Header)
 import qualified Network.WebSockets as WS
-import Protolude hiding (toS)
+import Protolude hiding (Handler, toS)
 import Protolude.Conv
 import qualified System.Info
 import qualified Wuss
@@ -51,23 +53,48 @@ runForever withLog options inner = do
         WebsocketPong.pingHandler pongState mainThreadID pongTimeout
   let connectionOptions = WebsocketPong.installPongHandler pongState WS.defaultConnectionOptions
 
-  -- TODO: use exponential retry with reset: https://github.com/Soostone/retry/issues/25
-  -- retryWithLogging endlessConstantRetryPolicy (logRetry withLog) $ do
-  withLog $
-    K.logLocM K.InfoS $ K.ls $ "Agent " <> agentIdentifier options <> " connecting to " <> host options <> path options
+  reconnectWithLog withLog $ do
+    withLog $
+      K.logLocM K.InfoS $ K.ls $ "Agent " <> agentIdentifier options <> " connecting to " <> host options <> path options
 
-  -- refresh pong state in case we're reconnecting
-  WebsocketPong.pongHandler pongState
+    -- refresh pong state in case we're reconnecting
+    WebsocketPong.pongHandler pongState
 
-  -- TODO: https://github.com/jaspervdj/websockets/issues/229
-  Wuss.runSecureClientWith (toS $ host options) 443 (toS $ path options) connectionOptions (headers options) $ \connection -> do
-    withLog $ K.logLocM K.InfoS "Connected to Cachix Deploy service"
-    WS.withPingThread connection pingEvery pingHandler $
-      WSS.recieveDataConcurrently connection (inner connection)
+    -- TODO: https://github.com/jaspervdj/websockets/issues/229
+    Wuss.runSecureClientWith (toS $ host options) 443 (toS $ path options) connectionOptions (headers options) $ \connection -> do
+      withLog $ K.logLocM K.InfoS "Connected to Cachix Deploy service"
+      WS.withPingThread connection pingEvery pingHandler $
+        WSS.recieveDataConcurrently connection (inner connection)
 
-exitWithCloseRequest :: WS.ConnectionException -> IO ()
-exitWithCloseRequest (WS.CloseRequest _ _) = return ()
-exitWithCloseRequest e = throwIO e
+-- TODO: use exponential retry with reset: https://github.com/Soostone/retry/issues/25
+reconnectWithLog :: (MonadMask m, MonadIO m) => Log.WithLog -> m a -> m a
+reconnectWithLog withLog inner =
+  Retry.recovering Retry.endlessConstantRetryPolicy handlers $ const inner
+  where
+    handlers = Retry.skipAsyncExceptions ++ [exitOnSuccess, exitOnCloseRequest, logSyncExceptions]
+
+    exitOnSuccess _ = Handler $ \(_ :: ExitCode) -> return False
+
+    exitOnCloseRequest _ = Handler $ \(e :: WS.ConnectionException) ->
+      case e of
+        WS.CloseRequest _ _ -> do
+          liftIO . withLog $
+            K.logLocM K.DebugS . K.ls $
+              ("Received close request from peer. Closing connection." :: Text)
+          return False
+        _ -> return True
+
+    logSyncExceptions = Retry.logRetries (return . isSyncException) logRetries
+
+    logRetries :: (MonadIO m) => Bool -> SomeException -> Retry.RetryStatus -> m ()
+    logRetries _ exception retryStatus =
+      liftIO . withLog $
+        K.logLocM K.ErrorS . K.ls $
+          "Retrying in " <> delay (Retry.rsPreviousDelay retryStatus) <> " due to an exception: " <> displayException exception
+
+    delay :: Maybe Int -> String
+    delay Nothing = "0 seconds"
+    delay (Just s) = show (floor (fromIntegral s / 1000 / 1000)) <> " seconds"
 
 createHeaders ::
   -- | Agent name
@@ -81,15 +108,6 @@ createHeaders agentName agentToken =
     ("version", toS versionNumber),
     ("system", toS system)
   ]
-
--- TODO: log the exception
-logRetry :: Log.WithLog -> Bool -> SomeException -> RetryStatus -> IO ()
-logRetry withLog _ exception retryStatus =
-  withLog $ K.logLocM K.ErrorS $ K.ls $ "Retrying in " <> delay (rsPreviousDelay retryStatus) <> " due to an exception: " <> displayException exception
-  where
-    delay :: Maybe Int -> String
-    delay Nothing = "0 seconds"
-    delay (Just s) = show (floor (fromIntegral s / 1000 / 1000)) <> " seconds"
 
 -- TODO: Move to the agent. If the websocket is going to parse messages then it
 -- can’t also swallow errors like this.

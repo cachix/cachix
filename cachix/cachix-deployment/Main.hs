@@ -9,7 +9,6 @@ where
 
 import Cachix.API.Error (escalateAs)
 import qualified Cachix.API.WebSocketSubprotocol as WSS
-import Cachix.Client.Retry
 import qualified Cachix.Deploy.Activate as Activate
 import qualified Cachix.Deploy.Agent as Agent
 import qualified Cachix.Deploy.Lock as Lock
@@ -192,19 +191,18 @@ type LogStream = Conduit.ConduitT ByteString Conduit.Void IO ()
 
 streamLog :: Log.WithLog -> Text -> Text -> RequestHeaders -> TMQueue.TMQueue ByteString -> IO ()
 streamLog withLog host path headers queue = do
-  -- retryAllWithLogging endlessRetryPolicy (WebSocket.logRetry withLog) $
-  Wuss.runSecureClientWith (toS host) 443 (toS path) WS.defaultConnectionOptions headers $
-    \conn -> do
-      -- handle WebSocket.exitWithCloseRequest $
-      Conduit.runConduit $
-        Conduit.sourceTMQueue queue
-          .| Conduit.linesUnboundedAscii
-          -- TODO: prepend katip-like format to each line
-          .| Conduit.mapM (\bs -> (withLog . K.logLocM K.DebugS . K.ls) bs >> return bs)
-          .| sendLog conn
+  WebSocket.reconnectWithLog withLog $
+    Wuss.runSecureClientWith (toS host) 443 (toS path) WS.defaultConnectionOptions headers $
+      \conn -> do
+        Conduit.runConduit $
+          Conduit.sourceTMQueue queue
+            .| Conduit.linesUnboundedAscii
+            -- TODO: prepend katip-like format to each line
+            .| Conduit.mapM (\bs -> (withLog . K.logLocM K.DebugS . K.ls) bs >> return bs)
+            .| sendLog conn
 
-      WS.sendClose conn ("" :: ByteString)
-      threadDelay (2 * 1000 * 1000)
+        WS.sendClose conn ("" :: ByteString)
+        threadDelay (2 * 1000 * 1000)
 
 logLine :: LogStream -> ByteString -> IO ()
 logLine logStream msg = Conduit.connect (Conduit.yield $ "\n" <> msg <> "\n") logStream

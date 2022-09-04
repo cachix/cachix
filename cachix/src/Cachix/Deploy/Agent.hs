@@ -33,6 +33,7 @@ data Deployment = Deployment
     profileName :: Text,
     host :: Text,
     deploymentDetails :: WSS.DeploymentDetails,
+    agentInformation :: WSS.AgentInformation,
     logOptions :: Log.Options
   }
   deriving (Show, Generic, Aeson.ToJSON, Aeson.FromJSON)
@@ -98,17 +99,23 @@ run cachixOptions agentOpts =
         handleCommand (WSS.AgentRegistered agentInformation) =
           withLog $ registerAgent agentState agentInformation
         handleCommand (WSS.Deployment deploymentDetails) = do
-          binDir <- toS <$> getBinDir
-          readProcess (binDir <> "/.cachix-deployment") [] $
-            toS . Aeson.encode $
-              Deployment
-                { agentName = agentName,
-                  agentToken = agentToken,
-                  profileName = profileName,
-                  host = host,
-                  deploymentDetails = deploymentDetails,
-                  logOptions = logOptions
-                }
+          agentRegistered <- readIORef agentState
+
+          case agentRegistered of
+            Nothing -> pure ()
+            Just agentInformation -> do
+              binDir <- toS <$> getBinDir
+              readProcess (binDir <> "/.cachix-deployment") [] $
+                toS . Aeson.encode $
+                  Deployment
+                    { agentName = agentName,
+                      agentToken = agentToken,
+                      profileName = profileName,
+                      host = host,
+                      deploymentDetails = deploymentDetails,
+                      agentInformation = agentInformation,
+                      logOptions = logOptions
+                    }
 
 -- | Fetch the home directory and verify that the owner matches the current user.
 -- Throws either 'NoHomeFound' or 'UserDoesNotOwnHome'.

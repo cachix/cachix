@@ -99,6 +99,7 @@ handleMessage withLog deployment websocketOptions connection payload =
     index = show $ WSS.index deploymentDetails
     profileName = Agent.profileName deployment
     agentToken = Agent.agentToken deployment
+    agentInformation = Agent.agentInformation deployment
 
     -- WebSocket options
     host = WebSocket.host websocketOptions
@@ -107,7 +108,7 @@ handleMessage withLog deployment websocketOptions connection payload =
     handleCommand :: WSS.BackendCommand -> IO ()
     handleCommand (WSS.Deployment _) =
       withLog $ K.logLocM K.ErrorS "cachix-deployment should have never gotten a deployment command directly."
-    handleCommand (WSS.AgentRegistered agentInformation) = do
+    handleCommand (WSS.AgentRegistered _) = do
       withLog $ K.logLocM K.InfoS $ K.ls $ "Deploying #" <> index <> ": " <> storePath
 
       let logPath = "/api/v1/deploy/log/" <> UUID.toText deploymentID

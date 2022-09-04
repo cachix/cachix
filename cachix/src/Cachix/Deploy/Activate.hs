@@ -119,7 +119,7 @@ uri :: Text -> WSS.Cache -> Text
 uri host cache = "https://" <> domain host cache
 
 -- TODO: don't create tmpfile for public caches
-withCacheArgs :: Text -> WSS.AgentInformation -> ByteString -> ([String] -> IO a) -> IO a
+withCacheArgs :: Text -> WSS.AgentInformation -> Text -> ([String] -> IO a) -> IO a
 withCacheArgs host agentInfo agentToken m =
   withSystemTempDirectory "netrc" $ \dir -> do
     let filepath = dir </> "netrc"
@@ -135,7 +135,7 @@ withCacheArgs host agentInfo agentToken m =
                   BinaryCache.githubUsername = "",
                   BinaryCache.permission = Read
                 }
-        NetRc.add (Token agentToken) [bc] filepath
+        NetRc.add (Token (toS agentToken)) [bc] filepath
         return $ cachesArgs <> ["--option", "netrc-file", filepath]
       Nothing ->
         return cachesArgs

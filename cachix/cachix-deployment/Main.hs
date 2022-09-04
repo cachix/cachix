@@ -48,29 +48,32 @@ main = do
 
   input <- escalateAs (FatalError . toS) . Aeson.eitherDecode . toS =<< getContents
 
+  let agentName = Agent.agentName input
+  let agentToken = Agent.agentToken input
   let profileName = Agent.profileName input
   let logOptions = Agent.logOptions input
-  let websocketOptions = Agent.websocketOptions input
+
+  let host = Agent.host input
+  let headers = WebSocket.createHeaders agentName agentToken
+  let websocketOptions = WebSocket.Options {WebSocket.host = host, WebSocket.path = "/ws-deployment", WebSocket.headers = headers, WebSocket.agentIdentifier = Agent.agentIdentifier agentName}
 
   Log.withLog logOptions $ \withLog ->
     void . Lock.withTryLock profileName $
-      WebSocket.runForever withLog websocketOptions (handleMessage withLog input)
+      WebSocket.runForever withLog websocketOptions (handleMessage withLog input websocketOptions)
 
 handleMessage ::
   -- | Logging context
   Log.WithLog ->
   -- | Deployment information passed from the agent
   Agent.Deployment ->
+  -- | WebSocket options
+  WebSocket.Options ->
   -- | Backend WebSocket connection
   WS.Connection ->
   -- | Message from the backend
   ByteString ->
-  -- | Agent information
-  WebSocket.AgentState ->
-  -- | Agent token
-  ByteString ->
   IO ()
-handleMessage withLog input connection payload _ agentToken =
+handleMessage withLog input websocketOptions connection payload =
   case WSS.parseMessage payload of
     Left err ->
       -- TODO: show the bytestring?
@@ -86,11 +89,11 @@ handleMessage withLog input connection payload _ agentToken =
     deploymentID = WSS.id (deploymentDetails :: WSS.DeploymentDetails)
     index = show $ WSS.index deploymentDetails
     profileName = Agent.profileName input
+    agentToken = Agent.agentToken input
 
     -- WebSocket options
-    options = Agent.websocketOptions input
-    host = WebSocket.host options
-    headers = WebSocket.headers options agentToken
+    host = WebSocket.host websocketOptions
+    headers = WebSocket.headers websocketOptions
 
     handleCommand :: WSS.BackendCommand -> IO ()
     handleCommand (WSS.Deployment _) =
@@ -104,7 +107,7 @@ handleMessage withLog input connection payload _ agentToken =
         Async.async $ streamLog withLog host logPath headers logQueue
       let logStream = Conduit.sinkTMQueue logQueue
 
-      result <- Activate.withCacheArgs (WebSocket.host options) agentInformation agentToken $ \cacheArgs -> do
+      result <- Activate.withCacheArgs host agentInformation agentToken $ \cacheArgs -> do
         -- TODO: what if this fails
         closureSize <- fromRight Nothing <$> Activate.getClosureSize cacheArgs storePath
         startDeployment closureSize

@@ -33,15 +33,15 @@ data Options = Options
 system :: String
 system = System.Info.arch <> "-" <> System.Info.os
 
-runForever ::
+withConnection ::
   -- | Logging context for logging socket status
   Log.WithLog ->
   -- | WebSocket options
   Options ->
   -- | The app to run inside the socket
-  (WS.Connection -> ByteString -> IO ()) ->
+  WS.ClientApp () ->
   IO ()
-runForever withLog options inner = do
+withConnection withLog options app = do
   mainThreadID <- myThreadId
   pongState <- WebsocketPong.newState
 
@@ -64,7 +64,7 @@ runForever withLog options inner = do
     Wuss.runSecureClientWith (toS $ host options) 443 (toS $ path options) connectionOptions (headers options) $ \connection -> do
       withLog $ K.logLocM K.InfoS "Connected to Cachix Deploy service"
       WS.withPingThread connection pingEvery pingHandler $
-        WSS.recieveDataConcurrently connection (inner connection)
+        app connection
 
 -- TODO: use exponential retry with reset: https://github.com/Soostone/retry/issues/25
 reconnectWithLog :: (MonadMask m, MonadIO m) => Log.WithLog -> m a -> m a
@@ -121,14 +121,3 @@ createHeaders agentName agentToken =
     ("version", toS versionNumber),
     ("system", toS system)
   ]
-
--- TODO: Move to the agent. If the websocket is going to parse messages then it
--- can’t also swallow errors like this.
-parseMessage :: K.KatipContext m => Aeson.FromJSON cmd => ByteString -> (WSS.Message cmd -> m ()) -> m ()
-parseMessage payload m = do
-  case WSS.parseMessage payload of
-    Left err ->
-      -- TODO: show the bytestring?
-      K.logLocM K.ErrorS $ K.ls $ "Failed to parse websocket payload: " <> err
-    Right message ->
-      m message

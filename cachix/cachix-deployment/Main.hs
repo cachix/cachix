@@ -10,9 +10,10 @@ import Cachix.API.Error (escalateAs)
 import qualified Cachix.API.WebSocketSubprotocol as WSS
 import Cachix.Client.Retry
 import qualified Cachix.Deploy.Activate as Activate
+import qualified Cachix.Deploy.Agent as Agent
 import qualified Cachix.Deploy.Lock as Lock
 import qualified Cachix.Deploy.Log as Log
-import qualified Cachix.Deploy.Websocket as CachixWebsocket
+import qualified Cachix.Deploy.Websocket as WebSocket
 import Conduit ((.|))
 import qualified Control.Concurrent.Async as Async
 import qualified Control.Concurrent.STM.TMQueue as TMQueue
@@ -21,17 +22,13 @@ import qualified Data.Aeson as Aeson
 import qualified Data.Conduit as Conduit
 import qualified Data.Conduit.Combinators as Conduit
 import qualified Data.Conduit.TQueue as Conduit
-import Data.IORef
-import Data.String (String)
 import Data.Time.Clock (getCurrentTime)
-import Data.UUID (UUID)
 import qualified Data.UUID as UUID
 import qualified Data.UUID.V4 as UUID
 import GHC.IO.Encoding
 import qualified Katip as K
 import Network.HTTP.Simple (RequestHeaders)
 import qualified Network.WebSockets as WS
-import qualified Network.WebSockets.Connection as WS
 import Protolude hiding (toS)
 import Protolude.Conv
 import System.IO (BufferMode (..), hSetBuffering)
@@ -51,25 +48,25 @@ main = do
 
   input <- escalateAs (FatalError . toS) . Aeson.eitherDecode . toS =<< getContents
 
-  let logOptions = CachixWebsocket.logOptions input
-  let websocketOptions = CachixWebsocket.websocketOptions input
-  let profile = CachixWebsocket.profile websocketOptions
+  let profileName = Agent.profileName input
+  let logOptions = Agent.logOptions input
+  let websocketOptions = Agent.websocketOptions input
 
   Log.withLog logOptions $ \withLog ->
-    void . Lock.withTryLock profile $
-      CachixWebsocket.runForever withLog websocketOptions (handleMessage withLog input)
+    void . Lock.withTryLock profileName $
+      WebSocket.runForever withLog websocketOptions (handleMessage withLog input)
 
 handleMessage ::
   -- | Logging context
   Log.WithLog ->
   -- | Deployment information passed from the agent
-  CachixWebsocket.Input ->
+  Agent.Deployment ->
   -- | Backend WebSocket connection
   WS.Connection ->
   -- | Message from the backend
   ByteString ->
   -- | Agent information
-  CachixWebsocket.AgentState ->
+  WebSocket.AgentState ->
   -- | Agent token
   ByteString ->
   IO ()
@@ -82,13 +79,18 @@ handleMessage withLog input connection payload _ agentToken =
       handleCommand (WSS.command message)
   where
     -- TODO: cut down record access boilerplate
-    deploymentDetails = CachixWebsocket.deploymentDetails input
+
+    -- Deployment details
     storePath = WSS.storePath deploymentDetails
+    deploymentDetails = Agent.deploymentDetails input
     deploymentID = WSS.id (deploymentDetails :: WSS.DeploymentDetails)
     index = show $ WSS.index deploymentDetails
-    options = CachixWebsocket.websocketOptions input
-    host = CachixWebsocket.host options
-    headers = CachixWebsocket.headers options agentToken
+    profileName = Agent.profileName input
+
+    -- WebSocket options
+    options = Agent.websocketOptions input
+    host = WebSocket.host options
+    headers = WebSocket.headers options agentToken
 
     handleCommand :: WSS.BackendCommand -> IO ()
     handleCommand (WSS.Deployment _) =
@@ -102,12 +104,12 @@ handleMessage withLog input connection payload _ agentToken =
         Async.async $ streamLog withLog host logPath headers logQueue
       let logStream = Conduit.sinkTMQueue logQueue
 
-      result <- Activate.withCacheArgs options agentInformation agentToken $ \cacheArgs -> do
+      result <- Activate.withCacheArgs (WebSocket.host options) agentInformation agentToken $ \cacheArgs -> do
         -- TODO: what if this fails
         closureSize <- fromRight Nothing <$> Activate.getClosureSize cacheArgs storePath
         startDeployment closureSize
 
-        Exception.tryIO $ Activate.activate logStream options deploymentDetails cacheArgs
+        Exception.tryIO $ Activate.activate logStream profileName deploymentDetails cacheArgs
 
       let hasSucceeded = isRight result
       when hasSucceeded $
@@ -177,10 +179,10 @@ type LogStream = Conduit.ConduitT ByteString Conduit.Void IO ()
 
 streamLog :: Log.WithLog -> Text -> Text -> RequestHeaders -> TMQueue.TMQueue ByteString -> IO ()
 streamLog withLog host path headers queue = do
-  -- retryAllWithLogging endlessRetryPolicy (CachixWebsocket.logRetry withLog) $
+  -- retryAllWithLogging endlessRetryPolicy (WebSocket.logRetry withLog) $
   Wuss.runSecureClientWith (toS host) 443 (toS path) WS.defaultConnectionOptions headers $
     \conn -> do
-      -- handle CachixWebsocket.exitWithCloseRequest $
+      -- handle WebSocket.exitWithCloseRequest $
       Conduit.runConduit $
         Conduit.sourceTMQueue queue
           .| Conduit.linesUnboundedAscii

@@ -1,0 +1,32 @@
+name: "Release"
+on:
+  push:
+    tags:
+      - v**
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - uses: haskell/actions/setup@v2
+    - uses: nikita-volkov/edit-cabal-version.github-action@v1.1.0
+      with:
+        mode: set
+        set-value: github.ref_name
+        work-dir: cachix
+    - uses: nikita-volkov/edit-cabal-version.github-action@v1.1.0
+      with:
+        mode: set
+        set-value: github.ref_name
+        work-dir: cachix-api
+    - uses: stefanzweifel/git-auto-commit-action@v4
+      with:
+        commit_message: "Bumping *.cabal to ${{ github.ref_name }}"
+    - run: cabal v2-sdist all
+    - uses: haskell-actions/hackage-publish@v1
+      with:
+        # http://hackage.haskell.org/users/account-management
+        hackageToken: ${{ secrets.HACKAGE_AUTH_TOKEN }}
+        packagesPath: dist-newstyle/sdist
+        #docsPath: ${{ runner.temp }}/docs
+        publish: true

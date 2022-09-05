@@ -1,11 +1,6 @@
 - edit CHANGELOG
+- README.md `cachix --help` changes
 - git commit -m "prepare v0.X.X"
 - git tag v0.X.X
 - git push
-- cabal v2-sdist
-- cabal upload --publish dist-newstyle/sdist/cachix-0.X.X.tar.gz
-- bump cabal version
-- README.md `cachix --help` changes
-- nix-shell -p lzma zlib nix pkgconfig boost --run "cabal haddock --haddock-for-hackage"
-- cabal upload --documentation --publish dist-newstyle/cachix-0.6.0-docs.tar.gz
 - bump link to https://cachix.org/api/v1/install

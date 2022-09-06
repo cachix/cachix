@@ -9,6 +9,7 @@ import Cachix.Client.Version (versionNumber)
 import qualified Cachix.Deploy.Log as Log
 import qualified Cachix.Deploy.WebsocketPong as WebsocketPong
 import Control.Exception.Safe (Handler (..), MonadMask, isSyncException)
+import qualified Control.Exception.Safe as Exception
 import qualified Control.Retry as Retry
 import qualified Data.Aeson as Aeson
 import Data.String (String)
@@ -18,6 +19,7 @@ import qualified Network.WebSockets as WS
 import Protolude hiding (Handler, toS)
 import Protolude.Conv
 import qualified System.Info
+import qualified System.Timeout as Timeout
 import qualified Wuss
 
 data Options = Options
@@ -67,10 +69,14 @@ withConnection withLog options app = do
         app connection
 
 -- TODO: use exponential retry with reset: https://github.com/Soostone/retry/issues/25
-reconnectWithLog :: (MonadMask m, MonadIO m) => Log.WithLog -> m a -> m a
+reconnectWithLog :: (MonadMask m, MonadIO m) => Log.WithLog -> m () -> m ()
 reconnectWithLog withLog inner =
-  Retry.recovering Retry.endlessConstantRetryPolicy handlers $ const inner
+  Exception.handle closeRequest $
+    Retry.recovering Retry.endlessConstantRetryPolicy handlers $ const inner
   where
+    closeRequest (WS.CloseRequest _ _) = return ()
+    closeRequest e = Exception.throwM e
+
     handlers = Retry.skipAsyncExceptions ++ [exitOnSuccess, exitOnCloseRequest, logSyncExceptions]
 
     exitOnSuccess _ = Handler $ \(_ :: ExitCode) -> return False
@@ -106,8 +112,11 @@ gracefulShutdown connection = do
   WS.sendClose connection ("Closing." :: ByteString)
 
   -- Grace period
-  threadDelay (5 * 1000 * 1000)
-  throwIO $ WS.CloseRequest 1000 "No response to close request"
+  response <- Timeout.timeout (5 * 1000 * 1000) $ WS.receiveDataMessage connection
+
+  case response of
+    Nothing -> throwIO $ WS.CloseRequest 1000 "No response to close request"
+    Just _ -> return ()
 
 createHeaders ::
   -- | Agent name

@@ -18,6 +18,9 @@ import qualified Control.Concurrent.Async as Async
 import qualified Control.Concurrent.STM.TMQueue as TMQueue
 import qualified Control.Exception.Safe as Exception
 import qualified Data.Aeson as Aeson
+import Data.Conduit ((.|))
+import qualified Data.Conduit as Conduit
+import qualified Data.Conduit.Combinators as Conduit
 import qualified Data.Conduit.TQueue as Conduit
 import Data.Time.Clock (getCurrentTime)
 import qualified Data.UUID as UUID
@@ -50,8 +53,12 @@ main = do
           agentToken,
           profileName,
           host,
-          logOptions
+          logOptions,
+          agentInformation,
+          deploymentDetails
         } = deployment
+
+  let deploymentID = WSS.id (deploymentDetails :: WSS.DeploymentDetails)
 
   let headers = WebSocket.createHeaders agentName agentToken
   let websocketOptions =
@@ -63,94 +70,36 @@ main = do
           }
 
   Log.withLog logOptions $ \withLog ->
-    void . Lock.withTryLock profileName $
-      WebSocket.withConnection withLog websocketOptions $ \connection ->
-        deploy withLog deployment websocketOptions connection
+    void . Lock.withTryLock profileName $ do
+      backendQueue <- atomically TMQueue.newTMQueue
+      logQueue <- atomically TMQueue.newTMQueue
+      let finish = atomically $ TMQueue.closeTMQueue logQueue >> TMQueue.closeTMQueue backendQueue
+      r <-
+        Exception.tryAny $
+          Async.runConcurrently $
+            (,,)
+              <$> Concurrently (connectToBackend withLog websocketOptions agentInformation backendQueue)
+              <*> Concurrently (runLogStream withLog host (WebSocket.headers websocketOptions) deploymentID logQueue)
+              <*> Concurrently (deploy withLog deployment websocketOptions backendQueue (Conduit.sinkTMQueue logQueue) `finally` finish)
 
-deploy ::
-  -- | Logging context
-  Log.WithLog ->
-  -- | Deployment information passed from the agent
-  Agent.Deployment ->
-  -- | WebSocket options
-  WebSocket.Options ->
-  -- | Backend WebSocket connection
-  WS.Connection ->
-  IO ()
-deploy withLog deployment websocketOptions connection = do
-  withLog $ K.logLocM K.InfoS $ K.ls $ "Deploying #" <> index <> ": " <> storePath
+      withLog $ do
+        K.logLocM K.InfoS $ K.ls ("UNEXPECTED ERROR" :: Text)
+        K.logLocM K.InfoS $ K.ls (show r :: Text)
 
+runLogStream withLog host headers deploymentID logQueue = do
   let logPath = "/api/v1/deploy/log/" <> UUID.toText deploymentID
-  logQueue <- atomically TMQueue.newTMQueue
-  logThread <-
-    Async.async $ streamLog withLog host logPath headers logQueue
-  let logStream = Conduit.sinkTMQueue logQueue
+  streamLog withLog host logPath headers logQueue
 
-  result <- Activate.withCacheArgs host agentInformation agentToken $ \cacheArgs -> do
-    -- TODO: what if this fails
-    closureSize <- fromRight Nothing <$> Activate.getClosureSize cacheArgs storePath
-    startDeployment closureSize
+connectToBackend withLog websocketOptions agentInformation backendQueue =
+  WebSocket.withConnection withLog websocketOptions $ \connection -> do
+    Conduit.runConduit $
+      Conduit.sourceTMQueue backendQueue
+        .| Conduit.mapM_ (sendMessage connection)
 
-    Exception.tryIO $ Activate.activate logStream profileName deploymentDetails cacheArgs
-
-  let hasSucceeded = isRight result
-  when hasSucceeded $
-    Log.streamLine logStream "Successfully activated the deployment."
-
-  endDeployment hasSucceeded
-
-  -- Test network, run rollback script, and optionally trigger rollback
-
-  -- case result of
-  --   Left _ ->
-  --     K.logLocM K.InfoS $ K.ls $ "Deploying #" <> index <> " failed."
-  --   Right _ ->
-  --     K.logLocM K.InfoS $ K.ls $ "Deployment #" <> index <> " finished"
-
-  -- Cleanup
-
-  -- Stop logging
-  atomically (TMQueue.closeTMQueue logQueue)
-  wait logThread
-
-  WebSocket.gracefulShutdown connection
+    WebSocket.gracefulShutdown connection
   where
-    -- TODO: cut down record access boilerplate
-
-    -- Deployment details
-    storePath = WSS.storePath deploymentDetails
-    deploymentDetails = Agent.deploymentDetails deployment
-    deploymentID = WSS.id (deploymentDetails :: WSS.DeploymentDetails)
-    index = show $ WSS.index deploymentDetails
-    profileName = Agent.profileName deployment
-    agentToken = Agent.agentToken deployment
-    agentInformation = Agent.agentInformation deployment
-
-    -- WebSocket options
-    host = WebSocket.host websocketOptions
-    headers = WebSocket.headers websocketOptions
-
-    startDeployment closureSize = do
-      now <- getCurrentTime
-      sendMessage $
-        WSS.DeploymentStarted
-          { WSS.id = deploymentID,
-            WSS.time = now,
-            WSS.closureSize = closureSize
-          }
-
-    endDeployment :: Bool -> IO ()
-    endDeployment hasSucceeded = do
-      now <- getCurrentTime
-      sendMessage $
-        WSS.DeploymentFinished
-          { WSS.id = deploymentID,
-            WSS.time = now,
-            WSS.hasSucceeded = hasSucceeded
-          }
-
-    sendMessage :: WSS.AgentCommand -> IO ()
-    sendMessage cmd = do
+    sendMessage :: WS.Connection -> WSS.AgentCommand -> IO ()
+    sendMessage connection cmd = do
       command <- createMessage cmd
       WSS.sendMessage connection command
 
@@ -169,6 +118,85 @@ deploy withLog deployment websocketOptions connection = do
         method = case command of
           WSS.DeploymentStarted {} -> "DeploymentStarted"
           WSS.DeploymentFinished {} -> "DeploymentFinished"
+
+deploy ::
+  -- | Logging context
+  Log.WithLog ->
+  -- | Deployment information passed from the agent
+  Agent.Deployment ->
+  -- | WebSocket options
+  WebSocket.Options ->
+  -- | Backend WebSocket connection
+  TMQueue.TMQueue WSS.AgentCommand ->
+  -- | Logging WebSocket connection
+  Log.LogStream ->
+  IO ()
+deploy withLog deployment websocketOptions backendQueue logStream = do
+  withLog $ K.logLocM K.InfoS $ K.ls $ "Deploying #" <> index <> ": " <> storePath
+
+  result <- Exception.tryIO $
+    Activate.withCacheArgs host agentInformation agentToken $ \cacheArgs -> do
+      -- TODO: what if this fails
+      closureSize <- fromRight Nothing <$> Activate.getClosureSize cacheArgs storePath
+      startDeployment closureSize
+
+      Activate.activate logStream profileName deploymentDetails cacheArgs
+
+  let hasSucceeded = isRight result
+  when hasSucceeded $
+    Log.streamLine logStream "Successfully activated the deployment."
+
+  endDeployment hasSucceeded
+  where
+    -- Test network, run rollback script, and optionally trigger rollback
+
+    -- case result of
+    --   Left _ ->
+    --     K.logLocM K.InfoS $ K.ls $ "Deploying #" <> index <> " failed."
+    --   Right _ ->
+    --     K.logLocM K.InfoS $ K.ls $ "Deployment #" <> index <> " finished"
+
+    -- Cleanup
+
+    -- Stop logging
+    -- atomically (TMQueue.closeTMQueue logQueue)
+    -- wait logThread
+
+    -- TODO: cut down record access boilerplate
+
+    -- Deployment details
+    storePath = WSS.storePath deploymentDetails
+    deploymentDetails = Agent.deploymentDetails deployment
+    deploymentID = WSS.id (deploymentDetails :: WSS.DeploymentDetails)
+    index = show $ WSS.index deploymentDetails
+    profileName = Agent.profileName deployment
+    agentToken = Agent.agentToken deployment
+    agentInformation = Agent.agentInformation deployment
+
+    -- WebSocket options
+    host = WebSocket.host websocketOptions
+    headers = WebSocket.headers websocketOptions
+
+    startDeployment closureSize = do
+      now <- getCurrentTime
+      atomically $
+        TMQueue.writeTMQueue backendQueue $
+          WSS.DeploymentStarted
+            { WSS.id = deploymentID,
+              WSS.time = now,
+              WSS.closureSize = closureSize
+            }
+
+    endDeployment :: Bool -> IO ()
+    endDeployment hasSucceeded = do
+      now <- getCurrentTime
+      atomically $
+        TMQueue.writeTMQueue backendQueue $
+          WSS.DeploymentFinished
+            { WSS.id = deploymentID,
+              WSS.time = now,
+              WSS.hasSucceeded = hasSucceeded
+            }
 
 -- Log
 

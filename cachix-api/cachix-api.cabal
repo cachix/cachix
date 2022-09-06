@@ -4,9 +4,9 @@ version:            0.7.0
 synopsis:           Servant HTTP API specification for https://cachix.org
 homepage:           https://github.com/cachix/cachix#readme
 bug-reports:        https://github.com/cachix/cachix/issues
-author:             Domen Kožar
-maintainer:         domen@enlambda.com
-copyright:          2018 Domen Kožar
+author:             Domen Kozar
+maintainer:         domen@cachix.org
+copyright:          2018 Domen Kozar
 category:           Nix
 license:            Apache-2.0
 license-file:       LICENSE

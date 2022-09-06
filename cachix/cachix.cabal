@@ -3,10 +3,10 @@ name:               cachix
 version:            0.9.0
 license:            Apache-2.0
 license-file:       LICENSE
-copyright:          2018 Domen Kožar
+copyright:          2018 Domen Kozar
 category:           Nix
 maintainer:         domen@cachix.org
-author:             Domen Kožar
+author:             Domen Kozar
 homepage:           https://github.com/cachix/cachix#readme
 bug-reports:        https://github.com/cachix/cachix/issues
 synopsis:

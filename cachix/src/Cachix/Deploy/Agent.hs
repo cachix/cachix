@@ -8,7 +8,7 @@ import Cachix.Client.URI (getBaseUrl)
 import Cachix.Client.Version (versionNumber)
 import qualified Cachix.Deploy.Log as Log
 import qualified Cachix.Deploy.OptionsParser as AgentOptions
-import Cachix.Deploy.StdinProcess (readProcess)
+import qualified Cachix.Deploy.StdinProcess as StdinProcess
 import qualified Cachix.Deploy.Websocket as WebSocket
 import Control.Exception.Safe (handleAny, onException)
 import qualified Data.Aeson as Aeson
@@ -107,7 +107,7 @@ run cachixOptions agentOpts =
             Nothing -> pure ()
             Just agentInformation -> do
               binDir <- toS <$> getBinDir
-              readProcess (binDir <> "/.cachix-deployment") [] $
+              StdinProcess.spawnProcess (binDir <> "/.cachix-deployment") [] $
                 toS . Aeson.encode $
                   Deployment
                     { agentName = agentName,

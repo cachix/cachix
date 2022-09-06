@@ -12,12 +12,12 @@ jobs:
     - uses: nikita-volkov/edit-cabal-version.github-action@v1.1.0
       with:
         mode: set
-        set-value: github.ref_name
+        set-value: "${{ github.ref_name }}"
         work-dir: cachix
     - uses: nikita-volkov/edit-cabal-version.github-action@v1.1.0
       with:
         mode: set
-        set-value: github.ref_name
+        set-value: "${{ github.ref_name }}"
         work-dir: cachix-api
     - uses: stefanzweifel/git-auto-commit-action@v4
       with:

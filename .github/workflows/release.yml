@@ -2,26 +2,32 @@ name: "Release"
 on:
   push:
     tags:
-      - 1.**
+      - v**
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
-    - uses: haskell/actions/setup@v2
+    - name: Clean version
+      uses: mad9000/actions-find-and-replace-string@1
+      id: version
+      with:
+        source: "${{ github.ref_name }}"
+        find: 'v'
+        replace: ''
     - uses: nikita-volkov/edit-cabal-version.github-action@v1.1.0
       with:
         mode: set
-        set-value: "${{ github.ref_name }}"
+        set-value: "${{ steps.version.outputs.value }}"
         work-dir: cachix
     - uses: nikita-volkov/edit-cabal-version.github-action@v1.1.0
       with:
         mode: set
-        set-value: "${{ github.ref_name }}"
+        set-value: "${{ steps.version.outputs.value }}"
         work-dir: cachix-api
     - uses: stefanzweifel/git-auto-commit-action@v4
       with:
-        commit_message: "Bumping *.cabal to ${{ github.ref_name }}"
+        commit_message: "Bumping *.cabal to ${{ steps.version.outputs.value  }}"
         branch: master
     - run: cabal v2-sdist all
     - uses: haskell-actions/hackage-publish@v1

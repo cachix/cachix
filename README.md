@@ -16,8 +16,8 @@ Usage: cachix [--host URI] [-c|--config CONFIGPATH] [-v|--verbose]
 Available options:
   -h,--help                Show this help text
   --host URI               Host to connect to (default: https://cachix.org)
-  -c,--config CONFIGPATH   Cachix configuration
-                           file (default: "/home/ielectric/.config/cachix/cachix.dhall")
+  -c,--config CONFIGPATH   Cachix configuration file
+                           (default: "/home/domen/.config/cachix/cachix.dhall")
   -v,--verbose             Verbose mode
   -V,--version             Show cachix version
 
@@ -33,7 +33,7 @@ Available commands:
                            paths and upload them to a binary cache
   use                      Configure a binary cache by writing nix.conf and
                            netrc files
-
+  deploy                   Cachix Deploy commands
 ```
 
 

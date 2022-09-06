@@ -1,6 +1,6 @@
 - edit CHANGELOG.md
 - README.md `cachix --help` changes
-- git commit -m "vX.X.X"
-- git tag vX.X.X
+- git commit -m "X.X.X"
+- git tag X.X.X
 - git push --tags
 - bump link to https://cachix.org/api/v1/install

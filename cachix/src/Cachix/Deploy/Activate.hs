@@ -27,6 +27,7 @@ import Protolude hiding (log, toS)
 import Protolude.Conv (toS)
 import Servant.Auth.Client (Token (..))
 import System.Directory (canonicalizePath, doesPathExist)
+import System.FilePath ((</>))
 import System.IO.Temp (withSystemTempDirectory)
 import System.Process
 import System.Timeout (timeout)
@@ -119,12 +120,12 @@ activate options connection sourceStream deploymentDetails agentInfo agentToken 
     activateProfile :: Text -> (Maybe Text -> K.KatipContextT IO ()) -> K.KatipContextT IO ()
     activateProfile path action = do
       (profilePath, activationScripts) <- liftIO $ getActivationScript path (CachixWebsocket.profile options)
-      profileExists <- liftIO $ doesPathExist $ toS profilePath
+      profileExists <- liftIO $ doesPathExist profilePath
       -- in case we're doing the first deployment the profile won't exist so we can't rollback
       previousStorePath <-
         if profileExists
           then do
-            oldStorePath <- liftIO $ canonicalizePath $ toS profilePath
+            oldStorePath <- liftIO $ canonicalizePath profilePath
             return $ Just $ toS oldStorePath
           else return Nothing
       (activateProfileExitCode, _, _) <- liftIO $ shellOut "nix-env" ["-p", toS profilePath, "--set", toS path]
@@ -170,24 +171,24 @@ activate options connection sourceStream deploymentDetails agentInfo agentToken 
           WSS.DeploymentStarted {} -> "DeploymentStarted"
           WSS.DeploymentFinished {} -> "DeploymentFinished"
     -- TODO: home-manager
-    getActivationScript :: Text -> Text -> IO (Text, [Command])
+    getActivationScript :: Text -> Text -> IO (FilePath, [Command])
     getActivationScript storePath profile = do
-      isNixOS <- doesPathExist $ toS $ storePath <> "/nixos-version"
-      isNixDarwin <- doesPathExist $ toS $ storePath <> "/darwin-version"
+      isNixOS <- doesPathExist $ toS storePath </> "nixos-version"
+      isNixDarwin <- doesPathExist $ toS storePath </> "darwin-version"
       user <- InstallationMode.getUser
       (systemProfile, cmds) <- case (isNixOS, isNixDarwin) of
-        (True, _) -> return ("system", [(toS storePath <> "/bin/switch-to-configuration", ["switch"])])
+        (True, _) -> return ("system", [(toS storePath </> "bin/switch-to-configuration", ["switch"])])
         (_, True) ->
           -- https://github.com/LnL7/nix-darwin/blob/master/pkgs/nix-tools/darwin-rebuild.sh
           return
             ( "system-profiles/system",
               [ ("mkdir", ["-p", "-m", "0755", "/nix/var/nix/profiles/system-profiles"]),
-                (toS storePath <> "/activate-user", []),
-                (toS storePath <> "/activate", [])
+                (toS storePath </> "activate-user", []),
+                (toS storePath </> "activate", [])
               ]
             )
         (_, _) -> return ("system", [])
-      return ("/nix/var/nix/profiles/" <> if profile == "" then systemProfile else profile, cmds)
+      return ("/nix/var/nix/profiles" </> if profile == "" then systemProfile else toS profile, cmds)
 
 type Command = (String, [String])
 
@@ -203,7 +204,7 @@ extractClosureSize _ = Nothing
 withCacheArgs :: CachixWebsocket.Options -> WSS.AgentInformation -> ByteString -> ([String] -> K.KatipContextT IO ()) -> K.KatipContextT IO ()
 withCacheArgs options agentInfo agentToken m =
   withSystemTempDirectory "netrc" $ \dir -> do
-    let filepath = dir <> "netrc"
+    let filepath = dir </> "netrc"
     args <- case WSS.cache agentInfo of
       Just cache -> do
         -- TODO: ugh

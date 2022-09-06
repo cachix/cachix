@@ -22,6 +22,7 @@ jobs:
     - uses: stefanzweifel/git-auto-commit-action@v4
       with:
         commit_message: "Bumping *.cabal to ${{ github.ref_name }}"
+        branch: master
     - run: cabal v2-sdist all
     - uses: haskell-actions/hackage-publish@v1
       with:

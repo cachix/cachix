@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
+# [1.0.0] - 2022-09-06
+
+- Cachix Deploy: auto rollback if the agent can't connect to the backend service anymore
+
+- Cachix Deploy: allow specifying `rollbackScript`: https://docs.cachix.org/deploy/reference
+
+- Cachix Deploy: report `system` and closure size from the agent
+
+- Cachix Deploy: lock deployments so there's only one active at the time
+
+- Cachix Deploy: disable negative narinfo caching
+
 ## [0.8.1] - 2022-07-26
 
 - Cachix Deploy: retry exceptions every 1s instead of exponentially 

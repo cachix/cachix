@@ -16,4 +16,5 @@ jobs:
       with:
         branch: master
         work-dir: cachix
+        hackage-token: ${{ secrets.HACKAGE_AUTH_TOKEN }}
         

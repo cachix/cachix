@@ -8,32 +8,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
-    - name: Clean version
-      uses: mad9000/actions-find-and-replace-string@1
-      id: version
+    - uses: cachix/haskell-release-action@v1
       with:
-        source: "${{ github.ref_name }}"
-        find: 'v'
-        replace: ''
-    - uses: nikita-volkov/edit-cabal-version.github-action@v1.1.0
-      with:
-        mode: set
-        set-value: "${{ steps.version.outputs.value }}"
-        work-dir: cachix
-    - uses: nikita-volkov/edit-cabal-version.github-action@v1.1.0
-      with:
-        mode: set
-        set-value: "${{ steps.version.outputs.value }}"
-        work-dir: cachix-api
-    - uses: stefanzweifel/git-auto-commit-action@v4
-      with:
-        commit_message: "Bumping *.cabal to ${{ steps.version.outputs.value  }}"
         branch: master
-    - run: cabal v2-sdist all
-    - uses: haskell-actions/hackage-publish@v1
+        work-dir: cachix-api
+    - uses: cachix/haskell-release-action@v1
       with:
-        # http://hackage.haskell.org/users/account-management
-        hackageToken: ${{ secrets.HACKAGE_AUTH_TOKEN }}
-        packagesPath: dist-newstyle/sdist
-        #docsPath: ${{ runner.temp }}/docs
-        publish: true
+        branch: master
+        work-dir: cachix
+        

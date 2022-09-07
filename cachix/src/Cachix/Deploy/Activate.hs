@@ -55,16 +55,7 @@ activate ::
 activate options connection sourceStream deploymentDetails agentInfo agentToken = withCacheArgs options agentInfo agentToken $ \cacheArgs -> do
   let storePath = WSS.storePath deploymentDetails
   K.logLocM K.InfoS $ K.ls $ "Deploying #" <> index <> ": " <> WSS.storePath deploymentDetails
-  -- notify the service deployment started
-  (_, pathInfoJSON, _) <- liftIO $ shellNoStream "nix" (cacheArgs <> ["--extra-experimental-features", "nix-command", "path-info", "-S", "--json", toS storePath])
-  do
-    now <- liftIO getCurrentTime
-    sendMessage $
-      WSS.DeploymentStarted
-        { WSS.id = deploymentID,
-          WSS.time = now,
-          WSS.closureSize = maybe Nothing extractClosureSize (Aeson.decode (toS pathInfoJSON) :: Maybe Aeson.Value)
-        }
+  deploymentStarted Nothing
   -- TODO: add GC root so it's preserved for the next command
   -- get the store path using caches
   (downloadExitCode, _, _) <-
@@ -73,6 +64,10 @@ activate options connection sourceStream deploymentDetails agentInfo agentToken 
   case downloadExitCode of
     ExitFailure _ -> deploymentFailed
     ExitSuccess -> do
+      -- TODO: query the remote store to get the size before downloading (and possibly running out of disk space)
+      (_, pathInfoJSON, _) <- liftIO $ shellNoStream "nix" (cacheArgs <> ["--extra-experimental-features", "nix-command", "path-info", "-S", "--json", toS storePath])
+      deploymentStarted $ extractClosureSize =<< Aeson.decode (toS pathInfoJSON)
+
       activateProfile storePath $ \oldStorePath -> do
         -- connect the the backend to see if we broke networking
         websocketSucceeded <- liftIO $ timeout (10 * 1000 * 1000) $ CachixWebsocket.runOnce options $ \_ _ _ _ -> return ()
@@ -98,6 +93,14 @@ activate options connection sourceStream deploymentDetails agentInfo agentToken 
       liftIO $ log "Successfully activated the deployment."
       K.logLocM K.InfoS $ K.ls $ "Deployment #" <> index <> " finished"
       hackFlush
+    deploymentStarted closureSize = do
+      now <- liftIO getCurrentTime
+      sendMessage $
+        WSS.DeploymentStarted
+          { WSS.id = deploymentID,
+            WSS.time = now,
+            WSS.closureSize = closureSize
+          }
     deploymentFinished hasSucceeded now =
       WSS.DeploymentFinished
         { WSS.id = deploymentID,

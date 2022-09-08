@@ -66,7 +66,7 @@ run cachixOptions agentOpts =
               }
 
       WebSocket.withConnection withLog websocketOptions $ \connection ->
-        WSS.recieveDataConcurrently connection $ \message ->
+        WSS.receiveDataConcurrently connection $ \message ->
           handleMessage withLog agentState agentName agentToken connection message
   where
     host = toS $ Servant.baseUrlHost $ getBaseUrl $ Config.host cachixOptions

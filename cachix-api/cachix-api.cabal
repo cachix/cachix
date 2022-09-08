@@ -79,10 +79,12 @@ library
     , nix-narinfo
     , protolude
     , resourcet
+    , safe-exceptions
     , servant               >=0.14.1
     , servant-auth
     , servant-auth-swagger
     , servant-client
+    , stm-chans
     , string-conv
     , swagger2
     , text

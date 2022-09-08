@@ -5,7 +5,8 @@
 module Cachix.API.WebSocketSubprotocol where
 
 import qualified Control.Concurrent.Async as Async
-import qualified Control.Concurrent.Chan as Chan
+import qualified Control.Concurrent.STM.TMQueue as TMQueue
+import qualified Control.Exception.Safe as Exception
 import qualified Data.Aeson as Aeson
 import Data.Time (UTCTime)
 import Data.UUID (UUID)
@@ -61,25 +62,44 @@ sendMessage :: Aeson.ToJSON cmd => WS.Connection -> Message cmd -> IO ()
 sendMessage connection cmd =
   WS.sendTextData connection $ Aeson.encode cmd
 
+-- | Receive and process messages in parallel.
+--
+-- Note: This will not rethrow the 'CloseRequest' exception!
+--
 -- TODO: use Async.replicateConcurrently
-recieveDataConcurrently :: WS.Connection -> (ByteString -> IO ()) -> IO ()
-recieveDataConcurrently connection m =
+receiveDataConcurrently :: WS.Connection -> (ByteString -> IO ()) -> IO ()
+receiveDataConcurrently connection action =
   do
-    channel <- Chan.newChan
-    Async.race_ (producer channel) (consumer channel)
-    `catch` ( \(e :: WS.ConnectionException) -> do
-                case e of
-                  WS.CloseRequest _ _ -> return ()
-                  WS.ConnectionClosed -> return ()
-                  _ -> throwIO e
-            )
+    queue <- atomically TMQueue.newTMQueue
+    Async.withAsync (consumer queue) (producer queue)
   where
-    producer channel = forever $ do
-      payload <- WS.receiveData connection
-      Chan.writeChan channel payload
-    consumer channel = forever $ do
-      payload <- Chan.readChan channel
-      m payload
+    producer queue consumerThread =
+      loop
+        `Exception.catch` closeRequest
+        `Exception.finally` closeGracefully queue consumerThread
+      where
+        loop = do
+          payload <- WS.receiveData connection
+          atomically $ TMQueue.writeTMQueue queue payload
+          loop
+
+    consumer queue = loop
+      where
+        loop = do
+          payload <- atomically $ TMQueue.readTMQueue queue
+          case payload of
+            Nothing -> return ()
+            Just msg -> action msg *> loop
+
+    -- Close the queue and wait for the consumer finish processing messages.
+    closeGracefully :: TMQueue.TMQueue a -> Async.Async () -> IO ()
+    closeGracefully queue consumerThread = do
+      atomically $ TMQueue.closeTMQueue queue
+      Async.wait consumerThread
+
+    closeRequest :: WS.ConnectionException -> IO ()
+    closeRequest (WS.CloseRequest _ _) = return ()
+    closeRequest e = throwIO e
 
 data Log = Log
   { line :: Text,

@@ -68,6 +68,7 @@ withConnection withLog options app = do
       WS.withPingThread connection pingEvery pingHandler $
         app connection
 
+-- Log all exceptions and retry, except when the websocket receives a close request.
 -- TODO: use exponential retry with reset: https://github.com/Soostone/retry/issues/25
 reconnectWithLog :: (MonadMask m, MonadIO m) => Log.WithLog -> m () -> m ()
 reconnectWithLog withLog inner =

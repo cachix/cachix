@@ -46,20 +46,19 @@ main = do
   hSetBuffering stdout LineBuffering
   hSetBuffering stderr LineBuffering
 
-  deployment <- escalateAs (FatalError . toS) . Aeson.eitherDecode . toS =<< getContents
-
-  let Agent.Deployment
-        { agentName,
-          agentToken,
-          profileName,
-          host,
-          logOptions,
-          agentInformation,
-          deploymentDetails
-        } = deployment
+  deployment@Agent.Deployment
+    { agentName,
+      agentToken,
+      profileName,
+      host,
+      logOptions,
+      agentInformation,
+      deploymentDetails
+    } <-
+    escalateAs (FatalError . toS) . Aeson.eitherDecode . toS =<< getContents
 
   let deploymentID = WSS.id (deploymentDetails :: WSS.DeploymentDetails)
-
+  let logPath = "/api/v1/deploy/log/" <> UUID.toText deploymentID
   let headers = WebSocket.createHeaders agentName agentToken
   let websocketOptions =
         WebSocket.Options
@@ -73,23 +72,23 @@ main = do
     void . Lock.withTryLock profileName $ do
       backendQueue <- atomically TMQueue.newTMQueue
       logQueue <- atomically TMQueue.newTMQueue
-      let finish = atomically $ TMQueue.closeTMQueue logQueue >> TMQueue.closeTMQueue backendQueue
-      r <-
-        Exception.tryAny $
-          Async.runConcurrently $
-            (,,)
-              <$> Concurrently (connectToBackend withLog websocketOptions agentInformation backendQueue)
-              <*> Concurrently (runLogStream withLog host (WebSocket.headers websocketOptions) deploymentID logQueue)
-              <*> Concurrently (deploy withLog deployment websocketOptions backendQueue (Conduit.sinkTMQueue logQueue) `finally` finish)
 
-      withLog $ do
-        K.logLocM K.InfoS $ K.ls ("UNEXPECTED ERROR" :: Text)
-        K.logLocM K.InfoS $ K.ls (show r :: Text)
+      Async.withAsync (streamLog withLog host logPath (WebSocket.headers websocketOptions) logQueue) $ \logThread ->
+        Async.withAsync (connectToBackend withLog websocketOptions agentInformation backendQueue) $ \backendThread ->
+          Exception.tryAny $
+            deploy withLog deployment websocketOptions backendQueue (Conduit.sinkTMQueue logQueue)
+              `Exception.finally` do
+                atomically $ do
+                  TMQueue.closeTMQueue logQueue
+                  TMQueue.closeTMQueue backendQueue
+                  Async.waitBothSTM logThread backendThread
 
-runLogStream withLog host headers deploymentID logQueue = do
-  let logPath = "/api/v1/deploy/log/" <> UUID.toText deploymentID
-  streamLog withLog host logPath headers logQueue
-
+connectToBackend ::
+  Log.WithLog ->
+  WebSocket.Options ->
+  WSS.AgentInformation ->
+  TMQueue.TMQueue WSS.AgentCommand ->
+  IO ()
 connectToBackend withLog websocketOptions agentInformation backendQueue =
   WebSocket.withConnection withLog websocketOptions $ \connection -> do
     Conduit.runConduit $
@@ -134,7 +133,7 @@ deploy ::
 deploy withLog deployment websocketOptions backendQueue logStream = do
   withLog $ K.logLocM K.InfoS $ K.ls $ "Deploying #" <> index <> ": " <> storePath
 
-  result <- Exception.tryIO $
+  deploymentStatus <- Exception.tryIO $
     Activate.withCacheArgs host agentInformation agentToken $ \cacheArgs -> do
       -- TODO: what if this fails
       closureSize <- fromRight Nothing <$> Activate.getClosureSize cacheArgs storePath
@@ -142,41 +141,36 @@ deploy withLog deployment websocketOptions backendQueue logStream = do
 
       Activate.activate logStream profileName deploymentDetails cacheArgs
 
-  let hasSucceeded = isRight result
-  when hasSucceeded $
-    Log.streamLine logStream "Successfully activated the deployment."
+  -- TODO: Test network, run rollback script, and optionally trigger rollback
 
-  endDeployment hasSucceeded
+  case deploymentStatus of
+    Left _ -> do
+      Log.streamLine logStream "Failed to activate the deployment."
+      withLog $ K.logLocM K.InfoS $ K.ls $ "Deploying #" <> deploymentIndex <> " failed."
+    Right _ -> do
+      Log.streamLine logStream "Successfully activated the deployment."
+      withLog $ K.logLocM K.InfoS $ K.ls $ "Deployment #" <> deploymentIndex <> " finished"
+
+  endDeployment (isRight deploymentStatus)
   where
-    -- Test network, run rollback script, and optionally trigger rollback
-
-    -- case result of
-    --   Left _ ->
-    --     K.logLocM K.InfoS $ K.ls $ "Deploying #" <> index <> " failed."
-    --   Right _ ->
-    --     K.logLocM K.InfoS $ K.ls $ "Deployment #" <> index <> " finished"
-
-    -- Cleanup
-
-    -- Stop logging
-    -- atomically (TMQueue.closeTMQueue logQueue)
-    -- wait logThread
-
     -- TODO: cut down record access boilerplate
 
     -- Deployment details
+
     storePath = WSS.storePath deploymentDetails
     deploymentDetails = Agent.deploymentDetails deployment
     deploymentID = WSS.id (deploymentDetails :: WSS.DeploymentDetails)
-    index = show $ WSS.index deploymentDetails
+    deploymentIndex = show $ WSS.index deploymentDetails
     profileName = Agent.profileName deployment
     agentToken = Agent.agentToken deployment
     agentInformation = Agent.agentInformation deployment
 
     -- WebSocket options
+
     host = WebSocket.host websocketOptions
     headers = WebSocket.headers websocketOptions
 
+    startDeployment :: Maybe Int64 -> IO ()
     startDeployment closureSize = do
       now <- getCurrentTime
       atomically $

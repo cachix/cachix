@@ -77,12 +77,15 @@ main = do
         Async.withAsync (connectToBackend withLog websocketOptions agentInformation backendQueue) $ \backendThread ->
           Exception.tryAny $
             deploy withLog deployment websocketOptions backendQueue (Conduit.sinkTMQueue logQueue)
-              `Exception.finally` do
-                atomically $ do
-                  TMQueue.closeTMQueue logQueue
-                  TMQueue.closeTMQueue backendQueue
-                  Async.waitBothSTM logThread backendThread
+              `Exception.finally` atomically
+                ( do
+                    TMQueue.closeTMQueue logQueue
+                    TMQueue.closeTMQueue backendQueue
+                    void $ Async.waitBothSTM logThread backendThread
+                )
 
+-- | Maintain a websocket connection to the backend for sending deployment
+-- progress updates.
 connectToBackend ::
   Log.WithLog ->
   WebSocket.Options ->
@@ -94,8 +97,6 @@ connectToBackend withLog websocketOptions agentInformation backendQueue =
     Conduit.runConduit $
       Conduit.sourceTMQueue backendQueue
         .| Conduit.mapM_ (sendMessage connection)
-
-    WebSocket.gracefulShutdown connection
   where
     sendMessage :: WS.Connection -> WSS.AgentCommand -> IO ()
     sendMessage connection cmd = do
@@ -118,20 +119,21 @@ connectToBackend withLog websocketOptions agentInformation backendQueue =
           WSS.DeploymentStarted {} -> "DeploymentStarted"
           WSS.DeploymentFinished {} -> "DeploymentFinished"
 
+-- | Run the deployment commands
 deploy ::
   -- | Logging context
   Log.WithLog ->
   -- | Deployment information passed from the agent
   Agent.Deployment ->
-  -- | WebSocket options
+  -- | Websocket options
   WebSocket.Options ->
-  -- | Backend WebSocket connection
+  -- | Message queue for the backend websocket connection
   TMQueue.TMQueue WSS.AgentCommand ->
-  -- | Logging WebSocket connection
+  -- | Logging Websocket connection
   Log.LogStream ->
   IO ()
 deploy withLog deployment websocketOptions backendQueue logStream = do
-  withLog $ K.logLocM K.InfoS $ K.ls $ "Deploying #" <> index <> ": " <> storePath
+  withLog $ K.logLocM K.InfoS $ K.ls $ "Deploying #" <> deploymentIndex <> ": " <> storePath
 
   deploymentStatus <- Exception.tryIO $
     Activate.withCacheArgs host agentInformation agentToken $ \cacheArgs -> do
@@ -209,6 +211,6 @@ streamLog ::
   IO ()
 streamLog withLog host path headers queue = do
   WebSocket.reconnectWithLog withLog $
-    Wuss.runSecureClientWith (toS host) 443 (toS path) WS.defaultConnectionOptions headers $ \connection -> do
+    Wuss.runSecureClientWith (toS host) 443 (toS path) WS.defaultConnectionOptions headers $ \connection ->
       Log.streamLog withLog connection queue
-      WebSocket.gracefulShutdown connection
+        `Exception.finally` WebSocket.gracefulShutdown connection

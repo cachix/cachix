@@ -1,6 +1,5 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 
 module Main
   ( main,
@@ -170,7 +169,6 @@ deploy withLog deployment websocketOptions backendQueue logStream = do
     -- WebSocket options
 
     host = WebSocket.host websocketOptions
-    headers = WebSocket.headers websocketOptions
 
     startDeployment :: Maybe Int64 -> IO ()
     startDeployment closureSize = do

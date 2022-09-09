@@ -15,7 +15,6 @@ import qualified Data.Aeson as Aeson
 import Data.IORef
 import Data.String (String)
 import qualified Katip as K
-import qualified Network.WebSockets as WS
 import Paths_cachix (getBinDir)
 import Protolude hiding (onException, toS)
 import Protolude.Conv
@@ -27,24 +26,26 @@ import qualified System.Posix.User as Posix.User
 
 type AgentState = IORef (Maybe WSS.AgentInformation)
 
+-- | Everything required for the standalone deployment binary to complete a
+-- deployment.
 data Deployment = Deployment
   { agentName :: Text,
     agentToken :: Text,
     profileName :: Text,
     host :: Text,
+    logOptions :: Log.Options,
     deploymentDetails :: WSS.DeploymentDetails,
-    agentInformation :: WSS.AgentInformation,
-    logOptions :: Log.Options
+    agentInformation :: WSS.AgentInformation
   }
   deriving (Show, Generic, Aeson.ToJSON, Aeson.FromJSON)
+
+agentIdentifier :: Text -> Text
+agentIdentifier agentName = agentName <> " " <> toS versionNumber
 
 registerAgent :: AgentState -> WSS.AgentInformation -> K.KatipContextT IO ()
 registerAgent agentState agentInformation = do
   K.logLocM K.InfoS "Agent registered."
   liftIO $ atomicWriteIORef agentState (Just agentInformation)
-
-agentIdentifier :: Text -> Text
-agentIdentifier agentName = agentName <> " " <> toS versionNumber
 
 run :: Config.CachixOptions -> AgentOptions.AgentOptions -> IO ()
 run cachixOptions agentOpts =
@@ -104,6 +105,8 @@ run cachixOptions agentOpts =
           agentRegistered <- readIORef agentState
 
           case agentRegistered of
+            -- TODO: this is currently not possible, but relies on the backend
+            -- to do the right thing. Can we improve the typing here?
             Nothing -> pure ()
             Just agentInformation -> do
               binDir <- toS <$> getBinDir

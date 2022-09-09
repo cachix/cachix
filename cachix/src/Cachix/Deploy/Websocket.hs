@@ -3,7 +3,6 @@
 -- high level interface for websocket clients
 module Cachix.Deploy.Websocket where
 
-import qualified Cachix.API.WebSocketSubprotocol as WSS
 import qualified Cachix.Client.Retry as Retry
 import Cachix.Client.Version (versionNumber)
 import qualified Cachix.Deploy.Log as Log
@@ -11,7 +10,6 @@ import qualified Cachix.Deploy.WebsocketPong as WebsocketPong
 import Control.Exception.Safe (Handler (..), MonadMask, isSyncException)
 import qualified Control.Exception.Safe as Exception
 import qualified Control.Retry as Retry
-import qualified Data.Aeson as Aeson
 import Data.String (String)
 import qualified Katip as K
 import qualified Network.HTTP.Simple as HTTP
@@ -63,10 +61,13 @@ withConnection withLog options app = do
     WebsocketPong.pongHandler pongState
 
     -- TODO: https://github.com/jaspervdj/websockets/issues/229
-    Wuss.runSecureClientWith (toS $ host options) 443 (toS $ path options) connectionOptions (headers options) $ \connection -> do
-      withLog $ K.logLocM K.InfoS "Connected to Cachix Deploy service"
-      WS.withPingThread connection pingEvery pingHandler $
-        app connection
+    Wuss.runSecureClientWith (toS $ host options) 443 (toS $ path options) connectionOptions (headers options) $
+      \connection ->
+        do
+          withLog $ K.logLocM K.InfoS "Connected to Cachix Deploy service"
+          WS.withPingThread connection pingEvery pingHandler $
+            app connection
+          `Exception.finally` gracefulShutdown connection
 
 -- Log all exceptions and retry, except when the websocket receives a close request.
 -- TODO: use exponential retry with reset: https://github.com/Soostone/retry/issues/25

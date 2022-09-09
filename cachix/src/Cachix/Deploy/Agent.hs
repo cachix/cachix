@@ -67,7 +67,7 @@ run cachixOptions agentOpts =
 
       WebSocket.withConnection withLog websocketOptions $ \connection ->
         WSS.receiveDataConcurrently connection $ \message ->
-          handleMessage withLog agentState agentName agentToken connection message
+          handleMessage withLog agentState agentName agentToken message
   where
     host = toS $ Servant.baseUrlHost $ getBaseUrl $ Config.host cachixOptions
     profileName = fromMaybe "system" (AgentOptions.profile agentOpts)
@@ -88,8 +88,8 @@ run cachixOptions agentOpts =
           environment = "production"
         }
 
-    handleMessage :: Log.WithLog -> AgentState -> Text -> Text -> WS.Connection -> ByteString -> IO ()
-    handleMessage withLog agentState agentName agentToken _ payload =
+    handleMessage :: Log.WithLog -> AgentState -> Text -> Text -> ByteString -> IO ()
+    handleMessage withLog agentState agentName agentToken payload =
       case WSS.parseMessage payload of
         Left err ->
           -- TODO: show the bytestring?

@@ -73,9 +73,10 @@ receiveDataConcurrently connection action =
   where
     producer queue consumerThread =
       loop
-        `Exception.catch` closeRequest
         `Exception.finally` closeGracefully queue consumerThread
       where
+        -- `Exception.catch` closeRequest
+
         loop = do
           payload <- WS.receiveData connection
           atomically $ TMQueue.writeTMQueue queue payload

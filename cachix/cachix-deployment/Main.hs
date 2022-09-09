@@ -31,6 +31,7 @@ import qualified Network.WebSockets as WS
 import Protolude hiding (toS)
 import Protolude.Conv
 import System.IO (BufferMode (..), hSetBuffering)
+import qualified System.Timeout as Timeout
 import qualified Wuss
 
 -- | Activate the new deployment.
@@ -67,21 +68,26 @@ main = do
             WebSocket.agentIdentifier = Agent.agentIdentifier agentName
           }
 
-  Log.withLog logOptions $ \withLog ->
+  Log.withLog logOptions $ \withLog -> do
     void . Lock.withTryLock profileName $ do
       backendQueue <- atomically TMQueue.newTMQueue
       logQueue <- atomically TMQueue.newTMQueue
 
-      Async.withAsync (streamLog withLog host logPath (WebSocket.headers websocketOptions) logQueue) $ \logThread ->
-        Async.withAsync (connectToBackend withLog websocketOptions agentInformation backendQueue) $ \backendThread ->
+      Async.withAsync (connectToBackend withLog websocketOptions agentInformation backendQueue) $ \backendThread ->
+        Async.withAsync (streamLog withLog host logPath (WebSocket.headers websocketOptions) logQueue) $ \logThread ->
           Exception.tryAny $
             deploy withLog deployment websocketOptions backendQueue (Conduit.sinkTMQueue logQueue)
-              `Exception.finally` atomically
-                ( do
-                    TMQueue.closeTMQueue logQueue
-                    TMQueue.closeTMQueue backendQueue
-                    void $ Async.waitBothSTM logThread backendThread
-                )
+              `Exception.finally` do
+                withLog $ K.logLocM K.InfoS $ K.ls ("Cleaning up websocket connections" :: Text)
+                atomically $ do
+                  TMQueue.closeTMQueue logQueue
+                  TMQueue.closeTMQueue backendQueue
+                withLog $ K.logLocM K.InfoS $ K.ls ("Waiting for log stream to finish" :: Text)
+                Async.wait logThread
+                withLog $ K.logLocM K.InfoS $ K.ls ("Waiting for backend service to disconnect" :: Text)
+                Async.wait backendThread
+
+    withLog $ K.logLocM K.InfoS $ K.ls ("Exiting deployment binary" :: Text)
 
 -- | Maintain a websocket connection to the backend for sending deployment
 -- progress updates.
@@ -211,4 +217,3 @@ streamLog withLog host path headers queue = do
   WebSocket.reconnectWithLog withLog $
     Wuss.runSecureClientWith (toS host) 443 (toS path) WS.defaultConnectionOptions headers $ \connection ->
       Log.streamLog withLog connection queue
-        `Exception.finally` WebSocket.gracefulShutdown connection

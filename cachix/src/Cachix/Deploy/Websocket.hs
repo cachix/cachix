@@ -102,7 +102,11 @@ reconnectWithLog withLog inner =
 
     delay :: Maybe Int -> String
     delay Nothing = "0 seconds"
-    delay (Just s) = show (floor (fromIntegral s / 1000 / 1000)) <> " seconds"
+    delay (Just t) = show (toSeconds t) <> " seconds"
+
+    toSeconds :: Int -> Int
+    toSeconds t =
+      floor $ (fromIntegral t :: Double) / 1000 / 1000
 
 -- | Try to gracefully close the WebSocket.
 --

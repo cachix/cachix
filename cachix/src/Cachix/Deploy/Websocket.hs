@@ -8,7 +8,7 @@ import Cachix.Client.Version (versionNumber)
 import qualified Cachix.Deploy.Log as Log
 import qualified Cachix.Deploy.WebsocketPong as WebsocketPong
 import Control.Exception.Safe (Handler (..), MonadMask, isSyncException)
-import qualified Control.Exception.Safe as Exception
+import qualified Control.Exception.Safe as Safe
 import qualified Control.Retry as Retry
 import Data.String (String)
 import qualified Katip as K
@@ -67,17 +67,17 @@ withConnection withLog options app = do
           withLog $ K.logLocM K.InfoS "Connected to Cachix Deploy service"
           WS.withPingThread connection pingEvery pingHandler $
             app connection
-          `Exception.finally` gracefulShutdown connection
+          `finally` waitForGracefulShutdown connection
 
 -- Log all exceptions and retry, except when the websocket receives a close request.
 -- TODO: use exponential retry with reset: https://github.com/Soostone/retry/issues/25
 reconnectWithLog :: (MonadMask m, MonadIO m) => Log.WithLog -> m () -> m ()
 reconnectWithLog withLog inner =
-  Exception.handle closeRequest $
+  Safe.handle closeRequest $
     Retry.recovering Retry.endlessConstantRetryPolicy handlers $ const inner
   where
     closeRequest (WS.CloseRequest _ _) = return ()
-    closeRequest e = Exception.throwM e
+    closeRequest e = Safe.throwM e
 
     handlers = Retry.skipAsyncExceptions ++ [exitOnSuccess, exitOnCloseRequest, logSyncExceptions]
 
@@ -88,7 +88,7 @@ reconnectWithLog withLog inner =
         WS.CloseRequest _ _ -> do
           liftIO . withLog $
             K.logLocM K.DebugS . K.ls $
-              ("Received close request from peer. Closing connection." :: Text)
+              ("Received close request from peer. Closing connection" :: Text)
           return False
         _ -> return True
 
@@ -110,19 +110,20 @@ reconnectWithLog withLog inner =
 
 -- | Try to gracefully close the WebSocket.
 --
+-- Do not run with asynchronous exceptions masked, ie. Control.Exception.Safe.finally.
+--
 -- We send a close request to the peer and continue processing
 -- any incoming messages until the server replies with its own
 -- close control message.
-gracefulShutdown :: WS.Connection -> IO ()
-gracefulShutdown connection = do
+waitForGracefulShutdown :: WS.Connection -> IO ()
+waitForGracefulShutdown connection = do
   WS.sendClose connection ("Closing." :: ByteString)
 
   -- Grace period
-  response <- Timeout.timeout (5 * 1000 * 1000) $ WS.receiveDataMessage connection
+  response <- Timeout.timeout (5 * 1000 * 1000) $ forever (WS.receiveDataMessage connection)
 
-  case response of
-    Nothing -> throwIO $ WS.CloseRequest 1000 "No response to close request"
-    Just _ -> return ()
+  when (isNothing response) $
+    throwIO $ WS.CloseRequest 1000 "No response to close request"
 
 createHeaders ::
   -- | Agent name

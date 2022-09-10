@@ -15,7 +15,7 @@ import qualified Cachix.Deploy.Log as Log
 import qualified Cachix.Deploy.Websocket as WebSocket
 import qualified Control.Concurrent.Async as Async
 import qualified Control.Concurrent.STM.TMQueue as TMQueue
-import qualified Control.Exception.Safe as Exception
+import qualified Control.Exception.Safe as Safe
 import qualified Data.Aeson as Aeson
 import Data.Conduit ((.|))
 import qualified Data.Conduit as Conduit
@@ -73,21 +73,15 @@ main = do
       backendQueue <- atomically TMQueue.newTMQueue
       logQueue <- atomically TMQueue.newTMQueue
 
-      Async.withAsync (connectToBackend withLog websocketOptions agentInformation backendQueue) $ \backendThread ->
-        Async.withAsync (streamLog withLog host logPath (WebSocket.headers websocketOptions) logQueue) $ \logThread ->
-          Exception.tryAny $
-            deploy withLog deployment websocketOptions backendQueue (Conduit.sinkTMQueue logQueue)
-              `Exception.finally` do
-                withLog $ K.logLocM K.InfoS $ K.ls ("Cleaning up websocket connections" :: Text)
-                atomically $ do
-                  TMQueue.closeTMQueue logQueue
-                  TMQueue.closeTMQueue backendQueue
-                withLog $ K.logLocM K.InfoS $ K.ls ("Waiting for log stream to finish" :: Text)
-                Async.wait logThread
-                withLog $ K.logLocM K.InfoS $ K.ls ("Waiting for backend service to disconnect" :: Text)
-                Async.wait backendThread
-
-    withLog $ K.logLocM K.InfoS $ K.ls ("Exiting deployment binary" :: Text)
+      Async.withAsync (streamLog withLog host logPath (WebSocket.headers websocketOptions) logQueue) $ \logThread ->
+        Async.withAsync (connectToBackend withLog websocketOptions agentInformation backendQueue) $ \backendThread ->
+          deploy withLog deployment websocketOptions backendQueue (Conduit.sinkTMQueue logQueue)
+            `finally` do
+              withLog $ K.logLocM K.DebugS $ K.ls ("Cleaning up websocket connections" :: Text)
+              atomically $ do
+                TMQueue.closeTMQueue logQueue
+                TMQueue.closeTMQueue backendQueue
+              Async.waitBoth logThread backendThread
 
 -- | Maintain a websocket connection to the backend for sending deployment
 -- progress updates.
@@ -140,7 +134,7 @@ deploy ::
 deploy withLog deployment websocketOptions backendQueue logStream = do
   withLog $ K.logLocM K.InfoS $ K.ls $ "Deploying #" <> deploymentIndex <> ": " <> storePath
 
-  deploymentStatus <- Exception.tryIO $
+  deploymentStatus <- Safe.tryIO $
     Activate.withCacheArgs host agentInformation agentToken $ \cacheArgs -> do
       -- TODO: what if this fails
       closureSize <- fromRight Nothing <$> Activate.getClosureSize cacheArgs storePath
@@ -217,3 +211,4 @@ streamLog withLog host path headers queue = do
   WebSocket.reconnectWithLog withLog $
     Wuss.runSecureClientWith (toS host) 443 (toS path) WS.defaultConnectionOptions headers $ \connection ->
       Log.streamLog withLog connection queue
+        `finally` WebSocket.waitForGracefulShutdown connection

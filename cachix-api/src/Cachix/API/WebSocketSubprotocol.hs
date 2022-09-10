@@ -4,7 +4,7 @@ module Cachix.API.WebSocketSubprotocol where
 
 import qualified Control.Concurrent.Async as Async
 import qualified Control.Concurrent.STM.TMQueue as TMQueue
-import qualified Control.Exception.Safe as Exception
+import qualified Control.Exception.Safe as Safe
 import qualified Data.Aeson as Aeson
 import Data.Time (UTCTime)
 import Data.UUID (UUID)
@@ -73,10 +73,9 @@ receiveDataConcurrently connection action =
   where
     producer queue consumerThread =
       loop
-        `Exception.finally` closeGracefully queue consumerThread
+        `finally` closeGracefully queue consumerThread
+        `Safe.catch` closeRequest
       where
-        -- `Exception.catch` closeRequest
-
         loop = do
           payload <- WS.receiveData connection
           atomically $ TMQueue.writeTMQueue queue payload

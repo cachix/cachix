@@ -25,6 +25,7 @@ common defaults
     DeriveAnyClass
     DeriveGeneric
     DerivingVia
+    LambdaCase
     NamedFieldPuns
     OverloadedStrings
 

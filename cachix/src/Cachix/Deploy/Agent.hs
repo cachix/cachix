@@ -10,6 +10,7 @@ import qualified Cachix.Deploy.Log as Log
 import qualified Cachix.Deploy.OptionsParser as AgentOptions
 import qualified Cachix.Deploy.StdinProcess as StdinProcess
 import qualified Cachix.Deploy.Websocket as WebSocket
+import qualified Control.Concurrent.MVar as MVar
 import Control.Exception.Safe (handleAny, onException)
 import qualified Data.Aeson as Aeson
 import Data.IORef
@@ -66,8 +67,9 @@ run cachixOptions agentOpts =
                 WebSocket.agentIdentifier = agentIdentifier agentName
               }
 
-      WebSocket.withConnection withLog websocketOptions $ \connection ->
-        WSS.receiveDataConcurrently connection $ \message ->
+      WebSocket.withConnection withLog websocketOptions $ \WebSocket.WebSocket {connection} -> do
+        activeConnection <- MVar.readMVar connection
+        WSS.receiveDataConcurrently activeConnection $ \message ->
           handleMessage withLog agentState agentName agentToken message
   where
     host = toS $ Servant.baseUrlHost $ getBaseUrl $ Config.host cachixOptions

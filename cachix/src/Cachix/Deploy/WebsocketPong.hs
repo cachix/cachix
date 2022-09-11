@@ -2,7 +2,8 @@
 -- TODO: upstream to https://github.com/jaspervdj/websockets/issues/159
 module Cachix.Deploy.WebsocketPong where
 
-import Data.IORef
+import Data.IORef (IORef)
+import qualified Data.IORef as IORef
 import Data.Time.Clock (UTCTime, diffUTCTime, getCurrentTime, nominalDiffTimeToSeconds)
 import qualified Network.WebSockets as WS
 import Protolude
@@ -18,25 +19,25 @@ instance Exception WebsocketPongTimeout
 newState :: IO LastPongState
 newState = do
   now <- getCurrentTime
-  newIORef now
+  IORef.newIORef now
 
 -- everytime we send a ping we check if we also got a pong back
 pingHandler :: LastPongState -> ThreadId -> Int -> IO ()
-pingHandler state threadID maxLastPing = do
-  last <- secondsSinceLastPong state
+pingHandler pong threadID maxLastPing = do
+  last <- secondsSinceLastPong pong
   when (last > maxLastPing) $ do
     throwTo threadID WebsocketPongTimeout
 
 secondsSinceLastPong :: LastPongState -> IO Int
-secondsSinceLastPong state = do
+secondsSinceLastPong pong = do
+  last <- IORef.readIORef pong
   now <- getCurrentTime
-  last <- readIORef state
   return $ ceiling $ nominalDiffTimeToSeconds $ diffUTCTime now last
 
 pongHandler :: LastPongState -> IO ()
-pongHandler state = do
+pongHandler pong = do
   now <- getCurrentTime
-  writeIORef state now
+  void $ IORef.atomicWriteIORef pong now
 
 installPongHandler :: LastPongState -> WS.ConnectionOptions -> WS.ConnectionOptions
-installPongHandler state opts = opts {WS.connectionOnPong = pongHandler state}
+installPongHandler pong opts = opts {WS.connectionOnPong = pongHandler pong}

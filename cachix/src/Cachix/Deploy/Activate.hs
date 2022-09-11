@@ -7,7 +7,6 @@ import qualified Cachix.API.WebSocketSubprotocol as WSS
 import qualified Cachix.Client.InstallationMode as InstallationMode
 import qualified Cachix.Client.NetRc as NetRc
 import qualified Cachix.Deploy.Log as Log
-import qualified Cachix.Deploy.Websocket as CachixWebsocket
 import qualified Cachix.Types.BinaryCache as BinaryCache
 import Cachix.Types.Permission (Permission (..))
 import qualified Data.Aeson as Aeson
@@ -16,80 +15,106 @@ import qualified Data.Aeson.KeyMap as HM
 #else
 import qualified Data.HashMap.Strict as HM
 #endif
-import qualified Data.Conduit as Conduit
 import qualified Data.Conduit.Combinators as Conduit
 import qualified Data.Conduit.Process as Conduit
 import qualified Data.Vector as Vector
 import Protolude hiding (log, toS)
 import Protolude.Conv (toS)
 import Servant.Auth.Client (Token (..))
-import System.Directory (canonicalizePath, doesPathExist)
+import qualified System.Directory as Directory
 import System.FilePath ((</>))
 import System.IO.Temp (withSystemTempDirectory)
 import System.Process
 import Prelude (String, userError)
 
-activate ::
+data Error
+  = NetworkTestFailure
+  | RollbackScriptFailure IOException
+  | RollbackFailure
+  deriving (Show)
+
+instance Exception Error where
+  displayException NetworkTestFailure = "Cannot connect back to Cachix Deploy after activating the new deployment"
+  displayException (RollbackScriptFailure e) = "The rollback script returned an error." <> displayException e
+  displayException RollbackFailure = "Cannot roll back the deployment."
+
+downloadStorePaths ::
   -- | Logging context
-  Conduit.ConduitT ByteString Void IO () ->
-  -- | Profile name
-  Text ->
+  Log.LogStream ->
   -- | Deployment details
   WSS.DeploymentDetails ->
   -- | Binary cache args
   [String] ->
   IO ()
-activate logStream profileName deploymentDetails cacheArgs = do
+downloadStorePaths logStream deploymentDetails cacheArgs = do
   -- Download the store path from the binary cache
   -- TODO: add GC root so it's preserved for the next command
-  shellOut "nix-store" (["-r", toS storePath] <> cacheArgs)
+  runShell logStream "nix-store" (["-r", toS storePath] <> cacheArgs)
 
-  (profilePath, activationScripts) <- getActivationScript storePath profileName
-
-  -- Set the new profile
-  -- TODO: document what happens if the wrong user is used for the agent
-  shellOut "nix-env" ["-p", toS profilePath, "--set", toS storePath]
-
-  -- Activate the configuration
-  -- TODO: Check with Domen whether we can exit early here
-  mapM_ (uncurry shellOut) activationScripts
+  -- Download the rollback script, if provided
+  for_ (WSS.rollbackScript deploymentDetails) $ \script ->
+    runShell logStream "nix-store" (["-r", toS script] <> cacheArgs)
   where
     storePath = WSS.storePath deploymentDetails
 
-    shellOut :: FilePath -> [String] -> IO ()
-    shellOut cmd args = shellOutWithExitCode cmd args >>= handleError
-      where
-        handleError (ExitFailure code) = ioError $ userError (show code)
-        handleError ExitSuccess = pure ()
+type RollbackAction = IO ()
 
-    shellOutWithExitCode :: FilePath -> [String] -> IO ExitCode
-    shellOutWithExitCode cmd args = do
-      Log.streamLine logStream $ "$ " <> toS cmd <> " " <> toS (unwords $ fmap toS args)
-      (exitCode, _, _) <- Conduit.sourceProcessWithStreams (proc cmd args) Conduit.sinkNull logStream logStream
-      pure exitCode
+-- | Activate the profile and return a rollback action if available.
+activate ::
+  -- | Logging context
+  Log.LogStream ->
+  -- | Profile name
+  Text ->
+  -- | Store path to activate
+  FilePath ->
+  -- | Returns a rollback action if available
+  IO (Maybe RollbackAction)
+activate logStream profileName storePath = do
+  (profilePath, activationScripts) <- getActivationScript profileName storePath
+  previousProfilePath <- toStorePath profilePath
 
-    -- TODO: home-manager
-    -- TODO: move out of where clause
-    getActivationScript :: Text -> Text -> IO (FilePath, [Command])
-    getActivationScript storePath profile = do
-      isNixOS <- doesPathExist $ toS storePath </> "nixos-version"
-      isNixDarwin <- doesPathExist $ toS storePath </> "darwin-version"
-      user <- InstallationMode.getUser
-      (systemProfile, cmds) <- case (isNixOS, isNixDarwin) of
-        (True, _) -> return ("system", [(toS storePath </> "bin/switch-to-configuration", ["switch"])])
-        (_, True) ->
-          -- https://github.com/LnL7/nix-darwin/blob/master/pkgs/nix-tools/darwin-rebuild.sh
-          return
-            ( "system-profiles/system",
-              [ ("mkdir", ["-p", "-m", "0755", "/nix/var/nix/profiles/system-profiles"]),
-                (toS storePath </> "activate-user", []),
-                (toS storePath </> "activate", [])
-              ]
-            )
-        (_, _) -> return ("system", [])
-      return ("/nix/var/nix/profiles" </> if profile == "" then systemProfile else toS profile, cmds)
+  -- Set the new profile
+  -- TODO: document what happens if the wrong user is used for the agent
+  runShell logStream "nix-env" ["-p", toS profilePath, "--set", toS storePath]
+
+  -- Activate the configuration
+  -- TODO: Check with Domen whether we can exit early here
+  forM_ activationScripts $ uncurry (runShell logStream)
+
+  pure $ Just rollback <*> previousProfilePath
+  where
+    toStorePath profilePath = do
+      profileExists <- Directory.doesPathExist profilePath
+      if profileExists
+        then Just <$> Directory.canonicalizePath profilePath
+        else pure Nothing
+
+    -- We can't use '--rollback' because it just selects the next generation
+    -- down from our deployment, which is not necessarily the generation that
+    -- was previously active.
+    rollback = void . activate logStream profileName
 
 type Command = (String, [String])
+
+-- TODO: home-manager
+getActivationScript :: Text -> FilePath -> IO (FilePath, [Command])
+getActivationScript profile storePath = do
+  isNixOS <- Directory.doesPathExist $ toS storePath </> "nixos-version"
+  isNixDarwin <- Directory.doesPathExist $ toS storePath </> "darwin-version"
+  void InstallationMode.getUser
+  (systemProfile, cmds) <- case (isNixOS, isNixDarwin) of
+    (True, _) -> return ("system", [(toS storePath </> "bin/switch-to-configuration", ["switch"])])
+    (_, True) ->
+      -- https://github.com/LnL7/nix-darwin/blob/master/pkgs/nix-tools/darwin-rebuild.sh
+      return
+        ( "system-profiles/system",
+          [ ("mkdir", ["-p", "-m", "0755", "/nix/var/nix/profiles/system-profiles"]),
+            (toS storePath </> "activate-user", []),
+            (toS storePath </> "activate", [])
+          ]
+        )
+    (_, _) -> return ("system", [])
+  return ("/nix/var/nix/profiles" </> if profile == "" then systemProfile else toS profile, cmds)
 
 -- TODO: send errors as well
 -- TODO: fix either/maybe types
@@ -147,3 +172,15 @@ withCacheArgs host agentInfo agentToken m =
             sigs = ["--option", "trusted-public-keys", officialCache <> " " <> toS (domain host cache) <> "-1:" <> toS (WSS.publicKey cache)]
          in substituters ++ sigs ++ noNegativeCaching
       Nothing -> []
+
+runShell :: Log.LogStream -> FilePath -> [String] -> IO ()
+runShell logStream cmd args = runShellWithExitCode logStream cmd args >>= handleError
+  where
+    handleError (ExitFailure code) = ioError $ userError (show code)
+    handleError ExitSuccess = pure ()
+
+runShellWithExitCode :: Log.LogStream -> FilePath -> [String] -> IO ExitCode
+runShellWithExitCode logStream cmd args = do
+  Log.streamLine logStream $ "$ " <> toS cmd <> " " <> toS (unwords $ fmap toS args)
+  (exitCode, _, _) <- Conduit.sourceProcessWithStreams (proc cmd args) Conduit.sinkNull logStream logStream
+  pure exitCode

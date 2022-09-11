@@ -1,5 +1,3 @@
-{-# LANGUAGE NamedFieldPuns #-}
-
 module Cachix.Deploy.ActivateCommand where
 
 import qualified Cachix.API.Deploy as API

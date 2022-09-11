@@ -1,16 +1,22 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
--- high level interface for websocket clients
+-- | A high-level, multiple reader, single writer interface for Websocket clients.
 module Cachix.Deploy.Websocket where
 
 import qualified Cachix.Client.Retry as Retry
 import Cachix.Client.Version (versionNumber)
 import qualified Cachix.Deploy.Log as Log
 import qualified Cachix.Deploy.WebsocketPong as WebsocketPong
+import qualified Control.Concurrent.Async as Async
+import qualified Control.Concurrent.MVar as MVar
+import qualified Control.Concurrent.STM.TBMQueue as TBMQueue
+import qualified Control.Concurrent.STM.TMChan as TMChan
 import Control.Exception.Safe (Handler (..), MonadMask, isSyncException)
 import qualified Control.Exception.Safe as Safe
 import qualified Control.Retry as Retry
+import qualified Data.ByteString as BS
 import Data.String (String)
+import qualified Data.Time.Clock as Time
 import qualified Katip as K
 import qualified Network.HTTP.Simple as HTTP
 import qualified Network.WebSockets as WS
@@ -19,6 +25,48 @@ import Protolude.Conv
 import qualified System.Info
 import qualified System.Timeout as Timeout
 import qualified Wuss
+
+-- | A reliable WebSocket connection that can be run ergonomically in a
+-- separate thread.
+--
+-- Maintains the connection by periodically sending pings.
+data WebSocket tx rx = WebSocket
+  { -- | The active WebSocket connection, if available
+    connection :: MVar.MVar WS.Connection,
+    -- | A timestamp of the last pong message received
+    lastPong :: WebsocketPong.LastPongState,
+    -- | See 'Transmit'
+    tx :: Transmit tx,
+    -- | See 'Receive'
+    rx :: Receive rx
+  }
+
+-- | A more ergonomic version of the Websocket 'Message' data type
+data Message msg
+  = ControlMessage WS.ControlMessage
+  | DataMessage msg
+
+-- | A bounded queue of outbound messages.
+type Transmit msg = TBMQueue.TBMQueue (Message msg)
+
+-- | A broadcast channel for incoming messages.
+type Receive msg = TMChan.TMChan (Message msg)
+
+-- | Send messages over the socket.
+send :: WebSocket tx rx -> Message tx -> IO ()
+send WebSocket {tx} = atomically . TBMQueue.writeTBMQueue tx
+
+-- | Open a new receiving channel.
+receive :: WebSocket tx rx -> IO (Receive rx)
+receive WebSocket {rx} = atomically $ TMChan.dupTMChan rx
+
+-- | Read incoming messages on a channel opened with 'receive'.
+read :: Receive rx -> IO (Maybe (Message rx))
+read = atomically . TMChan.readTMChan
+
+-- | Close the outgoing queue.
+close :: WebSocket tx rx -> IO ()
+close WebSocket {tx} = atomically $ TBMQueue.closeTBMQueue tx
 
 data Options = Options
   { host :: Text,
@@ -30,44 +78,52 @@ data Options = Options
   }
   deriving (Show)
 
-system :: String
-system = System.Info.arch <> "-" <> System.Info.os
-
 withConnection ::
   -- | Logging context for logging socket status
   Log.WithLog ->
   -- | WebSocket options
   Options ->
   -- | The app to run inside the socket
-  WS.ClientApp () ->
+  (WebSocket tx rx -> IO ()) ->
   IO ()
 withConnection withLog options app = do
   mainThreadID <- myThreadId
-  pongState <- WebsocketPong.newState
+  lastPong <- WebsocketPong.newState
 
   let pingEvery = 30
   let pongTimeout = pingEvery * 2
   let pingHandler = do
-        last <- WebsocketPong.secondsSinceLastPong pongState
+        last <- WebsocketPong.secondsSinceLastPong lastPong
         withLog $ K.logLocM K.DebugS $ K.ls $ "Sending WebSocket keep-alive ping, last pong was " <> (show last :: Text) <> " seconds ago"
-        WebsocketPong.pingHandler pongState mainThreadID pongTimeout
-  let connectionOptions = WebsocketPong.installPongHandler pongState WS.defaultConnectionOptions
+        WebsocketPong.pingHandler lastPong mainThreadID pongTimeout
+  let connectionOptions = WebsocketPong.installPongHandler lastPong WS.defaultConnectionOptions
 
-  reconnectWithLog withLog $ do
-    withLog $
-      K.logLocM K.InfoS $ K.ls $ "Agent " <> agentIdentifier options <> " connecting to " <> host options <> path options
+  connection <- MVar.newEmptyMVar
+  tx <- TBMQueue.newTBMQueueIO 100
+  rx <- TMChan.newBroadcastTMChanIO
+  let websocket = WebSocket {connection, tx, rx, lastPong}
 
-    -- refresh pong state in case we're reconnecting
-    WebsocketPong.pongHandler pongState
+  reconnectWithLog withLog $
+    do
+      withLog $
+        K.logLocM K.InfoS $ K.ls $ "Agent " <> agentIdentifier options <> " connecting to " <> host options <> path options
 
-    -- TODO: https://github.com/jaspervdj/websockets/issues/229
-    Wuss.runSecureClientWith (toS $ host options) 443 (toS $ path options) connectionOptions (headers options) $
-      \connection ->
-        do
-          withLog $ K.logLocM K.InfoS "Connected to Cachix Deploy service"
-          WS.withPingThread connection pingEvery pingHandler $
-            app connection
-          `finally` waitForGracefulShutdown connection
+      -- TODO: https://github.com/jaspervdj/websockets/issues/229
+      Wuss.runSecureClientWith (toS $ host options) 443 (toS $ path options) connectionOptions (headers options) $
+        \newConnection ->
+          do
+            withLog $ K.logLocM K.InfoS "Connected to Cachix Deploy service"
+
+            -- Reset the pong state in case we're reconnecting
+            WebsocketPong.pongHandler lastPong
+
+            -- Update the connection
+            MVar.putMVar connection newConnection
+
+            WS.withPingThread newConnection pingEvery pingHandler $
+              app websocket
+            `finally` waitForGracefulShutdown newConnection
+      `Safe.finally` void (MVar.tryTakeMVar connection)
 
 -- Log all exceptions and retry, except when the websocket receives a close request.
 -- TODO: use exponential retry with reset: https://github.com/Soostone/retry/issues/25
@@ -108,6 +164,31 @@ reconnectWithLog withLog inner =
     toSeconds t =
       floor $ (fromIntegral t :: Double) / 1000 / 1000
 
+-- | Open a receiving channel and discard incoming messages.
+consumeIntoVoid :: WebSocket tx rx -> IO ()
+consumeIntoVoid websocket = do
+  rx <- receive websocket
+  fix $ \keepReading -> do
+    msg <- read rx
+    when (isJust msg) keepReading
+
+waitForPong :: Int -> WebSocket tx rx -> IO (Maybe Time.UTCTime)
+waitForPong seconds websocket =
+  Async.withAsync (sendPingEvery 1 websocket) $ \_ ->
+    Timeout.timeout (seconds * 1000 * 1000) $ do
+      channel <- receive websocket
+      fix $ \waitForNextMsg -> do
+        msg <- read channel
+        case msg of
+          Just (ControlMessage (WS.Pong _)) -> Time.getCurrentTime
+          _ -> waitForNextMsg
+
+sendPingEvery :: Int -> WebSocket tx rx -> IO ()
+sendPingEvery seconds WebSocket {connection} = forever $ do
+  activeConnection <- MVar.readMVar connection
+  WS.sendPing activeConnection BS.empty
+  threadDelay (seconds * 1000 * 1000)
+
 -- | Try to gracefully close the WebSocket.
 --
 -- Do not run with asynchronous exceptions masked, ie. Control.Exception.Safe.finally.
@@ -124,6 +205,11 @@ waitForGracefulShutdown connection = do
 
   when (isNothing response) $
     throwIO $ WS.CloseRequest 1000 "No response to close request"
+
+-- Cachix Deploy authorization headers
+
+system :: String
+system = System.Info.arch <> "-" <> System.Info.os
 
 createHeaders ::
   -- | Agent name

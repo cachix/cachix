@@ -76,7 +76,7 @@ handleMessage input payload runKatip connection _ agentToken =
       let path = "/api/v1/deploy/log/" <> UUID.toText deploymentID
       retryAllWithLogging endlessRetryPolicy (CachixWebsocket.logger runKatip) $ do
         liftIO $
-          Wuss.runSecureClientWith host 443 (toS path) WS.defaultConnectionOptions headers $
+          WS.runClientWith host 80 (toS path) WS.defaultConnectionOptions headers $
             \conn ->
               Conduit.runConduit $
                 Conduit.sourceTMQueue queue

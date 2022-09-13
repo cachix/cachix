@@ -38,7 +38,7 @@ domain options cache = toS (WSS.cacheName cache) <> "." <> toS (CachixWebsocket.
 
 -- TODO: get uri scheme
 uri :: CachixWebsocket.Options -> WSS.Cache -> Text
-uri options cache = "https://" <> domain options cache
+uri options cache = "http://" <> domain options cache
 
 hackFlush :: K.KatipContextT IO ()
 hackFlush = liftIO $ threadDelay (5 * 1000 * 1000)

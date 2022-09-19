@@ -70,17 +70,14 @@ run cachixOptions agentOpts =
                 WebSocket.agentIdentifier = agentIdentifier agentName
               }
 
-      WebSocket.withConnection
-        withLog
-        websocketOptions
-        $ \websocket ->
-          WebSocket.handleJSONMessages @(WSS.Message WSS.AgentCommand) @(WSS.Message WSS.BackendCommand) websocket $
-            WebSocket.receive websocket >>= \channel ->
-              forever $
-                WebSocket.read channel >>= \case
-                  Just (WebSocket.DataMessage message) -> do
-                    handleMessage withLog agentState agentName agentToken message
-                  _ -> pure ()
+      WebSocket.withConnection withLog websocketOptions $ \websocket ->
+        WebSocket.handleJSONMessages @(WSS.Message WSS.AgentCommand) @(WSS.Message WSS.BackendCommand) websocket $
+          WebSocket.receive websocket >>= \channel ->
+            forever $
+              WebSocket.read channel >>= \case
+                Just (WebSocket.DataMessage message) -> do
+                  handleMessage withLog agentState agentName agentToken message
+                _ -> pure ()
   where
     host = toS $ Servant.baseUrlHost $ getBaseUrl $ Config.host cachixOptions
     profileName = fromMaybe "system" (AgentOptions.profile agentOpts)

@@ -14,12 +14,19 @@ import qualified Control.Concurrent.STM.TMChan as TMChan
 import Control.Exception.Safe (Handler (..), MonadMask, isSyncException)
 import qualified Control.Exception.Safe as Safe
 import qualified Control.Retry as Retry
+import qualified Data.Aeson as Aeson
 import qualified Data.ByteString as BS
+import Data.Conduit ((.|))
+import qualified Data.Conduit as Conduit
+import qualified Data.Conduit.Combinators as Conduit
+import qualified Data.Conduit.TQueue as Conduit
+import qualified Data.IORef as IORef
 import Data.String (String)
 import qualified Data.Time.Clock as Time
 import qualified Katip as K
 import qualified Network.HTTP.Simple as HTTP
 import qualified Network.WebSockets as WS
+import qualified Network.WebSockets.Connection as WS.Connection
 import Protolude hiding (Handler, toS)
 import Protolude.Conv
 import qualified System.Info
@@ -38,7 +45,8 @@ data WebSocket tx rx = WebSocket
     -- | See 'Transmit'
     tx :: Transmit tx,
     -- | See 'Receive'
-    rx :: Receive rx
+    rx :: Receive rx,
+    withLog :: Log.WithLog
   }
 
 -- | A more ergonomic version of the Websocket 'Message' data type
@@ -79,6 +87,7 @@ data Options = Options
   deriving (Show)
 
 withConnection ::
+  (Aeson.ToJSON tx, Aeson.FromJSON rx) =>
   -- | Logging context for logging socket status
   Log.WithLog ->
   -- | WebSocket options
@@ -101,7 +110,7 @@ withConnection withLog options app = do
   connection <- MVar.newEmptyMVar
   tx <- TBMQueue.newTBMQueueIO 100
   rx <- TMChan.newBroadcastTMChanIO
-  let websocket = WebSocket {connection, tx, rx, lastPong}
+  let websocket = WebSocket {connection, tx, rx, lastPong, withLog}
 
   reconnectWithLog withLog $
     do
@@ -121,9 +130,44 @@ withConnection withLog options app = do
             MVar.putMVar connection newConnection
 
             WS.withPingThread newConnection pingEvery pingHandler $
-              app websocket
+              Async.withAsync (handleIncoming websocket) $ \_ ->
+                Async.withAsync (handleOutgoing websocket) $ \_ ->
+                  app websocket
             `finally` waitForGracefulShutdown newConnection
       `Safe.finally` void (MVar.tryTakeMVar connection)
+
+handleIncoming :: (Aeson.FromJSON rx) => WebSocket tx rx -> IO rx
+handleIncoming websocket@WebSocket {connection, rx, withLog} = do
+  activeConnection <- MVar.readMVar connection
+  let broadcast = atomically . TMChan.writeTMChan rx
+
+  forever $ do
+    msg <- WS.receive activeConnection
+    case msg of
+      WS.DataMessage _ _ _ am ->
+        case Aeson.eitherDecodeStrict' (WS.fromDataMessage am :: ByteString) of
+          Left e -> withLog $ K.logLocM K.DebugS . K.ls $ "Cannot parse websocket payload: " <> e
+          Right pMsg -> broadcast (DataMessage pMsg)
+      WS.ControlMessage controlMsg -> do
+        case controlMsg of
+          WS.Ping pl -> send websocket (ControlMessage (WS.Pong pl))
+          WS.Pong _ -> WS.connectionOnPong (WS.Connection.connectionOptions activeConnection)
+          WS.Close _ _ -> do
+            hasSentClose <- IORef.readIORef $ WS.Connection.connectionSentClose activeConnection
+            unless hasSentClose $ WS.send activeConnection msg
+            close websocket
+
+        broadcast (ControlMessage controlMsg)
+
+handleOutgoing :: Aeson.ToJSON tx => WebSocket tx rx -> IO ()
+handleOutgoing WebSocket {connection, tx} = do
+  activeConnection <- MVar.readMVar connection
+  Conduit.runConduit $
+    Conduit.sourceTBMQueue tx
+      .| Conduit.mapM_ (sendMessage activeConnection)
+  where
+    sendMessage conn (ControlMessage msg) = WS.send conn (WS.ControlMessage msg)
+    sendMessage conn (DataMessage msg) = WS.sendTextData conn (Aeson.encode msg)
 
 -- Log all exceptions and retry, except when the websocket receives a close request.
 -- TODO: use exponential retry with reset: https://github.com/Soostone/retry/issues/25

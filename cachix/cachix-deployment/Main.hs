@@ -33,6 +33,8 @@ import Protolude.Conv
 import System.IO (BufferMode (..), hSetBuffering)
 import qualified Wuss
 
+type ServiceWebSocket = WebSocket.WebSocket (WSS.Message WSS.AgentCommand) (WSS.Message WSS.BackendCommand)
+
 -- | Activate the new deployment.
 --
 -- If the target profile is already locked by another deployment, exit
@@ -49,7 +51,6 @@ main = do
       profileName,
       host,
       logOptions,
-      agentInformation,
       deploymentDetails
     } <-
     escalateAs (FatalError . toS) . Aeson.eitherDecode . toS =<< getContents
@@ -71,7 +72,7 @@ main = do
       (logQueue, loggingThread) <- runLogStream withLog host logPath (WebSocket.headers websocketOptions)
 
       -- Open a connection to Cachix and block until it's ready.
-      (service, serviceThread) <- connectToService withLog websocketOptions agentInformation
+      (service, serviceThread) <- connectToService withLog websocketOptions
 
       deploy withLog deployment service (Conduit.sinkTMQueue logQueue)
         `finally` do
@@ -85,46 +86,19 @@ main = do
 connectToService ::
   Log.WithLog ->
   WebSocket.Options ->
-  WSS.AgentInformation ->
-  IO (WebSocket.WebSocket WSS.AgentCommand WSS.BackendCommand, Async.Async ())
-connectToService withLog websocketOptions agentInformation = do
+  IO (ServiceWebSocket, Async.Async ())
+connectToService withLog websocketOptions = do
   initialConnection <- MVar.newEmptyMVar
 
   thread <- Async.async $
-    WebSocket.withConnection withLog websocketOptions $ \websocket ->
-      do
-        MVar.putMVar initialConnection websocket
-        Async.withAsync (WebSocket.consumeIntoVoid websocket) $ \_ ->
-          Conduit.runConduit $
-            Conduit.sourceTBMQueue (WebSocket.tx websocket)
-              .| Conduit.mapM_ (sendMessage websocket)
+    WebSocket.withConnection withLog websocketOptions $ \websocket -> do
+      MVar.putMVar initialConnection websocket
+      WebSocket.consumeIntoVoid websocket
 
   -- Block until the connection has been established
   websocket <- MVar.readMVar initialConnection
 
   return (websocket, thread)
-  where
-    sendMessage :: WebSocket.WebSocket WSS.AgentCommand WSS.BackendCommand -> WebSocket.Message WSS.AgentCommand -> IO ()
-    sendMessage WebSocket.WebSocket {connection} (WebSocket.DataMessage msg) = do
-      command <- createMessage msg
-      activeConnection <- MVar.readMVar connection
-      WS.sendTextData activeConnection $ Aeson.encode command
-
-    createMessage :: WSS.AgentCommand -> IO (WSS.Message WSS.AgentCommand)
-    createMessage command = do
-      uuid <- UUID.nextRandom
-      return $
-        WSS.Message
-          { WSS.method = method,
-            WSS.command = command,
-            WSS.id = uuid,
-            WSS.agent = Just $ WSS.id (agentInformation :: WSS.AgentInformation)
-          }
-      where
-        -- TODO: move to WSS
-        method = case command of
-          WSS.DeploymentStarted {} -> "DeploymentStarted"
-          WSS.DeploymentFinished {} -> "DeploymentFinished"
 
 -- | Run the deployment commands
 deploy ::
@@ -132,16 +106,14 @@ deploy ::
   Log.WithLog ->
   -- | Deployment information passed from the agent
   Agent.Deployment ->
-  WebSocket.WebSocket WSS.AgentCommand WSS.BackendCommand ->
-  -- WebSocket.Receive WSS.AgentCommand ->
-
+  ServiceWebSocket ->
   -- | Logging Websocket connection
   Log.LogStream ->
   IO ()
 deploy withLog deployment service logStream = do
   withLog $ K.logLocM K.InfoS $ K.ls $ "Deploying #" <> deploymentIndex <> ": " <> storePath
 
-  activationStatus <- Safe.tryIO $
+  activationStatus <- Safe.tryAny $
     Activate.withCacheArgs host agentInformation agentToken $ \cacheArgs -> do
       startDeployment Nothing
 
@@ -157,7 +129,7 @@ deploy withLog deployment service logStream = do
       rollbackAction <- Activate.activate logStream profileName (toS storePath)
 
       -- Run tests on the new deployment
-      testResults <- Safe.tryIO $ do
+      testResults <- Safe.tryAny $ do
         -- Run network test
         pong <- WebSocket.waitForPong 10 service
         when (isNothing pong) $ throwIO Activate.NetworkTestFailure
@@ -212,24 +184,42 @@ deploy withLog deployment service logStream = do
     startDeployment :: Maybe Int64 -> IO ()
     startDeployment closureSize = do
       now <- getCurrentTime
-      WebSocket.send service $
-        WebSocket.DataMessage $
+      msg <-
+        createMessage $
           WSS.DeploymentStarted
             { WSS.id = deploymentID,
               WSS.time = now,
               WSS.closureSize = closureSize
             }
+      WebSocket.send service (WebSocket.DataMessage msg)
 
     endDeployment :: Bool -> IO ()
     endDeployment hasSucceeded = do
       now <- getCurrentTime
-      WebSocket.send service $
-        WebSocket.DataMessage $
+      msg <-
+        createMessage $
           WSS.DeploymentFinished
             { WSS.id = deploymentID,
               WSS.time = now,
               WSS.hasSucceeded = hasSucceeded
             }
+      WebSocket.send service (WebSocket.DataMessage msg)
+
+    createMessage :: WSS.AgentCommand -> IO (WSS.Message WSS.AgentCommand)
+    createMessage command = do
+      uuid <- UUID.nextRandom
+      return $
+        WSS.Message
+          { WSS.method = method,
+            WSS.command = command,
+            WSS.id = uuid,
+            WSS.agent = Just $ WSS.id (agentInformation :: WSS.AgentInformation)
+          }
+      where
+        -- TODO: move to WSS
+        method = case command of
+          WSS.DeploymentStarted {} -> "DeploymentStarted"
+          WSS.DeploymentFinished {} -> "DeploymentFinished"
 
 -- Log
 

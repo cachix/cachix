@@ -1,4 +1,6 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Cachix.Deploy.Agent where
 
@@ -67,10 +69,13 @@ run cachixOptions agentOpts =
                 WebSocket.agentIdentifier = agentIdentifier agentName
               }
 
-      WebSocket.withConnection withLog websocketOptions $ \WebSocket.WebSocket {connection} -> do
-        activeConnection <- MVar.readMVar connection
-        WSS.receiveDataConcurrently activeConnection $ \message ->
-          handleMessage withLog agentState agentName agentToken message
+      WebSocket.withConnection @Int @(WSS.Message WSS.BackendCommand) withLog websocketOptions $ \websocket -> do
+        channel <- WebSocket.receive websocket
+        forever $
+          WebSocket.read channel >>= \case
+            Just (WebSocket.DataMessage message) -> do
+              handleMessage withLog agentState agentName agentToken message
+            _ -> pure ()
   where
     host = toS $ Servant.baseUrlHost $ getBaseUrl $ Config.host cachixOptions
     profileName = fromMaybe "system" (AgentOptions.profile agentOpts)
@@ -91,14 +96,14 @@ run cachixOptions agentOpts =
           environment = "production"
         }
 
-    handleMessage :: Log.WithLog -> AgentState -> Text -> Text -> ByteString -> IO ()
+    handleMessage :: Log.WithLog -> AgentState -> Text -> Text -> WSS.Message WSS.BackendCommand -> IO ()
     handleMessage withLog agentState agentName agentToken payload =
-      case WSS.parseMessage payload of
-        Left err ->
-          -- TODO: show the bytestring?
-          withLog $ K.logLocM K.ErrorS $ K.ls $ "Failed to parse websocket payload: " <> err
-        Right message ->
-          handleCommand (WSS.command message)
+      -- case WSS.parseMessage payload of
+      -- Left err ->
+      -- TODO: show the bytestring?
+      -- withLog $ K.logLocM K.ErrorS $ K.ls $ "Failed to parse websocket payload: " <> err
+      -- Right message ->
+      handleCommand (WSS.command payload)
       where
         handleCommand :: WSS.BackendCommand -> IO ()
         handleCommand (WSS.AgentRegistered agentInformation) =

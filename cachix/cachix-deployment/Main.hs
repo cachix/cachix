@@ -17,9 +17,6 @@ import qualified Control.Concurrent.MVar as MVar
 import qualified Control.Concurrent.STM.TMQueue as TMQueue
 import qualified Control.Exception.Safe as Safe
 import qualified Data.Aeson as Aeson
-import Data.Conduit ((.|))
-import qualified Data.Conduit as Conduit
-import qualified Data.Conduit.Combinators as Conduit
 import qualified Data.Conduit.TQueue as Conduit
 import Data.Time.Clock (getCurrentTime)
 import qualified Data.UUID as UUID
@@ -32,8 +29,6 @@ import Protolude hiding (toS)
 import Protolude.Conv
 import System.IO (BufferMode (..), hSetBuffering)
 import qualified Wuss
-
-type ServiceWebSocket = WebSocket.WebSocket (WSS.Message WSS.AgentCommand) (WSS.Message WSS.BackendCommand)
 
 -- | Activate the new deployment.
 --
@@ -86,14 +81,14 @@ main = do
 connectToService ::
   Log.WithLog ->
   WebSocket.Options ->
-  IO (ServiceWebSocket, Async.Async ())
+  IO (Agent.ServiceWebSocket, Async.Async ())
 connectToService withLog websocketOptions = do
   initialConnection <- MVar.newEmptyMVar
 
   thread <- Async.async $
     WebSocket.withConnection withLog websocketOptions $ \websocket -> do
       MVar.putMVar initialConnection websocket
-      WebSocket.consumeIntoVoid websocket
+      WebSocket.handleJSONMessages websocket (WebSocket.consumeIntoVoid websocket)
 
   -- Block until the connection has been established
   websocket <- MVar.readMVar initialConnection
@@ -106,7 +101,7 @@ deploy ::
   Log.WithLog ->
   -- | Deployment information passed from the agent
   Agent.Deployment ->
-  ServiceWebSocket ->
+  Agent.ServiceWebSocket ->
   -- | Logging Websocket connection
   Log.LogStream ->
   IO ()
@@ -138,11 +133,9 @@ deploy withLog deployment service logStream = do
           Log.streamLine logStream "Running rollback script."
           rollbackScriptResult <- Safe.tryIO $ Activate.runShellWithExitCode logStream (toS rollbackScript) []
           case rollbackScriptResult of
+            Right ExitSuccess -> pure ()
+            Right (ExitFailure _) -> throwIO Activate.RollbackFailure
             Left e -> throwIO (Activate.RollbackScriptFailure e)
-            Right exitCode ->
-              case exitCode of
-                ExitSuccess -> pure ()
-                ExitFailure _ -> throwIO Activate.RollbackFailure
 
       -- Roll back if any of the tests have failed
       when (isLeft testResults) $
@@ -224,7 +217,7 @@ deploy withLog deployment service logStream = do
 -- Log
 
 -- TODO: prepend katip-like format to each line
--- TODO: use the WebSocket module here (without ping?)
+-- TODO: Re-use the WebSocket module here (without ping?)
 runLogStream ::
   -- | Logging context
   Log.WithLog ->

@@ -16,6 +16,7 @@ import qualified Control.Exception.Safe as Safe
 import qualified Control.Retry as Retry
 import qualified Data.Aeson as Aeson
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BL
 import Data.Conduit ((.|))
 import qualified Data.Conduit as Conduit
 import qualified Data.Conduit.Combinators as Conduit
@@ -73,8 +74,16 @@ read :: Receive rx -> IO (Maybe (Message rx))
 read = atomically . TMChan.readTMChan
 
 -- | Close the outgoing queue.
-close :: WebSocket tx rx -> IO ()
-close WebSocket {tx} = atomically $ TBMQueue.closeTBMQueue tx
+drainQueue :: WebSocket tx rx -> IO ()
+drainQueue WebSocket {tx} = atomically $ TBMQueue.closeTBMQueue tx
+
+shutdownNow :: WebSocket tx rx -> Word16 -> BL.ByteString -> IO ()
+shutdownNow websocket@WebSocket {rx} code msg = do
+  -- Close the outgoing queue
+  drainQueue websocket
+  -- Signal to all receivers that the socket is closed
+  atomically (TMChan.closeTMChan rx)
+  throwIO $ WS.CloseRequest code msg
 
 data Options = Options
   { host :: Text,
@@ -94,7 +103,7 @@ withConnection ::
   -- | The client app to run inside the socket
   (WebSocket tx rx -> IO ()) ->
   IO ()
-withConnection withLog options app = do
+withConnection withLog Options {host, path, headers, agentIdentifier} app = do
   mainThreadID <- myThreadId
   lastPong <- WebsocketPong.newState
 
@@ -111,39 +120,51 @@ withConnection withLog options app = do
   rx <- TMChan.newBroadcastTMChanIO
   let websocket = WebSocket {connection, tx, rx, lastPong, withLog}
 
-  reconnectWithLog withLog $
-    do
-      withLog $
-        K.logLocM K.InfoS $ K.ls $ "Agent " <> agentIdentifier options <> " connecting to " <> host options <> path options
+  let dropConnection = void $ MVar.tryTakeMVar connection
+  let closeChannels = atomically $ do
+        TBMQueue.closeTBMQueue tx
+        TMChan.closeTMChan rx
 
-      -- TODO: https://github.com/jaspervdj/websockets/issues/229
-      Wuss.runSecureClientWith (toS $ host options) 443 (toS $ path options) connectionOptions (headers options) $
-        \newConnection ->
-          do
-            withLog $ K.logLocM K.InfoS "Connected to Cachix Deploy service"
+  flip Safe.finally closeChannels $
+    reconnectWithLog withLog $
+      do
+        withLog $
+          K.logLocM K.InfoS $ K.ls $ "Agent " <> agentIdentifier <> " connecting to " <> host <> path
 
-            -- Reset the pong state in case we're reconnecting
-            WebsocketPong.pongHandler lastPong
+        -- TODO: https://github.com/jaspervdj/websockets/issues/229
+        Wuss.runSecureClientWith (toS host) 443 (toS path) connectionOptions headers $
+          \newConnection ->
+            do
+              withLog $ K.logLocM K.InfoS "Connected to Cachix Deploy service"
 
-            -- Update the connection
-            MVar.putMVar connection newConnection
+              -- Reset the pong state in case we're reconnecting
+              WebsocketPong.pongHandler lastPong
 
-            WS.withPingThread newConnection pingEvery pingHandler (app websocket)
+              -- Update the connection
+              MVar.putMVar connection newConnection
 
-      -- `finally` waitForGracefulShutdown newConnection
-      `Safe.finally` void (MVar.tryTakeMVar connection)
+              WS.withPingThread newConnection pingEvery pingHandler (app websocket)
+        `Safe.finally` dropConnection
 
 -- Handle JSON messages
 
 handleJSONMessages :: (Aeson.ToJSON tx, Aeson.FromJSON rx) => WebSocket tx rx -> IO () -> IO ()
 handleJSONMessages websocket app =
   Async.withAsync (handleIncomingJSON websocket) $ \incomingThread ->
-    Async.withAsync (handleOutgoingJSON websocket) $ \outgoingThread ->
-      app `finally` do
-        close websocket
-        Async.waitBoth outgoingThread incomingThread
+    Async.withAsync (handleOutgoingJSON websocket `finally` closeGracefully incomingThread) $ \outgoingThread -> do
+      app
+      Async.wait outgoingThread
+  where
+    closeGracefully incomingThread = do
+      repsonseToCloseRequest <- startGracePeriod $ do
+        activeConnection <- MVar.readMVar (connection websocket)
+        WS.sendClose activeConnection ("Closing." :: ByteString)
+        _ <- Async.wait incomingThread
+        atomically (TMChan.closeTMChan (rx websocket))
 
-handleIncomingJSON :: (Aeson.FromJSON rx) => WebSocket tx rx -> IO rx
+      when (isNothing repsonseToCloseRequest) throwNoResponseToCloseRequest
+
+handleIncomingJSON :: (Aeson.FromJSON rx) => WebSocket tx rx -> IO ()
 handleIncomingJSON websocket@WebSocket {connection, rx, withLog} = do
   activeConnection <- MVar.readMVar connection
   let broadcast = atomically . TMChan.writeTMChan rx
@@ -159,12 +180,10 @@ handleIncomingJSON websocket@WebSocket {connection, rx, withLog} = do
         case controlMsg of
           WS.Ping pl -> send websocket (ControlMessage (WS.Pong pl))
           WS.Pong _ -> WS.connectionOnPong (WS.Connection.connectionOptions activeConnection)
-          WS.Close i closeMsg -> do
+          WS.Close code closeMsg -> do
             hasSentClose <- IORef.readIORef $ WS.Connection.connectionSentClose activeConnection
             unless hasSentClose $ WS.send activeConnection msg
-            close websocket
-            atomically $ TMChan.closeTMChan rx
-            throwIO $ WS.CloseRequest i closeMsg
+            shutdownNow websocket code closeMsg
 
         broadcast (ControlMessage controlMsg)
 
@@ -174,8 +193,6 @@ handleOutgoingJSON WebSocket {connection, tx} = do
   Conduit.runConduit $
     Conduit.sourceTBMQueue tx
       .| Conduit.mapM_ (sendJSONMessage activeConnection)
-
-  WS.sendClose activeConnection ("Closing." :: ByteString)
   where
     sendJSONMessage :: WS.Connection -> Message tx -> IO ()
     sendJSONMessage conn (ControlMessage msg) = WS.send conn (WS.ControlMessage msg)
@@ -235,8 +252,7 @@ waitForPong seconds websocket =
     Timeout.timeout (seconds * 1000 * 1000) $ do
       channel <- receive websocket
       fix $ \waitForNextMsg -> do
-        msg <- read channel
-        case msg of
+        read channel >>= \case
           Just (ControlMessage (WS.Pong _)) -> Time.getCurrentTime
           _ -> waitForNextMsg
 
@@ -245,6 +261,9 @@ sendPingEvery seconds WebSocket {connection} = forever $ do
   activeConnection <- MVar.readMVar connection
   WS.sendPing activeConnection BS.empty
   threadDelay (seconds * 1000 * 1000)
+
+startGracePeriod :: IO a -> IO (Maybe a)
+startGracePeriod = Timeout.timeout (5 * 1000 * 1000)
 
 -- | Try to gracefully close the WebSocket.
 --
@@ -258,10 +277,12 @@ waitForGracefulShutdown connection = do
   WS.sendClose connection ("Closing." :: ByteString)
 
   -- Grace period
-  response <- Timeout.timeout (5 * 1000 * 1000) $ forever (WS.receiveDataMessage connection)
+  response <- startGracePeriod $ forever (WS.receiveDataMessage connection)
 
-  when (isNothing response) $
-    throwIO $ WS.CloseRequest 1000 "No response to close request"
+  when (isNothing response) throwNoResponseToCloseRequest
+
+throwNoResponseToCloseRequest :: IO a
+throwNoResponseToCloseRequest = throwIO $ WS.CloseRequest 1000 "No response to close request"
 
 -- Authorization headers for Cachix Deploy
 

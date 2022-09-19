@@ -87,12 +87,11 @@ data Options = Options
   deriving (Show)
 
 withConnection ::
-  (Aeson.ToJSON tx, Aeson.FromJSON rx) =>
   -- | Logging context for logging socket status
   Log.WithLog ->
   -- | WebSocket options
   Options ->
-  -- | The app to run inside the socket
+  -- | The client app to run inside the socket
   (WebSocket tx rx -> IO ()) ->
   IO ()
 withConnection withLog options app = do
@@ -129,15 +128,23 @@ withConnection withLog options app = do
             -- Update the connection
             MVar.putMVar connection newConnection
 
-            WS.withPingThread newConnection pingEvery pingHandler $
-              Async.withAsync (handleIncoming websocket) $ \_ ->
-                Async.withAsync (handleOutgoing websocket) $ \_ ->
-                  app websocket
-            `finally` waitForGracefulShutdown newConnection
+            WS.withPingThread newConnection pingEvery pingHandler (app websocket)
+
+      -- `finally` waitForGracefulShutdown newConnection
       `Safe.finally` void (MVar.tryTakeMVar connection)
 
-handleIncoming :: (Aeson.FromJSON rx) => WebSocket tx rx -> IO rx
-handleIncoming websocket@WebSocket {connection, rx, withLog} = do
+-- Handle JSON messages
+
+handleJSONMessages :: (Aeson.ToJSON tx, Aeson.FromJSON rx) => WebSocket tx rx -> IO () -> IO ()
+handleJSONMessages websocket app =
+  Async.withAsync (handleIncomingJSON websocket) $ \incomingThread ->
+    Async.withAsync (handleOutgoingJSON websocket) $ \outgoingThread ->
+      app `finally` do
+        close websocket
+        Async.waitBoth outgoingThread incomingThread
+
+handleIncomingJSON :: (Aeson.FromJSON rx) => WebSocket tx rx -> IO rx
+handleIncomingJSON websocket@WebSocket {connection, rx, withLog} = do
   activeConnection <- MVar.readMVar connection
   let broadcast = atomically . TMChan.writeTMChan rx
 
@@ -152,24 +159,30 @@ handleIncoming websocket@WebSocket {connection, rx, withLog} = do
         case controlMsg of
           WS.Ping pl -> send websocket (ControlMessage (WS.Pong pl))
           WS.Pong _ -> WS.connectionOnPong (WS.Connection.connectionOptions activeConnection)
-          WS.Close _ _ -> do
+          WS.Close i closeMsg -> do
             hasSentClose <- IORef.readIORef $ WS.Connection.connectionSentClose activeConnection
             unless hasSentClose $ WS.send activeConnection msg
             close websocket
+            atomically $ TMChan.closeTMChan rx
+            throwIO $ WS.CloseRequest i closeMsg
 
         broadcast (ControlMessage controlMsg)
 
-handleOutgoing :: Aeson.ToJSON tx => WebSocket tx rx -> IO ()
-handleOutgoing WebSocket {connection, tx} = do
+handleOutgoingJSON :: forall tx rx. Aeson.ToJSON tx => WebSocket tx rx -> IO ()
+handleOutgoingJSON WebSocket {connection, tx} = do
   activeConnection <- MVar.readMVar connection
   Conduit.runConduit $
     Conduit.sourceTBMQueue tx
-      .| Conduit.mapM_ (sendMessage activeConnection)
-  where
-    sendMessage conn (ControlMessage msg) = WS.send conn (WS.ControlMessage msg)
-    sendMessage conn (DataMessage msg) = WS.sendTextData conn (Aeson.encode msg)
+      .| Conduit.mapM_ (sendJSONMessage activeConnection)
 
--- Log all exceptions and retry, except when the websocket receives a close request.
+  WS.sendClose activeConnection ("Closing." :: ByteString)
+  where
+    sendJSONMessage :: WS.Connection -> Message tx -> IO ()
+    sendJSONMessage conn (ControlMessage msg) = WS.send conn (WS.ControlMessage msg)
+    sendJSONMessage conn (DataMessage msg) = WS.sendTextData conn (Aeson.encode msg)
+
+-- | Log all exceptions and retry. Exit when the websocket receives a close request.
+--
 -- TODO: use exponential retry with reset: https://github.com/Soostone/retry/issues/25
 reconnectWithLog :: (MonadMask m, MonadIO m) => Log.WithLog -> m () -> m ()
 reconnectWithLog withLog inner =
@@ -208,7 +221,7 @@ reconnectWithLog withLog inner =
     toSeconds t =
       floor $ (fromIntegral t :: Double) / 1000 / 1000
 
--- | Open a receiving channel and discard incoming messages.
+-- | Open a receiving channel and discard all incoming messages.
 consumeIntoVoid :: WebSocket tx rx -> IO ()
 consumeIntoVoid websocket = do
   rx <- receive websocket
@@ -250,7 +263,7 @@ waitForGracefulShutdown connection = do
   when (isNothing response) $
     throwIO $ WS.CloseRequest 1000 "No response to close request"
 
--- Cachix Deploy authorization headers
+-- Authorization headers for Cachix Deploy
 
 system :: String
 system = System.Info.arch <> "-" <> System.Info.os

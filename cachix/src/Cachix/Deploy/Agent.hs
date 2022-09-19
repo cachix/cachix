@@ -12,7 +12,6 @@ import qualified Cachix.Deploy.Log as Log
 import qualified Cachix.Deploy.OptionsParser as AgentOptions
 import qualified Cachix.Deploy.StdinProcess as StdinProcess
 import qualified Cachix.Deploy.Websocket as WebSocket
-import qualified Control.Concurrent.MVar as MVar
 import Control.Exception.Safe (handleAny, onException)
 import qualified Data.Aeson as Aeson
 import Data.IORef
@@ -28,6 +27,8 @@ import qualified System.Posix.Files as Posix.Files
 import qualified System.Posix.User as Posix.User
 
 type AgentState = IORef (Maybe WSS.AgentInformation)
+
+type ServiceWebSocket = WebSocket.WebSocket (WSS.Message WSS.AgentCommand) (WSS.Message WSS.BackendCommand)
 
 -- | Everything required for the standalone deployment binary to complete a
 -- deployment.
@@ -69,13 +70,17 @@ run cachixOptions agentOpts =
                 WebSocket.agentIdentifier = agentIdentifier agentName
               }
 
-      WebSocket.withConnection @Int @(WSS.Message WSS.BackendCommand) withLog websocketOptions $ \websocket -> do
-        channel <- WebSocket.receive websocket
-        forever $
-          WebSocket.read channel >>= \case
-            Just (WebSocket.DataMessage message) -> do
-              handleMessage withLog agentState agentName agentToken message
-            _ -> pure ()
+      WebSocket.withConnection
+        withLog
+        websocketOptions
+        $ \websocket ->
+          WebSocket.handleJSONMessages @(WSS.Message WSS.AgentCommand) @(WSS.Message WSS.BackendCommand) websocket $
+            WebSocket.receive websocket >>= \channel ->
+              forever $
+                WebSocket.read channel >>= \case
+                  Just (WebSocket.DataMessage message) -> do
+                    handleMessage withLog agentState agentName agentToken message
+                  _ -> pure ()
   where
     host = toS $ Servant.baseUrlHost $ getBaseUrl $ Config.host cachixOptions
     profileName = fromMaybe "system" (AgentOptions.profile agentOpts)
@@ -98,11 +103,6 @@ run cachixOptions agentOpts =
 
     handleMessage :: Log.WithLog -> AgentState -> Text -> Text -> WSS.Message WSS.BackendCommand -> IO ()
     handleMessage withLog agentState agentName agentToken payload =
-      -- case WSS.parseMessage payload of
-      -- Left err ->
-      -- TODO: show the bytestring?
-      -- withLog $ K.logLocM K.ErrorS $ K.ls $ "Failed to parse websocket payload: " <> err
-      -- Right message ->
       handleCommand (WSS.command payload)
       where
         handleCommand :: WSS.BackendCommand -> IO ()

@@ -25,6 +25,7 @@ common defaults
     DeriveAnyClass
     DeriveGeneric
     DerivingVia
+    NamedFieldPuns
     OverloadedStrings
 
   ghc-options:
@@ -111,6 +112,7 @@ library
     , netrc
     , optparse-applicative
     , pretty-terminal
+    , prettyprinter
     , process
     , protolude
     , resourcet

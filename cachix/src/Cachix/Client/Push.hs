@@ -281,7 +281,7 @@ getMissingPathsForClosure pushParams inputPaths = do
 
 -- | Find auth token or signing key in the 'Config' or environment variable
 findPushSecret ::
-  Maybe Config.Config ->
+  Config.Config ->
   -- | Cache name
   Text ->
   -- | Secret key or exception
@@ -289,9 +289,7 @@ findPushSecret ::
 findPushSecret config name = do
   maybeSigningKeyEnv <- toS <<$>> lookupEnv "CACHIX_SIGNING_KEY"
   maybeAuthToken <- Config.getAuthTokenMaybe config
-  let maybeSigningKeyConfig = case config of
-        Nothing -> Nothing
-        Just cfg -> Config.secretKey <$> head (getBinaryCache cfg)
+  let maybeSigningKeyConfig = Config.secretKey <$> head (getBinaryCache config)
   case maybeSigningKeyEnv <|> maybeSigningKeyConfig of
     Just signingKey -> escalateAs FatalError $ PushSigningKey (fromMaybe (Token "") maybeAuthToken) <$> parseSigningKeyLenient signingKey
     Nothing -> case maybeAuthToken of

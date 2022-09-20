@@ -6,8 +6,7 @@ module Cachix.Client.Env
   )
 where
 
-import Cachix.Client.Config (Config, readConfig)
-import Cachix.Client.OptionsParser (CachixOptions (..))
+import Cachix.Client.Config (CachixOptions (..), Config, getConfig)
 import Cachix.Client.URI (getBaseUrl)
 import Cachix.Client.Version (cachixVersion)
 import Hercules.CNix.Store (Store, openStore)
@@ -25,7 +24,7 @@ import Servant.Client.Streaming (ClientEnv, mkClientEnv)
 import System.Directory (canonicalizePath)
 
 data Env = Env
-  { config :: Maybe Config,
+  { config :: Config,
     clientenv :: ClientEnv,
     cachixoptions :: CachixOptions,
     storeAsync :: Async Store
@@ -37,7 +36,7 @@ mkEnv rawcachixoptions = do
   -- make sure path to the config is passed as absolute to dhall logic
   canonicalConfigPath <- canonicalizePath (configPath rawcachixoptions)
   let cachixOptions = rawcachixoptions {configPath = canonicalConfigPath}
-  cfg <- readConfig $ configPath cachixOptions
+  cfg <- getConfig (configPath cachixOptions)
   clientEnv <- createClientEnv cachixOptions
   return
     Env

@@ -1,6 +1,5 @@
 module Cachix.Client.OptionsParser
   ( CachixCommand (..),
-    CachixOptions (..),
     PushArguments (..),
     PushOptions (..),
     BinaryCacheName,
@@ -23,16 +22,9 @@ import URI.ByteString
     strictURIParserOptions,
   )
 
-data CachixOptions = CachixOptions
-  { host :: URIRef Absolute,
-    configPath :: Config.ConfigPath,
-    verbose :: Bool
-  }
-  deriving (Show)
-
-parserCachixOptions :: Config.ConfigPath -> Parser CachixOptions
+parserCachixOptions :: Config.ConfigPath -> Parser Config.CachixOptions
 parserCachixOptions defaultConfigPath =
-  CachixOptions
+  Config.CachixOptions
     <$> option
       uriOption
       ( long "host"
@@ -169,12 +161,12 @@ parserCachixCommand =
                   )
             )
 
-getOpts :: IO (CachixOptions, CachixCommand)
+getOpts :: IO (Config.CachixOptions, CachixCommand)
 getOpts = do
   configpath <- Config.getDefaultFilename
   customExecParser (prefs showHelpOnEmpty) (optsInfo configpath)
 
-optsInfo :: Config.ConfigPath -> ParserInfo (CachixOptions, CachixCommand)
+optsInfo :: Config.ConfigPath -> ParserInfo (Config.CachixOptions, CachixCommand)
 optsInfo configpath = infoH parser desc
   where
     parser = (,) <$> parserCachixOptions configpath <*> (parserCachixCommand <|> versionParser)

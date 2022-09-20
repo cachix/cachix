@@ -76,7 +76,7 @@ getInstallationMode nixenv useOptions
   | otherwise = UntrustedRequiresSudo
 
 -- | Add a Binary cache to nix.conf, print nixos config or fail
-addBinaryCache :: Maybe Config -> BinaryCache.BinaryCache -> UseOptions -> InstallationMode -> IO ()
+addBinaryCache :: Config -> BinaryCache.BinaryCache -> UseOptions -> InstallationMode -> IO ()
 addBinaryCache _ _ _ UntrustedNixOS = do
   user <- getUser
   throwIO $
@@ -108,9 +108,9 @@ b) Run the following command to add your user as trusted
 
   echo "trusted-users = root ${user}" | sudo tee -a /etc/nix/nix.conf && sudo pkill nix-daemon
 |]
-addBinaryCache maybeConfig bc useOptions WriteNixOS =
-  nixosBinaryCache maybeConfig bc useOptions
-addBinaryCache maybeConfig bc _ (Install ncl) = do
+addBinaryCache config bc useOptions WriteNixOS =
+  nixosBinaryCache config bc useOptions
+addBinaryCache config bc _ (Install ncl) = do
   -- TODO: might need locking one day
   gnc <- NixConf.read NixConf.Global
   (input, output) <-
@@ -123,7 +123,7 @@ addBinaryCache maybeConfig bc _ (Install ncl) = do
         lnc <- NixConf.read ncl
         return ([lnc], lnc)
   let nixconf = fromMaybe (NixConf.NixConf []) output
-  netrcLocMaybe <- forM (guard $ not (BinaryCache.isPublic bc)) $ const $ addPrivateBinaryCacheNetRC maybeConfig bc ncl
+  netrcLocMaybe <- forM (guard $ not (BinaryCache.isPublic bc)) $ const $ addPrivateBinaryCacheNetRC config bc ncl
   let addNetRCLine :: NixConf.NixConf -> NixConf.NixConf
       addNetRCLine = fromMaybe identity $ do
         netrcLoc <- netrcLocMaybe :: Maybe FilePath
@@ -135,8 +135,8 @@ addBinaryCache maybeConfig bc _ (Install ncl) = do
   filename <- NixConf.getFilename ncl
   putStrLn $ "Configured " <> BinaryCache.uri bc <> " binary cache in " <> toS filename
 
-nixosBinaryCache :: Maybe Config -> BinaryCache.BinaryCache -> UseOptions -> IO ()
-nixosBinaryCache maybeConfig bc UseOptions {useNixOSFolder = baseDirectory} = do
+nixosBinaryCache :: Config -> BinaryCache.BinaryCache -> UseOptions -> IO ()
+nixosBinaryCache config bc UseOptions {useNixOSFolder = baseDirectory} = do
   _ <- try $ createDirectoryIfMissing True $ toS toplevel :: IO (Either SomeException ())
   eitherPermissions <- try $ getPermissions (toS toplevel) :: IO (Either SomeException Permissions)
   case eitherPermissions of
@@ -148,7 +148,7 @@ nixosBinaryCache maybeConfig bc UseOptions {useNixOSFolder = baseDirectory} = do
     installFiles = do
       writeFile (toS glueModuleFile) glueModule
       writeFile (toS cacheModuleFile) cacheModule
-      unless (BinaryCache.isPublic bc) $ void $ addPrivateBinaryCacheNetRC maybeConfig bc NixConf.Global
+      unless (BinaryCache.isPublic bc) $ void $ addPrivateBinaryCacheNetRC config bc NixConf.Global
       putText instructions
     configurationNix :: Text
     configurationNix = toS $ toS baseDirectory </> "configuration.nix"
@@ -213,10 +213,10 @@ in {
 |]
 
 -- TODO: allow overriding netrc location
-addPrivateBinaryCacheNetRC :: Maybe Config -> BinaryCache.BinaryCache -> NixConf.NixConfLoc -> IO FilePath
-addPrivateBinaryCacheNetRC maybeConfig bc nixconf = do
+addPrivateBinaryCacheNetRC :: Config -> BinaryCache.BinaryCache -> NixConf.NixConfLoc -> IO FilePath
+addPrivateBinaryCacheNetRC config bc nixconf = do
   filename <- (`replaceFileName` "netrc") <$> NixConf.getFilename nixconf
-  authToken <- Config.getAuthTokenRequired maybeConfig
+  authToken <- Config.getAuthTokenRequired config
   let netrcfile = fromMaybe filename Nothing -- TODO: get netrc from nixconf
   NetRc.add authToken [bc] netrcfile
   putErrText $ "Configured private read access credentials in " <> toS filename

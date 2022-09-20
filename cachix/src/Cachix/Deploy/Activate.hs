@@ -25,18 +25,39 @@ import qualified System.Directory as Directory
 import System.FilePath ((</>))
 import System.IO.Temp (withSystemTempDirectory)
 import System.Process
-import Prelude (String, userError)
+import Prelude (String)
 
-data Error
+data Status
+  = Success
+  | Failure FailureReason
+  | Rollback FailureReason
+  deriving (Show, Exception)
+
+data FailureReason
   = NetworkTestFailure
-  | RollbackScriptFailure IOException
-  | RollbackFailure
+  | RollbackScriptExitFailure
+  | RollbackScriptUnexpectedError IOException
+  | ShellCommandFailure {command :: String, exitCode :: Int}
+  | UnexpectedError SomeException
   deriving (Show)
 
-instance Exception Error where
-  displayException NetworkTestFailure = "Cannot connect back to Cachix Deploy after activating the new deployment"
-  displayException (RollbackScriptFailure e) = "The rollback script returned an error." <> displayException e
-  displayException RollbackFailure = "Cannot roll back the deployment."
+instance Exception FailureReason where
+  displayException = \case
+    NetworkTestFailure -> "Cannot connect back to Cachix Deploy after activating the new deployment"
+    RollbackScriptExitFailure -> "The rollback script returned a non-zero exit code"
+    RollbackScriptUnexpectedError e -> "Cannot run rollback script: " <> displayException e
+    ShellCommandFailure {command, exitCode} ->
+      toS $
+        unwords
+          [ "Failed to run " <> toS command,
+            show exitCode
+          ]
+    UnexpectedError e ->
+      toS $
+        unwords
+          [ "The deployment failed with an unexpected error:",
+            toS (displayException e)
+          ]
 
 downloadStorePaths ::
   -- | Logging context
@@ -176,7 +197,7 @@ withCacheArgs host agentInfo agentToken m =
 runShell :: Log.LogStream -> FilePath -> [String] -> IO ()
 runShell logStream cmd args = runShellWithExitCode logStream cmd args >>= handleError
   where
-    handleError (ExitFailure code) = ioError $ userError (show code)
+    handleError (ExitFailure exitCode) = throwIO $ ShellCommandFailure {command = cmd, exitCode}
     handleError ExitSuccess = pure ()
 
 runShellWithExitCode :: Log.LogStream -> FilePath -> [String] -> IO ExitCode

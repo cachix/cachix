@@ -1,4 +1,5 @@
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Main
   ( main,
@@ -108,7 +109,7 @@ deploy ::
 deploy withLog deployment service logStream = do
   withLog $ K.logLocM K.InfoS $ K.ls $ "Deploying #" <> deploymentIndex <> ": " <> storePath
 
-  activationStatus <- Safe.tryAny $
+  activationStatus <- handleAsActivationStatus $
     Activate.withCacheArgs host agentInformation agentToken $ \cacheArgs -> do
       startDeployment Nothing
 
@@ -124,42 +125,41 @@ deploy withLog deployment service logStream = do
       rollbackAction <- Activate.activate logStream profileName (toS storePath)
 
       -- Run tests on the new deployment
-      testResults <- Safe.tryAny $ do
-        -- Run network test
+      testResults <- handleAsFailureReason $ do
+        -- Run a basic network test against the backend
         pong <- WebSocket.waitForPong 10 service
         when (isNothing pong) $ throwIO Activate.NetworkTestFailure
 
+        -- Run the optional rollback script
         for (WSS.rollbackScript deploymentDetails) $ \rollbackScript -> do
           Log.streamLine logStream "Running rollback script."
           rollbackScriptResult <- Safe.tryIO $ Activate.runShellWithExitCode logStream (toS rollbackScript) []
           case rollbackScriptResult of
             Right ExitSuccess -> pure ()
-            Right (ExitFailure _) -> throwIO Activate.RollbackFailure
-            Left e -> throwIO (Activate.RollbackScriptFailure e)
+            Right (ExitFailure _) -> throwIO Activate.RollbackScriptExitFailure
+            Left e -> throwIO (Activate.RollbackScriptUnexpectedError e)
 
       -- Roll back if any of the tests have failed
-      when (isLeft testResults) $
-        case rollbackAction of
-          Just rollback -> do
-            Log.streamLine logStream "Deployment failed, rolling back ..."
-            rollback
-          Nothing ->
-            Log.streamLine logStream "Skipping rollback as this is the first deployment."
+      case testResults of
+        Right _ -> pure Activate.Success
+        Left testErrors ->
+          case rollbackAction of
+            Just rollback -> do
+              Log.streamLine logStream "Deployment failed, rolling back ..."
+              rollback
+              throwIO (Activate.Rollback testErrors)
+            Nothing -> do
+              Log.streamLine logStream "Skipping rollback as this is the first deployment."
+              throwIO (Activate.Failure testErrors)
 
   case activationStatus of
-    Left e -> do
-      Log.streamLine logStream $
-        toS $
-          unwords
-            [ "Failed to activate the deployment.",
-              toS $ displayException e
-            ]
-      withLog $ K.logLocM K.InfoS $ K.ls $ "Deploying #" <> deploymentIndex <> " failed."
-    Right _ -> do
+    Activate.Failure e -> logDeploymentFailed e
+    Activate.Rollback e -> logDeploymentFailed e
+    Activate.Success -> do
       Log.streamLine logStream "Successfully activated the deployment."
       withLog $ K.logLocM K.InfoS $ K.ls $ "Deployment #" <> deploymentIndex <> " finished"
 
-  endDeployment (isRight activationStatus)
+  endDeployment activationStatus
   where
     -- TODO: cut down record access boilerplate
 
@@ -174,6 +174,29 @@ deploy withLog deployment service logStream = do
     agentToken = Agent.agentToken deployment
     agentInformation = Agent.agentInformation deployment
 
+    handleAsActivationStatus :: IO Activate.Status -> IO Activate.Status
+    handleAsActivationStatus action =
+      action
+        `Safe.catches` [ Safe.Handler (\(e :: Activate.Status) -> pure e),
+                         Safe.Handler (\(e :: SomeException) -> pure $ Activate.Failure (Activate.UnexpectedError e))
+                       ]
+
+    handleAsFailureReason :: IO a -> IO (Either Activate.FailureReason a)
+    handleAsFailureReason action =
+      fmap Right action
+        `Safe.catches` [ Safe.Handler (\(e :: Activate.FailureReason) -> pure (Left e)),
+                         Safe.Handler (\(e :: SomeException) -> pure $ Left (Activate.UnexpectedError e))
+                       ]
+
+    logDeploymentFailed e = do
+      Log.streamLine logStream $
+        toS $
+          unwords
+            [ "Failed to activate the deployment.",
+              toS $ displayException e
+            ]
+      withLog $ K.logLocM K.InfoS $ K.ls $ "Deploying #" <> deploymentIndex <> " failed."
+
     startDeployment :: Maybe Int64 -> IO ()
     startDeployment closureSize = do
       now <- getCurrentTime
@@ -186,8 +209,12 @@ deploy withLog deployment service logStream = do
             }
       WebSocket.send service (WebSocket.DataMessage msg)
 
-    endDeployment :: Bool -> IO ()
-    endDeployment hasSucceeded = do
+    endDeployment :: Activate.Status -> IO ()
+    endDeployment status = do
+      let hasSucceeded =
+            case status of
+              Activate.Success -> True
+              _ -> False
       now <- getCurrentTime
       msg <-
         createMessage $

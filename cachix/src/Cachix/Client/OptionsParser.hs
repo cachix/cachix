@@ -13,7 +13,7 @@ import qualified Cachix.Client.InstallationMode as InstallationMode
 import Cachix.Client.URI (defaultCachixURI)
 import qualified Cachix.Deploy.OptionsParser as DeployOptions
 import Options.Applicative
-import Protolude hiding (option, toS)
+import Protolude hiding (toS)
 import Protolude.Conv
 import URI.ByteString
   ( Absolute,
@@ -63,6 +63,7 @@ type BinaryCacheName = Text
 
 data CachixCommand
   = AuthToken (Maybe Text)
+  | Config Config.Command
   | GenerateKeypair BinaryCacheName
   | Push PushArguments
   | WatchStore PushOptions Text
@@ -88,6 +89,7 @@ parserCachixCommand :: Parser CachixCommand
 parserCachixCommand =
   subparser $
     command "authtoken" (infoH authtoken (progDesc "Configure authentication token for communication to HTTP API"))
+      <> command "config" (Config <$> Config.parser)
       <> command "generate-keypair" (infoH generateKeypair (progDesc "Generate signing key pair for a binary cache"))
       <> command "push" (infoH push (progDesc "Upload Nix store paths to a binary cache"))
       <> command "watch-exec" (infoH watchExec (progDesc "Run a command while it's running watch /nix/store for newly added store paths and upload them to a binary cache"))

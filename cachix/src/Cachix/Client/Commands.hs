@@ -51,7 +51,7 @@ import Data.String.Here
 import qualified Data.Text as T
 import qualified Data.Text.IO as T.IO
 import GHC.IO.Handle (hDuplicate, hDuplicateTo)
-import Hercules.CNix.Store (Store, StorePath, followLinksToStorePath, isValidPath, storePathToPath)
+import Hercules.CNix.Store (Store, StorePath, followLinksToStorePath, storePathToPath)
 import Network.HTTP.Types (status401, status404)
 import Protolude hiding (toS)
 import Protolude.Conv

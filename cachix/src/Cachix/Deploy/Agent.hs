@@ -3,7 +3,7 @@
 module Cachix.Deploy.Agent where
 
 import qualified Cachix.API.WebSocketSubprotocol as WSS
-import qualified Cachix.Client.OptionsParser as CachixOptions
+import qualified Cachix.Client.Config as Config
 import Cachix.Client.URI (getBaseUrl)
 import qualified Cachix.Deploy.OptionsParser as AgentOptions
 import Cachix.Deploy.StdinProcess (readProcess)
@@ -16,11 +16,11 @@ import Protolude hiding (toS)
 import Protolude.Conv
 import qualified Servant.Client as Servant
 
-run :: CachixOptions.CachixOptions -> AgentOptions.AgentOptions -> IO ()
+run :: Config.CachixOptions -> AgentOptions.AgentOptions -> IO ()
 run cachixOptions agentOpts =
   CachixWebsocket.runForever options handleMessage
   where
-    host = toS $ Servant.baseUrlHost $ getBaseUrl $ CachixOptions.host cachixOptions
+    host = toS $ Servant.baseUrlHost $ getBaseUrl $ Config.host cachixOptions
     name = AgentOptions.name agentOpts
     profile = fromMaybe "system" (AgentOptions.profile agentOpts)
     options =
@@ -29,7 +29,7 @@ run cachixOptions agentOpts =
           CachixWebsocket.name = name,
           CachixWebsocket.path = "/ws",
           CachixWebsocket.profile = profile,
-          CachixWebsocket.isVerbose = CachixOptions.verbose cachixOptions
+          CachixWebsocket.isVerbose = Config.verbose cachixOptions
         }
     handleMessage :: ByteString -> (K.KatipContextT IO () -> IO ()) -> WS.Connection -> CachixWebsocket.AgentState -> ByteString -> K.KatipContextT IO ()
     handleMessage payload _ _ agentState _ =
@@ -51,6 +51,6 @@ run cachixOptions agentOpts =
                           name = name,
                           path = "/ws-deployment",
                           profile = profile,
-                          isVerbose = CachixOptions.verbose cachixOptions
+                          isVerbose = Config.verbose cachixOptions
                         }
                   }

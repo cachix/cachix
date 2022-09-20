@@ -19,7 +19,6 @@ import Cachix.Client.CNix (filterInvalidStorePath)
 import Cachix.Client.Config
   ( BinaryCacheConfig (BinaryCacheConfig),
     Config (..),
-    mkConfig,
     writeConfig,
   )
 import qualified Cachix.Client.Config as Config
@@ -30,8 +29,7 @@ import qualified Cachix.Client.InstallationMode as InstallationMode
 import qualified Cachix.Client.NixConf as NixConf
 import Cachix.Client.NixVersion (assertNixVersion)
 import Cachix.Client.OptionsParser
-  ( CachixOptions (..),
-    PushArguments (..),
+  ( PushArguments (..),
     PushOptions (..),
   )
 import Cachix.Client.Push
@@ -64,17 +62,17 @@ import System.IO (hIsTerminalDevice)
 import qualified System.Posix.Signals as Signals
 import qualified System.Process
 
+-- TODO: check that token actually authenticates!
 authtoken :: Env -> Maybe Text -> IO ()
-authtoken env (Just token) = do
-  -- TODO: check that token actually authenticates!
-  writeConfig (configPath (cachixoptions env)) $ case config env of
-    Just cfg -> Config.setAuthToken cfg $ Token (toS token)
-    Nothing -> mkConfig token
+authtoken Env {cachixoptions} (Just token) = do
+  let configPath = Config.configPath cachixoptions
+  config <- Config.getConfig configPath
+  writeConfig configPath $ config {authToken = Token (toS token)}
 authtoken env Nothing = authtoken env . Just . T.strip =<< T.IO.getContents
 
 generateKeypair :: Env -> Text -> IO ()
 generateKeypair env name = do
-  cachixAuthToken <- Config.getAuthTokenRequired (config env)
+  authToken <- Config.getAuthTokenRequired (config env)
   (PublicKey pk, sk) <- createKeypair
   let signingKey = exportSigningKey $ SigningKey sk
       signingKeyCreate = SigningKeyCreate.SigningKeyCreate (toS $ B64.encode pk)
@@ -83,14 +81,15 @@ generateKeypair env name = do
   (_ :: NoContent) <-
     escalate <=< retryAll $ \_ ->
       (`runClientM` clientenv env) $
-        API.createKey cachixClient cachixAuthToken name signingKeyCreate
+        API.createKey cachixClient authToken name signingKeyCreate
   -- if key was successfully added, write it to the config
   -- TODO: warn if binary cache with the same key already exists
-  let cfg = case config env of
-        Just it -> it
-        Nothing -> Config.mkConfig $ toS $ getToken cachixAuthToken
-  writeConfig (configPath (cachixoptions env)) $
-    cfg {binaryCaches = binaryCaches cfg <> [bcc]}
+  let cfg =
+        config env
+          -- TODO: ASK DOMEN ABOUT THE SEMANTICS OF THE AUTH TOKEN HERE
+          & Config.setAuthToken authToken
+          & Config.setBinaryCaches [bcc]
+  writeConfig (Config.configPath (cachixoptions env)) cfg
   putStrLn
     ( [iTrim|
 Secret signing key has been saved in the file above. To populate
@@ -128,7 +127,9 @@ use env name useOptions = do
   res <- retryAll $ \_ -> (`runClientM` clientenv env) $ API.getCache cachixClient cachixAuthToken name
   case res of
     Left err
-      | isErr err status401 && isJust (config env) -> throwM $ accessDeniedBinaryCache name
+      -- TODO: is checking for the existence of the config file the right thing to do here?
+      -- Is this error helpful even helpful if we're not checking whether the auth token is valid?
+      -- isErr err status401 && isJust (config env) -> throwM $ accessDeniedBinaryCache name
       | isErr err status401 -> throwM $ notAuthenticatedBinaryCache name
       | isErr err status404 -> throwM $ BinaryCacheNotFound $ "Binary cache" <> name <> " does not exist."
       | otherwise -> throwM err
@@ -210,13 +211,14 @@ retryText retrystatus =
     else "(retry #" <> show (rsIterNumber retrystatus) <> ") "
 
 pushStrategy :: Store -> Env -> PushOptions -> Text -> StorePath -> PushStrategy IO ()
-pushStrategy store env opts name storePath =
+pushStrategy store _env opts name storePath =
   PushStrategy
     { onAlreadyPresent = pass,
       on401 =
-        if isJust (config env)
-          then throwM $ accessDeniedBinaryCache name
-          else throwM $ notAuthenticatedBinaryCache name,
+        -- TODO: same thing as before. How valid is this check?
+        -- if isJust (config env)
+        -- then throwM $ accessDeniedBinaryCache name
+        throwM $ notAuthenticatedBinaryCache name,
       onError = throwM,
       onAttempt = \retrystatus size -> do
         path <- decodeUtf8With lenientDecode <$> storePathToPath store storePath

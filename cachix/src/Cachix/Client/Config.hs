@@ -1,40 +1,48 @@
 {-# LANGUAGE ApplicativeDo #-}
-{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE QuasiQuotes #-}
 
 module Cachix.Client.Config
-  ( Command (..),
-    ConfigKey (..),
-    Config (binaryCaches),
+  ( -- CLI options
+    run,
     parser,
+    CachixOptions (..),
+    Command (..),
+    ConfigKey (..),
+    -- Auth token helpers
     getAuthTokenRequired,
     getAuthTokenOptional,
     getAuthTokenMaybe,
     setAuthToken,
     noAuthTokenError,
-    BinaryCacheConfig (..),
+    -- Config
+    getConfig,
     readConfig,
     writeConfig,
     getDefaultFilename,
     ConfigPath,
-    mkConfig,
+    Config (..),
+    BinaryCacheConfig (..),
+    setBinaryCaches,
   )
 where
 
 import Cachix.Client.Config.Orphans ()
 import Cachix.Client.Exception (CachixException (..))
+import qualified Control.Exception.Safe as Safe
+import Data.Either.Extra (eitherToMaybe)
 import Data.String.Here
 import qualified Dhall
 import qualified Dhall.Pretty
 import qualified Options.Applicative as Opt
 import qualified Options.Applicative.Help as Opt.Help
+import qualified Prettyprinter as Pretty
+import qualified Prettyprinter.Render.Text as Pretty
 import Protolude hiding (toS)
 import Protolude.Conv
 import Servant.Auth.Client
 import System.Directory
   ( XdgDirectory (..),
     createDirectoryIfMissing,
-    doesFileExist,
     getXdgDirectory,
   )
 import System.Environment (lookupEnv)
@@ -45,6 +53,14 @@ import System.Posix.Files
     setFileMode,
     unionFileModes,
   )
+import qualified URI.ByteString as URI
+
+data CachixOptions = CachixOptions
+  { host :: URI.URIRef URI.Absolute,
+    configPath :: ConfigPath,
+    verbose :: Bool
+  }
+  deriving (Show)
 
 data Command
   = Set ConfigKey
@@ -53,6 +69,14 @@ data Command
 data ConfigKey
   = HostName Text
   deriving (Show)
+
+run :: CachixOptions -> Command -> IO ()
+run cachixOptions (Set option) = setConfigOption cachixOptions option
+
+setConfigOption :: CachixOptions -> ConfigKey -> IO ()
+setConfigOption CachixOptions {configPath} (HostName hostname) = do
+  config <- getConfig configPath
+  writeConfig configPath config {hostName = hostname}
 
 parser :: Opt.ParserInfo Command
 parser =
@@ -113,27 +137,45 @@ data BinaryCacheConfig = BinaryCacheConfig
   }
   deriving (Show, Generic, Dhall.FromDhall, Dhall.ToDhall)
 
-mkConfig :: Text -> Config
-mkConfig token =
+defaultHostName :: Text
+defaultHostName = "https://cachix.org/"
+
+defaultConfig :: Config
+defaultConfig =
   Config
-    { authToken = Token (toS token),
-      hostName = "https://cachix.org",
+    { authToken = "",
+      hostName = defaultHostName,
       binaryCaches = []
     }
 
+mergeWithDefault :: Text -> Text
+mergeWithDefault config =
+  serializeConfig defaultConfig <> " // " <> config
+
 type ConfigPath = FilePath
 
+getConfig :: ConfigPath -> IO Config
+getConfig filename = do
+  userConfig <- readConfig filename
+  pure $ fromMaybe defaultConfig userConfig
+
 readConfig :: ConfigPath -> IO (Maybe Config)
-readConfig filename = do
-  doesExist <- doesFileExist filename
-  if doesExist
-    then Just <$> Dhall.inputFile Dhall.auto filename
-    else return Nothing
+readConfig filename = fmap eitherToMaybe . Safe.tryIO $ do
+  userConfig <- readFile filename
+  let config = mergeWithDefault userConfig
+  Dhall.detailed (Dhall.input Dhall.auto config)
 
 getDefaultFilename :: IO FilePath
 getDefaultFilename = do
   dir <- getXdgDirectory XdgConfig "cachix"
   return $ dir <> "/cachix.dhall"
+
+serializeConfig :: Config -> Text
+serializeConfig =
+  Pretty.renderStrict
+    . Pretty.layoutPretty Pretty.defaultLayoutOptions
+    . Dhall.Pretty.prettyExpr
+    . Dhall.embed Dhall.inject
 
 writeConfig :: ConfigPath -> Config -> IO ()
 writeConfig filename config = do
@@ -148,27 +190,26 @@ assureFilePermissions :: FilePath -> IO ()
 assureFilePermissions fp =
   setFileMode fp $ unionFileModes ownerReadMode ownerWriteMode
 
-getAuthTokenRequired :: Maybe Config -> IO Token
-getAuthTokenRequired maybeConfig = do
-  authTokenMaybe <- getAuthTokenMaybe maybeConfig
+getAuthTokenRequired :: Config -> IO Token
+getAuthTokenRequired config = do
+  authTokenMaybe <- getAuthTokenMaybe config
   case authTokenMaybe of
     Just authtoken -> return authtoken
     Nothing -> throwIO $ NoConfig $ toS noAuthTokenError
 
 -- TODO: https://github.com/haskell-servant/servant-auth/issues/173
-getAuthTokenOptional :: Maybe Config -> IO Token
-getAuthTokenOptional maybeConfig = do
-  authTokenMaybe <- getAuthTokenMaybe maybeConfig
-  return $ Protolude.maybe (Token "") identity authTokenMaybe
+getAuthTokenOptional :: Config -> IO Token
+getAuthTokenOptional = pure . authToken
 
 -- get auth token from env variable or fallback to config
-getAuthTokenMaybe :: Maybe Config -> IO (Maybe Token)
-getAuthTokenMaybe maybeConfig = do
+-- TODO: we could fetch this env variable when creating the config.
+-- It would make all these options (and their precedence) much more obvious.
+getAuthTokenMaybe :: Config -> IO (Maybe Token)
+getAuthTokenMaybe config = do
   maybeAuthToken <- lookupEnv "CACHIX_AUTH_TOKEN"
-  case (maybeAuthToken, maybeConfig) of
-    (Just token, _) -> return $ Just $ Token $ toS token
-    (Nothing, Just cfg) -> return $ Just $ authToken cfg
-    (_, _) -> return Nothing
+  case maybeAuthToken of
+    Just token -> return $ Just $ Token (toS token)
+    Nothing -> return $ Just (authToken config)
 
 noAuthTokenError :: Text
 noAuthTokenError =
@@ -186,5 +227,10 @@ b) Via configuration file:
 $ cachix authtoken <token...>
   |]
 
-setAuthToken :: Config -> Token -> Config
-setAuthToken cfg token = cfg {authToken = token}
+-- Setters
+
+setAuthToken :: Token -> Config -> Config
+setAuthToken token config = config {authToken = token}
+
+setBinaryCaches :: [BinaryCacheConfig] -> Config -> Config
+setBinaryCaches caches config = config {binaryCaches = binaryCaches config <> caches}

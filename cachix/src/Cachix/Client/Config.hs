@@ -1,8 +1,12 @@
+{-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE QuasiQuotes #-}
 
 module Cachix.Client.Config
-  ( Config (binaryCaches),
+  ( Command (..),
+    ConfigKey (..),
+    Config (binaryCaches),
+    parser,
     getAuthTokenRequired,
     getAuthTokenOptional,
     getAuthTokenMaybe,
@@ -20,8 +24,10 @@ where
 import Cachix.Client.Config.Orphans ()
 import Cachix.Client.Exception (CachixException (..))
 import Data.String.Here
-import Dhall hiding (Text)
-import Dhall.Pretty (prettyExpr)
+import qualified Dhall
+import qualified Dhall.Pretty
+import qualified Options.Applicative as Opt
+import qualified Options.Applicative.Help as Opt.Help
 import Protolude hiding (toS)
 import Protolude.Conv
 import Servant.Auth.Client
@@ -40,22 +46,78 @@ import System.Posix.Files
     unionFileModes,
   )
 
+data Command
+  = Set ConfigKey
+  deriving (Show)
+
+data ConfigKey
+  = HostName Text
+  deriving (Show)
+
+parser :: Opt.ParserInfo Command
+parser =
+  Opt.info (Opt.helper <*> commandParser) $
+    mconcat
+      [ Opt.fullDesc,
+        Opt.progDesc "Manage the configuration for cachix",
+        Opt.footer (toS $ Opt.Help.renderHelp 80 (Opt.Help.bodyHelp printAllConfigurationKeys))
+      ]
+  where
+    printAllConfigurationKeys =
+      Opt.Help.vcatChunks $
+        map snd $
+          Opt.Help.cmdDesc Opt.defaultPrefs $
+            Opt.subparser (mconcat supportedConfigKeys)
+
+commandParser :: Opt.Parser Command
+commandParser =
+  Opt.subparser $
+    mconcat
+      [ Opt.command "set" $
+          Opt.info (Opt.helper <*> configKeyParser Set) $
+            Opt.progDesc "Set a configuration option"
+      ]
+
+configKeyParser :: (ConfigKey -> Command) -> Opt.Parser Command
+configKeyParser cmd = do
+  cmd
+    <$> Opt.subparser (Opt.metavar "KEY VALUE" <> mconcat supportedConfigKeys)
+
+supportedConfigKeys :: [Opt.Mod Opt.CommandFields ConfigKey]
+supportedConfigKeys =
+  [ Opt.command "hostname" $
+      Opt.info (Opt.helper <*> hostnameParser) $
+        Opt.progDesc "The hostname for the Cachix Deploy service."
+  ]
+
+hostnameParser :: Opt.Parser ConfigKey
+hostnameParser = do
+  hostname <-
+    Opt.strArgument $
+      mconcat
+        [ Opt.metavar "HOSTNAME",
+          Opt.showDefault
+        ]
+  pure (HostName hostname)
+
+data Config = Config
+  { authToken :: Token,
+    hostName :: Text,
+    binaryCaches :: [BinaryCacheConfig]
+  }
+  deriving (Show, Generic, Dhall.FromDhall, Dhall.ToDhall)
+
 data BinaryCacheConfig = BinaryCacheConfig
   { name :: Text,
     secretKey :: Text
   }
-  deriving (Show, Generic, Interpret, Inject)
-
-data Config = Config
-  { authToken :: Token,
-    binaryCaches :: [BinaryCacheConfig]
-  }
-  deriving (Show, Generic, Interpret, Inject)
+  deriving (Show, Generic, Dhall.FromDhall, Dhall.ToDhall)
 
 mkConfig :: Text -> Config
 mkConfig token =
   Config
     { authToken = Token (toS token),
+      hostName = "https://cachix.org",
       binaryCaches = []
     }
 
@@ -65,7 +127,7 @@ readConfig :: ConfigPath -> IO (Maybe Config)
 readConfig filename = do
   doesExist <- doesFileExist filename
   if doesExist
-    then Just <$> inputFile auto filename
+    then Just <$> Dhall.inputFile Dhall.auto filename
     else return Nothing
 
 getDefaultFilename :: IO FilePath
@@ -75,7 +137,7 @@ getDefaultFilename = do
 
 writeConfig :: ConfigPath -> Config -> IO ()
 writeConfig filename config = do
-  let doc = prettyExpr $ embed inject config
+  let doc = Dhall.Pretty.prettyExpr $ Dhall.embed Dhall.inject config
   createDirectoryIfMissing True (takeDirectory filename)
   writeFile filename $ show doc
   assureFilePermissions filename

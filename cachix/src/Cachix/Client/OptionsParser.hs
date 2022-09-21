@@ -4,12 +4,12 @@ module Cachix.Client.OptionsParser
     PushOptions (..),
     BinaryCacheName,
     getOpts,
+    Flags (..),
   )
 where
 
 import qualified Cachix.Client.Config as Config
 import qualified Cachix.Client.InstallationMode as InstallationMode
-import Cachix.Client.URI (defaultCachixURI)
 import qualified Cachix.Deploy.OptionsParser as DeployOptions
 import Options.Applicative
 import Protolude hiding (toS)
@@ -18,20 +18,21 @@ import URI.ByteString
   ( Absolute,
     URIRef,
     parseURI,
-    serializeURIRef',
     strictURIParserOptions,
   )
 
-parserCachixOptions :: Config.ConfigPath -> Parser Config.CachixOptions
+data Flags = Flags {host :: Maybe (URIRef Absolute), configPath :: Config.ConfigPath, verbose :: Bool}
+
+parserCachixOptions :: Config.ConfigPath -> Parser Flags
 parserCachixOptions defaultConfigPath =
-  Config.CachixOptions
-    <$> option
-      uriOption
-      ( long "host"
-          <> value defaultCachixURI
-          <> metavar "URI"
-          <> showDefaultWith (toS . serializeURIRef')
-          <> help "Host to connect to"
+  Flags
+    <$> optional
+      ( option
+          uriOption
+          ( long "host"
+              <> metavar "URI"
+              <> help "Host to connect to"
+          )
       )
     <*> strOption
       ( long "config"
@@ -161,12 +162,12 @@ parserCachixCommand =
                   )
             )
 
-getOpts :: IO (Config.CachixOptions, CachixCommand)
+getOpts :: IO (Flags, CachixCommand)
 getOpts = do
   configpath <- Config.getDefaultFilename
   customExecParser (prefs showHelpOnEmpty) (optsInfo configpath)
 
-optsInfo :: Config.ConfigPath -> ParserInfo (Config.CachixOptions, CachixCommand)
+optsInfo :: Config.ConfigPath -> ParserInfo (Flags, CachixCommand)
 optsInfo configpath = infoH parser desc
   where
     parser = (,) <$> parserCachixOptions configpath <*> (parserCachixCommand <|> versionParser)

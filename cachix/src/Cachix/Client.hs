@@ -5,7 +5,7 @@ where
 
 import Cachix.Client.Commands as Commands
 import qualified Cachix.Client.Config as Config
-import Cachix.Client.Env (mkEnv)
+import Cachix.Client.Env (cachixoptions, mkEnv)
 import Cachix.Client.OptionsParser (CachixCommand (..), getOpts)
 import Cachix.Client.Version (cachixVersion)
 import Cachix.Deploy.ActivateCommand as ActivateCommand
@@ -15,11 +15,12 @@ import Protolude
 
 main :: IO ()
 main = do
-  (cachixoptions, command) <- getOpts
-  env <- mkEnv cachixoptions
+  (flags, command) <- getOpts
+  env <- mkEnv flags
+  let cachixOptions = cachixoptions env
   case command of
     AuthToken token -> Commands.authtoken env token
-    Config configCommand -> Config.run cachixoptions configCommand
+    Config configCommand -> Config.run cachixOptions configCommand
     GenerateKeypair name -> Commands.generateKeypair env name
     Push pushArgs -> Commands.push env pushArgs
     WatchStore watchArgs name -> Commands.watchStore env watchArgs name
@@ -28,5 +29,5 @@ main = do
     Version -> putText cachixVersion
     DeployCommand deployCommand ->
       case deployCommand of
-        DeployOptions.Agent opts -> AgentCommand.run cachixoptions opts
-        DeployOptions.Activate opts -> ActivateCommand.run cachixoptions opts
+        DeployOptions.Agent opts -> AgentCommand.run cachixOptions opts
+        DeployOptions.Activate opts -> ActivateCommand.run cachixOptions opts

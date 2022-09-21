@@ -28,6 +28,7 @@ where
 
 import Cachix.Client.Config.Orphans ()
 import Cachix.Client.Exception (CachixException (..))
+import Cachix.Client.URI as URI
 import qualified Control.Exception.Safe as Safe
 import Data.Either.Extra (eitherToMaybe)
 import Data.String.Here
@@ -67,7 +68,7 @@ data Command
   deriving (Show)
 
 data ConfigKey
-  = HostName Text
+  = HostName (URI.URIRef URI.Absolute)
   deriving (Show)
 
 run :: CachixOptions -> Command -> IO ()
@@ -117,19 +118,23 @@ supportedConfigKeys =
 hostnameParser :: Opt.Parser ConfigKey
 hostnameParser = do
   hostname <-
-    Opt.strArgument $
-      mconcat
-        [ Opt.metavar "HOSTNAME",
-          Opt.showDefault
+    Opt.argument
+      uriOption
+      $ mconcat
+        [ Opt.metavar "HOSTNAME"
         ]
   pure (HostName hostname)
 
+uriOption :: Opt.ReadM (URI.URIRef URI.Absolute)
+uriOption = Opt.eitherReader $ \s ->
+  first show $ URI.parseURI URI.strictURIParserOptions (toS s)
+
 data Config = Config
   { authToken :: Token,
-    hostName :: Text,
+    hostName :: URI.URIRef URI.Absolute,
     binaryCaches :: [BinaryCacheConfig]
   }
-  deriving (Show, Generic, Dhall.FromDhall, Dhall.ToDhall)
+  deriving (Show, Generic, Dhall.ToDhall, Dhall.FromDhall)
 
 data BinaryCacheConfig = BinaryCacheConfig
   { name :: Text,
@@ -137,14 +142,11 @@ data BinaryCacheConfig = BinaryCacheConfig
   }
   deriving (Show, Generic, Dhall.FromDhall, Dhall.ToDhall)
 
-defaultHostName :: Text
-defaultHostName = "https://cachix.org/"
-
 defaultConfig :: Config
 defaultConfig =
   Config
     { authToken = "",
-      hostName = defaultHostName,
+      hostName = URI.defaultCachixURI,
       binaryCaches = []
     }
 

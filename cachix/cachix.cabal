@@ -93,6 +93,7 @@ library
     , dhall                   >=1.28.0
     , directory
     , ed25519
+    , either
     , extra
     , filepath
     , fsnotify

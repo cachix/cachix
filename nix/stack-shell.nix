@@ -9,10 +9,13 @@ pkgs.haskell.lib.buildStackProject {
 
   ghc = pkgs.haskell.compiler."${ghcVersion}";
 
+  NIX_PATH = "nixpkgs=${pkgs.path}";
+
   buildInputs = [
     pkgs.lzma
     pkgs.zlib
-    pkgs.nix
+    # TODO: match this to version in default.nix
+    pkgs.nixVersions.nix_2_9
     pkgs.boost
   ];
 }

@@ -1,3 +1,5 @@
+{-# LANGUAGE ApplicativeDo #-}
+
 module Cachix.Client.OptionsParser
   ( CachixCommand (..),
     PushArguments (..),
@@ -10,47 +12,60 @@ where
 
 import qualified Cachix.Client.Config as Config
 import qualified Cachix.Client.InstallationMode as InstallationMode
+import qualified Cachix.Client.URI as URI
 import qualified Cachix.Deploy.OptionsParser as DeployOptions
 import Options.Applicative
 import Protolude hiding (toS)
 import Protolude.Conv
-import URI.ByteString
-  ( Absolute,
-    URIRef,
-    parseURI,
-    strictURIParserOptions,
-  )
+import qualified URI.ByteString as URI
 
-data Flags = Flags {host :: Maybe (URIRef Absolute), configPath :: Config.ConfigPath, verbose :: Bool}
+data Flags = Flags
+  { configPath :: Config.ConfigPath,
+    host :: Maybe (URI.URIRef URI.Absolute),
+    verbose :: Bool
+  }
 
-parserCachixOptions :: Config.ConfigPath -> Parser Flags
-parserCachixOptions defaultConfigPath =
-  Flags
-    <$> optional
-      ( option
-          uriOption
-          ( long "host"
-              <> metavar "URI"
-              <> help "Host to connect to"
-          )
-      )
-    <*> strOption
-      ( long "config"
-          <> short 'c'
-          <> value defaultConfigPath
-          <> metavar "CONFIGPATH"
-          <> showDefault
-          <> help "Cachix configuration file"
-      )
-    <*> switch
-      ( long "verbose"
-          <> short 'v'
-          <> help "Verbose mode"
-      )
+flagParser :: Config.ConfigPath -> Parser Flags
+flagParser defaultConfigPath = do
+  host <-
+    optional $
+      option
+        uriOption
+        ( mconcat
+            [ long "hostname",
+              metavar "URI",
+              help ("Host to connect to (default: " <> defaultHostname <> ")")
+            ]
+        )
+        -- Accept `host` for backwards compatibility
+        <|> option uriOption (long "host" <> hidden)
 
-uriOption :: ReadM (URIRef Absolute)
+  configPath <-
+    strOption $
+      mconcat
+        [ long "config",
+          short 'c',
+          value defaultConfigPath,
+          metavar "CONFIGPATH",
+          showDefault,
+          help "Cachix configuration file"
+        ]
+
+  verbose <-
+    switch $
+      mconcat
+        [ long "verbose",
+          short 'v',
+          help "Verbose mode"
+        ]
+
+  pure Flags {host, configPath, verbose}
+  where
+    defaultHostname = toS (URI.serializeURIRef' URI.defaultCachixURI)
+
+uriOption :: ReadM (URI.URIRef URI.Absolute)
 uriOption = eitherReader $ \s ->
-  first show $ parseURI strictURIParserOptions $ toS s
+  first show $ URI.parseURI URI.strictURIParserOptions $ toS s
 
 type BinaryCacheName = Text
 
@@ -78,8 +93,8 @@ data PushOptions = PushOptions
   }
   deriving (Show)
 
-parserCachixCommand :: Parser CachixCommand
-parserCachixCommand =
+commandParser :: Parser CachixCommand
+commandParser =
   subparser $
     command "authtoken" (infoH authtoken (progDesc "Configure authentication token for communication to HTTP API"))
       <> command "config" (Config <$> Config.parser)
@@ -170,7 +185,7 @@ getOpts = do
 optsInfo :: Config.ConfigPath -> ParserInfo (Flags, CachixCommand)
 optsInfo configpath = infoH parser desc
   where
-    parser = (,) <$> parserCachixOptions configpath <*> (parserCachixCommand <|> versionParser)
+    parser = (,) <$> flagParser configpath <*> (commandParser <|> versionParser)
     versionParser :: Parser CachixCommand
     versionParser =
       flag'

@@ -6,7 +6,7 @@ module Cachix.Client.Env
   )
 where
 
-import Cachix.Client.Config (CachixOptions (..), Config)
+import Cachix.Client.Config (Config)
 import qualified Cachix.Client.Config as Config
 import qualified Cachix.Client.OptionsParser as Options
 import Cachix.Client.URI (getBaseUrl)
@@ -26,9 +26,9 @@ import Servant.Client.Streaming (ClientEnv, mkClientEnv)
 import System.Directory (canonicalizePath)
 
 data Env = Env
-  { config :: Config,
+  { cachixoptions :: Config.CachixOptions,
     clientenv :: ClientEnv,
-    cachixoptions :: CachixOptions,
+    config :: Config,
     storeAsync :: Async Store
   }
 
@@ -40,17 +40,16 @@ mkEnv flags = do
   cfg <- Config.getConfig canonicalConfigPath
   let cachixOptions =
         Config.CachixOptions
-          { configPath = canonicalConfigPath,
-            host = fromMaybe (Config.hostName cfg) (Options.host flags),
-            verbose = Options.verbose flags
+          { Config.configPath = canonicalConfigPath,
+            Config.host = fromMaybe (Config.hostname cfg) (Options.hostname flags),
+            Config.verbose = Options.verbose flags
           }
-
   clientEnv <- createClientEnv cachixOptions
   return
     Env
-      { config = cfg,
+      { cachixoptions = cachixOptions,
         clientenv = clientEnv,
-        cachixoptions = cachixOptions,
+        config = cfg,
         storeAsync = store
       }
 
@@ -62,7 +61,7 @@ customManagerSettings =
       managerModifyRequest = return . setRequestHeader "User-Agent" [toS cachixVersion]
     }
 
-createClientEnv :: CachixOptions -> IO ClientEnv
+createClientEnv :: Config.CachixOptions -> IO ClientEnv
 createClientEnv cachixOptions = do
   manager <- newTlsManagerWith customManagerSettings
-  return $ mkClientEnv manager $ getBaseUrl (host cachixOptions)
+  return $ mkClientEnv manager $ getBaseUrl (Config.host cachixOptions)

@@ -5,12 +5,11 @@ module Cachix.Client.Config
   ( -- CLI options
     run,
     parser,
-    CachixOptions (..),
     Command (..),
-    ConfigKey (..),
+    Option (..),
+    CachixOptions (..),
     -- Auth token helpers
     getAuthTokenRequired,
-    getAuthTokenOptional,
     getAuthTokenMaybe,
     setAuthToken,
     noAuthTokenError,
@@ -63,20 +62,20 @@ data CachixOptions = CachixOptions
   deriving (Show)
 
 data Command
-  = Set ConfigKey
+  = Set Option
   deriving (Show)
 
-data ConfigKey
+data Option
   = HostName (URI.URIRef URI.Absolute)
   deriving (Show)
 
 run :: CachixOptions -> Command -> IO ()
-run cachixOptions (Set option) = setConfigOption cachixOptions option
+run cachixoptions (Set option) = setConfigOption cachixoptions option
 
-setConfigOption :: CachixOptions -> ConfigKey -> IO ()
+setConfigOption :: CachixOptions -> Option -> IO ()
 setConfigOption CachixOptions {configPath} (HostName hostname) = do
   config <- getConfig configPath
-  writeConfig configPath config {hostName = hostname}
+  writeConfig configPath config {hostname = hostname}
 
 parser :: Opt.ParserInfo Command
 parser =
@@ -85,21 +84,21 @@ parser =
 
 commandParser :: Opt.Parser Command
 commandParser =
-  configKeyParser Set
+  configOptionParser Set
 
-configKeyParser :: (ConfigKey -> Command) -> Opt.Parser Command
-configKeyParser cmd = do
+configOptionParser :: (Option -> Command) -> Opt.Parser Command
+configOptionParser cmd = do
   cmd
-    <$> Opt.subparser (Opt.metavar "KEY VALUE" <> mconcat supportedConfigKeys)
+    <$> Opt.subparser (Opt.metavar "KEY VALUE" <> mconcat supportedOptions)
 
-supportedConfigKeys :: [Opt.Mod Opt.CommandFields ConfigKey]
-supportedConfigKeys =
+supportedOptions :: [Opt.Mod Opt.CommandFields Option]
+supportedOptions =
   [ Opt.command "hostname" $
       Opt.info (Opt.helper <*> hostnameParser) $
         Opt.progDesc "The hostname for the Cachix Deploy service."
   ]
 
-hostnameParser :: Opt.Parser ConfigKey
+hostnameParser :: Opt.Parser Option
 hostnameParser = do
   hostname <-
     Opt.argument
@@ -115,7 +114,7 @@ uriOption = Opt.eitherReader $ \s ->
 
 data Config = Config
   { authToken :: Token,
-    hostName :: URI.URIRef URI.Absolute,
+    hostname :: URI.URIRef URI.Absolute,
     binaryCaches :: [BinaryCacheConfig]
   }
   deriving (Show, Generic, Dhall.ToDhall, Dhall.FromDhall)
@@ -129,8 +128,8 @@ data BinaryCacheConfig = BinaryCacheConfig
 defaultConfig :: Config
 defaultConfig =
   Config
-    { authToken = "",
-      hostName = URI.defaultCachixURI,
+    { authToken = Token "",
+      hostname = URI.defaultCachixURI,
       binaryCaches = []
     }
 
@@ -176,6 +175,12 @@ assureFilePermissions :: FilePath -> IO ()
 assureFilePermissions fp =
   setFileMode fp $ unionFileModes ownerReadMode ownerWriteMode
 
+getAuthTokenFromConfig :: Config -> Maybe Token
+getAuthTokenFromConfig = inspectToken . authToken
+  where
+    inspectToken (Token "") = Nothing
+    inspectToken token = Just token
+
 getAuthTokenRequired :: Config -> IO Token
 getAuthTokenRequired config = do
   authTokenMaybe <- getAuthTokenMaybe config
@@ -183,19 +188,13 @@ getAuthTokenRequired config = do
     Just authtoken -> return authtoken
     Nothing -> throwIO $ NoConfig $ toS noAuthTokenError
 
--- TODO: https://github.com/haskell-servant/servant-auth/issues/173
-getAuthTokenOptional :: Config -> IO Token
-getAuthTokenOptional = pure . authToken
-
 -- get auth token from env variable or fallback to config
--- TODO: we could fetch this env variable when creating the config.
--- It would make all these options (and their precedence) much more obvious.
 getAuthTokenMaybe :: Config -> IO (Maybe Token)
 getAuthTokenMaybe config = do
   maybeAuthToken <- lookupEnv "CACHIX_AUTH_TOKEN"
   case maybeAuthToken of
     Just token -> return $ Just $ Token (toS token)
-    Nothing -> return $ Just (authToken config)
+    Nothing -> return $ getAuthTokenFromConfig config
 
 noAuthTokenError :: Text
 noAuthTokenError =

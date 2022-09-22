@@ -1,16 +1,12 @@
-resolver: nightly-2022-06-20
+resolver: nightly-2022-09-22
 packages:
-- cachix-api
 - cachix
+- cachix-api
 extra-deps:
-- hercules-ci-cnix-store-0.3.3.0
-- netrc-0.2.0.0
+- hercules-ci-cnix-store-0.3.3.1
 - nix-narinfo-0.1.0.1
-- protolude-0.3.2
-- servant-auth-swagger-0.2.10.1
 - cabal-pkg-config-version-hook-0.1.0.0
-# https://github.com/haskell-hvr/netrc/issues/5
-allow-newer: true
+allow-newer: false
 nix:
-  packages: []
+  enable: true
   shell-file: ./nix/stack-shell.nix

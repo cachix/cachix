@@ -9,13 +9,14 @@
 $ cachix --help
 https://cachix.org command line interface
 
-Usage: cachix [--host URI] [-c|--config CONFIGPATH] [-v|--verbose] 
+Usage: cachix [--hostname URI] [-c|--config CONFIGPATH] [-v|--verbose]
               (COMMAND | (-V|--version))
+
   To get started log in to https://app.cachix.org
 
 Available options:
   -h,--help                Show this help text
-  --host URI               Host to connect to (default: https://cachix.org)
+  --hostname URI           Host to connect to (default: https://cachix.org)
   -c,--config CONFIGPATH   Cachix configuration file
                            (default: "/home/domen/.config/cachix/cachix.dhall")
   -v,--verbose             Verbose mode
@@ -24,6 +25,7 @@ Available options:
 Available commands:
   authtoken                Configure authentication token for communication to
                            HTTP API
+  config                   Manage configuration settings for cachix
   generate-keypair         Generate signing key pair for a binary cache
   push                     Upload Nix store paths to a binary cache
   watch-exec               Run a command while it's running watch /nix/store for

@@ -35,7 +35,6 @@ import Data.String.Here
 import qualified Dhall
 import qualified Dhall.Pretty
 import qualified Options.Applicative as Opt
-import qualified Options.Applicative.Help as Opt.Help
 import qualified Prettyprinter as Pretty
 import qualified Prettyprinter.Render.Text as Pretty
 import Protolude hiding (toS)
@@ -82,26 +81,11 @@ setConfigOption CachixOptions {configPath} (HostName hostname) = do
 parser :: Opt.ParserInfo Command
 parser =
   Opt.info (Opt.helper <*> commandParser) $
-    mconcat
-      [ Opt.fullDesc,
-        Opt.progDesc "Manage the configuration for cachix",
-        Opt.footer (toS $ Opt.Help.renderHelp 80 (Opt.Help.bodyHelp printAllConfigurationKeys))
-      ]
-  where
-    printAllConfigurationKeys =
-      Opt.Help.vcatChunks $
-        map snd $
-          Opt.Help.cmdDesc Opt.defaultPrefs $
-            Opt.subparser (mconcat supportedConfigKeys)
+    Opt.progDesc "Manage the configuration for cachix"
 
 commandParser :: Opt.Parser Command
 commandParser =
-  Opt.subparser $
-    mconcat
-      [ Opt.command "set" $
-          Opt.info (Opt.helper <*> configKeyParser Set) $
-            Opt.progDesc "Set a configuration option"
-      ]
+  configKeyParser Set
 
 configKeyParser :: (ConfigKey -> Command) -> Opt.Parser Command
 configKeyParser cmd = do

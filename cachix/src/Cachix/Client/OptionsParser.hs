@@ -21,13 +21,13 @@ import qualified URI.ByteString as URI
 
 data Flags = Flags
   { configPath :: Config.ConfigPath,
-    host :: Maybe (URI.URIRef URI.Absolute),
+    hostname :: Maybe (URI.URIRef URI.Absolute),
     verbose :: Bool
   }
 
 flagParser :: Config.ConfigPath -> Parser Flags
 flagParser defaultConfigPath = do
-  host <-
+  hostname <-
     optional $
       option
         uriOption
@@ -59,7 +59,7 @@ flagParser defaultConfigPath = do
           help "Verbose mode"
         ]
 
-  pure Flags {host, configPath, verbose}
+  pure Flags {hostname, configPath, verbose}
   where
     defaultHostname = toS (URI.serializeURIRef' URI.defaultCachixURI)
 

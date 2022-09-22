@@ -16,11 +16,6 @@ where
 import qualified Cachix.API as API
 import Cachix.API.Error
 import Cachix.Client.CNix (filterInvalidStorePath)
-import Cachix.Client.Config
-  ( BinaryCacheConfig (BinaryCacheConfig),
-    Config (..),
-    writeConfig,
-  )
 import qualified Cachix.Client.Config as Config
 import Cachix.Client.Env (Env (..))
 import Cachix.Client.Exception (CachixException (..))
@@ -67,7 +62,7 @@ authtoken :: Env -> Maybe Text -> IO ()
 authtoken Env {cachixoptions} (Just token) = do
   let configPath = Config.configPath cachixoptions
   config <- Config.getConfig configPath
-  writeConfig configPath $ config {authToken = Token (toS token)}
+  Config.writeConfig configPath $ config {Config.authToken = Token (toS token)}
 authtoken env Nothing = authtoken env . Just . T.strip =<< T.IO.getContents
 
 generateKeypair :: Env -> Text -> IO ()
@@ -76,7 +71,7 @@ generateKeypair env name = do
   (PublicKey pk, sk) <- createKeypair
   let signingKey = exportSigningKey $ SigningKey sk
       signingKeyCreate = SigningKeyCreate.SigningKeyCreate (toS $ B64.encode pk)
-      bcc = BinaryCacheConfig name signingKey
+      bcc = Config.BinaryCacheConfig name signingKey
   -- we first validate if key can be added to the binary cache
   (_ :: NoContent) <-
     escalate <=< retryAll $ \_ ->
@@ -84,12 +79,8 @@ generateKeypair env name = do
         API.createKey cachixClient authToken name signingKeyCreate
   -- if key was successfully added, write it to the config
   -- TODO: warn if binary cache with the same key already exists
-  let cfg =
-        config env
-          -- TODO: ASK DOMEN ABOUT THE SEMANTICS OF THE AUTH TOKEN HERE
-          & Config.setAuthToken authToken
-          & Config.setBinaryCaches [bcc]
-  writeConfig (Config.configPath (cachixoptions env)) cfg
+  let cfg = config env & Config.setBinaryCaches [bcc]
+  Config.writeConfig (Config.configPath (cachixoptions env)) cfg
   putStrLn
     ( [iTrim|
 Secret signing key has been saved in the file above. To populate
@@ -122,14 +113,14 @@ accessDeniedBinaryCache name =
 
 use :: Env -> Text -> InstallationMode.UseOptions -> IO ()
 use env name useOptions = do
-  cachixAuthToken <- Config.getAuthTokenOptional (config env)
+  optionalAuthToken <- Config.getAuthTokenMaybe (config env)
+  let token = fromMaybe (Token "") optionalAuthToken
   -- 1. get cache public key
-  res <- retryAll $ \_ -> (`runClientM` clientenv env) $ API.getCache cachixClient cachixAuthToken name
+  res <- retryAll $ \_ -> (`runClientM` clientenv env) $ API.getCache cachixClient token name
   case res of
     Left err
       -- TODO: is checking for the existence of the config file the right thing to do here?
-      -- Is this error helpful even helpful if we're not checking whether the auth token is valid?
-      -- isErr err status401 && isJust (config env) -> throwM $ accessDeniedBinaryCache name
+      | isErr err status401 && isJust optionalAuthToken -> throwM $ accessDeniedBinaryCache name
       | isErr err status401 -> throwM $ notAuthenticatedBinaryCache name
       | isErr err status404 -> throwM $ BinaryCacheNotFound $ "Binary cache" <> name <> " does not exist."
       | otherwise -> throwM err
@@ -210,15 +201,14 @@ retryText retrystatus =
     then ""
     else "(retry #" <> show (rsIterNumber retrystatus) <> ") "
 
-pushStrategy :: Store -> Env -> PushOptions -> Text -> StorePath -> PushStrategy IO ()
-pushStrategy store _env opts name storePath =
+pushStrategy :: Store -> Maybe Token -> PushOptions -> Text -> StorePath -> PushStrategy IO ()
+pushStrategy store authToken opts name storePath =
   PushStrategy
     { onAlreadyPresent = pass,
       on401 =
-        -- TODO: same thing as before. How valid is this check?
-        -- if isJust (config env)
-        -- then throwM $ accessDeniedBinaryCache name
-        throwM $ notAuthenticatedBinaryCache name,
+        if isJust authToken
+          then throwM (accessDeniedBinaryCache name)
+          else throwM (notAuthenticatedBinaryCache name),
       onError = throwM,
       onAttempt = \retrystatus size -> do
         path <- decodeUtf8With lenientDecode <$> storePathToPath store storePath
@@ -233,11 +223,12 @@ getPushParams :: Env -> PushOptions -> Text -> IO (PushParams IO ())
 getPushParams env pushOpts name = do
   pushSecret <- findPushSecret (config env) name
   store <- wait (storeAsync env)
+  authToken <- Config.getAuthTokenMaybe (config env)
   return $
     PushParams
       { pushParamsName = name,
         pushParamsSecret = pushSecret,
         pushParamsClientEnv = clientenv env,
-        pushParamsStrategy = pushStrategy store env pushOpts name,
+        pushParamsStrategy = pushStrategy store authToken pushOpts name,
         pushParamsStore = store
       }

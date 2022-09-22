@@ -6,7 +6,6 @@ module Cachix.Client.Config
     run,
     parser,
     Command (..),
-    Option (..),
     CachixOptions (..),
     -- Auth token helpers
     getAuthTokenRequired,
@@ -62,51 +61,69 @@ data CachixOptions = CachixOptions
   deriving (Show)
 
 data Command
-  = Set Option
+  = Get GetCommand
+  | Set SetCommand
   deriving (Show)
 
-data Option
-  = HostName (URI.URIRef URI.Absolute)
+data GetCommand
+  = GetHostname
+  deriving (Show)
+
+data SetCommand
+  = SetHostname (URI.URIRef URI.Absolute)
   deriving (Show)
 
 run :: CachixOptions -> Command -> IO ()
-run cachixoptions (Set option) = setConfigOption cachixoptions option
+run CachixOptions {configPath} (Get cmd) = getConfigOption configPath cmd
+run CachixOptions {configPath} (Set cmd) = setConfigOption configPath cmd
 
-setConfigOption :: CachixOptions -> Option -> IO ()
-setConfigOption CachixOptions {configPath} (HostName hostname) = do
+getConfigOption :: ConfigPath -> GetCommand -> IO ()
+getConfigOption configPath cmd = do
   config <- getConfig configPath
-  writeConfig configPath config {hostname = hostname}
+  case cmd of
+    GetHostname -> putStrLn $ URI.serializeURIRef' (hostname config)
+
+setConfigOption :: ConfigPath -> SetCommand -> IO ()
+setConfigOption configPath (SetHostname hostname) = do
+  config <- getConfig configPath
+  writeConfig configPath config {hostname}
 
 parser :: Opt.ParserInfo Command
 parser =
   Opt.info (Opt.helper <*> commandParser) $
-    Opt.progDesc "Manage the configuration for cachix"
+    Opt.progDesc "Manage configuration settings for cachix"
 
 commandParser :: Opt.Parser Command
 commandParser =
-  configOptionParser Set
+  Opt.subparser $
+    mconcat
+      [ Opt.command "get" $
+          Opt.info (Opt.helper <*> getConfigOptionParser) $
+            Opt.progDesc "Get a configuration option",
+        Opt.command "set" $
+          Opt.info (Opt.helper <*> setConfigOptionParser) $
+            Opt.progDesc "Set a configuration option"
+      ]
 
-configOptionParser :: (Option -> Command) -> Opt.Parser Command
-configOptionParser cmd = do
-  cmd
-    <$> Opt.subparser (Opt.metavar "KEY VALUE" <> mconcat supportedOptions)
+getConfigOptionParser :: Opt.Parser Command
+getConfigOptionParser =
+  Opt.subparser (Opt.metavar "KEY" <> mconcat (supportedOptions False))
 
-supportedOptions :: [Opt.Mod Opt.CommandFields Option]
-supportedOptions =
+setConfigOptionParser :: Opt.Parser Command
+setConfigOptionParser =
+  Opt.subparser (Opt.metavar "KEY VALUE" <> mconcat (supportedOptions True))
+
+supportedOptions :: Bool -> [Opt.Mod Opt.CommandFields Command]
+supportedOptions canModify =
   [ Opt.command "hostname" $
-      Opt.info (Opt.helper <*> hostnameParser) $
+      Opt.info (Opt.helper <*> if canModify then fmap Set hostnameParser else pure (Get GetHostname)) $
         Opt.progDesc "The hostname for the Cachix Deploy service."
   ]
 
-hostnameParser :: Opt.Parser Option
+hostnameParser :: Opt.Parser SetCommand
 hostnameParser = do
-  hostname <-
-    Opt.argument
-      uriOption
-      $ mconcat
-        [ Opt.metavar "HOSTNAME"
-        ]
-  pure (HostName hostname)
+  SetHostname
+    <$> Opt.argument uriOption (Opt.metavar "HOSTNAME")
 
 uriOption :: Opt.ReadM (URI.URIRef URI.Absolute)
 uriOption = Opt.eitherReader $ \s ->

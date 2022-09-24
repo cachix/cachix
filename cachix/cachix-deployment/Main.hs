@@ -68,33 +68,36 @@ main = do
       (logQueue, loggingThread) <- runLogStream withLog host logPath (WebSocket.headers websocketOptions)
 
       -- Open a connection to Cachix and block until it's ready.
-      (service, serviceThread) <- connectToService withLog websocketOptions
+      (service, shutdownService) <- connectToService withLog websocketOptions
 
       deploy withLog deployment service (Conduit.sinkTMQueue logQueue)
         `finally` do
           withLog $ K.logLocM K.DebugS $ K.ls ("Cleaning up websocket connections" :: Text)
           atomically $ TMQueue.closeTMQueue logQueue
-          WebSocket.drainQueue service
+          serviceThread <- shutdownService
           Async.waitBoth serviceThread loggingThread
 
--- | Open and maintain a websocket connection to the backend for sending deployment
--- progress updates.
+-- | Asynchronously open and maintain a websocket connection to the backend for
+-- sending deployment progress updates.
 connectToService ::
   Log.WithLog ->
   WebSocket.Options ->
-  IO (Agent.ServiceWebSocket, Async.Async ())
+  IO (Agent.ServiceWebSocket, IO (Async ()))
 connectToService withLog websocketOptions = do
   initialConnection <- MVar.newEmptyMVar
+  close <- MVar.newEmptyMVar
 
   thread <- Async.async $
     WebSocket.withConnection withLog websocketOptions $ \websocket -> do
       MVar.putMVar initialConnection websocket
-      WebSocket.handleJSONMessages websocket (WebSocket.consumeIntoVoid websocket)
+      WebSocket.handleJSONMessages websocket (MVar.readMVar close)
 
   -- Block until the connection has been established
-  websocket <- MVar.readMVar initialConnection
+  websocket <- MVar.takeMVar initialConnection
 
-  return (websocket, thread)
+  let shutdownService = MVar.putMVar close () $> thread
+
+  return (websocket, shutdownService)
 
 -- | Run the deployment commands
 deploy ::

@@ -73,6 +73,20 @@ receive WebSocket {rx} = atomically $ TMChan.dupTMChan rx
 read :: Receive rx -> IO (Maybe (Message rx))
 read = atomically . TMChan.readTMChan
 
+-- | Read incoming data messages, ignoring everything else.
+--
+-- Stops reading when either a close request is received or the channel is
+-- closed.
+readDataMessages :: Receive rx -> (rx -> IO ()) -> IO ()
+readDataMessages channel action = loop
+  where
+    loop =
+      read channel >>= \case
+        Just (DataMessage message) -> action message *> loop
+        Just (ControlMessage (WS.Close _ _)) -> pure ()
+        Just _ -> loop
+        Nothing -> pure ()
+
 -- | Close the outgoing queue.
 drainQueue :: WebSocket tx rx -> IO ()
 drainQueue WebSocket {tx} = atomically $ TBMQueue.closeTBMQueue tx
@@ -104,15 +118,15 @@ withConnection ::
   (WebSocket tx rx -> IO ()) ->
   IO ()
 withConnection withLog Options {host, path, headers, agentIdentifier} app = do
-  mainThreadID <- myThreadId
+  threadId <- myThreadId
   lastPong <- WebsocketPong.newState
 
   let pingEvery = 30
   let pongTimeout = pingEvery * 2
-  let pingHandler = do
+  let onPing = do
         last <- WebsocketPong.secondsSinceLastPong lastPong
         withLog $ K.logLocM K.DebugS $ K.ls $ "Sending WebSocket keep-alive ping, last pong was " <> (show last :: Text) <> " seconds ago"
-        WebsocketPong.pingHandler lastPong mainThreadID pongTimeout
+        WebsocketPong.pingHandler lastPong threadId pongTimeout
   let connectionOptions = WebsocketPong.installPongHandler lastPong WS.defaultConnectionOptions
 
   connection <- MVar.newEmptyMVar
@@ -143,24 +157,28 @@ withConnection withLog Options {host, path, headers, agentIdentifier} app = do
               -- Update the connection
               MVar.putMVar connection newConnection
 
-              WS.withPingThread newConnection pingEvery pingHandler (app websocket)
-        `Safe.finally` dropConnection
+              Async.withAsync (sendPingEvery pingEvery onPing websocket) $ \_ -> app websocket
+              `Safe.finally` dropConnection
 
 -- Handle JSON messages
 
 handleJSONMessages :: (Aeson.ToJSON tx, Aeson.FromJSON rx) => WebSocket tx rx -> IO () -> IO ()
 handleJSONMessages websocket app =
   Async.withAsync (handleIncomingJSON websocket) $ \incomingThread ->
-    Async.withAsync (handleOutgoingJSON websocket `finally` closeGracefully incomingThread) $ \outgoingThread -> do
+    Async.withAsync (handleOutgoingJSON websocket) $ \outgoingThread -> do
       app
+      drainQueue websocket
+      Async.wait outgoingThread
+      closeGracefully incomingThread
       Async.wait outgoingThread
   where
     closeGracefully incomingThread = do
       repsonseToCloseRequest <- startGracePeriod $ do
-        activeConnection <- MVar.readMVar (connection websocket)
-        WS.sendClose activeConnection ("Closing." :: ByteString)
-        _ <- Async.wait incomingThread
-        atomically (TMChan.closeTMChan (rx websocket))
+        MVar.tryReadMVar (connection websocket) >>= \case
+          Just activeConnection -> do
+            WS.sendClose activeConnection ("Peer initiated a close request" :: ByteString)
+            Async.wait incomingThread
+          Nothing -> pure ()
 
       when (isNothing repsonseToCloseRequest) throwNoResponseToCloseRequest
 
@@ -215,10 +233,10 @@ reconnectWithLog withLog inner =
 
     exitOnCloseRequest _ = Handler $ \(e :: WS.ConnectionException) ->
       case e of
-        WS.CloseRequest _ _ -> do
+        WS.CloseRequest _ msg -> do
           liftIO . withLog $
             K.logLocM K.DebugS . K.ls $
-              ("Received close request from peer. Closing connection" :: Text)
+              "Received close request from peer (" <> msg <> "). Closing connection"
           return False
         _ -> return True
 
@@ -238,26 +256,19 @@ reconnectWithLog withLog inner =
     toSeconds t =
       floor $ (fromIntegral t :: Double) / 1000 / 1000
 
--- | Open a receiving channel and discard all incoming messages.
-consumeIntoVoid :: WebSocket tx rx -> IO ()
-consumeIntoVoid websocket = do
-  rx <- receive websocket
-  fix $ \keepReading -> do
-    msg <- read rx
-    when (isJust msg) keepReading
-
 waitForPong :: Int -> WebSocket tx rx -> IO (Maybe Time.UTCTime)
 waitForPong seconds websocket =
-  Async.withAsync (sendPingEvery 1 websocket) $ \_ ->
+  Async.withAsync (sendPingEvery 1 pass websocket) $ \_ ->
     Timeout.timeout (seconds * 1000 * 1000) $ do
-      channel <- receive websocket
-      fix $ \waitForNextMsg -> do
-        read channel >>= \case
-          Just (ControlMessage (WS.Pong _)) -> Time.getCurrentTime
-          _ -> waitForNextMsg
+      receive websocket >>= \channel ->
+        fix $ \waitForNextMsg -> do
+          read channel >>= \case
+            Just (ControlMessage (WS.Pong _)) -> Time.getCurrentTime
+            _ -> waitForNextMsg
 
-sendPingEvery :: Int -> WebSocket tx rx -> IO ()
-sendPingEvery seconds WebSocket {connection} = forever $ do
+sendPingEvery :: Int -> IO () -> WebSocket tx rx -> IO ()
+sendPingEvery seconds onPing WebSocket {connection} = forever $ do
+  onPing
   activeConnection <- MVar.readMVar connection
   WS.sendPing activeConnection BS.empty
   threadDelay (seconds * 1000 * 1000)

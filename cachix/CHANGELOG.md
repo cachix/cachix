@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
+# [1.0.1] - 2022-09-24
+
+### Added 
+
+- `cachix config`: allow setting hostname
+
 # [1.0.0] - 2022-09-06
 
 - Cachix Deploy: auto rollback if the agent can't connect to the backend service anymore

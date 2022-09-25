@@ -1,12 +1,12 @@
-resolver: nightly-2022-09-22
+# Match resolver with nixos-unstable haskellPackages
+resolver: lts-19.25
 packages:
 - cachix
 - cachix-api
 extra-deps:
 - hercules-ci-cnix-store-0.3.3.1
-- nix-narinfo-0.1.0.1
 - cabal-pkg-config-version-hook-0.1.0.0
-allow-newer: false
+- nix-narinfo-0.1.0.1
 nix:
   enable: true
   shell-file: ./nix/stack-shell.nix

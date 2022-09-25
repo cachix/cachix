@@ -2,9 +2,9 @@
 , pkgs ? import ./nix { inherit system; }
 }:
 let
-  # Match the GHC version to the one chosen by Stack.
   # TODO: Choose between stack and cabal. Don't use both!
-  haskellPackages = pkgs.haskell.packages.ghc924;
+  # GHC version should match nixpkgs to test potential release build
+  haskellPackages = pkgs.haskellPackages;
 
   cachix-api = haskellPackages.callCabal2nix "cachix-api" (pkgs.gitignoreSource ./cachix-api) {};
 

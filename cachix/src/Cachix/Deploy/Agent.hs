@@ -6,15 +6,18 @@ module Cachix.Deploy.Agent where
 
 import qualified Cachix.API.WebSocketSubprotocol as WSS
 import qualified Cachix.Client.Config as Config
-import Cachix.Client.URI (getBaseUrl)
+import Cachix.Client.URI (URI)
+import qualified Cachix.Client.URI as URI
 import Cachix.Client.Version (versionNumber)
 import qualified Cachix.Deploy.Log as Log
 import qualified Cachix.Deploy.OptionsParser as AgentOptions
 import qualified Cachix.Deploy.StdinProcess as StdinProcess
 import qualified Cachix.Deploy.Websocket as WebSocket
 import Control.Exception.Safe (handleAny, onException)
+import Control.Monad (fail)
 import qualified Data.Aeson as Aeson
 import Data.IORef
+import Data.Maybe (fromJust)
 import Data.String (String)
 import qualified Katip as K
 import Paths_cachix (getBinDir)
@@ -36,7 +39,7 @@ data Deployment = Deployment
   { agentName :: Text,
     agentToken :: Text,
     profileName :: Text,
-    host :: Text,
+    host :: URI,
     logOptions :: Log.Options,
     deploymentDetails :: WSS.DeploymentDetails,
     agentInformation :: WSS.AgentInformation
@@ -64,7 +67,7 @@ run cachixOptions agentOpts =
       let agentName = AgentOptions.name agentOpts
       let websocketOptions =
             WebSocket.Options
-              { WebSocket.host = host,
+              { WebSocket.host = basename,
                 WebSocket.path = "/ws",
                 WebSocket.headers = WebSocket.createHeaders agentName agentToken,
                 WebSocket.agentIdentifier = agentIdentifier agentName
@@ -76,7 +79,8 @@ run cachixOptions agentOpts =
             WebSocket.readDataMessages channel $ \message ->
               handleMessage withLog agentState agentName agentToken message
   where
-    host = toS $ Servant.baseUrlHost $ getBaseUrl $ Config.host cachixOptions
+    basename = URI.getHostname (Config.host cachixOptions)
+
     profileName = fromMaybe "system" (AgentOptions.profile agentOpts)
 
     logAndExit withLog e = do
@@ -117,7 +121,7 @@ run cachixOptions agentOpts =
                     { agentName = agentName,
                       agentToken = agentToken,
                       profileName = profileName,
-                      host = host,
+                      host = Config.host cachixOptions,
                       deploymentDetails = deploymentDetails,
                       agentInformation = agentInformation,
                       logOptions = logOptions

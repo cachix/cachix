@@ -26,6 +26,7 @@ where
 
 import Cachix.Client.Config.Orphans ()
 import Cachix.Client.Exception (CachixException (..))
+import Cachix.Client.URI (URI)
 import Cachix.Client.URI as URI
 import qualified Control.Exception.Safe as Safe
 import Data.Either.Extra (eitherToMaybe)
@@ -51,10 +52,9 @@ import System.Posix.Files
     setFileMode,
     unionFileModes,
   )
-import qualified URI.ByteString as URI
 
 data CachixOptions = CachixOptions
-  { host :: URI.URIRef URI.Absolute,
+  { host :: URI,
     configPath :: ConfigPath,
     verbose :: Bool
   }
@@ -62,7 +62,7 @@ data CachixOptions = CachixOptions
 
 data Config = Config
   { authToken :: Token,
-    hostname :: URI.URIRef URI.Absolute,
+    hostname :: URI,
     binaryCaches :: [BinaryCacheConfig]
   }
   deriving (Show, Generic, Dhall.ToDhall, Dhall.FromDhall)
@@ -180,7 +180,7 @@ data GetCommand
   deriving (Show)
 
 data SetCommand
-  = SetHostname (URI.URIRef URI.Absolute)
+  = SetHostname URI
   deriving (Show)
 
 run :: CachixOptions -> Command -> IO ()
@@ -191,7 +191,7 @@ getConfigOption :: ConfigPath -> GetCommand -> IO ()
 getConfigOption configPath cmd = do
   config <- getConfig configPath
   case cmd of
-    GetHostname -> putStrLn $ URI.serializeURIRef' (hostname config)
+    GetHostname -> putStrLn (URI.serialize (hostname config) :: Text)
 
 setConfigOption :: ConfigPath -> SetCommand -> IO ()
 setConfigOption configPath (SetHostname hostname) = do
@@ -235,6 +235,6 @@ hostnameParser = do
   SetHostname
     <$> Opt.argument uriOption (Opt.metavar "HOSTNAME")
 
-uriOption :: Opt.ReadM (URI.URIRef URI.Absolute)
+uriOption :: Opt.ReadM URI
 uriOption = Opt.eitherReader $ \s ->
-  first show $ URI.parseURI URI.strictURIParserOptions (toS s)
+  first show $ URI.parseURI (toS s)

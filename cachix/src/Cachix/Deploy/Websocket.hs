@@ -4,6 +4,7 @@
 module Cachix.Deploy.Websocket where
 
 import qualified Cachix.Client.Retry as Retry
+import qualified Cachix.Client.URI as URI
 import Cachix.Client.Version (versionNumber)
 import qualified Cachix.Deploy.Log as Log
 import qualified Cachix.Deploy.WebsocketPong as WebsocketPong
@@ -100,7 +101,7 @@ shutdownNow websocket@WebSocket {rx} code msg = do
   throwIO $ WS.CloseRequest code msg
 
 data Options = Options
-  { host :: Text,
+  { host :: URI.Host,
     path :: Text,
     headers :: HTTP.RequestHeaders,
     -- | The identifier used when logging. Usually a combination of the agent
@@ -143,10 +144,10 @@ withConnection withLog Options {host, path, headers, agentIdentifier} app = do
     reconnectWithLog withLog $
       do
         withLog $
-          K.logLocM K.InfoS $ K.ls $ "Agent " <> agentIdentifier <> " connecting to " <> host <> path
+          K.logLocM K.InfoS $ K.ls $ "Agent " <> agentIdentifier <> " connecting to " <> show host <> path
 
         -- TODO: https://github.com/jaspervdj/websockets/issues/229
-        Wuss.runSecureClientWith (toS host) 443 (toS path) connectionOptions headers $
+        Wuss.runSecureClientWith (show host) 443 (toS path) connectionOptions headers $
           \newConnection ->
             do
               withLog $ K.logLocM K.InfoS "Connected to Cachix Deploy service"

@@ -8,6 +8,7 @@ where
 
 import Cachix.API.Error (escalateAs)
 import qualified Cachix.API.WebSocketSubprotocol as WSS
+import qualified Cachix.Client.URI as URI
 import qualified Cachix.Deploy.Activate as Activate
 import qualified Cachix.Deploy.Agent as Agent
 import qualified Cachix.Deploy.Lock as Lock
@@ -24,7 +25,6 @@ import qualified Data.UUID as UUID
 import qualified Data.UUID.V4 as UUID
 import GHC.IO.Encoding
 import qualified Katip as K
-import qualified Network.HTTP.Simple as HTTP
 import qualified Network.WebSockets as WS
 import Protolude hiding (toS)
 import Protolude.Conv
@@ -52,11 +52,17 @@ main = do
     escalateAs (FatalError . toS) . Aeson.eitherDecode . toS =<< getContents
 
   let deploymentID = WSS.id (deploymentDetails :: WSS.DeploymentDetails)
-  let logPath = "/api/v1/deploy/log/" <> UUID.toText deploymentID
   let headers = WebSocket.createHeaders agentName agentToken
-  let websocketOptions =
+  let logWebsocketOptions =
         WebSocket.Options
-          { WebSocket.host = host,
+          { WebSocket.host = URI.getHostname host,
+            WebSocket.path = "/api/v1/deploy/log/" <> UUID.toText deploymentID,
+            WebSocket.headers = headers,
+            WebSocket.agentIdentifier = Agent.agentIdentifier agentName
+          }
+  let serviceWebsocketOptions =
+        WebSocket.Options
+          { WebSocket.host = URI.getHostname host,
             WebSocket.path = "/ws-deployment",
             WebSocket.headers = headers,
             WebSocket.agentIdentifier = Agent.agentIdentifier agentName
@@ -65,10 +71,10 @@ main = do
   Log.withLog logOptions $ \withLog ->
     void . Lock.withTryLock profileName $ do
       -- Open a connection to logging stream
-      (logQueue, loggingThread) <- runLogStream withLog host logPath (WebSocket.headers websocketOptions)
+      (logQueue, loggingThread) <- runLogStream withLog logWebsocketOptions
 
       -- Open a connection to Cachix and block until it's ready.
-      (service, shutdownService) <- connectToService withLog websocketOptions
+      (service, shutdownService) <- connectToService withLog serviceWebsocketOptions
 
       deploy withLog deployment service (Conduit.sinkTMQueue logQueue)
         `finally` do
@@ -249,21 +255,19 @@ deploy withLog deployment service logStream = do
 -- TODO: prepend katip-like format to each line
 -- TODO: Re-use the WebSocket module here (without ping?)
 runLogStream ::
-  -- | Logging context
   Log.WithLog ->
-  -- | Host
-  Text ->
-  -- | Path
-  Text ->
-  -- | HTTP headers
-  HTTP.RequestHeaders ->
+  WebSocket.Options ->
   -- | Returns a queue for writing messages and the thread handle
   IO (TMQueue.TMQueue ByteString, Async.Async ())
-runLogStream withLog host path headers = do
+runLogStream withLog options = do
+  let hostname = show (WebSocket.host options)
+  let path = toS (WebSocket.path options)
+  let headers = WebSocket.headers options
+
   queue <- TMQueue.newTMQueueIO
   thread <- Async.async $
     WebSocket.reconnectWithLog withLog $
-      Wuss.runSecureClientWith (toS host) 443 (toS path) WS.defaultConnectionOptions headers $ \connection ->
+      Wuss.runSecureClientWith hostname 443 path WS.defaultConnectionOptions headers $ \connection ->
         Log.streamLog withLog connection queue
           `finally` WebSocket.waitForGracefulShutdown connection
   return (queue, thread)

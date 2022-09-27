@@ -14,16 +14,13 @@ import qualified Cachix.Deploy.OptionsParser as AgentOptions
 import qualified Cachix.Deploy.StdinProcess as StdinProcess
 import qualified Cachix.Deploy.Websocket as WebSocket
 import Control.Exception.Safe (handleAny, onException)
-import Control.Monad (fail)
 import qualified Data.Aeson as Aeson
 import Data.IORef
-import Data.Maybe (fromJust)
 import Data.String (String)
 import qualified Katip as K
 import Paths_cachix (getBinDir)
 import Protolude hiding (onException, toS)
 import Protolude.Conv
-import qualified Servant.Client as Servant
 import qualified System.Directory as Directory
 import System.Environment (getEnv, lookupEnv)
 import qualified System.Posix.Files as Posix.Files
@@ -65,10 +62,13 @@ run cachixOptions agentOpts =
       agentState <- newIORef Nothing
 
       let agentName = AgentOptions.name agentOpts
+      let port = fromMaybe (URI.Port 80) $ (URI.getPortFor . URI.getScheme) host
       let websocketOptions =
             WebSocket.Options
               { WebSocket.host = basename,
+                WebSocket.port = port,
                 WebSocket.path = "/ws",
+                WebSocket.useSSL = URI.requiresSSL (URI.getScheme host),
                 WebSocket.headers = WebSocket.createHeaders agentName agentToken,
                 WebSocket.agentIdentifier = agentIdentifier agentName
               }
@@ -79,7 +79,8 @@ run cachixOptions agentOpts =
             WebSocket.readDataMessages channel $ \message ->
               handleMessage withLog agentState agentName agentToken message
   where
-    basename = URI.getHostname (Config.host cachixOptions)
+    host = Config.host cachixOptions
+    basename = URI.getHostname host
 
     profileName = fromMaybe "system" (AgentOptions.profile agentOpts)
 

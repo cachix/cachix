@@ -10,13 +10,17 @@ module Cachix.Client.URI
     getScheme,
     getHostname,
     appendSubdomain,
+    getPortFor,
+    getPath,
+    requiresSSL,
     parseURI,
     serialize,
     getBaseUrl,
     defaultCachixURI,
     defaultCachixBaseUrl,
-    UBS.Host,
-    UBS.Scheme,
+    UBS.Host (..),
+    UBS.Scheme (..),
+    UBS.Port (..),
   )
 where
 
@@ -59,7 +63,7 @@ appendSubdomain :: Text -> URI -> URI
 appendSubdomain domain uri =
   let UBS.URI uScheme uAuthority uPath uQuery uFragment = getUri uri
       UBS.Authority aUserInfo aHost aPort = fromJust uAuthority
-      newHost = UBS.Host $ toS domain <> show aHost
+      newHost = UBS.Host $ toS domain <> "." <> UBS.hostBS aHost
    in URI $
         UBS.URI
           uScheme
@@ -71,11 +75,18 @@ appendSubdomain domain uri =
 getPortFor :: UBS.Scheme -> Maybe UBS.Port
 getPortFor scheme = Map.lookup scheme UBS.httpDefaultPorts
 
+getPath :: URI -> ByteString
+getPath = UBS.uriPath . getUri
+
+requiresSSL :: UBS.Scheme -> Bool
+requiresSSL (UBS.Scheme "https") = True
+requiresSSL _ = False
+
 parseURI :: ByteString -> Either UBS.URIParseError URI
 parseURI bs = fromURIRef <$> UBS.parseURI UBS.strictURIParserOptions bs
 
 serialize :: StringConv BS.ByteString s => URI -> s
-serialize = toS . UBS.normalizeURIRef' UBS.httpNormalization . getUri
+serialize = toS . UBS.serializeURIRef' . getUri
 
 instance Aeson.ToJSON URI where
   toJSON (URI uri) = Aeson.String . toS . UBS.serializeURIRef' $ uri

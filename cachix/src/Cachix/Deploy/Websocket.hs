@@ -51,6 +51,18 @@ data WebSocket tx rx = WebSocket
     withLog :: Log.WithLog
   }
 
+data Options = Options
+  { host :: URI.Host,
+    port :: URI.Port,
+    path :: Text,
+    useSSL :: Bool,
+    headers :: HTTP.RequestHeaders,
+    -- | The identifier used when logging. Usually a combination of the agent
+    -- name and the CLI version.
+    agentIdentifier :: Text
+  }
+  deriving (Show)
+
 -- | A more ergonomic version of the Websocket 'Message' data type
 data Message msg
   = ControlMessage WS.ControlMessage
@@ -100,16 +112,6 @@ shutdownNow websocket@WebSocket {rx} code msg = do
   atomically (TMChan.closeTMChan rx)
   throwIO $ WS.CloseRequest code msg
 
-data Options = Options
-  { host :: URI.Host,
-    path :: Text,
-    headers :: HTTP.RequestHeaders,
-    -- | The identifier used when logging. Usually a combination of the agent
-    -- name and the CLI version.
-    agentIdentifier :: Text
-  }
-  deriving (Show)
-
 withConnection ::
   -- | Logging context for logging socket status
   Log.WithLog ->
@@ -118,7 +120,7 @@ withConnection ::
   -- | The client app to run inside the socket
   (WebSocket tx rx -> IO ()) ->
   IO ()
-withConnection withLog Options {host, path, headers, agentIdentifier} app = do
+withConnection withLog options@Options {host, path, agentIdentifier} app = do
   threadId <- myThreadId
   lastPong <- WebsocketPong.newState
 
@@ -144,10 +146,10 @@ withConnection withLog Options {host, path, headers, agentIdentifier} app = do
     reconnectWithLog withLog $
       do
         withLog $
-          K.logLocM K.InfoS $ K.ls $ "Agent " <> agentIdentifier <> " connecting to " <> show host <> path
+          K.logLocM K.InfoS $ K.ls $ "Agent " <> toS agentIdentifier <> " connecting to " <> toS (URI.hostBS host) <> path
 
         -- TODO: https://github.com/jaspervdj/websockets/issues/229
-        Wuss.runSecureClientWith (show host) 443 (toS path) connectionOptions headers $
+        runClientWith options connectionOptions $
           \newConnection ->
             do
               withLog $ K.logLocM K.InfoS "Connected to Cachix Deploy service"
@@ -160,6 +162,14 @@ withConnection withLog Options {host, path, headers, agentIdentifier} app = do
 
               Async.withAsync (sendPingEvery pingEvery onPing websocket) $ \_ -> app websocket
               `Safe.finally` dropConnection
+
+runClientWith :: Options -> WS.Connection.ConnectionOptions -> WS.ClientApp a -> IO a
+runClientWith Options {host, port, path, headers, useSSL} connectionOptions app =
+  if useSSL
+    then Wuss.runSecureClientWith hostS (fromIntegral (URI.portNumber port)) (toS path) connectionOptions headers app
+    else WS.runClientWith hostS (URI.portNumber port) (toS path) connectionOptions headers app
+  where
+    hostS = toS (URI.hostBS host)
 
 -- Handle JSON messages
 

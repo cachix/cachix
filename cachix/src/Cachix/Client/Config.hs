@@ -26,7 +26,6 @@ where
 
 import Cachix.Client.Config.Orphans ()
 import Cachix.Client.Exception (CachixException (..))
-import Cachix.Client.URI (URI)
 import Cachix.Client.URI as URI
 import qualified Control.Exception.Safe as Safe
 import Data.Either.Extra (eitherToMaybe)

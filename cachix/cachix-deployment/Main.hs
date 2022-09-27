@@ -29,7 +29,6 @@ import qualified Network.WebSockets as WS
 import Protolude hiding (toS)
 import Protolude.Conv
 import System.IO (BufferMode (..), hSetBuffering)
-import qualified Wuss
 
 -- | Activate the new deployment.
 --
@@ -53,17 +52,22 @@ main = do
 
   let deploymentID = WSS.id (deploymentDetails :: WSS.DeploymentDetails)
   let headers = WebSocket.createHeaders agentName agentToken
+  let port = fromMaybe (URI.Port 80) (URI.getPortFor (URI.getScheme host))
   let logWebsocketOptions =
         WebSocket.Options
           { WebSocket.host = URI.getHostname host,
+            WebSocket.port = port,
             WebSocket.path = "/api/v1/deploy/log/" <> UUID.toText deploymentID,
+            WebSocket.useSSL = URI.requiresSSL (URI.getScheme host),
             WebSocket.headers = headers,
             WebSocket.agentIdentifier = Agent.agentIdentifier agentName
           }
   let serviceWebsocketOptions =
         WebSocket.Options
           { WebSocket.host = URI.getHostname host,
+            WebSocket.port = port,
             WebSocket.path = "/ws-deployment",
+            WebSocket.useSSL = URI.requiresSSL (URI.getScheme host),
             WebSocket.headers = headers,
             WebSocket.agentIdentifier = Agent.agentIdentifier agentName
           }
@@ -78,7 +82,7 @@ main = do
 
       deploy withLog deployment service (Conduit.sinkTMQueue logQueue)
         `finally` do
-          withLog $ K.logLocM K.DebugS $ K.ls ("Cleaning up websocket connections" :: Text)
+          withLog $ K.logLocM K.DebugS "Cleaning up websocket connections"
           atomically $ TMQueue.closeTMQueue logQueue
           serviceThread <- shutdownService
           Async.waitBoth serviceThread loggingThread
@@ -260,14 +264,10 @@ runLogStream ::
   -- | Returns a queue for writing messages and the thread handle
   IO (TMQueue.TMQueue ByteString, Async.Async ())
 runLogStream withLog options = do
-  let hostname = show (WebSocket.host options)
-  let path = toS (WebSocket.path options)
-  let headers = WebSocket.headers options
-
   queue <- TMQueue.newTMQueueIO
   thread <- Async.async $
     WebSocket.reconnectWithLog withLog $
-      Wuss.runSecureClientWith hostname 443 path WS.defaultConnectionOptions headers $ \connection ->
+      WebSocket.runClientWith options WS.defaultConnectionOptions $ \connection ->
         Log.streamLog withLog connection queue
           `finally` WebSocket.waitForGracefulShutdown connection
   return (queue, thread)

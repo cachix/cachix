@@ -12,16 +12,16 @@ where
 
 import qualified Cachix.Client.Config as Config
 import qualified Cachix.Client.InstallationMode as InstallationMode
+import Cachix.Client.URI (URI)
 import qualified Cachix.Client.URI as URI
 import qualified Cachix.Deploy.OptionsParser as DeployOptions
 import Options.Applicative
 import Protolude hiding (option, toS)
 import Protolude.Conv
-import qualified URI.ByteString as URI
 
 data Flags = Flags
   { configPath :: Config.ConfigPath,
-    hostname :: Maybe (URI.URIRef URI.Absolute),
+    hostname :: Maybe URI,
     verbose :: Bool
   }
 
@@ -61,11 +61,11 @@ flagParser defaultConfigPath = do
 
   pure Flags {hostname, configPath, verbose}
   where
-    defaultHostname = toS (URI.serializeURIRef' URI.defaultCachixURI)
+    defaultHostname = URI.serialize URI.defaultCachixURI
 
-uriOption :: ReadM (URI.URIRef URI.Absolute)
+uriOption :: ReadM URI
 uriOption = eitherReader $ \s ->
-  first show $ URI.parseURI URI.strictURIParserOptions $ toS s
+  first show $ URI.parseURI (toS s)
 
 type BinaryCacheName = Text
 

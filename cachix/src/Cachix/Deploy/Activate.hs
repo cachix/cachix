@@ -6,6 +6,8 @@ module Cachix.Deploy.Activate where
 import qualified Cachix.API.WebSocketSubprotocol as WSS
 import qualified Cachix.Client.InstallationMode as InstallationMode
 import qualified Cachix.Client.NetRc as NetRc
+import Cachix.Client.URI (URI)
+import qualified Cachix.Client.URI as URI
 import qualified Cachix.Deploy.Log as Log
 import qualified Cachix.Types.BinaryCache as BinaryCache
 import Cachix.Types.Permission (Permission (..))
@@ -154,45 +156,41 @@ extractClosureSize (Aeson.Array vector) = case Vector.toList vector of
   _ -> Nothing
 extractClosureSize _ = Nothing
 
-domain :: Text -> WSS.Cache -> Text
-domain host cache = toS (WSS.cacheName cache) <> "." <> toS host
-
--- TODO: get uri scheme
-uri :: Text -> WSS.Cache -> Text
-uri host cache = "https://" <> domain host cache
-
 -- TODO: don't create tmpfile for public caches
-withCacheArgs :: Text -> WSS.AgentInformation -> Text -> ([String] -> IO a) -> IO a
+withCacheArgs :: URI -> WSS.AgentInformation -> Text -> ([String] -> IO a) -> IO a
 withCacheArgs host agentInfo agentToken m =
   withSystemTempDirectory "netrc" $ \dir -> do
     let filepath = dir </> "netrc"
     args <- case WSS.cache agentInfo of
       Just cache -> do
+        let cacheName = WSS.cacheName cache
+        let cacheURI = URI.appendSubdomain cacheName host
         -- TODO: ugh
         let bc =
               BinaryCache.BinaryCache
                 { BinaryCache.name = "",
-                  BinaryCache.uri = toS (uri host cache),
+                  BinaryCache.uri = URI.serialize cacheURI,
                   BinaryCache.publicSigningKeys = [],
                   BinaryCache.isPublic = WSS.isPublic cache,
                   BinaryCache.githubUsername = "",
                   BinaryCache.permission = Read
                 }
         NetRc.add (Token (toS agentToken)) [bc] filepath
-        return $ cachesArgs <> ["--option", "netrc-file", filepath]
+        return $ cachesArgs cache <> ["--option", "netrc-file", filepath]
       Nothing ->
-        return cachesArgs
+        return []
     m args
   where
-    cachesArgs :: [String]
-    cachesArgs = case WSS.cache agentInfo of
-      Just cache ->
-        let officialCache = "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
-            substituters = ["--option", "extra-substituters", toS (uri host cache)]
-            noNegativeCaching = ["--option", "narinfo-cache-negative-ttl", "0"]
-            sigs = ["--option", "trusted-public-keys", officialCache <> " " <> toS (domain host cache) <> "-1:" <> toS (WSS.publicKey cache)]
-         in substituters ++ sigs ++ noNegativeCaching
-      Nothing -> []
+    cachesArgs :: WSS.Cache -> [String]
+    cachesArgs cache =
+      let cacheName = WSS.cacheName cache
+          cacheURI = URI.appendSubdomain cacheName host
+          hostname = URI.getHostname cacheURI
+          officialCache = "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+          substituters = ["--option", "extra-substituters", URI.serialize cacheURI]
+          noNegativeCaching = ["--option", "narinfo-cache-negative-ttl", "0"]
+          sigs = ["--option", "trusted-public-keys", officialCache <> " " <> show hostname <> "-1:" <> toS (WSS.publicKey cache)]
+       in substituters ++ sigs ++ noNegativeCaching
 
 runShell :: Log.LogStream -> FilePath -> [String] -> IO ()
 runShell logStream cmd args = runShellWithExitCode logStream cmd args >>= handleError

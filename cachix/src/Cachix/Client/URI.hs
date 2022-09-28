@@ -1,7 +1,5 @@
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE QuasiQuotes #-}
 
 module Cachix.Client.URI
@@ -47,7 +45,7 @@ defaultCachixBaseUrl :: BaseUrl
 defaultCachixBaseUrl = getBaseUrl defaultCachixURI
 
 newtype URI = URI {getUri :: UBS.URIRef UBS.Absolute}
-  deriving newtype (Show)
+  deriving stock (Eq, Show)
 
 fromURIRef :: UBS.URIRef UBS.Absolute -> URI
 fromURIRef = URI

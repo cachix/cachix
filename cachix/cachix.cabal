@@ -201,12 +201,17 @@ test-suite cachix-test
     NixConfSpec
     NixVersionSpec
     Spec
+    URISpec
 
   build-depends:
+    , aeson
     , base                 >=4.7 && <5
+    , bytestring
     , cachix
     , cachix-api
+    , dhall
     , directory
+    , extra
     , here
     , hspec
     , protolude

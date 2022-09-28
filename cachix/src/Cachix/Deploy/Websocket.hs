@@ -59,7 +59,7 @@ data Options = Options
     headers :: HTTP.RequestHeaders,
     -- | The identifier used when logging. Usually a combination of the agent
     -- name and the CLI version.
-    agentIdentifier :: Text
+    identifier :: Text
   }
   deriving (Show)
 
@@ -120,7 +120,7 @@ withConnection ::
   -- | The client app to run inside the socket
   (WebSocket tx rx -> IO ()) ->
   IO ()
-withConnection withLog options@Options {host, path, agentIdentifier} app = do
+withConnection withLog options@Options {host, path, identifier} app = do
   threadId <- myThreadId
   lastPong <- WebsocketPong.newState
 
@@ -146,7 +146,7 @@ withConnection withLog options@Options {host, path, agentIdentifier} app = do
     reconnectWithLog withLog $
       do
         withLog $
-          K.logLocM K.InfoS $ K.ls $ "Agent " <> toS agentIdentifier <> " connecting to " <> toS (URI.hostBS host) <> path
+          K.logLocM K.InfoS $ K.ls $ "Agent " <> toS identifier <> " connecting to " <> toS (URI.hostBS host) <> path
 
         -- TODO: https://github.com/jaspervdj/websockets/issues/229
         runClientWith options connectionOptions $

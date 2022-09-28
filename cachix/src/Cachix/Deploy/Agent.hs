@@ -70,7 +70,7 @@ run cachixOptions agentOpts =
                 WebSocket.path = "/ws",
                 WebSocket.useSSL = URI.requiresSSL (URI.getScheme host),
                 WebSocket.headers = WebSocket.createHeaders agentName agentToken,
-                WebSocket.agentIdentifier = agentIdentifier agentName
+                WebSocket.identifier = agentIdentifier agentName
               }
 
       WebSocket.withConnection withLog websocketOptions $ \websocket ->

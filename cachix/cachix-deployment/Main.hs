@@ -60,7 +60,7 @@ main = do
             WebSocket.path = "/api/v1/deploy/log/" <> UUID.toText deploymentID,
             WebSocket.useSSL = URI.requiresSSL (URI.getScheme host),
             WebSocket.headers = headers,
-            WebSocket.agentIdentifier = Agent.agentIdentifier agentName
+            WebSocket.identifier = Agent.agentIdentifier agentName
           }
   let serviceWebsocketOptions =
         WebSocket.Options
@@ -69,7 +69,7 @@ main = do
             WebSocket.path = "/ws-deployment",
             WebSocket.useSSL = URI.requiresSSL (URI.getScheme host),
             WebSocket.headers = headers,
-            WebSocket.agentIdentifier = Agent.agentIdentifier agentName
+            WebSocket.identifier = Agent.agentIdentifier agentName
           }
 
   Log.withLog logOptions $ \withLog ->

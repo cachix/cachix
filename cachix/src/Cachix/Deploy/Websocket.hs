@@ -1,3 +1,4 @@
+{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- | A high-level, multiple reader, single writer interface for Websocket clients.
@@ -24,6 +25,8 @@ import qualified Data.Conduit.Combinators as Conduit
 import qualified Data.Conduit.TQueue as Conduit
 import qualified Data.IORef as IORef
 import Data.String (String)
+import Data.String.Here (iTrim)
+import qualified Data.Text as Text
 import qualified Data.Time.Clock as Time
 import qualified Katip as K
 import qualified Network.HTTP.Simple as HTTP
@@ -120,7 +123,7 @@ withConnection ::
   -- | The client app to run inside the socket
   (WebSocket tx rx -> IO ()) ->
   IO ()
-withConnection withLog options@Options {host, path, identifier} app = do
+withConnection withLog options app = do
   threadId <- myThreadId
   lastPong <- WebsocketPong.newState
 
@@ -146,7 +149,7 @@ withConnection withLog options@Options {host, path, identifier} app = do
     reconnectWithLog withLog $
       do
         withLog $
-          K.logLocM K.InfoS $ K.ls $ "Agent " <> toS identifier <> " connecting to " <> toS (URI.hostBS host) <> path
+          K.logLocM K.InfoS $ K.ls (logOnMessage options)
 
         -- TODO: https://github.com/jaspervdj/websockets/issues/229
         runClientWith options connectionOptions $
@@ -323,3 +326,14 @@ createHeaders agentName agentToken =
     ("version", toS versionNumber),
     ("system", toS system)
   ]
+
+logOnMessage :: Options -> Text
+logOnMessage Options {host, identifier, path, useSSL} =
+  [iTrim|
+    ${Text.toTitle identifier} connecting to ${uri} over ${protocol}
+  |]
+  where
+    uri = decodeUtf8 (URI.hostBS host) <> path
+
+    protocol :: Text
+    protocol = if useSSL then "HTTPS" else "HTTP"

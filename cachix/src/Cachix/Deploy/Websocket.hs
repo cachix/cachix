@@ -146,25 +146,23 @@ withConnection withLog options app = do
         TMChan.closeTMChan rx
 
   flip Safe.finally closeChannels $
-    reconnectWithLog withLog $
-      do
-        withLog $
-          K.logLocM K.InfoS $ K.ls (logOnMessage options)
+    reconnectWithLog withLog $ do
+      withLog $ K.logLocM K.InfoS $ K.ls (logOnMessage options)
 
-        -- TODO: https://github.com/jaspervdj/websockets/issues/229
-        runClientWith options connectionOptions $
-          \newConnection ->
-            do
-              withLog $ K.logLocM K.InfoS "Connected to Cachix Deploy service"
+      -- TODO: https://github.com/jaspervdj/websockets/issues/229
+      runClientWith options connectionOptions $
+        \newConnection -> flip Safe.finally dropConnection $ do
+          withLog $ K.logLocM K.InfoS "Connected to Cachix Deploy service"
 
-              -- Reset the pong state in case we're reconnecting
-              WebsocketPong.pongHandler lastPong
+          -- Reset the pong state in case we're reconnecting
+          WebsocketPong.pongHandler lastPong
 
-              -- Update the connection
-              MVar.putMVar connection newConnection
+          -- Update the connection
+          MVar.putMVar connection newConnection
 
-              Async.withAsync (sendPingEvery pingEvery onPing websocket) $ \_ -> app websocket
-              `Safe.finally` dropConnection
+          Async.concurrently_
+            (sendPingEvery pingEvery onPing websocket)
+            (app websocket)
 
 runClientWith :: Options -> WS.Connection.ConnectionOptions -> WS.ClientApp a -> IO a
 runClientWith Options {host, port, path, headers, useSSL} connectionOptions app =
@@ -179,12 +177,15 @@ runClientWith Options {host, port, path, headers, useSSL} connectionOptions app 
 handleJSONMessages :: (Aeson.ToJSON tx, Aeson.FromJSON rx) => WebSocket tx rx -> IO () -> IO ()
 handleJSONMessages websocket app =
   Async.withAsync (handleIncomingJSON websocket) $ \incomingThread ->
-    Async.withAsync (handleOutgoingJSON websocket) $ \outgoingThread -> do
-      app
-      drainQueue websocket
-      Async.wait outgoingThread
-      closeGracefully incomingThread
-      Async.wait outgoingThread
+    Async.withAsync (handleOutgoingJSON websocket) $ \outgoingThread ->
+      Async.withAsync
+        ( do
+            app
+            drainQueue websocket
+            Async.wait outgoingThread
+            closeGracefully incomingThread
+        )
+        (\appThread -> mapM_ wait [appThread, outgoingThread, incomingThread])
   where
     closeGracefully incomingThread = do
       repsonseToCloseRequest <- startGracePeriod $ do

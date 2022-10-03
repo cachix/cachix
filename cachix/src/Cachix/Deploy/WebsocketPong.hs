@@ -25,7 +25,7 @@ newState = do
 pingHandler :: LastPongState -> ThreadId -> Int -> IO ()
 pingHandler pong threadID maxLastPing = do
   last <- secondsSinceLastPong pong
-  when (last > maxLastPing) $ do
+  when (last > maxLastPing) $
     throwTo threadID WebsocketPongTimeout
 
 secondsSinceLastPong :: LastPongState -> IO Int

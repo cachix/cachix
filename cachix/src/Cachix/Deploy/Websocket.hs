@@ -174,6 +174,10 @@ runClientWith Options {host, port, path, headers, useSSL} connectionOptions app 
 
 -- Handle JSON messages
 
+-- | Start processing incoming and outgoing JSON messages.
+--
+-- Make sure to open an incoming channel with [receive] beforehand to avoid
+-- dropping messages.
 handleJSONMessages :: (Aeson.ToJSON tx, Aeson.FromJSON rx) => WebSocket tx rx -> IO () -> IO ()
 handleJSONMessages websocket app =
   Async.withAsync (handleIncomingJSON websocket) $ \incomingThread ->

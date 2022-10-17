@@ -1,6 +1,5 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE TypeApplications #-}
 
 module Cachix.Deploy.Agent where
 
@@ -9,10 +8,13 @@ import qualified Cachix.Client.Config as Config
 import Cachix.Client.URI (URI)
 import qualified Cachix.Client.URI as URI
 import Cachix.Client.Version (versionNumber)
+import qualified Cachix.Deploy.Deployment as Deployment
 import qualified Cachix.Deploy.Log as Log
 import qualified Cachix.Deploy.OptionsParser as AgentOptions
 import qualified Cachix.Deploy.StdinProcess as StdinProcess
 import qualified Cachix.Deploy.Websocket as WebSocket
+import qualified Control.Concurrent.Async as Async
+import qualified Control.Concurrent.MVar as MVar
 import Control.Exception.Safe (handleAny, onException)
 import qualified Data.Aeson as Aeson
 import Data.IORef
@@ -26,30 +28,21 @@ import System.Environment (getEnv, lookupEnv)
 import qualified System.Posix.Files as Posix.Files
 import qualified System.Posix.User as Posix.User
 
-type AgentState = IORef (Maybe WSS.AgentInformation)
-
 type ServiceWebSocket = WebSocket.WebSocket (WSS.Message WSS.AgentCommand) (WSS.Message WSS.BackendCommand)
 
--- | Everything required for the standalone deployment binary to complete a
--- deployment.
-data Deployment = Deployment
-  { agentName :: Text,
-    agentToken :: Text,
+data Agent = Agent
+  { agentState :: IORef (Maybe WSS.AgentInformation),
+    name :: Text,
+    token :: Text,
     profileName :: Text,
     host :: URI,
     logOptions :: Log.Options,
-    deploymentDetails :: WSS.DeploymentDetails,
-    agentInformation :: WSS.AgentInformation
+    withLog :: Log.WithLog,
+    websocket :: ServiceWebSocket
   }
-  deriving (Show, Generic, Aeson.ToJSON, Aeson.FromJSON)
 
 agentIdentifier :: Text -> Text
 agentIdentifier agentName = agentName <> " " <> toS versionNumber
-
-registerAgent :: AgentState -> WSS.AgentInformation -> K.KatipContextT IO ()
-registerAgent agentState agentInformation = do
-  K.logLocM K.InfoS "Agent registered."
-  liftIO $ atomicWriteIORef agentState (Just agentInformation)
 
 run :: Config.CachixOptions -> AgentOptions.AgentOptions -> IO ()
 run cachixOptions agentOpts =
@@ -57,11 +50,11 @@ run cachixOptions agentOpts =
     handleAny (logAndExit withLog) $ do
       checkUserOwnsHome
 
-      -- TODO: error if token is missing
+      -- TODO: show a more helpful error if the token is missing
+      -- TODO: show a more helpful error when the token isn't valid
       agentToken <- toS <$> getEnv "CACHIX_AGENT_TOKEN"
       agentState <- newIORef Nothing
 
-      let agentName = AgentOptions.name agentOpts
       let port = fromMaybe (URI.Port 80) $ (URI.getPortFor . URI.getScheme) host
       let websocketOptions =
             WebSocket.Options
@@ -75,14 +68,26 @@ run cachixOptions agentOpts =
 
       websocket <- WebSocket.new withLog websocketOptions
       channel <- WebSocket.receive websocket
-      WebSocket.runConnection websocket $
-        WebSocket.handleJSONMessages @(WSS.Message WSS.AgentCommand) @(WSS.Message WSS.BackendCommand) websocket $
-          WebSocket.readDataMessages channel $ \message ->
-            handleMessage withLog agentState agentName agentToken message
+      _shutdownWebsocket <- connectToService websocket
+
+      let agent =
+            Agent
+              { agentState = agentState,
+                name = agentName,
+                token = agentToken,
+                profileName = profileName,
+                host = host,
+                logOptions = logOptions,
+                withLog = withLog,
+                websocket = websocket
+              }
+
+      WebSocket.readDataMessages channel $ \message ->
+        handleCommand agent (WSS.command message)
   where
     host = Config.host cachixOptions
     basename = URI.getHostname host
-
+    agentName = AgentOptions.name agentOpts
     profileName = fromMaybe "system" (AgentOptions.profile agentOpts)
 
     logAndExit withLog e = do
@@ -101,33 +106,57 @@ run cachixOptions agentOpts =
           environment = "production"
         }
 
-    handleMessage :: Log.WithLog -> AgentState -> Text -> Text -> WSS.Message WSS.BackendCommand -> IO ()
-    handleMessage withLog agentState agentName agentToken payload =
-      handleCommand (WSS.command payload)
-      where
-        handleCommand :: WSS.BackendCommand -> IO ()
-        handleCommand (WSS.AgentRegistered agentInformation) =
-          withLog $ registerAgent agentState agentInformation
-        handleCommand (WSS.Deployment deploymentDetails) = do
-          agentRegistered <- readIORef agentState
+registerAgent :: Agent -> WSS.AgentInformation -> K.KatipContextT IO ()
+registerAgent Agent {agentState} agentInformation = do
+  K.logLocM K.InfoS "Agent registered."
+  liftIO $ atomicWriteIORef agentState (Just agentInformation)
 
-          case agentRegistered of
-            -- TODO: this is currently not possible, but relies on the backend
-            -- to do the right thing. Can we improve the typing here?
-            Nothing -> pure ()
-            Just agentInformation -> do
-              binDir <- toS <$> getBinDir
-              StdinProcess.spawnProcess (binDir <> "/.cachix-deployment") [] $
-                toS . Aeson.encode $
-                  Deployment
-                    { agentName = agentName,
-                      agentToken = agentToken,
-                      profileName = profileName,
-                      host = Config.host cachixOptions,
-                      deploymentDetails = deploymentDetails,
-                      agentInformation = agentInformation,
-                      logOptions = logOptions
-                    }
+launchDeployment :: Agent -> WSS.DeploymentDetails -> IO ()
+launchDeployment Agent {agentState, name, token, profileName, host, logOptions} deploymentDetails = do
+  agentRegistered <- readIORef agentState
+
+  case agentRegistered of
+    -- TODO: this is currently not possible, but relies on the backend
+    -- to do the right thing. Can we improve the typing here?
+    Nothing -> pure ()
+    Just agentInformation -> do
+      binDir <- toS <$> getBinDir
+      StdinProcess.spawnProcess (binDir <> "/.cachix-deployment") [] $
+        toS . Aeson.encode $
+          Deployment.Deployment
+            { Deployment.agentName = name,
+              Deployment.agentToken = token,
+              Deployment.profileName = profileName,
+              Deployment.host = host,
+              Deployment.deploymentDetails = deploymentDetails,
+              Deployment.agentInformation = agentInformation,
+              Deployment.logOptions = logOptions
+            }
+
+handleCommand :: Agent -> WSS.BackendCommand -> IO ()
+handleCommand agent@Agent {withLog} command =
+  case command of
+    WSS.AgentRegistered agentInformation -> withLog $ registerAgent agent agentInformation
+    WSS.Deployment deploymentDetails -> launchDeployment agent deploymentDetails
+
+-- | Asynchronously open and maintain a websocket connection to the backend for
+-- sending deployment progress updates.
+connectToService :: ServiceWebSocket -> IO (IO (Async ()))
+connectToService websocket = do
+  initialConnection <- MVar.newEmptyMVar
+  close <- MVar.newEmptyMVar
+
+  thread <- Async.async $
+    WebSocket.runConnection websocket $ do
+      MVar.putMVar initialConnection ()
+      WebSocket.handleJSONMessages websocket (MVar.readMVar close)
+
+  -- Block until the connection has been established
+  void $ MVar.takeMVar initialConnection
+
+  let shutdownService = MVar.putMVar close () $> thread
+
+  pure shutdownService
 
 -- | Fetch the home directory and verify that the owner matches the current user.
 -- Throws either 'NoHomeFound' or 'UserDoesNotOwnHome'.

@@ -47,6 +47,7 @@ library
     Cachix.Types.ByteStringStreaming
     Cachix.Types.ContentTypes
     Cachix.Types.Deploy
+    Cachix.Types.Deployment
     Cachix.Types.DeployResponse
     Cachix.Types.NarFileName
     Cachix.Types.NarInfo

@@ -28,15 +28,18 @@ import qualified System.Directory as Directory
 import System.Environment (getEnv, lookupEnv)
 import qualified System.Posix.Files as Posix.Files
 import qualified System.Posix.Signals as Signals
+import qualified System.Posix.Types as Posix
 import qualified System.Posix.User as Posix.User
+import qualified System.Process as Process
 
 type ServiceWebSocket = WebSocket.WebSocket (WSS.Message WSS.AgentCommand) (WSS.Message WSS.BackendCommand)
 
 data Agent = Agent
-  { agentState :: IORef (Maybe WSS.AgentInformation),
-    name :: Text,
+  { name :: Text,
     token :: Text,
     profileName :: Text,
+    agentState :: IORef (Maybe WSS.AgentInformation),
+    pid :: Posix.CPid,
     host :: URI,
     logOptions :: Log.Options,
     withLog :: Log.WithLog,
@@ -56,6 +59,8 @@ run cachixOptions agentOpts =
       -- TODO: show a more helpful error when the token isn't valid
       agentToken <- toS <$> getEnv "CACHIX_AGENT_TOKEN"
       agentState <- newIORef Nothing
+
+      pid <- Process.getCurrentPid
 
       let port = fromMaybe (URI.Port 80) $ (URI.getPortFor . URI.getScheme) host
       let websocketOptions =
@@ -78,10 +83,11 @@ run cachixOptions agentOpts =
 
       let agent =
             Agent
-              { agentState = agentState,
-                name = agentName,
+              { name = agentName,
                 token = agentToken,
                 profileName = profileName,
+                agentState = agentState,
+                pid = pid,
                 host = host,
                 logOptions = logOptions,
                 withLog = withLog,

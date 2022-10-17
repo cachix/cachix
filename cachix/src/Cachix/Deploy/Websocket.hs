@@ -102,7 +102,7 @@ readDataMessages channel action = loop
       read channel >>= \case
         Just (DataMessage message) -> action message *> loop
         Just (ControlMessage (WS.Close _ _)) -> pure ()
-        Just _ -> loop
+        Just (ControlMessage _) -> loop
         Nothing -> pure ()
 
 -- | Close the outgoing queue.

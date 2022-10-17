@@ -1,4 +1,5 @@
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Main
@@ -11,11 +12,11 @@ import qualified Cachix.API.WebSocketSubprotocol as WSS
 import qualified Cachix.Client.URI as URI
 import qualified Cachix.Deploy.Activate as Activate
 import qualified Cachix.Deploy.Agent as Agent
+import Cachix.Deploy.Deployment (Deployment (..))
 import qualified Cachix.Deploy.Lock as Lock
 import qualified Cachix.Deploy.Log as Log
 import qualified Cachix.Deploy.Websocket as WebSocket
 import qualified Control.Concurrent.Async as Async
-import qualified Control.Concurrent.MVar as MVar
 import qualified Control.Concurrent.STM.TMQueue as TMQueue
 import qualified Control.Exception.Safe as Safe
 import qualified Data.Aeson as Aeson
@@ -40,7 +41,7 @@ main = do
   hSetBuffering stdout LineBuffering
   hSetBuffering stderr LineBuffering
 
-  deployment@Agent.Deployment
+  deployment@Deployment
     { agentName,
       agentToken,
       profileName,
@@ -78,7 +79,8 @@ main = do
       (logQueue, loggingThread) <- runLogStream withLog logWebsocketOptions
 
       -- Open a connection to Cachix and block until it's ready.
-      (service, shutdownService) <- connectToService withLog serviceWebsocketOptions
+      service <- WebSocket.new withLog serviceWebsocketOptions
+      shutdownService <- Agent.connectToService service
 
       deploy withLog deployment service (Conduit.sinkTMQueue logQueue)
         `finally` do
@@ -87,39 +89,17 @@ main = do
           serviceThread <- shutdownService
           Async.waitBoth serviceThread loggingThread
 
--- | Asynchronously open and maintain a websocket connection to the backend for
--- sending deployment progress updates.
-connectToService ::
-  Log.WithLog ->
-  WebSocket.Options ->
-  IO (Agent.ServiceWebSocket, IO (Async ()))
-connectToService withLog websocketOptions = do
-  initialConnection <- MVar.newEmptyMVar
-  close <- MVar.newEmptyMVar
-
-  thread <- Async.async $
-    WebSocket.withConnection withLog websocketOptions $ \websocket -> do
-      MVar.putMVar initialConnection websocket
-      WebSocket.handleJSONMessages websocket (MVar.readMVar close)
-
-  -- Block until the connection has been established
-  websocket <- MVar.takeMVar initialConnection
-
-  let shutdownService = MVar.putMVar close () $> thread
-
-  return (websocket, shutdownService)
-
 -- | Run the deployment commands
 deploy ::
   -- | Logging context
   Log.WithLog ->
   -- | Deployment information passed from the agent
-  Agent.Deployment ->
+  Deployment ->
   Agent.ServiceWebSocket ->
   -- | Logging Websocket connection
   Log.LogStream ->
   IO ()
-deploy withLog deployment service logStream = do
+deploy withLog Deployment {..} service logStream = do
   withLog $ K.logLocM K.InfoS $ K.ls $ "Deploying #" <> deploymentIndex <> ": " <> storePath
 
   activationStatus <- handleAsActivationStatus $
@@ -174,18 +154,9 @@ deploy withLog deployment service logStream = do
 
   endDeployment activationStatus
   where
-    -- TODO: cut down record access boilerplate
-
-    -- Deployment details
-
     storePath = WSS.storePath deploymentDetails
-    deploymentDetails = Agent.deploymentDetails deployment
     deploymentID = WSS.id (deploymentDetails :: WSS.DeploymentDetails)
-    deploymentIndex = show $ WSS.index deploymentDetails
-    host = Agent.host deployment
-    profileName = Agent.profileName deployment
-    agentToken = Agent.agentToken deployment
-    agentInformation = Agent.agentInformation deployment
+    deploymentIndex = show (WSS.index deploymentDetails)
 
     handleAsActivationStatus :: IO Activate.Status -> IO Activate.Status
     handleAsActivationStatus action =

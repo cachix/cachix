@@ -31,6 +31,9 @@ import Protolude hiding (toS)
 import Protolude.Conv
 import System.IO (BufferMode (..), hSetBuffering)
 
+lockFilename :: Text -> FilePath
+lockFilename profileName = "deployment-" <> toS profileName
+
 -- | Activate the new deployment.
 --
 -- If the target profile is already locked by another deployment, exit
@@ -74,7 +77,7 @@ main = do
           }
 
   Log.withLog logOptions $ \withLog ->
-    void . Lock.withTryLock profileName $ do
+    void . Lock.withTryLock (lockFilename profileName) $ do
       -- Open a connection to logging stream
       (logQueue, loggingThread) <- runLogStream withLog logWebsocketOptions
 

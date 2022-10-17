@@ -1,20 +1,22 @@
-module Cachix.Deploy.Lock (withTryLock) where
+module Cachix.Deploy.Lock
+  ( defaultLockDirectory,
+    getLockDirectory,
+    withTryLock,
+  )
+where
 
 import qualified Lukko as Lock
 import Protolude hiding ((<.>))
 import qualified System.Directory as Directory
 import System.FilePath ((<.>), (</>))
+import System.Posix (getProcessID)
+import System.Posix.Types (CPid (..))
 
 defaultLockDirectory :: FilePath
 defaultLockDirectory = "cachix" </> "deploy" </> "locks"
 
--- | Run an IO action with an acquired profile lock. Returns immediately if the profile is already locked.
---
--- Lock files are not deleted after use.
---
--- macOS: if using sudo, make sure to use `-H` to reset the home directory.
-withTryLock :: Text -> IO a -> IO (Maybe a)
-withTryLock profileName action = do
+getLockDirectory :: IO FilePath
+getLockDirectory = do
   lockDirectory <- Directory.getXdgDirectory Directory.XdgCache defaultLockDirectory
 
   Directory.createDirectoryIfMissing True lockDirectory
@@ -25,7 +27,19 @@ withTryLock profileName action = do
       & Directory.setOwnerExecutable True
       & Directory.setOwnerSearchable True
 
-  let lockFile = lockDirectory </> toS profileName <.> "lock"
+  pure lockDirectory
+
+-- | Run an IO action with an acquired profile lock. Returns immediately if the profile is already locked.
+--
+-- Lock files are not deleted after use.
+--
+-- macOS: if using sudo, make sure to use `-H` to reset the home directory.
+withTryLock :: FilePath -> IO a -> IO (Maybe a)
+withTryLock lockFilename action = do
+  lockDirectory <- getLockDirectory
+
+  let lockFile = lockDirectory </> lockFilename <.> "lock"
+  let pidFile = lockDirectory </> lockFilename <.> "pid"
 
   bracket
     (Lock.fdOpen lockFile)
@@ -33,5 +47,8 @@ withTryLock profileName action = do
     $ \fd -> do
       isLocked <- Lock.fdTryLock fd Lock.ExclusiveLock
       if isLocked
-        then Just <$> action
+        then do
+          CPid pid <- getProcessID
+          writeFile pidFile (show pid)
+          fmap Just action
         else pure Nothing

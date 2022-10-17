@@ -27,7 +27,8 @@ parser =
 
 data AgentOptions = AgentOptions
   { name :: Text,
-    profile :: Maybe Text
+    profile :: Maybe Text,
+    bootstrap :: Bool
   }
   deriving (Show)
 
@@ -50,6 +51,7 @@ parserAgentOptions =
               <> help "Nix profile to manage. Defaults to 'system' on NixOS, 'system-profiles/system' (nix-darwin) on macOS, and 'home-manager' for Home Manager."
           )
       )
+    <*> switch (long "bootstrap" <> help "Exit once the system agent takes over.")
 
 parserActivateOptions :: Parser ActivateOptions
 parserActivateOptions =

@@ -6,9 +6,9 @@ import System.Process
 import Prelude (String)
 
 -- | Spawn a process with only stdin as an input
-spawnProcess :: FilePath -> [String] -> String -> IO ()
+spawnProcess :: FilePath -> [String] -> String -> IO ExitCode
 spawnProcess cmd args input = do
-  (Just stdin, _, _, _) <-
+  (Just stdin, _, _, pHandle) <-
     createProcess
       (proc cmd args)
         { std_in = CreatePipe,
@@ -17,5 +17,8 @@ spawnProcess cmd args input = do
           -- Same, but with posix api
           new_session = True
         }
+
   hPutStr stdin input
   hClose stdin
+
+  waitForProcess pHandle

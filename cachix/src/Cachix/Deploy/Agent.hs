@@ -14,6 +14,7 @@ import qualified Cachix.Deploy.OptionsParser as AgentOptions
 import qualified Cachix.Deploy.StdinProcess as StdinProcess
 import qualified Cachix.Deploy.Websocket as WebSocket
 import qualified Control.Concurrent.Async as Async
+import Control.Concurrent.Extra (once)
 import qualified Control.Concurrent.MVar as MVar
 import Control.Exception.Safe (handleAny, onException)
 import qualified Data.Aeson as Aeson
@@ -26,6 +27,7 @@ import Protolude.Conv
 import qualified System.Directory as Directory
 import System.Environment (getEnv, lookupEnv)
 import qualified System.Posix.Files as Posix.Files
+import qualified System.Posix.Signals as Signals
 import qualified System.Posix.User as Posix.User
 
 type ServiceWebSocket = WebSocket.WebSocket (WSS.Message WSS.AgentCommand) (WSS.Message WSS.BackendCommand)
@@ -47,7 +49,7 @@ agentIdentifier agentName = agentName <> " " <> toS versionNumber
 run :: Config.CachixOptions -> AgentOptions.AgentOptions -> IO ()
 run cachixOptions agentOpts =
   Log.withLog logOptions $ \withLog ->
-    handleAny (logAndExit withLog) $ do
+    handleAny (logAndExitWithFailure withLog) $ do
       checkUserOwnsHome
 
       -- TODO: show a more helpful error if the token is missing
@@ -68,7 +70,11 @@ run cachixOptions agentOpts =
 
       websocket <- WebSocket.new withLog websocketOptions
       channel <- WebSocket.receive websocket
-      _shutdownWebsocket <- connectToService websocket
+      shutdownWebsocket <- connectToService websocket
+
+      let signalSet = Signals.CatchOnce (shutdownWebsocket >>= Async.wait)
+      void $ Signals.installHandler Signals.sigINT signalSet Nothing
+      void $ Signals.installHandler Signals.sigTERM signalSet Nothing
 
       let agent =
             Agent
@@ -90,7 +96,7 @@ run cachixOptions agentOpts =
     agentName = AgentOptions.name agentOpts
     profileName = fromMaybe "system" (AgentOptions.profile agentOpts)
 
-    logAndExit withLog e = do
+    logAndExitWithFailure withLog e = do
       void $ withLog $ K.logLocM K.ErrorS $ K.ls (displayException e)
       exitFailure
 
@@ -154,9 +160,7 @@ connectToService websocket = do
   -- Block until the connection has been established
   void $ MVar.takeMVar initialConnection
 
-  let shutdownService = MVar.putMVar close () $> thread
-
-  pure shutdownService
+  once (MVar.putMVar close () $> thread)
 
 -- | Fetch the home directory and verify that the owner matches the current user.
 -- Throws either 'NoHomeFound' or 'UserDoesNotOwnHome'.

@@ -1,26 +1,19 @@
 module Cachix.Types.DeployResponse where
 
+import qualified Cachix.Types.Deployment as Deployment
 import Data.Aeson
   ( FromJSON,
     ToJSON,
   )
 import Data.HashMap.Strict
 import Data.Swagger (ToSchema)
+import Data.Time.Clock (UTCTime)
 import Data.UUID (UUID)
 import Protolude
 
-data Status
-  = Pending
-  | InProgress
-  | Cancelled
-  | Failed
-  | Succeeded
-  deriving stock (Show, Generic)
-  deriving anyclass (FromJSON, ToJSON, ToSchema, NFData)
-
 data Details = Details
   { id :: UUID,
-    status :: Status,
+    status :: Deployment.Status,
     url :: Text
   }
   deriving stock (Show, Generic)

@@ -30,4 +30,4 @@ main = do
     DeployCommand deployCommand ->
       case deployCommand of
         DeployOptions.Agent opts -> AgentCommand.run cachixOptions opts
-        DeployOptions.Activate opts -> ActivateCommand.run cachixOptions opts
+        DeployOptions.Activate opts -> ActivateCommand.run env opts

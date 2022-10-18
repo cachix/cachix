@@ -54,7 +54,7 @@ data Agent = Agent
   }
 
 agentIdentifier :: Text -> Text
-agentIdentifier agentName = agentName <> " " <> toS versionNumber
+agentIdentifier agentName = unwords [agentName, toS versionNumber]
 
 run :: Config.CachixOptions -> CLI.AgentOptions -> IO ()
 run cachixOptions agentOptions =
@@ -178,11 +178,9 @@ launchDeployment agent@Agent {..} deploymentDetails = do
                 Deployment.logOptions = logOptions
               }
 
-      case exitCode of
-        ExitSuccess
-          | bootstrap ->
-            verifyBootstrapSuccess agent
-        _ -> pure ()
+      when
+        (bootstrap && exitCode == ExitSuccess)
+        (verifyBootstrapSuccess agent)
 
 verifyBootstrapSuccess :: Agent -> IO ()
 verifyBootstrapSuccess Agent {profileName, withLog} = do
@@ -198,12 +196,11 @@ verifyBootstrapSuccess Agent {profileName, withLog} = do
   case eProcessName of
     Right (pid, "cachix") -> do
       withLog . K.logLocM K.InfoS . K.ls $
-        unwords ["Found an active agent for the", profileName, "profile with PID", show pid]
+        unwords ["Found an active agent for the", profileName, "profile with PID" <> show pid <> ".", "Exiting."]
       exitSuccess
     _ -> do
       withLog . K.logLocM K.InfoS . K.ls $
-        unwords ["Cannot find an active agent for the", profileName, "profile."]
-      pure ()
+        unwords ["Cannot find an active agent for the", profileName, "profile. Waiting for more deployments."]
   where
     getProcessName :: IO (Posix.CPid, Text)
     getProcessName = do

@@ -31,7 +31,6 @@ import Protolude hiding (onException, toS, (<.>))
 import Protolude.Conv
 import qualified System.Directory as Directory
 import System.Environment (getEnv, lookupEnv)
-import System.FilePath ((<.>), (</>))
 import qualified System.Posix.Files as Posix.Files
 import qualified System.Posix.Process as Posix
 import qualified System.Posix.Signals as Signals
@@ -66,6 +65,7 @@ run cachixOptions agentOptions =
 
         -- TODO: show a more helpful error if the token is missing
         -- TODO: show a more helpful error when the token isn't valid
+        -- TODO: wrap the token in a newtype or use servant's Token
         agentToken <- toS <$> getEnv "CACHIX_AGENT_TOKEN"
         agentState <- newIORef Nothing
 
@@ -150,8 +150,8 @@ launchDeployment agent@Agent {..} deploymentDetails = do
   agentRegistered <- readIORef agentState
 
   case agentRegistered of
-    -- TODO: this is currently not possible, but relies on the backend
-    -- to do the right thing. Can we improve the typing here?
+    -- TODO: the agent should either not exist before we register or
+    -- we should re-register here as a precaution.
     Nothing -> pure ()
     Just agentInformation -> do
       binDir <- toS <$> getBinDir
@@ -176,24 +176,28 @@ launchDeployment agent@Agent {..} deploymentDetails = do
 
 verifyBootstrapSuccess :: Agent -> IO ()
 verifyBootstrapSuccess Agent {profileName, withLog} = do
-  withLog $ K.logLocM K.InfoS $ K.ls $ unwords ["Waiting for another agent to take over", profileName, "..."]
+  withLog . K.logLocM K.InfoS . K.ls $
+    unwords ["Waiting for another agent to take over the", profileName, "profile..."]
 
-  lockDirectory <- Lock.getLockDirectory
   eProcessName <-
     Safe.tryIO $
       Retry.recoverAll
-        (Retry.limitRetries 30 <> Retry.constantDelay 1000)
-        (const $ getProcessName lockDirectory)
+        (Retry.limitRetries 20 <> Retry.constantDelay 1000)
+        (const getProcessName)
 
   case eProcessName of
     Right (pid, "cachix") -> do
-      withLog $ K.logLocM K.InfoS $ K.ls $ unwords ["Found an active agent for", profileName, "with PID", show pid]
+      withLog . K.logLocM K.InfoS . K.ls $
+        unwords ["Found an active agent for the", profileName, "profile with PID", show pid]
       exitSuccess
-    _ -> pure ()
+    _ -> do
+      withLog . K.logLocM K.InfoS . K.ls $
+        unwords ["Cannot find an active agent for the", profileName, "profile."]
+      pure ()
   where
-    getProcessName :: FilePath -> IO (Posix.CPid, Text)
-    getProcessName lockDirectory = do
-      mpid <- readMaybe <$> readFile (lockDirectory </> lockFilename profileName <.> "pid")
+    getProcessName :: IO (Posix.CPid, Text)
+    getProcessName = do
+      mpid <- Lock.readPidFile (lockFilename profileName)
       case mpid of
         Nothing -> throwString "No PID"
         Just pid -> do
@@ -257,7 +261,7 @@ data Error
 
 instance Exception Error where
   displayException = \case
-    ProfileLocked profileName -> toS $ unwords ["The profile", "\"" <> profileName <> "\"", "is already being managed by another Cachix Agent"]
+    ProfileLocked profileName -> toS $ unwords ["The", profileName, "profile is already being managed by another Cachix Agent"]
     NoHomeFound -> "Could not find the user’s home directory. Make sure to set the $HOME variable."
     UserDoesNotOwnHome {userName = userName, sudoUser = sudoUser, home = home} ->
       if isJust sudoUser

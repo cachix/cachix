@@ -18,7 +18,7 @@ import qualified Cachix.Deploy.Websocket as WebSocket
 import qualified Control.Concurrent.Async as Async
 import Control.Concurrent.Extra (once)
 import qualified Control.Concurrent.MVar as MVar
-import Control.Exception.Safe (handleAny, onException, throwString)
+import Control.Exception.Safe (onException, throwString, withException)
 import qualified Control.Exception.Safe as Safe
 import qualified Control.Retry as Retry
 import qualified Data.Aeson as Aeson
@@ -27,7 +27,7 @@ import Data.String (String)
 import qualified Data.Text as Text
 import qualified Katip as K
 import Paths_cachix (getBinDir)
-import Protolude hiding (onException, toS, (<.>))
+import Protolude hiding (onException, toS)
 import Protolude.Conv
 import qualified System.Directory as Directory
 import System.Environment (getEnv, lookupEnv)
@@ -59,7 +59,7 @@ agentIdentifier agentName = agentName <> " " <> toS versionNumber
 run :: Config.CachixOptions -> CLI.AgentOptions -> IO ()
 run cachixOptions agentOptions =
   Log.withLog logOptions $ \withLog ->
-    handleAny (logAndExitWithFailure withLog) $
+    logAndExitWithFailure withLog $
       withLockedProfile agentOptions profileName $ do
         checkUserOwnsHome
 
@@ -112,9 +112,19 @@ run cachixOptions agentOptions =
     agentName = CLI.name agentOptions
     profileName = fromMaybe "system" (CLI.profile agentOptions)
 
-    logAndExitWithFailure withLog e = do
-      void $ withLog $ K.logLocM K.ErrorS $ K.ls (displayException e)
-      exitFailure
+    logAndExitWithFailure withLog action = withException action logException
+      where
+        logException :: SomeException -> IO ()
+        logException someE =
+          case fromException someE of
+            Nothing -> pure ()
+            Just ExitSuccess -> pure ()
+            Just e ->
+              withLog . K.logLocM K.ErrorS . K.ls $
+                unlines
+                  [ "The agent encountered an exception:",
+                    toS (displayException e)
+                  ]
 
     verbosity =
       if Config.verbose cachixOptions
@@ -156,7 +166,7 @@ launchDeployment agent@Agent {..} deploymentDetails = do
     Just agentInformation -> do
       binDir <- toS <$> getBinDir
       exitCode <-
-        StdinProcess.spawnProcess (binDir <> "/.cachix-deployment") [] $
+        StdinProcess.readProcess (binDir <> "/.cachix-deployment") [] $
           toS . Aeson.encode $
             Deployment.Deployment
               { Deployment.agentName = name,

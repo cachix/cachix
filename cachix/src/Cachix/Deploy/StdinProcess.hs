@@ -5,9 +5,9 @@ import System.IO (hClose)
 import System.Process
 import Prelude (String)
 
--- | Spawn a process with only stdin as an input
-spawnProcess :: FilePath -> [String] -> String -> IO ExitCode
-spawnProcess cmd args input = do
+-- | Run a process with only stdin as an input
+readProcess :: FilePath -> [String] -> String -> IO ExitCode
+readProcess cmd args input = do
   (Just stdin, _, _, pHandle) <-
     createProcess
       (proc cmd args)

@@ -86,7 +86,7 @@ run cachixOptions agentOptions =
         channel <- WebSocket.receive websocket
         shutdownWebsocket <- connectToService websocket
 
-        let signalSet = Signals.CatchOnce (shutdownWebsocket >>= Async.wait)
+        let signalSet = Signals.CatchOnce shutdownWebsocket
         void $ Signals.installHandler Signals.sigINT signalSet Nothing
         void $ Signals.installHandler Signals.sigTERM signalSet Nothing
 
@@ -212,7 +212,7 @@ handleCommand agent command =
 
 -- | Asynchronously open and maintain a websocket connection to the backend for
 -- sending deployment progress updates.
-connectToService :: ServiceWebSocket -> IO (IO (Async ()))
+connectToService :: ServiceWebSocket -> IO (IO ())
 connectToService websocket = do
   initialConnection <- MVar.newEmptyMVar
   close <- MVar.newEmptyMVar
@@ -225,7 +225,7 @@ connectToService websocket = do
   -- Block until the connection has been established
   void $ MVar.takeMVar initialConnection
 
-  once (MVar.putMVar close () $> thread)
+  once $ MVar.putMVar close () >> Async.wait thread
 
 -- | Fetch the home directory and verify that the owner matches the current user.
 -- Throws either 'NoHomeFound' or 'UserDoesNotOwnHome'.

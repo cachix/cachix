@@ -89,8 +89,8 @@ main = do
         `finally` do
           withLog $ K.logLocM K.DebugS "Cleaning up websocket connections"
           atomically $ TMQueue.closeTMQueue logQueue
-          serviceThread <- shutdownService
-          Async.waitBoth serviceThread loggingThread
+          shutdownService
+          Async.wait loggingThread
 
 -- | Run the deployment commands
 deploy ::

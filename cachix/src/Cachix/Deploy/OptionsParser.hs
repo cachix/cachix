@@ -15,11 +15,11 @@ parser =
       [ command "activate" $
           info
             (helper <*> activate)
-            (progDesc "Deploy a new configuration to agents using CACHIX_ACTIVATE_TOKEN."),
+            (progDesc "Deploy a new configuration to agents using CACHIX_ACTIVATE_TOKEN. See https://docs.cachix.org/deploy/deploying-to-agents"),
         command "agent" $
           info
             (helper <*> agent)
-            (progDesc "Run an agent in foreground using CACHIX_AGENT_TOKEN.")
+            (progDesc "Run an agent in foreground using CACHIX_AGENT_TOKEN. See https://docs.cachix.org/deploy/running-an-agent/")
       ]
   where
     activate = Activate <$> parserActivateOptions
@@ -41,12 +41,12 @@ parserAgentOptions =
   AgentOptions
     <$> strArgument
       ( metavar "AGENT-NAME"
-          <> help "Unique identifier (usually hostname)."
+          <> help "Unique agent identifier (usually hostname)."
       )
     <*> optional
       ( strArgument
           ( metavar "NIX-PROFILE"
-              <> help "Nix profile to manage. Defaults to 'system' on NixOS and 'system-profiles/system' on nix-darwin."
+              <> help "Nix profile to manage. Defaults to 'system' on NixOS and 'system-profiles/system' (nix-darwin) on macOS."
           )
       )
 

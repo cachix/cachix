@@ -2,11 +2,13 @@ module URISpec where
 
 import qualified Cachix.Client.URI as URI
 import qualified Data.Aeson as Aeson
+import qualified Data.ByteString.Char8 as Char8
 import qualified Data.ByteString.Lazy as BL
 import Data.Either.Extra
 import qualified Dhall
 import qualified Dhall.Core
 import Protolude
+import qualified Servant.Client.Core as Servant
 import Test.Hspec
 
 secureScheme :: ByteString
@@ -77,3 +79,9 @@ spec =
 
     it "converts from Dhall" $
       Dhall.input Dhall.auto ("\"" <> decodeUtf8 secureUri <> "\"") `shouldReturn` parseURI' secureUri
+
+    -- https://github.com/cachix/cachix/issues/462
+    it "converts to a Servant BaseUrl without trailing slashes" $
+      let uriWithTrailingSlash = secureUri <> "/"
+          uri = parseURI' uriWithTrailingSlash
+       in Servant.baseUrlPath (URI.getBaseUrl uri) `shouldBe` ""

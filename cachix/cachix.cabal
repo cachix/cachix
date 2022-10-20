@@ -216,4 +216,5 @@ test-suite cachix-test
     , hspec
     , protolude
     , servant-auth-client
+    , servant-client-core
     , temporary

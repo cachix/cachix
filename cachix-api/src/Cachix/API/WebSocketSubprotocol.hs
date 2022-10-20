@@ -51,14 +51,11 @@ data AgentCommand
   deriving (Show, Eq, Generic, Aeson.FromJSON, Aeson.ToJSON)
 
 parseMessage :: Aeson.FromJSON cmd => ByteString -> Either Text (Message cmd)
-parseMessage body =
-  case Aeson.eitherDecodeStrict' body of
-    Left err -> Left $ toS err
-    Right message -> Right message
+parseMessage = first toS . Aeson.eitherDecodeStrict'
 
 sendMessage :: Aeson.ToJSON cmd => WS.Connection -> Message cmd -> IO ()
 sendMessage connection cmd =
-  WS.sendTextData connection $ Aeson.encode cmd
+  WS.sendTextData connection (Aeson.encode cmd)
 
 -- | Receive and process messages in parallel.
 --

@@ -45,6 +45,8 @@ import qualified Wuss
 data WebSocket tx rx = WebSocket
   { -- | The active WebSocket connection, if available
     connection :: MVar.MVar WS.Connection,
+    -- | The connection options
+    options :: Options,
     -- | A timestamp of the last pong message received
     lastPong :: WebsocketPong.LastPongState,
     -- | See 'Transmit'
@@ -115,18 +117,31 @@ shutdownNow websocket@WebSocket {rx} code msg = do
   atomically (TMChan.closeTMChan rx)
   throwIO $ WS.CloseRequest code msg
 
-withConnection ::
-  -- | Logging context for logging socket status
-  Log.WithLog ->
-  -- | WebSocket options
-  Options ->
-  -- | The client app to run inside the socket
-  (WebSocket tx rx -> IO ()) ->
-  IO ()
+-- | Run an app inside a new WebSocket connection.
+withConnection :: Log.WithLog -> Options -> (WebSocket tx rx -> IO ()) -> IO ()
 withConnection withLog options app = do
-  threadId <- myThreadId
-  lastPong <- WebsocketPong.newState
+  websocket <- new withLog options
+  runConnection websocket (app websocket)
 
+-- | Set up state for a new WebSocket connection. Use 'runConnection' to then
+-- open the connection.
+--
+-- This is useful for setting up message processing using the tx/rx channels
+-- before the connection is established. For example, you might want to use
+-- 'receive' to open a receiving channel and capture incoming messages.
+new :: Log.WithLog -> Options -> IO (WebSocket tx rx)
+new withLog options = do
+  connection <- MVar.newEmptyMVar
+  tx <- TBMQueue.newTBMQueueIO 100
+  rx <- TMChan.newBroadcastTMChanIO
+  lastPong <- WebsocketPong.newState
+  pure $ WebSocket {connection, options, tx, rx, lastPong, withLog}
+
+runConnection :: WebSocket tx rx -> IO () -> IO ()
+runConnection websocket@WebSocket {connection, options, tx, rx, withLog, lastPong} app = do
+  threadId <- myThreadId
+
+  -- TODO: store this in the WebSocket record
   let pingEvery = 30
   let pongTimeout = pingEvery * 2
   let onPing = do
@@ -134,11 +149,6 @@ withConnection withLog options app = do
         withLog $ K.logLocM K.DebugS $ K.ls $ "Sending WebSocket keep-alive ping, last pong was " <> (show last :: Text) <> " seconds ago"
         WebsocketPong.pingHandler lastPong threadId pongTimeout
   let connectionOptions = WebsocketPong.installPongHandler lastPong WS.defaultConnectionOptions
-
-  connection <- MVar.newEmptyMVar
-  tx <- TBMQueue.newTBMQueueIO 100
-  rx <- TMChan.newBroadcastTMChanIO
-  let websocket = WebSocket {connection, tx, rx, lastPong, withLog}
 
   let dropConnection = void $ MVar.tryTakeMVar connection
   let closeChannels = atomically $ do
@@ -160,9 +170,7 @@ withConnection withLog options app = do
           -- Update the connection
           MVar.putMVar connection newConnection
 
-          Async.concurrently_
-            (sendPingEvery pingEvery onPing websocket)
-            (app websocket)
+          Async.concurrently_ (sendPingEvery pingEvery onPing websocket) app
 
 runClientWith :: Options -> WS.Connection.ConnectionOptions -> WS.ClientApp a -> IO a
 runClientWith Options {host, port, path, headers, useSSL} connectionOptions app =
@@ -290,14 +298,14 @@ reconnectWithLog withLog app =
       floor $ (fromIntegral t :: Double) / 1000 / 1000
 
 waitForPong :: Int -> WebSocket tx rx -> IO (Maybe Time.UTCTime)
-waitForPong seconds websocket =
+waitForPong seconds websocket = do
+  channel <- receive websocket
   Async.withAsync (sendPingEvery 1 pass websocket) $ \_ ->
-    Timeout.timeout (seconds * 1000 * 1000) $ do
-      receive websocket >>= \channel ->
-        fix $ \waitForNextMsg -> do
-          read channel >>= \case
-            Just (ControlMessage (WS.Pong _)) -> Time.getCurrentTime
-            _ -> waitForNextMsg
+    Timeout.timeout (seconds * 1000 * 1000) $
+      fix $ \waitForNextMsg -> do
+        read channel >>= \case
+          Just (ControlMessage (WS.Pong _)) -> Time.getCurrentTime
+          _ -> waitForNextMsg
 
 sendPingEvery :: Int -> IO () -> WebSocket tx rx -> IO ()
 sendPingEvery seconds onPing WebSocket {connection} = forever $ do

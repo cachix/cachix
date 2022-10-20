@@ -73,8 +73,9 @@ run cachixOptions agentOpts =
                 WebSocket.identifier = agentIdentifier agentName
               }
 
-      WebSocket.withConnection withLog websocketOptions $ \websocket -> do
-        channel <- WebSocket.receive websocket
+      websocket <- WebSocket.new withLog websocketOptions
+      channel <- WebSocket.receive websocket
+      WebSocket.runConnection websocket $
         WebSocket.handleJSONMessages @(WSS.Message WSS.AgentCommand) @(WSS.Message WSS.BackendCommand) websocket $
           WebSocket.readDataMessages channel $ \message ->
             handleMessage withLog agentState agentName agentToken message

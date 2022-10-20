@@ -235,28 +235,42 @@ handleOutgoingJSON WebSocket {connection, tx} = do
     sendJSONMessage conn (ControlMessage msg) = WS.send conn (WS.ControlMessage msg)
     sendJSONMessage conn (DataMessage msg) = WS.sendTextData conn (Aeson.encode msg)
 
--- | Log all exceptions and retry. Exit when the websocket receives a close request.
+-- | Log exceptions and retry, specialized for reconnecting WebSockets.
+--
+-- Close requests should be retried unless the status code is 1000, which
+-- indicates that both the client and server have acknowledged the close
+-- request and are ready to terminate the connection.
+--
+-- Other status codes typically indicate some sort of error. For example,
+-- Cloudflare periodically restarts WebSockets and sends a pre-defined
+-- status code in the 1xxx range.
+--
+-- Defined status codes:
+-- https://www.rfc-editor.org/rfc/rfc6455.html#section-7.4.1
 --
 -- TODO: use exponential retry with reset: https://github.com/Soostone/retry/issues/25
+-- TODO: clients should be able to decide which errors to recover from.
 reconnectWithLog :: (MonadMask m, MonadIO m) => Log.WithLog -> m () -> m ()
-reconnectWithLog withLog inner =
+reconnectWithLog withLog app =
   Safe.handle closeRequest $
-    Retry.recovering Retry.endlessConstantRetryPolicy handlers $ const inner
+    Retry.recovering Retry.endlessConstantRetryPolicy handlers (const app)
   where
-    closeRequest (WS.CloseRequest _ _) = return ()
-    closeRequest e = Safe.throwM e
-
     handlers = Retry.skipAsyncExceptions ++ [exitOnSuccess, exitOnCloseRequest, logSyncExceptions]
+
+    closeRequest (WS.CloseRequest 1000 _) = return ()
+    closeRequest e = Safe.throwM e
 
     exitOnSuccess _ = Handler $ \(_ :: ExitCode) -> return False
 
     exitOnCloseRequest _ = Handler $ \(e :: WS.ConnectionException) ->
       case e of
-        WS.CloseRequest _ msg -> do
+        WS.CloseRequest code msg -> do
           liftIO . withLog $
             K.logLocM K.DebugS . K.ls $
-              "Received close request from peer (" <> msg <> "). Closing connection"
-          return False
+              "Received close request from peer (code: " <> show code <> ", message: " <> msg <> ")"
+
+          -- Retry on any code other than 1000
+          pure (code /= 1000)
         _ -> return True
 
     logSyncExceptions = Retry.logRetries (return . isSyncException) logRetries

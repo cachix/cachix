@@ -122,7 +122,7 @@ use env name useOptions = do
       -- TODO: is checking for the existence of the config file the right thing to do here?
       | isErr err status401 && isJust optionalAuthToken -> throwM $ accessDeniedBinaryCache name
       | isErr err status401 -> throwM $ notAuthenticatedBinaryCache name
-      | isErr err status404 -> throwM $ BinaryCacheNotFound $ "Binary cache" <> name <> " does not exist."
+      | isErr err status404 -> throwM $ BinaryCacheNotFound $ "Binary cache " <> name <> " does not exist."
       | otherwise -> throwM err
     Right binaryCache -> do
       () <- escalateAs UnsupportedNixVersion =<< assertNixVersion

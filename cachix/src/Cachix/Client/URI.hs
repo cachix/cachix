@@ -25,6 +25,7 @@ where
 import Control.Monad (fail)
 import qualified Data.Aeson as Aeson
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as Char8
 import Data.Either.Validation (Validation (Failure, Success))
 import qualified Data.Map.Strict as Map
 import Data.Maybe (fromJust)
@@ -120,28 +121,39 @@ instance Dhall.ToDhall URI where
 
       declared = Dhall.Core.Text
 
--- TODO: make getBaseUrl internal
-
 -- | Partial function from URI to BaseUrl
+--
+-- TODO: We should error out during the parsing stage with a nice error.
+-- TODO: make getBaseUrl internal
 getBaseUrl :: URI -> BaseUrl
 getBaseUrl (URI uriref) =
   case UBS.uriAuthority uriref of
     Nothing -> panic "missing host in url"
     Just authority ->
-      BaseUrl
-        scheme
-        (toS (UBS.hostBS (UBS.authorityHost authority)))
-        port
-        (toS (UBS.uriPath uriref))
+      BaseUrl scheme hostname port path
       where
         scheme :: Scheme
         scheme = case UBS.uriScheme uriref of
           UBS.Scheme "http" -> Http
           UBS.Scheme "https" -> Https
           _ -> panic "uri can only be http/https"
+
+        hostname = toS $ UBS.hostBS (UBS.authorityHost authority)
+
         port :: Int
         port = maybe defaultPort UBS.portNumber $ UBS.authorityPort authority
+
         defaultPort :: Int
         defaultPort = case scheme of
           Http -> 80
           Https -> 443
+
+        path = toS $ removeTrailingSlash (UBS.uriPath uriref)
+
+        -- Servant expects the trailing slash to be removed
+        -- https://hackage.haskell.org/package/servant-client-core-0.19/docs/Servant-Client-Core.html#v:parseBaseUrl
+        removeTrailingSlash :: ByteString -> ByteString
+        removeTrailingSlash "" = ""
+        removeTrailingSlash str = case Char8.last str of
+          '/' -> Char8.init str
+          _ -> str

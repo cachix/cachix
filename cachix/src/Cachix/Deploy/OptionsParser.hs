@@ -32,7 +32,8 @@ data AgentOptions = AgentOptions
   deriving (Show)
 
 data ActivateOptions = ActivateOptions
-  { payloadPath :: FilePath
+  { payloadPath :: FilePath,
+    agents :: [Text]
   }
   deriving (Show)
 
@@ -56,4 +57,12 @@ parserActivateOptions =
     <$> strArgument
       ( metavar "DEPLOY-SPEC.JSON"
           <> help "https://docs.cachix.org/deploy/reference.html#deploy-json"
+      )
+    <*> many
+      ( strOption
+          ( long "agent"
+              <> short 'a'
+              <> metavar "AGENT-NAME"
+              <> help "Deploy only specific agent(s)."
+          )
       )

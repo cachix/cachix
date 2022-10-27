@@ -127,7 +127,7 @@ exitOnceQueueIsEmpty stopProducerCallback pushWorker queryWorker queryWorkerStat
           cancelWith pushWorker StopWorker
         else do
           -- extend shutdown for another 90s
-          void $ Systemd.notify False $ "EXTEND_TIMEOUT_USEC=" <> show (90 * 1000 * 1000)
+          void $ Systemd.notify False $ "EXTEND_TIMEOUT_USEC=" <> show (90 * 1000 * 1000 :: Int)
           putTextError $ "Waiting to finish: " <> show inprogress <> " pushing, " <> show queueLength <> " in queue"
           threadDelay (1000 * 1000)
           go

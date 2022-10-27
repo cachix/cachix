@@ -96,10 +96,6 @@ activate logStream profileName storePath = do
   (profilePath, activationScripts) <- getActivationScript profileName storePath
   previousProfilePath <- toStorePath profilePath
 
-  -- Set the new profile
-  -- TODO: document what happens if the wrong user is used for the agent
-  runShell logStream "nix-env" ["-p", toS profilePath, "--set", toS storePath]
-
   -- Activate the configuration
   -- TODO: Check with Domen whether we can exit early here
   forM_ activationScripts $ uncurry (runShell logStream)
@@ -119,25 +115,46 @@ activate logStream profileName storePath = do
 
 type Command = (String, [String])
 
--- TODO: home-manager
 getActivationScript :: Text -> FilePath -> IO (FilePath, [Command])
 getActivationScript profile storePath = do
   isNixOS <- Directory.doesPathExist $ toS storePath </> "nixos-version"
   isNixDarwin <- Directory.doesPathExist $ toS storePath </> "darwin-version"
-  void InstallationMode.getUser
-  (systemProfile, cmds) <- case (isNixOS, isNixDarwin) of
-    (True, _) -> return ("system", [(toS storePath </> "bin/switch-to-configuration", ["switch"])])
-    (_, True) ->
+  isHomeManager <- Directory.doesPathExist $ toS storePath </> "hm-version"
+  user <- InstallationMode.getUser
+  let systemProfileDir = "/nix/var/nix/profiles"
+  let perUserProfileDir = systemProfileDir </> "per-user" </> toS user
+  let mkProfilePath profileBaseDir defaultProfile =
+        profileBaseDir </> if profile == "" then defaultProfile else toS profile
+  -- Sets the new profile. This is needed for NixOS and nix-darwin. The Home
+  -- Manager activation script does the profile setting by itself.
+  -- TODO: document what happens if the wrong user is used for the agent
+  let setNewProfile profilePath =
+        ("nix-env", ["-p", profilePath, "--set", storePath])
+  return $ case (isNixOS, isNixDarwin, isHomeManager) of
+    (True, _, _) ->
+      let profilePath = mkProfilePath systemProfileDir "system"
+       in ( profilePath,
+            [ setNewProfile profilePath,
+              (toS storePath </> "bin/switch-to-configuration", ["switch"])
+            ]
+          )
+    (_, True, _) ->
       -- https://github.com/LnL7/nix-darwin/blob/master/pkgs/nix-tools/darwin-rebuild.sh
-      return
-        ( "system-profiles/system",
-          [ ("mkdir", ["-p", "-m", "0755", "/nix/var/nix/profiles/system-profiles"]),
-            (toS storePath </> "activate-user", []),
-            (toS storePath </> "activate", [])
-          ]
-        )
-    (_, _) -> return ("system", [])
-  return ("/nix/var/nix/profiles" </> if profile == "" then systemProfile else toS profile, cmds)
+      let profilePath = mkProfilePath systemProfileDir "system-profiles/system"
+       in ( profilePath,
+            [ ("mkdir", ["-p", "-m", "0755", "/nix/var/nix/profiles/system-profiles"]),
+              setNewProfile profilePath,
+              (toS storePath </> "activate-user", []),
+              (toS storePath </> "activate", [])
+            ]
+          )
+    (_, _, True) ->
+      ( mkProfilePath perUserProfileDir "home-manager",
+        [(toS storePath </> "activate", [])]
+      )
+    (_, _, _) ->
+      let profilePath = mkProfilePath systemProfileDir "system"
+       in (profilePath, [setNewProfile profilePath])
 
 -- TODO: send errors as well
 -- TODO: fix either/maybe types

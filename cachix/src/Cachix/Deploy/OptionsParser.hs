@@ -47,7 +47,7 @@ parserAgentOptions =
     <*> optional
       ( strArgument
           ( metavar "NIX-PROFILE"
-              <> help "Nix profile to manage. Defaults to 'system' on NixOS and 'system-profiles/system' (nix-darwin) on macOS."
+              <> help "Nix profile to manage. Defaults to 'system' on NixOS, 'system-profiles/system' (nix-darwin) on macOS, and 'home-manager' for Home Manager."
           )
       )
 

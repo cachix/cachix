@@ -117,9 +117,10 @@ type Command = (String, [String])
 
 getActivationScript :: Text -> FilePath -> IO (FilePath, [Command])
 getActivationScript profile storePath = do
-  isNixOS <- Directory.doesPathExist $ toS storePath </> "nixos-version"
-  isNixDarwin <- Directory.doesPathExist $ toS storePath </> "darwin-version"
-  isHomeManager <- Directory.doesPathExist $ toS storePath </> "hm-version"
+  let checkPath p = Directory.doesPathExist $ toS storePath </> p
+  isNixOS <- checkPath "nixos-version"
+  isNixDarwin <- checkPath "darwin-version"
+  isHomeManager <- checkPath "hm-version"
   user <- InstallationMode.getUser
   let systemProfileDir = "/nix/var/nix/profiles"
   let perUserProfileDir = systemProfileDir </> "per-user" </> toS user

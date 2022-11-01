@@ -1,5 +1,4 @@
 {-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE RecordWildCards #-}
 
 module Cachix.Deploy.Log where
 

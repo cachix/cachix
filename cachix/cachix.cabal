@@ -28,6 +28,8 @@ common defaults
     LambdaCase
     NamedFieldPuns
     OverloadedStrings
+    RecordWildCards
+    ScopedTypeVariables
 
   ghc-options:
     -Wall -Wcompat -Wincomplete-record-updates

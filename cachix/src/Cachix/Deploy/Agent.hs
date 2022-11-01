@@ -23,7 +23,6 @@ import qualified Control.Retry as Retry
 import qualified Data.Aeson as Aeson
 import Data.IORef
 import Data.String (String)
-import qualified Data.Text as Text
 import qualified Katip as K
 import Paths_cachix (getBinDir)
 import Protolude hiding (onException, toS)
@@ -35,7 +34,6 @@ import qualified System.Posix.Process as Posix
 import qualified System.Posix.Signals as Signals
 import qualified System.Posix.Types as Posix
 import qualified System.Posix.User as Posix.User
-import qualified System.Process as Process
 
 type ServiceWebSocket = WebSocket.WebSocket (WSS.Message WSS.AgentCommand) (WSS.Message WSS.BackendCommand)
 
@@ -144,10 +142,9 @@ lockFilename profileName = "agent-" <> toS profileName
 withLockedProfile :: CLI.AgentOptions -> Text -> IO () -> IO ()
 withLockedProfile CLI.AgentOptions {bootstrap = True} _ action = action
 withLockedProfile _ profileName action = do
-  lock <- Lock.withTryLock (lockFilename profileName) action
-  case lock of
-    Nothing -> throwIO (ProfileLocked profileName)
-    _ -> pure ()
+  lock <- Lock.withTryLockAndPid (lockFilename profileName) action
+  when (isNothing lock) $
+    throwIO (ProfileLocked profileName)
 
 registerAgent :: Agent -> WSS.AgentInformation -> IO ()
 registerAgent Agent {agentState, withLog} agentInformation = do
@@ -186,29 +183,31 @@ verifyBootstrapSuccess Agent {profileName, withLog} = do
   withLog . K.logLocM K.InfoS . K.ls $
     unwords ["Waiting for another agent to take over the", profileName, "profile..."]
 
-  eProcessName <-
+  eAgentPid <-
     Safe.tryIO $
       Retry.recoverAll
         (Retry.limitRetries 20 <> Retry.constantDelay 1000)
-        (const getProcessName)
+        (const waitForAgent)
 
-  case eProcessName of
-    Right (pid, "cachix") -> do
+  case eAgentPid of
+    Right pid -> do
       withLog . K.logLocM K.InfoS . K.ls $
-        unwords ["Found an active agent for the", profileName, "profile with PID" <> show pid <> ".", "Exiting."]
+        unwords ["Found an active agent for the", profileName, "profile with PID " <> show pid <> ".", "Exiting."]
       exitSuccess
     _ -> do
       withLog . K.logLocM K.InfoS . K.ls $
         unwords ["Cannot find an active agent for the", profileName, "profile. Waiting for more deployments."]
   where
-    getProcessName :: IO (Posix.CPid, Text)
-    getProcessName = do
-      mpid <- Lock.readPidFile (lockFilename profileName)
-      case mpid of
-        Nothing -> throwString "No PID"
-        Just pid -> do
-          processName <- Process.readProcess "ps" ["--quick-pid", show pid, "-o", "comm", "--no-headers"] []
-          pure (pid, Text.strip $ toS processName)
+    lockfile = lockFilename profileName
+
+    -- The PID might be stale in rare cases. Only use this for diagnostics.
+    waitForAgent :: IO Posix.CPid
+    waitForAgent = do
+      lock <- Lock.withTryLock lockfile (pure ())
+      mpid <- Lock.readPidFile lockfile
+      case (lock, mpid) of
+        (Nothing, Just pid) -> pure pid
+        _ -> throwString "No active agent found"
 
 handleCommand :: Agent -> WSS.BackendCommand -> IO ()
 handleCommand agent command =

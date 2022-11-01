@@ -3,6 +3,7 @@ module Cachix.Deploy.Lock
     getLockDirectory,
     readPidFile,
     withTryLock,
+    withTryLockAndPid,
   )
 where
 
@@ -52,7 +53,6 @@ withTryLock lockFilename action = do
   lockDirectory <- getLockDirectory
 
   let lockFile = lockDirectory </> lockFilename <.> lockExtension
-  let pidFile = lockDirectory </> lockFilename <.> pidExtension
 
   bracket
     (Lock.fdOpen lockFile)
@@ -60,8 +60,16 @@ withTryLock lockFilename action = do
     $ \fd -> do
       isLocked <- Lock.fdTryLock fd Lock.ExclusiveLock
       if isLocked
-        then do
-          CPid pid <- getProcessID
-          writeFile pidFile (show pid)
-          fmap Just action
+        then fmap Just action
         else pure Nothing
+
+withTryLockAndPid :: FilePath -> IO a -> IO (Maybe a)
+withTryLockAndPid lockFilename action = do
+  lockDirectory <- getLockDirectory
+
+  let pidFile = lockDirectory </> lockFilename <.> pidExtension
+
+  withTryLock lockFilename $ do
+    CPid pid <- getProcessID
+    writeFile pidFile (show pid)
+    action

@@ -11,6 +11,10 @@ data BinaryCache = BinaryCache
     isPublic :: Bool,
     publicSigningKeys :: [Text],
     githubUsername :: Text,
-    permission :: Permission
+    permission :: Permission,
+    compression :: CompressionMode
   }
+  deriving (Show, Generic, FromJSON, ToJSON, ToSchema, NFData)
+
+data CompressionMode = XZ | ZSTD
   deriving (Show, Generic, FromJSON, ToJSON, ToSchema, NFData)

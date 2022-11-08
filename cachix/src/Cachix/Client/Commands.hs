@@ -35,6 +35,7 @@ import Cachix.Client.Secrets
   )
 import Cachix.Client.Servant
 import qualified Cachix.Client.WatchStore as WatchStore
+import qualified Cachix.Types.BinaryCache as BinaryCache
 import qualified Cachix.Types.SigningKeyCreate as SigningKeyCreate
 import Control.Exception.Safe (throwM)
 import Control.Retry (RetryStatus (rsIterNumber))
@@ -201,8 +202,8 @@ retryText retrystatus =
     then ""
     else "(retry #" <> show (rsIterNumber retrystatus) <> ") "
 
-pushStrategy :: Store -> Maybe Token -> PushOptions -> Text -> StorePath -> PushStrategy IO ()
-pushStrategy store authToken opts name storePath =
+pushStrategy :: Store -> Maybe Token -> PushOptions -> Text -> Maybe BinaryCache.CompressionMode -> StorePath -> PushStrategy IO ()
+pushStrategy store authToken opts name compressionMode storePath =
   PushStrategy
     { onAlreadyPresent = pass,
       on401 =
@@ -215,7 +216,9 @@ pushStrategy store authToken opts name storePath =
         -- we append newline instead of putStrLn due to https://github.com/haskell/text/issues/242
         putStr $ retryText retrystatus <> "compressing and pushing " <> path <> " (" <> humanSize (fromIntegral size) <> ")\n",
       onDone = pass,
-      withXzipCompressor = defaultWithXzipCompressorWithLevel (compressionLevel opts),
+      withCompressor = case fromMaybe BinaryCache.XZ compressionMode of
+        BinaryCache.XZ -> defaultWithXzipCompressorWithLevel (compressionLevel opts)
+        BinaryCache.ZSTD -> defaultWithZstdCompressorWithLevel (compressionLevel opts),
       Cachix.Client.Push.omitDeriver = Cachix.Client.OptionsParser.omitDeriver opts
     }
 
@@ -224,11 +227,24 @@ getPushParams env pushOpts name = do
   pushSecret <- findPushSecret (config env) name
   store <- wait (storeAsync env)
   authToken <- Config.getAuthTokenMaybe (config env)
+  compressionMode <- case pushSecret of
+    PushSigningKey {} -> pure Nothing
+    PushToken {} -> do
+      let token = fromMaybe (Token "") authToken
+      res <- retryAll $ \_ -> (`runClientM` clientenv env) $ API.getCache cachixClient token name
+      case res of
+        Left err
+          -- TODO: is checking for the existence of the config file the right thing to do here?
+          | isErr err status401 && isJust authToken -> throwM $ accessDeniedBinaryCache name
+          | isErr err status401 -> throwM $ notAuthenticatedBinaryCache name
+          | isErr err status404 -> throwM $ BinaryCacheNotFound $ "Binary cache " <> name <> " does not exist."
+          | otherwise -> throwM err
+        Right binaryCache -> pure (Just $ BinaryCache.compression binaryCache)
   return $
     PushParams
       { pushParamsName = name,
         pushParamsSecret = pushSecret,
         pushParamsClientEnv = clientenv env,
-        pushParamsStrategy = pushStrategy store authToken pushOpts name,
+        pushParamsStrategy = pushStrategy store authToken pushOpts name compressionMode,
         pushParamsStore = store
       }

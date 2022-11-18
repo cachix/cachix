@@ -57,7 +57,7 @@ run :: Config.CachixOptions -> CLI.AgentOptions -> IO ()
 run cachixOptions agentOptions =
   Log.withLog logOptions $ \withLog ->
     logAndExitWithFailure withLog $
-      withLockedProfile agentOptions profileName $ do
+      withAgentLock agentOptions $ do
         checkUserOwnsHome
 
         -- TODO: show a more helpful error if the token is missing
@@ -136,15 +136,15 @@ run cachixOptions agentOptions =
         }
 
 lockFilename :: Text -> FilePath
-lockFilename profileName = "agent-" <> toS profileName
+lockFilename agentName = "agent-" <> toS agentName
 
--- | Acquire a lock on the profile for this agent. Skip this step if we're bootstrapping the agent.
-withLockedProfile :: CLI.AgentOptions -> Text -> IO () -> IO ()
-withLockedProfile CLI.AgentOptions {bootstrap = True} _ action = action
-withLockedProfile _ profileName action = do
-  lock <- Lock.withTryLockAndPid (lockFilename profileName) action
+-- | Acquire a lock for this agent. Skip this step if we're bootstrapping the agent.
+withAgentLock :: CLI.AgentOptions -> IO () -> IO ()
+withAgentLock CLI.AgentOptions {bootstrap = True} action = action
+withAgentLock CLI.AgentOptions {name} action = do
+  lock <- Lock.withTryLockAndPid (lockFilename name) action
   when (isNothing lock) $
-    throwIO (ProfileLocked profileName)
+    throwIO (AgentAlreadyRunning name)
 
 registerAgent :: Agent -> WSS.AgentInformation -> IO ()
 registerAgent Agent {agentState, withLog} agentInformation = do
@@ -179,9 +179,9 @@ launchDeployment agent@Agent {..} deploymentDetails = do
         (verifyBootstrapSuccess agent)
 
 verifyBootstrapSuccess :: Agent -> IO ()
-verifyBootstrapSuccess Agent {profileName, withLog} = do
+verifyBootstrapSuccess Agent {name, withLog} = do
   withLog . K.logLocM K.InfoS . K.ls $
-    unwords ["Waiting for another agent to take over the", profileName, "profile..."]
+    unwords ["Waiting for another agent to take over..."]
 
   eAgentPid <-
     Safe.tryIO $
@@ -192,13 +192,13 @@ verifyBootstrapSuccess Agent {profileName, withLog} = do
   case eAgentPid of
     Right pid -> do
       withLog . K.logLocM K.InfoS . K.ls $
-        unwords ["Found an active agent for the", profileName, "profile with PID " <> show pid <> ".", "Exiting."]
+        unwords ["Found an active agent for", name, "with PID " <> show pid <> ".", "Exiting."]
       exitSuccess
     _ -> do
       withLog . K.logLocM K.InfoS . K.ls $
-        unwords ["Cannot find an active agent for the", profileName, "profile. Waiting for more deployments."]
+        unwords ["Cannot find an active agent for", name <> ".", "Waiting for more deployments."]
   where
-    lockfile = lockFilename profileName
+    lockfile = lockFilename name
 
     -- The PID might be stale in rare cases. Only use this for diagnostics.
     waitForAgent :: IO Posix.CPid
@@ -251,8 +251,8 @@ checkUserOwnsHome = do
         }
 
 data Error
-  = -- | The target profile is already locked by another agent.
-    ProfileLocked Text
+  = -- | An agent with the same name is already running.
+    AgentAlreadyRunning Text
   | -- | No home directory.
     NoHomeFound
   | -- | Safeguard against creating root-owned files in user directories.
@@ -266,7 +266,7 @@ data Error
 
 instance Exception Error where
   displayException = \case
-    ProfileLocked profileName -> toS $ unwords ["The", profileName, "profile is already being managed by another Cachix Agent"]
+    AgentAlreadyRunning agentName -> toS $ unwords ["The agent", agentName, "is already running."]
     NoHomeFound -> "Could not find the user’s home directory. Make sure to set the $HOME variable."
     UserDoesNotOwnHome {userName = userName, sudoUser = sudoUser, home = home} ->
       if isJust sudoUser

@@ -30,7 +30,7 @@ import Protolude.Conv
 import System.IO (BufferMode (..), hSetBuffering)
 
 lockFilename :: Text -> FilePath
-lockFilename profileName = "deployment-" <> toS profileName
+lockFilename agentName = "deployment-" <> toS agentName
 
 -- | Activate the new deployment.
 --
@@ -45,7 +45,6 @@ main = do
   deployment@Deployment
     { agentName,
       agentToken,
-      profileName,
       host,
       logOptions,
       deploymentDetails
@@ -75,7 +74,7 @@ main = do
           }
 
   Log.withLog logOptions $ \withLog ->
-    void . Lock.withTryLock (lockFilename profileName) $ do
+    void . Lock.withTryLock (lockFilename agentName) $ do
       -- Open a connection to logging stream
       (logQueue, loggingThread) <- runLogStream withLog logWebsocketOptions
 

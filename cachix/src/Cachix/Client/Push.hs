@@ -297,7 +297,9 @@ findPushSecret config name = do
       Nothing -> throwIO $ NoSigningKey msg
   where
     -- we reverse list of caches to prioritize keys added as last
-    getBinaryCache c = filter (\bc -> Config.name bc == name) $ reverse $ Config.binaryCaches c
+    getBinaryCache c =
+      reverse $
+        filter (\bc -> Config.name bc == name) (Config.binaryCaches c)
     msg :: Text
     msg =
       [iTrim|

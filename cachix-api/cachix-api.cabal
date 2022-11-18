@@ -129,4 +129,4 @@ test-suite cachix-api-test
     , transformers
     , unordered-containers
 
-  build-tool-depends: hspec-discover:hspec-discover -any
+  build-tool-depends: hspec-discover:hspec-discover

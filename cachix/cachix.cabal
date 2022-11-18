@@ -144,14 +144,12 @@ library
     , wuss
 
   -- These versions should match those supported by hercules-ci-cnix-store
-  pkgconfig-depends:
-    nix-main (==2.4 || >2.4) && <2.11,
-    nix-store (==2.4 || >2.4) && <2.11
+  pkgconfig-depends: nix-main >=2.4 && <2.11, nix-store >=2.4 && <2.11
 
 executable cachix
   import:             defaults
   main-is:            Main.hs
-  build-tool-depends: hspec-discover:hspec-discover -any
+  build-tool-depends: hspec-discover:hspec-discover
   ghc-options:        -threaded -rtsopts -with-rtsopts=-maxN8
   hs-source-dirs:     cachix
   other-modules:      Paths_cachix
@@ -165,7 +163,7 @@ executable cachix
 executable .cachix-deployment
   import:             defaults
   main-is:            Main.hs
-  build-tool-depends: hspec-discover:hspec-discover -any
+  build-tool-depends: hspec-discover:hspec-discover
   ghc-options:        -g -threaded -rtsopts -with-rtsopts=-maxN8
   hs-source-dirs:     cachix-deployment
   other-modules:      Paths_cachix

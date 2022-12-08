@@ -102,6 +102,7 @@ data BinaryCacheAPI route = BinaryCacheAPI
         :> "cache"
         :> Capture "name" Text
         :> "nar"
+        :> QueryParam "compression" BinaryCache.CompressionMode
         :> StreamBody NoFraming XNixNar (ConduitT () ByteStringStreaming.ByteStringStreaming (ResourceT IO) ())
         :> Post '[JSON] NoContent,
     serveNarContent ::

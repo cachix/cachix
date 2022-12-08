@@ -89,6 +89,7 @@ library
     , concurrent-extra
     , conduit                 >=1.3.0
     , conduit-extra
+    , conduit-zstd
     , containers
     , cookie
     , cryptonite

@@ -14,6 +14,8 @@ module Cachix.Client.Push
     PushStrategy (..),
     defaultWithXzipCompressor,
     defaultWithXzipCompressorWithLevel,
+    defaultWithZstdCompressor,
+    defaultWithZstdCompressorWithLevel,
     findPushSecret,
 
     -- * Pushing a closure of store paths
@@ -31,6 +33,7 @@ import Cachix.Client.Exception (CachixException (..))
 import Cachix.Client.Retry (retryAll)
 import Cachix.Client.Secrets
 import Cachix.Client.Servant
+import qualified Cachix.Types.BinaryCache as BinaryCache
 import qualified Cachix.Types.ByteStringStreaming
 import qualified Cachix.Types.NarInfoCreate as Api
 import qualified Cachix.Types.NarInfoHash as NarInfoHash
@@ -43,8 +46,9 @@ import Crypto.Sign.Ed25519
 import qualified Data.ByteString.Base64 as B64
 import Data.Coerce (coerce)
 import Data.Conduit
-import Data.Conduit.Lzma (compress)
+import qualified Data.Conduit.Lzma as Lzma (compress)
 import Data.Conduit.Process hiding (env)
+import qualified Data.Conduit.Zstd as Zstd (compress)
 import Data.IORef
 import qualified Data.Set as Set
 import Data.String.Here
@@ -85,15 +89,22 @@ data PushStrategy m r = PushStrategy
     on401 :: m r,
     onError :: ClientError -> m r,
     onDone :: m r,
-    withXzipCompressor :: forall a. (ConduitM ByteString ByteString (ResourceT IO) () -> m a) -> m a,
+    compressionMode :: BinaryCache.CompressionMode,
+    compressionLevel :: Int,
     omitDeriver :: Bool
   }
 
 defaultWithXzipCompressor :: forall m a. (ConduitM ByteString ByteString (ResourceT IO) () -> m a) -> m a
-defaultWithXzipCompressor = ($ compress (Just 2))
+defaultWithXzipCompressor = ($ Lzma.compress (Just 2))
 
 defaultWithXzipCompressorWithLevel :: Int -> forall m a. (ConduitM ByteString ByteString (ResourceT IO) () -> m a) -> m a
-defaultWithXzipCompressorWithLevel l = ($ compress (Just l))
+defaultWithXzipCompressorWithLevel l = ($ Lzma.compress (Just l))
+
+defaultWithZstdCompressor :: forall m a. (ConduitM ByteString ByteString (ResourceT IO) () -> m a) -> m a
+defaultWithZstdCompressor = ($ Zstd.compress 8)
+
+defaultWithZstdCompressorWithLevel :: Int -> forall m a. (ConduitM ByteString ByteString (ResourceT IO) () -> m a) -> m a
+defaultWithZstdCompressorWithLevel l = ($ Zstd.compress l)
 
 pushSingleStorePath ::
   (MonadMask m, MonadIO m) =>
@@ -143,6 +154,9 @@ uploadStorePath cache storePath retrystatus = do
       name = pushParamsName cache
       clientEnv = pushParamsClientEnv cache
       strategy = pushParamsStrategy cache storePath
+      withCompressor = case compressionMode strategy of
+        BinaryCache.XZ -> defaultWithXzipCompressorWithLevel (compressionLevel strategy)
+        BinaryCache.ZSTD -> defaultWithZstdCompressorWithLevel (compressionLevel strategy)
   narSizeRef <- liftIO $ newIORef 0
   fileSizeRef <- liftIO $ newIORef 0
   narHashRef <- liftIO $ newIORef ("" :: ByteString)
@@ -158,12 +172,12 @@ uploadStorePath cache storePath retrystatus = do
   -- create_group makes subprocess ignore signals such as ctrl-c that we handle in haskell main thread
   -- see https://github.com/haskell/process/issues/198
   (ClosedStream, stdoutStream, Inherited, cph) <- liftIO $ streamingProcess (cmd {create_group = True})
-  withXzipCompressor strategy $ \xzCompressor -> do
+  withCompressor $ \compressor -> do
     let stream' =
           stdoutStream
             .| passthroughSizeSink narSizeRef
             .| passthroughHashSink narHashRef
-            .| xzCompressor
+            .| compressor
             .| passthroughSizeSink fileSizeRef
             .| passthroughHashSinkB16 fileHashRef
     let subdomain =
@@ -178,7 +192,7 @@ uploadStorePath cache storePath retrystatus = do
     (_ :: NoContent) <-
       liftIO $
         (`withClientM` newClientEnv)
-          (API.createNar cachixClient (getCacheAuthToken (pushParamsSecret cache)) name (mapOutput coerce stream'))
+          (API.createNar cachixClient (getCacheAuthToken (pushParamsSecret cache)) name (Just $ compressionMode strategy) (mapOutput coerce stream'))
           $ escalate
             >=> \NoContent -> do
               exitcode <- waitForStreamingProcess cph

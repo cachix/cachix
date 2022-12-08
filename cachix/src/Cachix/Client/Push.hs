@@ -14,6 +14,8 @@ module Cachix.Client.Push
     PushStrategy (..),
     defaultWithXzipCompressor,
     defaultWithXzipCompressorWithLevel,
+    defaultWithZstdCompressor,
+    defaultWithZstdCompressorWithLevel,
     findPushSecret,
 
     -- * Pushing a closure of store paths
@@ -31,6 +33,7 @@ import Cachix.Client.Exception (CachixException (..))
 import Cachix.Client.Retry (retryAll)
 import Cachix.Client.Secrets
 import Cachix.Client.Servant
+import qualified Cachix.Types.BinaryCache as BinaryCache
 import qualified Cachix.Types.ByteStringStreaming
 import qualified Cachix.Types.NarInfoCreate as Api
 import qualified Cachix.Types.NarInfoHash as NarInfoHash
@@ -43,7 +46,8 @@ import Crypto.Sign.Ed25519
 import qualified Data.ByteString.Base64 as B64
 import Data.Coerce (coerce)
 import Data.Conduit
-import Data.Conduit.Lzma (compress)
+import qualified Data.Conduit.Lzma as Lzma (compress)
+import qualified Data.Conduit.Zstd as Zstd (compress)
 import Data.IORef
 import qualified Data.Set as Set
 import Data.String.Here
@@ -85,15 +89,22 @@ data PushStrategy m r = PushStrategy
     on401 :: m r,
     onError :: ClientError -> m r,
     onDone :: m r,
-    withXzipCompressor :: forall a. (ConduitM ByteString ByteString (ResourceT IO) () -> m a) -> m a,
+    compressionMode :: BinaryCache.CompressionMode,
+    compressionLevel :: Int,
     omitDeriver :: Bool
   }
 
 defaultWithXzipCompressor :: forall m a. (ConduitM ByteString ByteString (ResourceT IO) () -> m a) -> m a
-defaultWithXzipCompressor = ($ compress (Just 2))
+defaultWithXzipCompressor = ($ Lzma.compress (Just 2))
 
 defaultWithXzipCompressorWithLevel :: Int -> forall m a. (ConduitM ByteString ByteString (ResourceT IO) () -> m a) -> m a
-defaultWithXzipCompressorWithLevel l = ($ compress (Just l))
+defaultWithXzipCompressorWithLevel l = ($ Lzma.compress (Just l))
+
+defaultWithZstdCompressor :: forall m a. (ConduitM ByteString ByteString (ResourceT IO) () -> m a) -> m a
+defaultWithZstdCompressor = ($ Zstd.compress 8)
+
+defaultWithZstdCompressorWithLevel :: Int -> forall m a. (ConduitM ByteString ByteString (ResourceT IO) () -> m a) -> m a
+defaultWithZstdCompressorWithLevel l = ($ Zstd.compress l)
 
 pushSingleStorePath ::
   (MonadMask m, MonadIO m) =>
@@ -143,6 +154,9 @@ uploadStorePath cache storePath retrystatus = do
       name = pushParamsName cache
       clientEnv = pushParamsClientEnv cache
       strategy = pushParamsStrategy cache storePath
+      withCompressor = case compressionMode strategy of
+        BinaryCache.XZ -> defaultWithXzipCompressorWithLevel (compressionLevel strategy)
+        BinaryCache.ZSTD -> defaultWithZstdCompressorWithLevel (compressionLevel strategy)
   narSizeRef <- liftIO $ newIORef 0
   fileSizeRef <- liftIO $ newIORef 0
   narHashRef <- liftIO $ newIORef ("" :: ByteString)
@@ -154,12 +168,12 @@ uploadStorePath cache storePath retrystatus = do
   let storePathSize :: Int64
       storePathSize = Store.validPathInfoNarSize pathinfo
   onAttempt strategy retrystatus storePathSize
-  withXzipCompressor strategy $ \xzCompressor -> do
+  withCompressor $ \compressor -> do
     let stream' =
           streamNarIO narEffectsIO (toS storePathText) Data.Conduit.yield
             .| passthroughSizeSink narSizeRef
             .| passthroughHashSink narHashRef
-            .| xzCompressor
+            .| compressor
             .| passthroughSizeSink fileSizeRef
             .| passthroughHashSinkB16 fileHashRef
     let subdomain =

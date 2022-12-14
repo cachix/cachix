@@ -15,9 +15,12 @@ import qualified Cachix.Client.InstallationMode as InstallationMode
 import Cachix.Client.URI (URI)
 import qualified Cachix.Client.URI as URI
 import qualified Cachix.Deploy.OptionsParser as DeployOptions
+import qualified Cachix.Types.BinaryCache as BinaryCache
+import qualified Data.Text as T
 import Options.Applicative
 import Protolude hiding (option, toS)
 import Protolude.Conv
+import qualified Prelude
 
 data Flags = Flags
   { configPath :: Config.ConfigPath,
@@ -88,6 +91,7 @@ data PushArguments
 
 data PushOptions = PushOptions
   { compressionLevel :: Int,
+    compressionMode :: Maybe BinaryCache.CompressionMode,
     numJobs :: Int,
     omitDeriver :: Bool
   }
@@ -112,7 +116,14 @@ commandParser =
         authTokenArg = strArgument (metavar "AUTH-TOKEN")
     generateKeypair = GenerateKeypair <$> nameArg
     validatedLevel l =
-      l <$ unless (l `elem` [0 .. 9]) (readerError $ "value " <> show l <> " not in expected range: [0..9]")
+      l <$ unless (l `elem` [0 .. 16]) (readerError $ "value " <> show l <> " not in expected range: [0..16]")
+    validatedMode :: Prelude.String -> Either Prelude.String (Maybe BinaryCache.CompressionMode)
+    validatedMode mode =
+      if mode `elem` ["xz", "zstd"]
+        then case readEither (T.toUpper (toS mode)) of
+          Right a -> Right $ Just a
+          Left b -> Left $ toS b
+        else Left $ "value " <> show mode <> " not expected. Use xz or zstd."
     pushOptions :: Parser PushOptions
     pushOptions =
       PushOptions
@@ -120,12 +131,20 @@ commandParser =
           (auto >>= validatedLevel)
           ( long "compression-level"
               <> short 'c'
-              <> metavar "[0..9]"
+              <> metavar "[0..16]"
               <> help
-                "The compression level for XZ compression.\
-                \ Take compressor *and* decompressor memory usage into account before using [7..9]!"
+                "The compression level for XZ compression between 0-9 and ZSTD 0-16."
               <> showDefault
               <> value 2
+          )
+        <*> option
+          (eitherReader validatedMode)
+          ( long "compression-mode"
+              <> short 'm'
+              <> metavar "xz | zstd"
+              <> help
+                "The compression mode, either xz or zstd."
+              <> value Nothing
           )
         <*> option
           auto

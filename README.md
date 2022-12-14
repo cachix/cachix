@@ -67,6 +67,7 @@ Or with Nix 2.4+:
 
 - [Documentation](https://docs.cachix.org)
 - [#cachix@matrix.org](https://matrix.to/#/#cachix:matrix.org)
+- [Discord](https://discord.com/invite/naMgvexb6q)
 - [support@cachix.org](mailto:support@cachix.org)
 
 ## Changelog

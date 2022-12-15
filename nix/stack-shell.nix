@@ -17,5 +17,6 @@ pkgs.haskell.lib.buildStackProject {
     # TODO: match this to version in default.nix
     pkgs.nixVersions.nix_2_9
     pkgs.boost
+    pkgs.libsodium
   ];
 }

@@ -44,7 +44,6 @@ import qualified Data.ByteString.Base64 as B64
 import Data.Coerce (coerce)
 import Data.Conduit
 import Data.Conduit.Lzma (compress)
-import Data.Conduit.Process hiding (env)
 import Data.IORef
 import qualified Data.Set as Set
 import Data.String.Here
@@ -63,6 +62,7 @@ import Servant.Client.Streaming
 import Servant.Conduit ()
 import System.Environment (lookupEnv)
 import qualified System.Nix.Base32
+import System.Nix.Nar
 
 data PushSecret
   = PushToken Token
@@ -151,16 +151,12 @@ uploadStorePath cache storePath retrystatus = do
   normalized <- liftIO $ Store.followLinksToStorePath store $ toS storePathText
   pathinfo <- liftIO $ Store.queryPathInfo store normalized
   -- stream store path as xz compressed nar file
-  let cmd = proc "nix-store" ["--dump", toS storePathText]
-      storePathSize :: Int64
+  let storePathSize :: Int64
       storePathSize = Store.validPathInfoNarSize pathinfo
   onAttempt strategy retrystatus storePathSize
-  -- create_group makes subprocess ignore signals such as ctrl-c that we handle in haskell main thread
-  -- see https://github.com/haskell/process/issues/198
-  (ClosedStream, stdoutStream, Inherited, cph) <- liftIO $ streamingProcess (cmd {create_group = True})
   withXzipCompressor strategy $ \xzCompressor -> do
     let stream' =
-          stdoutStream
+          streamNarIO narEffectsIO (toS storePathText) Data.Conduit.yield
             .| passthroughSizeSink narSizeRef
             .| passthroughHashSink narHashRef
             .| xzCompressor
@@ -175,15 +171,10 @@ uploadStorePath cache storePath retrystatus = do
           clientEnv
             { baseUrl = (baseUrl clientEnv) {baseUrlHost = subdomain <> "." <> baseUrlHost (baseUrl clientEnv)}
             }
-    (_ :: NoContent) <-
-      liftIO $
-        (`withClientM` newClientEnv)
-          (API.createNar cachixClient (getCacheAuthToken (pushParamsSecret cache)) name (mapOutput coerce stream'))
-          $ escalate
-            >=> \NoContent -> do
-              exitcode <- waitForStreamingProcess cph
-              when (exitcode /= ExitSuccess) $ throwM $ NarStreamingError exitcode $ show cmd
-              return NoContent
+    (_ :: NoContent) <- liftIO $ do
+      (`withClientM` newClientEnv)
+        (API.createNar cachixClient (getCacheAuthToken (pushParamsSecret cache)) name (mapOutput coerce stream'))
+        escalate
     (_ :: NoContent) <- liftIO $ do
       narSize <- readIORef narSizeRef
       narHash <- ("sha256:" <>) . System.Nix.Base32.encode <$> readIORef narHashRef

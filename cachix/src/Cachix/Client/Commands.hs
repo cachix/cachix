@@ -214,7 +214,7 @@ pushStrategy store authToken opts name compressionMode storePath =
       onAttempt = \retrystatus size -> do
         path <- decodeUtf8With lenientDecode <$> storePathToPath store storePath
         -- we append newline instead of putStrLn due to https://github.com/haskell/text/issues/242
-        putStr $ retryText retrystatus <> "compressing and pushing " <> path <> " (" <> humanSize (fromIntegral size) <> ")\n",
+        putStr $ retryText retrystatus <> "compressing using " <> T.toLower (show compressionMode) <> " and pushing " <> path <> " (" <> humanSize (fromIntegral size) <> ")\n",
       onDone = pass,
       Cachix.Client.Push.compressionMode = compressionMode,
       Cachix.Client.Push.compressionLevel = Cachix.Client.OptionsParser.compressionLevel opts,

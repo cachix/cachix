@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 
+# [1.1] - 2022-12-16
+
+### Added 
+
+- Use ZSTD compresion method by default and allow overriding it via `--compression-method` back to XZ. You can also change the default permanently on your binary cache settings page.
+
+- nars are now streamed without invoking an external process, so if
+you have a lot of small files, there should be some significant performance improvements
+
+- Cachix Deploy got a complete rewrite with correctness in mind and reliablity.
+
+- Cachix Deploy agent now supports --bootstrap that awaits a new agent to spawn and then shuts down.
+
+- Cachix Deploy now supports [home-manager](https://github.com/nix-community/home-manager/pull/3380)
+
+- Generated NixOS module now uses the naming of Nix settings as introduced in NixOS 22.05.
+
 # [1.0.1] - 2022-09-24
 
 ### Added 

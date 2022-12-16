@@ -192,7 +192,7 @@ withCacheArgs host agentInfo agentToken m =
                   BinaryCache.isPublic = WSS.isPublic cache,
                   BinaryCache.githubUsername = "",
                   BinaryCache.permission = Read,
-                  BinaryCache.compression = BinaryCache.XZ
+                  BinaryCache.preferredCompressionMethod = BinaryCache.XZ
                 }
         NetRc.add (Token (toS agentToken)) [bc] filepath
         return $ cachesArgs cache <> ["--option", "netrc-file", filepath]

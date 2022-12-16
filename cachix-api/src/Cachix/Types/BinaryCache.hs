@@ -13,21 +13,21 @@ data BinaryCache = BinaryCache
     publicSigningKeys :: [Text],
     githubUsername :: Text,
     permission :: Permission,
-    compression :: CompressionMode
+    preferredCompressionMethod :: CompressionMethod
   }
   deriving (Show, Generic, FromJSON, ToJSON, ToSchema, NFData)
 
-data CompressionMode = XZ | ZSTD
+data CompressionMethod = XZ | ZSTD
   deriving (Show, Read, Generic, FromJSON, ToJSON, ToSchema, NFData)
 
-instance FromHttpApiData CompressionMode where
+instance FromHttpApiData CompressionMethod where
   parseUrlPiece "xz" = Right XZ
   parseUrlPiece "zst" = Right ZSTD
-  parseUrlPiece compressionMode = Left $ "Wrong compression mode: " <> compressionMode
+  parseUrlPiece compressionMethod = Left $ "Wrong compression method: " <> compressionMethod
 
-instance ToHttpApiData CompressionMode where
+instance ToHttpApiData CompressionMethod where
   toUrlPiece XZ = "xz"
   toUrlPiece ZSTD = "zst"
 
-instance ToParamSchema CompressionMode where
+instance ToParamSchema CompressionMethod where
   toParamSchema _ = toParamSchema (Proxy :: Proxy Text)

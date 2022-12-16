@@ -89,7 +89,7 @@ data PushStrategy m r = PushStrategy
     on401 :: m r,
     onError :: ClientError -> m r,
     onDone :: m r,
-    compressionMode :: BinaryCache.CompressionMode,
+    compressionMethod :: BinaryCache.CompressionMethod,
     compressionLevel :: Int,
     omitDeriver :: Bool
   }
@@ -154,7 +154,7 @@ uploadStorePath cache storePath retrystatus = do
       name = pushParamsName cache
       clientEnv = pushParamsClientEnv cache
       strategy = pushParamsStrategy cache storePath
-      withCompressor = case compressionMode strategy of
+      withCompressor = case compressionMethod strategy of
         BinaryCache.XZ -> defaultWithXzipCompressorWithLevel (compressionLevel strategy)
         BinaryCache.ZSTD -> defaultWithZstdCompressorWithLevel (compressionLevel strategy)
   narSizeRef <- liftIO $ newIORef 0
@@ -187,7 +187,7 @@ uploadStorePath cache storePath retrystatus = do
             }
     (_ :: NoContent) <- liftIO $ do
       (`withClientM` newClientEnv)
-        (API.createNar cachixClient (getCacheAuthToken (pushParamsSecret cache)) name (mapOutput coerce stream'))
+        (API.createNar cachixClient (getCacheAuthToken (pushParamsSecret cache)) name (Just $ compressionMethod strategy) (mapOutput coerce stream'))
         escalate
     (_ :: NoContent) <- liftIO $ do
       narSize <- readIORef narSizeRef

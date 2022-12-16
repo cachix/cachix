@@ -91,7 +91,7 @@ data PushArguments
 
 data PushOptions = PushOptions
   { compressionLevel :: Int,
-    compressionMode :: Maybe BinaryCache.CompressionMode,
+    compressionMethod :: Maybe BinaryCache.CompressionMethod,
     numJobs :: Int,
     omitDeriver :: Bool
   }
@@ -117,13 +117,13 @@ commandParser =
     generateKeypair = GenerateKeypair <$> nameArg
     validatedLevel l =
       l <$ unless (l `elem` [0 .. 16]) (readerError $ "value " <> show l <> " not in expected range: [0..16]")
-    validatedMode :: Prelude.String -> Either Prelude.String (Maybe BinaryCache.CompressionMode)
-    validatedMode mode =
-      if mode `elem` ["xz", "zstd"]
-        then case readEither (T.toUpper (toS mode)) of
+    validatedMethod :: Prelude.String -> Either Prelude.String (Maybe BinaryCache.CompressionMethod)
+    validatedMethod method =
+      if method `elem` ["xz", "zstd"]
+        then case readEither (T.toUpper (toS method)) of
           Right a -> Right $ Just a
           Left b -> Left $ toS b
-        else Left $ "value " <> show mode <> " not expected. Use xz or zstd."
+        else Left $ "Compression method " <> show method <> " not expected. Use xz or zstd."
     pushOptions :: Parser PushOptions
     pushOptions =
       PushOptions
@@ -138,12 +138,12 @@ commandParser =
               <> value 2
           )
         <*> option
-          (eitherReader validatedMode)
-          ( long "compression-mode"
+          (eitherReader validatedMethod)
+          ( long "compression-method"
               <> short 'm'
               <> metavar "xz | zstd"
               <> help
-                "The compression mode, either xz or zstd."
+                "The compression method, either xz or zstd."
               <> value Nothing
           )
         <*> option

@@ -202,8 +202,8 @@ retryText retrystatus =
     then ""
     else "(retry #" <> show (rsIterNumber retrystatus) <> ") "
 
-pushStrategy :: Store -> Maybe Token -> PushOptions -> Text -> BinaryCache.CompressionMode -> StorePath -> PushStrategy IO ()
-pushStrategy store authToken opts name compressionMode storePath =
+pushStrategy :: Store -> Maybe Token -> PushOptions -> Text -> BinaryCache.CompressionMethod -> StorePath -> PushStrategy IO ()
+pushStrategy store authToken opts name compressionMethod storePath =
   PushStrategy
     { onAlreadyPresent = pass,
       on401 =
@@ -214,9 +214,9 @@ pushStrategy store authToken opts name compressionMode storePath =
       onAttempt = \retrystatus size -> do
         path <- decodeUtf8With lenientDecode <$> storePathToPath store storePath
         -- we append newline instead of putStrLn due to https://github.com/haskell/text/issues/242
-        putStr $ retryText retrystatus <> "compressing using " <> T.toLower (show compressionMode) <> " and pushing " <> path <> " (" <> humanSize (fromIntegral size) <> ")\n",
+        putStr $ retryText retrystatus <> "compressing using " <> T.toLower (show compressionMethod) <> " and pushing " <> path <> " (" <> humanSize (fromIntegral size) <> ")\n",
       onDone = pass,
-      Cachix.Client.Push.compressionMode = compressionMode,
+      Cachix.Client.Push.compressionMethod = compressionMethod,
       Cachix.Client.Push.compressionLevel = Cachix.Client.OptionsParser.compressionLevel opts,
       Cachix.Client.Push.omitDeriver = Cachix.Client.OptionsParser.omitDeriver opts
     }
@@ -226,7 +226,7 @@ getPushParams env pushOpts name = do
   pushSecret <- findPushSecret (config env) name
   store <- wait (storeAsync env)
   authToken <- Config.getAuthTokenMaybe (config env)
-  compressionModeBackend <- case pushSecret of
+  compressionMethodBackend <- case pushSecret of
     PushSigningKey {} -> pure Nothing
     PushToken {} -> do
       let token = fromMaybe (Token "") authToken
@@ -238,13 +238,13 @@ getPushParams env pushOpts name = do
           | isErr err status401 -> throwM $ notAuthenticatedBinaryCache name
           | isErr err status404 -> throwM $ BinaryCacheNotFound $ "Binary cache " <> name <> " does not exist."
           | otherwise -> throwM err
-        Right binaryCache -> pure (Just $ BinaryCache.compression binaryCache)
-  let compressionMode = fromMaybe BinaryCache.XZ (head $ catMaybes [Cachix.Client.OptionsParser.compressionMode pushOpts, compressionModeBackend])
+        Right binaryCache -> pure (Just $ BinaryCache.preferredCompressionMethod binaryCache)
+  let compressionMethod = fromMaybe BinaryCache.XZ (head $ catMaybes [Cachix.Client.OptionsParser.compressionMethod pushOpts, compressionMethodBackend])
   return $
     PushParams
       { pushParamsName = name,
         pushParamsSecret = pushSecret,
         pushParamsClientEnv = clientenv env,
-        pushParamsStrategy = pushStrategy store authToken pushOpts name compressionMode,
+        pushParamsStrategy = pushStrategy store authToken pushOpts name compressionMethod,
         pushParamsStore = store
       }

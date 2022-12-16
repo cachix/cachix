@@ -239,7 +239,7 @@ getPushParams env pushOpts name = do
           | isErr err status404 -> throwM $ BinaryCacheNotFound $ "Binary cache " <> name <> " does not exist."
           | otherwise -> throwM err
         Right binaryCache -> pure (Just $ BinaryCache.preferredCompressionMethod binaryCache)
-  let compressionMethod = fromMaybe BinaryCache.XZ (head $ catMaybes [Cachix.Client.OptionsParser.compressionMethod pushOpts, compressionMethodBackend])
+  let compressionMethod = fromMaybe BinaryCache.ZSTD (head $ catMaybes [Cachix.Client.OptionsParser.compressionMethod pushOpts, compressionMethodBackend])
   return $
     PushParams
       { pushParamsName = name,

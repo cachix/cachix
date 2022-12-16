@@ -143,7 +143,7 @@ commandParser =
               <> short 'm'
               <> metavar "xz | zstd"
               <> help
-                "The compression method, either xz or zstd."
+                "The compression method, either xz or zstd. Defaults to zstd."
               <> value Nothing
           )
         <*> option

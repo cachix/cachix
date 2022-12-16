@@ -47,6 +47,7 @@ import qualified Data.ByteString.Base64 as B64
 import Data.Coerce (coerce)
 import Data.Conduit
 import qualified Data.Conduit.Lzma as Lzma (compress)
+import Data.Conduit.Process hiding (env)
 import qualified Data.Conduit.Zstd as Zstd (compress)
 import Data.IORef
 import qualified Data.Set as Set
@@ -66,7 +67,6 @@ import Servant.Client.Streaming
 import Servant.Conduit ()
 import System.Environment (lookupEnv)
 import qualified System.Nix.Base32
-import System.Nix.Nar
 
 data PushSecret
   = PushToken Token
@@ -164,13 +164,17 @@ uploadStorePath cache storePath retrystatus = do
   -- This should be a noop because storePathText came from a StorePath
   normalized <- liftIO $ Store.followLinksToStorePath store $ toS storePathText
   pathinfo <- liftIO $ Store.queryPathInfo store normalized
-  -- stream store path as xz compressed nar file
-  let storePathSize :: Int64
+  -- stream store path as compressed nar file
+  let cmd = proc "nix-store" ["--dump", toS storePathText]
+      storePathSize :: Int64
       storePathSize = Store.validPathInfoNarSize pathinfo
   onAttempt strategy retrystatus storePathSize
+  -- create_group makes subprocess ignore signals such as ctrl-c that we handle in haskell main thread
+  -- see https://github.com/haskell/process/issues/198
+  (ClosedStream, stdoutStream, Inherited, cph) <- liftIO $ streamingProcess (cmd {create_group = True})
   withCompressor $ \compressor -> do
     let stream' =
-          streamNarIO narEffectsIO (toS storePathText) Data.Conduit.yield
+          stdoutStream
             .| passthroughSizeSink narSizeRef
             .| passthroughHashSink narHashRef
             .| compressor
@@ -185,10 +189,15 @@ uploadStorePath cache storePath retrystatus = do
           clientEnv
             { baseUrl = (baseUrl clientEnv) {baseUrlHost = subdomain <> "." <> baseUrlHost (baseUrl clientEnv)}
             }
-    (_ :: NoContent) <- liftIO $ do
-      (`withClientM` newClientEnv)
-        (API.createNar cachixClient (getCacheAuthToken (pushParamsSecret cache)) name (Just $ compressionMethod strategy) (mapOutput coerce stream'))
-        escalate
+    (_ :: NoContent) <-
+      liftIO $
+        (`withClientM` newClientEnv)
+          (API.createNar cachixClient (getCacheAuthToken (pushParamsSecret cache)) name (Just $ compressionMethod strategy) (mapOutput coerce stream'))
+          $ escalate
+            >=> \NoContent -> do
+              exitcode <- waitForStreamingProcess cph
+              when (exitcode /= ExitSuccess) $ throwM $ NarStreamingError exitcode $ show cmd
+              return NoContent
     (_ :: NoContent) <- liftIO $ do
       narSize <- readIORef narSizeRef
       narHash <- ("sha256:" <>) . System.Nix.Base32.encode <$> readIORef narHashRef

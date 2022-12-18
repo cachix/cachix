@@ -19,7 +19,6 @@ jobs:
         name: cachix
         installCommand: NIXPKGS_ALLOW_BROKEN=1 nix-env -if .
         signingKey: '${{ secrets.CACHIX_SIGNING_KEY }}'
-    # once nixpkgs is bumped we don't need this flag anymore
-    - run: NIXPKGS_ALLOW_BROKEN=1 nix-build ci.nix
+    - run:  nix build -L '.#ci' '.#cachix' --show-trace
     # make sure it's all uploaded to cachix
     - run: echo > /tmp/store-path-pre-build

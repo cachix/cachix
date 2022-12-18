@@ -1,15 +1,10 @@
-let
-  pkgs = import ./nix {};
-in
-pkgs.mkShell {
-  buildInputs = [
-    pkgs.stack
-    pkgs.niv
-    # hie can't find hspec-discover via stack
-    pkgs.haskellPackages.hspec-discover
-    pkgs.haskellPackages.releaser
-    pkgs.haskellPackages.hkgr
-  ];
-  NIX_PATH = "nixpkgs=${pkgs.path}";
-  inherit (pkgs.pre-commit-check) shellHook;
-}
+(import
+  (
+    let lock = builtins.fromJSON (builtins.readFile ./flake.lock); in
+    fetchTarball {
+      url = "https://github.com/edolstra/flake-compat/archive/${lock.nodes.flake-compat.locked.rev}.tar.gz";
+      sha256 = lock.nodes.flake-compat.locked.narHash;
+    }
+  )
+  { src = ./.; }
+).shellNix

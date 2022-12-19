@@ -45,7 +45,7 @@ import Data.String.Here
 import qualified Data.Text as T
 import qualified Data.Text.IO as T.IO
 import GHC.IO.Handle (hDuplicate, hDuplicateTo)
-import Hercules.CNix.Store (Store, StorePath, followLinksToStorePath, storePathToPath)
+import Hercules.CNix.Store (Store, StorePath, followLinksToStorePath, storePathToPath, withStore)
 import Network.HTTP.Types (status401, status404)
 import Protolude hiding (toS)
 import Protolude.Conv
@@ -153,22 +153,22 @@ push env (PushPaths opts name cliPaths) = do
       -- that may or may not be written to by the caller.
       -- This is somewhat like the behavior of `cat` for example.
       (_, paths) -> return paths
-  pushParams <- getPushParams env opts name
-  normalized <-
-    liftIO $
-      for inputStorePaths $
-        \path -> do
-          storePath <- followLinksToStorePath (pushParamsStore pushParams) (encodeUtf8 path)
-          filterInvalidStorePath (pushParamsStore pushParams) storePath
-  pushedPaths <-
-    pushClosure
-      (mapConcurrentlyBounded (numJobs opts))
-      pushParams
-      (catMaybes normalized)
-  case (length normalized, length pushedPaths) of
-    (0, _) -> putTextError "Nothing to push."
-    (_, 0) -> putTextError "Nothing to push - all store paths are already on Cachix."
-    _ -> putTextError "All done."
+  withPushParams env opts name $ \pushParams -> do
+    normalized <-
+      liftIO $
+        for inputStorePaths $
+          \path -> do
+            storePath <- followLinksToStorePath (pushParamsStore pushParams) (encodeUtf8 path)
+            filterInvalidStorePath (pushParamsStore pushParams) storePath
+    pushedPaths <-
+      pushClosure
+        (mapConcurrentlyBounded (numJobs opts))
+        pushParams
+        (catMaybes normalized)
+    case (length normalized, length pushedPaths) of
+      (0, _) -> putTextError "Nothing to push."
+      (_, 0) -> putTextError "Nothing to push - all store paths are already on Cachix."
+      _ -> putTextError "All done."
 push _ _ =
   throwIO $
     DeprecatedCommand "DEPRECATED: cachix watch-store has replaced cachix push --watch-store."
@@ -178,12 +178,11 @@ putTextError = hPutStrLn stderr
 
 watchStore :: Env -> PushOptions -> Text -> IO ()
 watchStore env opts name = do
-  pushParams <- getPushParams env opts name
-  WatchStore.startWorkers (pushParamsStore pushParams) (numJobs opts) pushParams
+  withPushParams env opts name $ \pushParams ->
+    WatchStore.startWorkers (pushParamsStore pushParams) (numJobs opts) pushParams
 
 watchExec :: Env -> PushOptions -> Text -> Text -> [Text] -> IO ()
-watchExec env pushOpts name cmd args = do
-  pushParams <- getPushParams env pushOpts name
+watchExec env pushOpts name cmd args = withPushParams env pushOpts name $ \pushParams -> do
   stdoutOriginal <- hDuplicate stdout
   let process = (System.Process.proc (toS cmd) (toS <$> args)) {System.Process.std_out = System.Process.UseHandle stdoutOriginal}
       watch = do
@@ -221,10 +220,9 @@ pushStrategy store authToken opts name compressionMethod storePath =
       Cachix.Client.Push.omitDeriver = Cachix.Client.OptionsParser.omitDeriver opts
     }
 
-getPushParams :: Env -> PushOptions -> Text -> IO (PushParams IO ())
-getPushParams env pushOpts name = do
+withPushParams :: Env -> PushOptions -> Text -> (PushParams IO () -> IO ()) -> IO ()
+withPushParams env pushOpts name m = do
   pushSecret <- findPushSecret (config env) name
-  store <- wait (storeAsync env)
   authToken <- Config.getAuthTokenMaybe (config env)
   compressionMethodBackend <- case pushSecret of
     PushSigningKey {} -> pure Nothing
@@ -240,11 +238,12 @@ getPushParams env pushOpts name = do
           | otherwise -> throwM err
         Right binaryCache -> pure (Just $ BinaryCache.preferredCompressionMethod binaryCache)
   let compressionMethod = fromMaybe BinaryCache.ZSTD (head $ catMaybes [Cachix.Client.OptionsParser.compressionMethod pushOpts, compressionMethodBackend])
-  return $
-    PushParams
-      { pushParamsName = name,
-        pushParamsSecret = pushSecret,
-        pushParamsClientEnv = clientenv env,
-        pushParamsStrategy = pushStrategy store authToken pushOpts name compressionMethod,
-        pushParamsStore = store
-      }
+  withStore $ \store ->
+    m
+      PushParams
+        { pushParamsName = name,
+          pushParamsSecret = pushSecret,
+          pushParamsClientEnv = clientenv env,
+          pushParamsStrategy = pushStrategy store authToken pushOpts name compressionMethod,
+          pushParamsStore = store
+        }

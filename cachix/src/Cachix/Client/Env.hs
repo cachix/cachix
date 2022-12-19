@@ -11,6 +11,7 @@ import qualified Cachix.Client.Config as Config
 import qualified Cachix.Client.OptionsParser as Options
 import Cachix.Client.URI (getBaseUrl)
 import Cachix.Client.Version (cachixVersion)
+import qualified Hercules.CNix as CNix
 import Hercules.CNix.Store (Store, openStore)
 import Network.HTTP.Client
   ( ManagerSettings,
@@ -28,13 +29,12 @@ import System.Directory (canonicalizePath)
 data Env = Env
   { cachixoptions :: Config.CachixOptions,
     clientenv :: ClientEnv,
-    config :: Config,
-    storeAsync :: Async Store
+    config :: Config
   }
 
 mkEnv :: Options.Flags -> IO Env
 mkEnv flags = do
-  store <- async openStore
+  CNix.init
   -- make sure path to the config is passed as absolute to dhall logic
   canonicalConfigPath <- canonicalizePath (Options.configPath flags)
   cfg <- Config.getConfig canonicalConfigPath
@@ -49,8 +49,7 @@ mkEnv flags = do
     Env
       { cachixoptions = cachixOptions,
         clientenv = clientEnv,
-        config = cfg,
-        storeAsync = store
+        config = cfg
       }
 
 customManagerSettings :: ManagerSettings

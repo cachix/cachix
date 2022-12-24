@@ -219,16 +219,14 @@ handleCommand agent command =
 -- sending deployment progress updates.
 connectToService :: ServiceWebSocket -> IO (IO ())
 connectToService websocket = do
-  initialConnection <- MVar.newEmptyMVar
   close <- MVar.newEmptyMVar
 
   thread <- Async.async $
     WebSocket.runConnection websocket $ do
-      MVar.putMVar initialConnection ()
       WebSocket.handleJSONMessages websocket (MVar.readMVar close)
 
-  -- Block until the connection has been established
-  void $ MVar.takeMVar initialConnection
+  -- Block until the initial connection is established
+  void $ MVar.readMVar (WebSocket.connection websocket)
 
   once $ MVar.putMVar close () >> Async.wait thread
 

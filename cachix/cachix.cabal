@@ -102,7 +102,7 @@ library
     , either
     , extra
     , filepath
-    , fsnotify
+    , fsnotify                >=0.4.1
     , hercules-ci-cnix-store
     , here
     , http-client

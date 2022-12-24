@@ -19,10 +19,11 @@
       packages = forAllSystems (system: 
         let
           pkgs = import nixpkgs { inherit system; };
-          
+
           cachix-api = pkgs.haskellPackages.callCabal2nix "cachix-api" ./cachix-api {};
           cachix = pkgs.haskellPackages.callCabal2nix "cachix" ./cachix {
             inherit cachix-api;
+            fsnotify = pkgs.haskellPackages.fsnotify_0_4_1_0;
             nix = getNix pkgs;
           };
         in

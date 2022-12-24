@@ -18,7 +18,6 @@ import qualified Control.Exception.Safe as Safe
 import qualified Control.Retry as Retry
 import qualified Data.Aeson as Aeson
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as BL
 import Data.Conduit ((.|))
 import qualified Data.Conduit as Conduit
 import qualified Data.Conduit.Combinators as Conduit
@@ -102,8 +101,21 @@ readDataMessages channel action = loop
         Nothing -> pure ()
 
 -- | Close the outgoing queue.
-drainQueue :: WebSocket tx rx -> IO ()
-drainQueue WebSocket {tx} = atomically $ TBMQueue.closeTBMQueue tx
+drainQueue :: WebSocket tx rx -> Async () -> IO ()
+drainQueue WebSocket {tx} outgoingThread = do
+  atomically $ TBMQueue.closeTBMQueue tx
+  Async.wait outgoingThread
+
+closeGracefully :: WebSocket tx rx -> Async () -> IO ()
+closeGracefully websocket incomingThread = do
+  repsonseToCloseRequest <- startGracePeriod $ do
+    MVar.tryReadMVar (connection websocket) >>= \case
+      Just activeConnection -> do
+        WS.sendClose activeConnection ("Peer initiated a close request" :: ByteString)
+        Async.wait incomingThread
+      Nothing -> pure ()
+
+  when (isNothing repsonseToCloseRequest) throwNoResponseToCloseRequest
 
 -- | Run an app inside a new WebSocket connection.
 withConnection :: Log.WithLog -> Options -> (WebSocket tx rx -> IO ()) -> IO ()
@@ -176,26 +188,20 @@ runClientWith Options {host, port, path, headers, useSSL} connectionOptions app 
 -- dropping messages.
 handleJSONMessages :: (Aeson.ToJSON tx, Aeson.FromJSON rx) => WebSocket tx rx -> IO () -> IO ()
 handleJSONMessages websocket app =
-  Async.withAsync (handleIncomingJSON websocket) $ \incomingThread ->
-    Async.withAsync (handleOutgoingJSON websocket) $ \outgoingThread ->
-      Async.withAsync
-        ( do
-            app
-            drainQueue websocket
-            Async.wait outgoingThread
-            closeGracefully incomingThread
-        )
-        (\appThread -> mapM_ wait [appThread, outgoingThread, incomingThread])
-  where
-    closeGracefully incomingThread = do
-      repsonseToCloseRequest <- startGracePeriod $ do
-        MVar.tryReadMVar (connection websocket) >>= \case
-          Just activeConnection -> do
-            WS.sendClose activeConnection ("Peer initiated a close request" :: ByteString)
-            Async.wait incomingThread
-          Nothing -> pure ()
+  mapException (\(Async.ExceptionInLinkedThread _ e) -> e) $
+    mask $ \restore -> do
+      incomingThread <- Async.async (handleIncomingJSON websocket)
+      outgoingThread <- Async.async (handleOutgoingJSON websocket)
 
-      when (isNothing repsonseToCloseRequest) throwNoResponseToCloseRequest
+      let threads = [incomingThread, outgoingThread]
+          cancelThreads = mapM_ Async.uninterruptibleCancel threads
+      mapM_ Async.link threads
+
+      let runApp = do
+            app
+            drainQueue websocket outgoingThread
+            closeGracefully websocket incomingThread
+      restore (runApp `finally` cancelThreads)
 
 handleIncomingJSON :: (Aeson.FromJSON rx) => WebSocket tx rx -> IO ()
 handleIncomingJSON websocket@WebSocket {connection, rx, withLog} = do

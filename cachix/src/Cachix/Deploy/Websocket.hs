@@ -92,16 +92,12 @@ read :: Receive rx -> IO (Maybe (Message rx))
 read = atomically . TMChan.readTMChan
 
 -- | Read incoming data messages, ignoring everything else.
---
--- Stops reading when either a close request is received or the channel is
--- closed.
 readDataMessages :: Receive rx -> (rx -> IO ()) -> IO ()
 readDataMessages channel action = loop
   where
     loop =
       read channel >>= \case
         Just (DataMessage message) -> action message *> loop
-        Just (ControlMessage (WS.Close _ _)) -> pure ()
         Just (ControlMessage _) -> loop
         Nothing -> pure ()
 

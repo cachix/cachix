@@ -105,14 +105,6 @@ readDataMessages channel action = loop
 drainQueue :: WebSocket tx rx -> IO ()
 drainQueue WebSocket {tx} = atomically $ TBMQueue.closeTBMQueue tx
 
-shutdownNow :: WebSocket tx rx -> Word16 -> BL.ByteString -> IO ()
-shutdownNow websocket@WebSocket {rx} code msg = do
-  -- Close the outgoing queue
-  drainQueue websocket
-  -- Signal to all receivers that the socket is closed
-  atomically (TMChan.closeTMChan rx)
-  throwIO $ WS.CloseRequest code msg
-
 -- | Run an app inside a new WebSocket connection.
 withConnection :: Log.WithLog -> Options -> (WebSocket tx rx -> IO ()) -> IO ()
 withConnection withLog options app = do
@@ -219,12 +211,14 @@ handleIncomingJSON websocket@WebSocket {connection, rx, withLog} = do
           Right pMsg -> broadcast (DataMessage pMsg)
       WS.ControlMessage controlMsg -> do
         case controlMsg of
-          WS.Ping pl -> send websocket (ControlMessage (WS.Pong pl))
-          WS.Pong _ -> WS.connectionOnPong (WS.Connection.connectionOptions activeConnection)
+          WS.Ping pl ->
+            send websocket (ControlMessage (WS.Pong pl))
+          WS.Pong _ ->
+            WS.connectionOnPong (WS.Connection.connectionOptions activeConnection)
           WS.Close code closeMsg -> do
             hasSentClose <- IORef.readIORef $ WS.Connection.connectionSentClose activeConnection
             unless hasSentClose $ WS.send activeConnection msg
-            shutdownNow websocket code closeMsg
+            throwIO $ WS.CloseRequest code closeMsg
 
         broadcast (ControlMessage controlMsg)
 

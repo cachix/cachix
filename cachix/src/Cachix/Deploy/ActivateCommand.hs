@@ -28,7 +28,10 @@ run cachixOptions DeployOptions.ActivateOptions {DeployOptions.payloadPath, Depl
       hPutStrLn stderr $ "Error while parsing JSON: " <> err
       exitFailure
     Right payload -> do
-      let deploy = payload {Types.agents = filterWithKey (\k _ -> k `elem` agents) (Types.agents payload)}
+      let deploy =
+            if not (null agents)
+              then payload {Types.agents = filterWithKey (\k _ -> k `elem` agents) (Types.agents payload)}
+              else payload
       response <- escalate <=< (`runClientM` clientEnv) $ API.activate deployClient (Token $ toS agentToken) deploy
       for_ (HM.toList $ DeployResponse.agents response) $
         \(_, url) -> putStrLn url

@@ -188,7 +188,7 @@ runClientWith Options {host, port, path, headers, useSSL} connectionOptions app 
 -- dropping messages.
 handleJSONMessages :: (Aeson.ToJSON tx, Aeson.FromJSON rx) => WebSocket tx rx -> IO () -> IO ()
 handleJSONMessages websocket app =
-  mapException (\(Async.ExceptionInLinkedThread _ e) -> e) $
+  handleJust unwrapThreadExceptions throwIO $
     mask $ \restore -> do
       incomingThread <- Async.async (handleIncomingJSON websocket)
       outgoingThread <- Async.async (handleOutgoingJSON websocket)
@@ -201,7 +201,12 @@ handleJSONMessages websocket app =
             app
             drainQueue websocket outgoingThread
             closeGracefully websocket incomingThread
-      restore (runApp `finally` cancelThreads)
+      restore (runApp `Safe.finally` cancelThreads)
+  where
+    unwrapThreadExceptions :: SomeException -> Maybe SomeException
+    unwrapThreadExceptions e
+      | Just (Async.ExceptionInLinkedThread _ e') <- fromException e = Just e'
+      | otherwise = Nothing
 
 handleIncomingJSON :: (Aeson.FromJSON rx) => WebSocket tx rx -> IO ()
 handleIncomingJSON websocket@WebSocket {connection, rx, withLog} = do

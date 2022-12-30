@@ -1,5 +1,3 @@
-{-# LANGUAGE DuplicateRecordFields #-}
-
 module Cachix.Deploy.ActivateCommand where
 
 import qualified Cachix.API.Deploy as API
@@ -47,43 +45,49 @@ run env DeployOptions.ActivateOptions {DeployOptions.payloadPath, DeployOptions.
 
 activate :: Env.Env -> ByteString -> Deploy -> IO ()
 activate Env.Env {cachixoptions, clientenv} agentToken payload = do
-  response <- escalate <=< (`runClientM` clientenv) $ API.activate deployClient (Token $ toS agentToken) payload
-  let agents = HM.toList (DeployResponse.agents response)
-  for_ agents $ \(agentName, details) -> do
-    putStrLn $
-      unlines
-        [ "Deploying " <> agentName,
-          DeployResponse.url details
-        ]
+  response <- escalate <=< (`runClientM` clientenv) $ API.activate deployClient (Token agentToken) payload
+  results <- mapM go (HM.toList (DeployResponse.agents response))
 
-    let deploymentID = DeployResponse.id details
+  printSummary results
 
-    let host = Config.host cachixoptions
-    let headers = [("Authorization", "Bearer " <> toS agentToken)]
-    let port = fromMaybe (URI.Port 80) (URI.getPortFor (URI.getScheme host))
-    let options =
-          WebSocket.Options
-            { WebSocket.host = URI.getHostname host,
-              WebSocket.port = port,
-              WebSocket.path = "/api/v1/deploy/log/" <> UUID.toText deploymentID <> "?view=true",
-              WebSocket.useSSL = URI.requiresSSL (URI.getScheme host),
-              WebSocket.headers = headers,
-              WebSocket.identifier = ""
-            }
+  if all ((==) Deployment.Succeeded . Deployment.status . snd) results
+    then exitSuccess
+    else exitFailure
+  where
+    go (agentName, details) = do
+      putStrLn $
+        unlines
+          [ "Deploying " <> agentName,
+            DeployResponse.url details
+          ]
 
-    Async.race_
-      (printLogsToTerminal options agentName)
-      (pollDeploymentStatus clientenv (Token $ toS agentToken) deploymentID)
+      let deploymentID = DeployResponse.id details
+      let host = Config.host cachixoptions
+      let headers = [("Authorization", "Bearer " <> agentToken)]
+      let port = fromMaybe (URI.Port 80) (URI.getPortFor (URI.getScheme host))
+      let options =
+            WebSocket.Options
+              { WebSocket.host = URI.getHostname host,
+                WebSocket.port = port,
+                WebSocket.path = "/api/v1/deploy/log/" <> UUID.toText deploymentID <> "?view=true",
+                WebSocket.useSSL = URI.requiresSSL (URI.getScheme host),
+                WebSocket.headers = headers,
+                WebSocket.identifier = ""
+              }
 
-pollDeploymentStatus :: ClientEnv -> Token -> UUID -> IO ()
-pollDeploymentStatus clientEnv token deploymentID = loop
+      Async.withAsync (printLogsToTerminal options agentName) $ \_ -> do
+        deployment <- pollDeploymentStatus clientenv agentName (Token agentToken) deploymentID
+        pure (agentName, deployment)
+
+pollDeploymentStatus :: ClientEnv -> Text -> Token -> UUID -> IO Deployment.Deployment
+pollDeploymentStatus clientEnv agentName token deploymentID = loop
   where
     loop = do
-      response <- escalate <=< (`runClientM` clientEnv) $ API.getDeployment deployClient token deploymentID
-      case Deployment.status response of
-        Deployment.Cancelled -> putStrLn ("cancelled" :: Text)
-        Deployment.Failed -> putStrLn ("failed" :: Text)
-        Deployment.Succeeded -> print ("succeeded" :: Text)
+      deployment <- escalate <=< (`runClientM` clientEnv) $ API.getDeployment deployClient token deploymentID
+      case Deployment.status deployment of
+        Deployment.Cancelled -> pure deployment
+        Deployment.Failed -> pure deployment
+        Deployment.Succeeded -> pure deployment
         _ -> do
           threadDelay (2 * 1000 * 1000)
           loop
@@ -99,3 +103,7 @@ printLogsToTerminal options agentName =
 
 inSquareBrackets :: (Semigroup a, IsString a) => a -> a
 inSquareBrackets s = "[" <> s <> "]"
+
+printSummary :: [(Text, Deployment.Deployment)] -> IO ()
+printSummary results = for_ results $ \(agentName, deployment) -> do
+  putStrLn $ agentName <> ": " <> show (Deployment.status deployment)

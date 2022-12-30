@@ -15,7 +15,7 @@ data Status
   | Cancelled
   | Failed
   | Succeeded
-  deriving stock (Show, Generic)
+  deriving stock (Eq, Generic, Show)
   deriving anyclass (FromJSON, ToJSON, ToSchema, NFData)
 
 data Deployment = Deployment

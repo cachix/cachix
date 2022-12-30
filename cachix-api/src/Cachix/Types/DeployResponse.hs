@@ -13,7 +13,6 @@ import Protolude
 
 data Details = Details
   { id :: UUID,
-    status :: Deployment.Status,
     url :: Text
   }
   deriving stock (Show, Generic)

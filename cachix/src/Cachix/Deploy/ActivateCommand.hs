@@ -45,8 +45,17 @@ run env DeployOptions.ActivateOptions {DeployOptions.payloadPath, DeployOptions.
 
 activate :: Env.Env -> ByteString -> Deploy -> IO ()
 activate Env.Env {cachixoptions, clientenv} agentToken payload = do
-  response <- escalate <=< (`runClientM` clientenv) $ API.activate deployClient (Token agentToken) payload
-  results <- mapM go (HM.toList (DeployResponse.agents response))
+  deployResponse <- escalate <=< (`runClientM` clientenv) $ API.activate deployClient (Token agentToken) payload
+  let agents = HM.toList (DeployResponse.agents deployResponse)
+
+  for_ agents $ \(agentName, details) ->
+    putStrLn $
+      unlines
+        [ "Deploying " <> agentName,
+          DeployResponse.url details
+        ]
+
+  results <- Async.mapConcurrently watchDeployment agents
 
   printSummary results
 
@@ -54,13 +63,7 @@ activate Env.Env {cachixoptions, clientenv} agentToken payload = do
     then exitSuccess
     else exitFailure
   where
-    go (agentName, details) = do
-      putStrLn $
-        unlines
-          [ "Deploying " <> agentName,
-            DeployResponse.url details
-          ]
-
+    watchDeployment (agentName, details) = do
       let deploymentID = DeployResponse.id details
       let host = Config.host cachixoptions
       let headers = [("Authorization", "Bearer " <> agentToken)]
@@ -76,11 +79,11 @@ activate Env.Env {cachixoptions, clientenv} agentToken payload = do
               }
 
       Async.withAsync (printLogsToTerminal options agentName) $ \_ -> do
-        deployment <- pollDeploymentStatus clientenv agentName (Token agentToken) deploymentID
+        deployment <- pollDeploymentStatus clientenv (Token agentToken) deploymentID
         pure (agentName, deployment)
 
-pollDeploymentStatus :: ClientEnv -> Text -> Token -> UUID -> IO Deployment.Deployment
-pollDeploymentStatus clientEnv agentName token deploymentID = loop
+pollDeploymentStatus :: ClientEnv -> Token -> UUID -> IO Deployment.Deployment
+pollDeploymentStatus clientEnv token deploymentID = loop
   where
     loop = do
       deployment <- escalate <=< (`runClientM` clientEnv) $ API.getDeployment deployClient token deploymentID

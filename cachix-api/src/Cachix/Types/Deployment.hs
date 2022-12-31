@@ -21,10 +21,11 @@ data Status
 data Deployment = Deployment
   { id :: UUID,
     index :: Int64,
-    startedOn :: Maybe UTCTime,
     createdOn :: UTCTime,
+    startedOn :: Maybe UTCTime,
     storePath :: Text,
     closureSize :: Maybe Int64,
     status :: Status
   }
-  deriving (Show, Generic, FromJSON, ToJSON, ToSchema, NFData)
+  deriving stock (Show, Generic)
+  deriving anyclass (FromJSON, ToJSON, ToSchema, NFData)

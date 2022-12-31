@@ -1,13 +1,11 @@
 module Cachix.Types.DeployResponse where
 
-import qualified Cachix.Types.Deployment as Deployment
 import Data.Aeson
   ( FromJSON,
     ToJSON,
   )
 import Data.HashMap.Strict
 import Data.Swagger (ToSchema)
-import Data.Time.Clock (UTCTime)
 import Data.UUID (UUID)
 import Protolude
 

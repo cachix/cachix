@@ -5,8 +5,10 @@ import Cachix.API.Error (escalate)
 import qualified Cachix.API.WebSocketSubprotocol as WSS
 import qualified Cachix.Client.Config as Config
 import qualified Cachix.Client.Env as Env
+import qualified Cachix.Client.Retry as Retry
 import Cachix.Client.Servant (deployClient)
 import qualified Cachix.Client.URI as URI
+import Cachix.Client.Version (versionNumber)
 import qualified Cachix.Deploy.OptionsParser as DeployOptions
 import qualified Cachix.Deploy.Websocket as WebSocket
 import Cachix.Types.Deploy (Deploy)
@@ -17,6 +19,7 @@ import qualified Control.Concurrent.Async as Async
 import qualified Data.Aeson as Aeson
 import Data.HashMap.Strict (filterWithKey)
 import qualified Data.HashMap.Strict as HM
+import qualified Data.Text.IO as Text
 import Data.UUID (UUID)
 import qualified Data.UUID as UUID
 import qualified Network.WebSockets as WS
@@ -29,64 +32,78 @@ import System.Environment (getEnv)
 
 run :: Env.Env -> DeployOptions.ActivateOptions -> IO ()
 run env DeployOptions.ActivateOptions {DeployOptions.payloadPath, DeployOptions.agents} = do
+  -- TODO: improve the error message here
   agentToken <- toS <$> getEnv "CACHIX_ACTIVATE_TOKEN"
-  payloadEither <- Aeson.eitherDecodeFileStrict' payloadPath
-
-  case payloadEither of
+  Aeson.eitherDecodeFileStrict' payloadPath >>= \case
     Left err -> do
-      hPutStrLn stderr $ "Error while parsing JSON: " <> err
+      hPutStrLn stderr $ "Error parsing the deployment spec: " <> err
       exitFailure
-    Right payload -> do
-      let deploy =
-            if not (null agents)
-              then payload {Types.agents = filterWithKey (\k _ -> k `elem` agents) (Types.agents payload)}
-              else payload
-      activate env agentToken deploy
+    Right deploySpec -> do
+      activate env agentToken (filterAgents agents deploySpec)
+  where
+    filterAgents [] deploySpec = deploySpec
+    filterAgents chosenAgents deploySpec =
+      deploySpec
+        { Types.agents = filterWithKey (\k _ -> k `elem` chosenAgents) (Types.agents deploySpec)
+        }
 
+-- TODO: use prettyprinter
 activate :: Env.Env -> ByteString -> Deploy -> IO ()
 activate Env.Env {cachixoptions, clientenv} agentToken payload = do
-  deployResponse <- escalate <=< (`runClientM` clientenv) $ API.activate deployClient (Token agentToken) payload
+  deployResponse <-
+    escalate <=< (`runClientM` clientenv) $
+      API.activate deployClient (Token agentToken) payload
+
   let agents = HM.toList (DeployResponse.agents deployResponse)
 
-  for_ agents $ \(agentName, details) ->
-    putStrLn $
-      unlines
-        [ "Deploying " <> agentName,
-          DeployResponse.url details
-        ]
+  Text.putStrLn (renderOverview agents)
+  Text.putStrLn ""
 
-  results <- Async.mapConcurrently watchDeployment agents
+  results <- Async.mapConcurrently watchDeployments agents
 
-  printSummary results
+  Text.putStrLn ""
+  Text.putStrLn (renderSummary results)
 
-  if all ((==) Deployment.Succeeded . Deployment.status . snd) results
+  if all filterSuccessfulDeployments results
     then exitSuccess
     else exitFailure
   where
-    watchDeployment (agentName, details) = do
+    filterSuccessfulDeployments = (==) Deployment.Succeeded . Deployment.status . snd
+
+    watchDeployments (agentName, details) = do
       let deploymentID = DeployResponse.id details
-      let host = Config.host cachixoptions
-      let headers = [("Authorization", "Bearer " <> agentToken)]
-      let port = fromMaybe (URI.Port 80) (URI.getPortFor (URI.getScheme host))
-      let options =
+          host = Config.host cachixoptions
+          hostname = URI.getHostname host
+          port = fromMaybe (URI.Port 80) (URI.getPortFor (URI.getScheme host))
+          path = "/api/v1/deploy/log/" <> UUID.toText deploymentID <> "?view=true"
+          useSSL = URI.requiresSSL (URI.getScheme host)
+          headers = [("Authorization", "Bearer " <> agentToken)]
+          identifier = unwords ["cachix", versionNumber]
+          options =
             WebSocket.Options
-              { WebSocket.host = URI.getHostname host,
+              { WebSocket.host = hostname,
                 WebSocket.port = port,
-                WebSocket.path = "/api/v1/deploy/log/" <> UUID.toText deploymentID <> "?view=true",
-                WebSocket.useSSL = URI.requiresSSL (URI.getScheme host),
+                WebSocket.path = path,
+                WebSocket.useSSL = useSSL,
                 WebSocket.headers = headers,
-                WebSocket.identifier = ""
+                WebSocket.identifier = identifier
               }
 
-      Async.withAsync (printLogsToTerminal options agentName) $ \_ -> do
-        deployment <- pollDeploymentStatus clientenv (Token agentToken) deploymentID
-        pure (agentName, deployment)
+      deployment <-
+        Async.withAsync (printLogsToTerminal options agentName) $ \_ ->
+          pollDeploymentStatus clientenv (Token agentToken) deploymentID
+
+      pure (agentName, deployment)
 
 pollDeploymentStatus :: ClientEnv -> Token -> UUID -> IO Deployment.Deployment
 pollDeploymentStatus clientEnv token deploymentID = loop
   where
     loop = do
-      deployment <- escalate <=< (`runClientM` clientEnv) $ API.getDeployment deployClient token deploymentID
+      deployment <-
+        Retry.retryAll . const $
+          escalate <=< (`runClientM` clientEnv) $
+            API.getDeployment deployClient token deploymentID
+
       case Deployment.status deployment of
         Deployment.Cancelled -> pure deployment
         Deployment.Failed -> pure deployment
@@ -101,12 +118,31 @@ printLogsToTerminal options agentName =
     forever $ do
       message <- WS.receiveData connection
       case Aeson.eitherDecodeStrict' message of
-        Left error -> print error
-        Right msg -> putStrLn $ unwords [inSquareBrackets agentName, WSS.line msg]
+        Left error -> Text.putStrLn $ "Error parsing the log message: " <> show error
+        Right msg -> Text.putStrLn $ unwords [inBrackets agentName, WSS.line msg]
 
-inSquareBrackets :: (Semigroup a, IsString a) => a -> a
-inSquareBrackets s = "[" <> s <> "]"
+renderOverview :: [(Text, DeployResponse.Details)] -> Text
+renderOverview agents =
+  unlines $
+    "Deploying agents:" :
+      [ inBrackets agentName <> " " <> DeployResponse.url details
+        | (agentName, details) <- agents
+      ]
 
-printSummary :: [(Text, Deployment.Deployment)] -> IO ()
-printSummary results = for_ results $ \(agentName, deployment) -> do
-  putStrLn $ agentName <> ": " <> show (Deployment.status deployment)
+renderSummary :: [(Text, Deployment.Deployment)] -> Text
+renderSummary results =
+  unlines $
+    "Deployment summary:" :
+      [ inBrackets agentName <> " " <> renderStatus (Deployment.status deployment)
+        | (agentName, deployment) <- results
+      ]
+  where
+    renderStatus = \case
+      Deployment.Succeeded -> "Deployed successfully"
+      Deployment.Failed -> "Failed to deploy"
+      Deployment.Cancelled -> "Deployment cancelled"
+      Deployment.InProgress -> "Still deploying"
+      Deployment.Pending -> "Deployment not started"
+
+inBrackets :: (Semigroup a, IsString a) => a -> a
+inBrackets s = "[" <> s <> "]"

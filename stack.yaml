@@ -8,6 +8,7 @@ extra-deps:
 - cabal-pkg-config-version-hook-0.1.0.0
 - nix-narinfo-0.1.0.1
 - fsnotify-0.4.1.0
+- hnix-store-core-0.6.1.0
 nix:
   enable: true
   shell-file: ./shell.nix

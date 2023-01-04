@@ -105,6 +105,7 @@ library
     , fsnotify                >=0.4.1
     , hercules-ci-cnix-store
     , here
+    , hnix-store-core
     , http-client
     , http-client-tls
     , http-conduit

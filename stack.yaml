@@ -9,6 +9,7 @@ extra-deps:
 - nix-narinfo-0.1.0.1
 - fsnotify-0.4.1.0
 - hnix-store-core-0.6.1.0
+- saltine-0.2.0.1
 nix:
   enable: true
   shell-file: ./shell.nix

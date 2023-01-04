@@ -44,6 +44,8 @@
               pkgs.zlib
               pkgs.boost
               pkgs.stack
+              pkgs.pkg-config
+              pkgs.libsodium
               # sync with stack.yaml LTS
               pkgs.haskell.compiler.ghc925
               (getNix pkgs)

@@ -90,6 +90,23 @@
         "type": "github"
       }
     },
+    "hnix-store-core": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1672658037,
+        "narHash": "sha256-UOe+dY1dhCvdEKjPF1gNpfc4cNhZSKSbvu4yG+XVqbg=",
+        "owner": "haskell-nix",
+        "repo": "hnix-store",
+        "rev": "81700e6e7c53bbd7c6b2c4913b9481e5827af92f",
+        "type": "github"
+      },
+      "original": {
+        "owner": "haskell-nix",
+        "ref": "core-0.6.1.0",
+        "repo": "hnix-store",
+        "type": "github"
+      }
+    },
     "lowdown-src": {
       "flake": false,
       "locked": {
@@ -224,6 +241,7 @@
       "inputs": {
         "devenv": "devenv",
         "flake-compat": "flake-compat_2",
+        "hnix-store-core": "hnix-store-core",
         "nixpkgs": "nixpkgs_2"
       }
     }

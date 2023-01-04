@@ -3,13 +3,15 @@
 
   inputs = {
     devenv.url = "github:cachix/devenv";
+    hnix-store-core.url = "github:haskell-nix/hnix-store/core-0.6.1.0";
+    hnix-store-core.flake = false;
     flake-compat = {
       url = "github:edolstra/flake-compat";
       flake = false;
     };
   };
 
-  outputs = { self, nixpkgs, ... }@inputs: let
+  outputs = { self, nixpkgs, hnix-store-core, ... }@inputs: let
     systems = [ "x86_64-linux" "i686-linux" "x86_64-darwin" "aarch64-linux" "aarch64-darwin" ];
     forAllSystems = f: builtins.listToAttrs (map (name: { inherit name; value = f name; }) systems);
     # TODO: get from nixpkgs
@@ -24,6 +26,7 @@
           cachix = pkgs.haskellPackages.callCabal2nix "cachix" ./cachix {
             inherit cachix-api;
             fsnotify = pkgs.haskellPackages.fsnotify_0_4_1_0;
+            hnix-store-core = pkgs.haskellPackages.callCabal2nix "hnix-store-core" "${hnix-store-core}/hnix-store-core" {};
             nix = getNix pkgs;
           };
         in

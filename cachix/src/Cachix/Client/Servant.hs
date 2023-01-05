@@ -1,6 +1,6 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -O0 #-}
 
 -- TODO https://github.com/haskell-servant/servant/issues/986
@@ -31,7 +31,7 @@ isErr (Servant.Client.FailureResponse _ resp) status
 isErr _ _ = False
 
 cachixClient :: API.BinaryCacheAPI (AsClientT ClientM)
-cachixClient = fromServant $ client API.api
+cachixClient = fromServant $ client (Proxy @API.API)
 
 deployClient :: API.Deploy.DeployAPI (AsClientT ClientM)
-deployClient = fromServant $ client API.Deploy.api
+deployClient = fromServant $ client (Proxy @API.Deploy.API)

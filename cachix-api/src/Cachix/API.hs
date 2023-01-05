@@ -3,8 +3,7 @@
 {-# LANGUAGE TypeOperators #-}
 
 module Cachix.API
-  ( api,
-    BinaryCacheAPI (..),
+  ( BinaryCacheAPI (..),
     API,
     CachixAuth,
   )
@@ -127,6 +126,3 @@ data BinaryCacheAPI route = BinaryCacheAPI
   deriving (Generic)
 
 type API = "api" :> "v1" :> ToServantApi BinaryCacheAPI
-
-api :: Proxy API
-api = Proxy

@@ -70,7 +70,7 @@ streamLog logger connection queue = do
       .| sendLog connection
 
 streamLine :: LogStream -> ByteString -> IO ()
-streamLine logStream msg = Conduit.connect (Conduit.yield $ "\n" <> msg <> "\n") logStream
+streamLine logStream msg = Conduit.connect (Conduit.yield $ msg <> "\n") logStream
 
 logLocal :: WithLog -> Conduit.ConduitT ByteString ByteString IO ()
 logLocal logger =

@@ -12,8 +12,9 @@ module Cachix.Client.Servant
   )
 where
 
-import qualified Cachix.API
-import qualified Cachix.API.Deploy as Cachix.Deploy.API
+import qualified Cachix.API as API
+import qualified Cachix.API.Deploy as API.Deploy
+import qualified Cachix.API.Deploy.V2 as API.Deploy.V2
 import Cachix.Types.ContentTypes ()
 import Network.HTTP.Types (Status)
 import Protolude
@@ -29,8 +30,8 @@ isErr (Servant.Client.FailureResponse _ resp) status
   | Servant.Client.responseStatusCode resp == status = True
 isErr _ _ = False
 
-cachixClient :: Cachix.API.BinaryCacheAPI (AsClientT ClientM)
-cachixClient = fromServant $ client Cachix.API.api
+cachixClient :: API.BinaryCacheAPI (AsClientT ClientM)
+cachixClient = fromServant $ client API.api
 
-deployClient :: Cachix.Deploy.API.DeployAPI (AsClientT ClientM)
-deployClient = fromServant $ client Cachix.Deploy.API.api
+deployClient :: API.Deploy.DeployAPI (AsClientT ClientM)
+deployClient = fromServant $ client API.Deploy.api

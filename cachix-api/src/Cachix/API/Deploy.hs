@@ -1,37 +1,19 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE TypeOperators #-}
 
-module Cachix.API.Deploy where
+module Cachix.API.Deploy
+  ( module Deploy.V2,
+    API,
+    api,
+  )
+where
 
-import Cachix.API (CachixAuth)
-import qualified Cachix.Types.Deploy as Deploy
-import qualified Cachix.Types.DeployResponse as DeployResponse
-import qualified Cachix.Types.Deployment as Deployment
-import Data.UUID (UUID)
+import Cachix.API.Deploy.V2 as Deploy.V2
 import Protolude
 import Servant.API
 import Servant.API.Generic
 
-data DeployAPI route = DeployAPI
-  { activate ::
-      route
-        :- CachixAuth
-        :> "deploy"
-        :> "activate"
-        :> ReqBody '[JSON] Deploy.Deploy
-        :> Post '[JSON] DeployResponse.DeployResponse,
-    getDeployment ::
-      route
-        :- CachixAuth
-        :> "deploy"
-        :> "deployment"
-        :> Capture "uuid" UUID
-        :> Get '[JSON] Deployment.Deployment
-  }
-  deriving (Generic)
-
-type API = "api" :> "v1" :> ToServantApi DeployAPI
+type API = "api" :> "v2" :> ToServantApi Deploy.V2.DeployAPI
 
 api :: Proxy API
 api = Proxy

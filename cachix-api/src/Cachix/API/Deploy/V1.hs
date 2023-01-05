@@ -13,6 +13,8 @@ import Protolude
 import Servant.API
 import Servant.API.Generic
 
+type API = "api" :> "v1" :> ToServantApi DeployAPI
+
 data DeployAPI route = DeployAPI
   { activate :: route :- Activate,
     getDeployment :: route :- GetDeployment

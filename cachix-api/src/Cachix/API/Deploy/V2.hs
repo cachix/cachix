@@ -5,16 +5,16 @@
 module Cachix.API.Deploy.V2 where
 
 import Cachix.API (CachixAuth)
-import qualified Cachix.API.Deploy.V1 as API.V1
 import qualified Cachix.Types.Deploy as Deploy
 import qualified Cachix.Types.DeployResponse.V2 as DeployResponse.V2
 import Protolude
 import Servant.API
 import Servant.API.Generic
 
+type API = "api" :> "v2" :> ToServantApi DeployAPI
+
 data DeployAPI route = DeployAPI
-  { activate :: route :- Activate,
-    getDeployment :: route :- API.V1.GetDeployment
+  { activate :: route :- Activate
   }
   deriving (Generic)
 

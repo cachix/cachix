@@ -39,7 +39,6 @@ library
   import:          defaults
   exposed-modules:
     Cachix.API
-    Cachix.API.Deploy
     Cachix.API.Deploy.V1
     Cachix.API.Deploy.V2
     Cachix.API.Error

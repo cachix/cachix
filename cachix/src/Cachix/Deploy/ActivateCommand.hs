@@ -60,16 +60,16 @@ activate Env.Env {cachixoptions, clientenv} agentToken payload = do
   Text.putStr (renderOverview agents)
   Text.putStr "\n\n"
 
-  results <- Async.mapConcurrently watchDeployments agents
+  deployments <- Async.mapConcurrently watchDeployments agents
 
   Text.putStr "\n"
-  Text.putStr (renderSummary results)
+  Text.putStr (renderSummary deployments)
 
-  if all filterSuccessfulDeployments results
+  if all isSuccessfulDeployment deployments
     then exitSuccess
     else exitFailure
   where
-    filterSuccessfulDeployments = (==) Deployment.Succeeded . Deployment.status . snd
+    isSuccessfulDeployment = (==) Deployment.Succeeded . Deployment.status . snd
 
     watchDeployments (agentName, details) = do
       let deploymentID = DeployResponse.id details

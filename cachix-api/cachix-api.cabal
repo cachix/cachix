@@ -40,6 +40,8 @@ library
   exposed-modules:
     Cachix.API
     Cachix.API.Deploy
+    Cachix.API.Deploy.V1
+    Cachix.API.Deploy.V2
     Cachix.API.Error
     Cachix.API.Signing
     Cachix.API.WebSocketSubprotocol
@@ -49,6 +51,8 @@ library
     Cachix.Types.Deploy
     Cachix.Types.Deployment
     Cachix.Types.DeployResponse
+    Cachix.Types.DeployResponse.V1
+    Cachix.Types.DeployResponse.V2
     Cachix.Types.NarFileName
     Cachix.Types.NarInfo
     Cachix.Types.NarInfoCreate

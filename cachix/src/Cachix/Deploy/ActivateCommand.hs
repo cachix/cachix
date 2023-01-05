@@ -1,12 +1,13 @@
 module Cachix.Deploy.ActivateCommand where
 
-import qualified Cachix.API.Deploy as API
+import qualified Cachix.API.Deploy.V1 as API.V1
+import qualified Cachix.API.Deploy.V2 as API.V2
 import Cachix.API.Error (escalate)
 import qualified Cachix.API.WebSocketSubprotocol as WSS
 import qualified Cachix.Client.Config as Config
 import qualified Cachix.Client.Env as Env
 import qualified Cachix.Client.Retry as Retry
-import Cachix.Client.Servant (deployClient)
+import Cachix.Client.Servant (deployClientV1, deployClientV2)
 import qualified Cachix.Client.URI as URI
 import Cachix.Client.Version (versionNumber)
 import qualified Cachix.Deploy.OptionsParser as DeployOptions
@@ -53,7 +54,7 @@ activate :: Env.Env -> ByteString -> Deploy -> IO ()
 activate Env.Env {cachixoptions, clientenv} agentToken payload = do
   deployResponse <-
     escalate <=< (`runClientM` clientenv) $
-      API.activate deployClient (Token agentToken) payload
+      API.V2.activate deployClientV2 (Token agentToken) payload
 
   let agents = HM.toList (DeployResponse.agents deployResponse)
 
@@ -103,7 +104,7 @@ pollDeploymentStatus clientEnv token deploymentID = loop
       deployment <-
         Retry.retryAll . const $
           escalate <=< (`runClientM` clientEnv) $
-            API.getDeployment deployClient token deploymentID
+            API.V1.getDeployment deployClientV1 token deploymentID
 
       case Deployment.status deployment of
         Deployment.Cancelled -> pure deployment

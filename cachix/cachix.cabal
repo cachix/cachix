@@ -148,8 +148,8 @@ library
     , websockets
     , wuss
 
-  -- These versions should match those supported by hercules-ci-cnix-store
-  pkgconfig-depends: nix-main >=2.4 && <2.11, nix-store >=2.4 && <2.11
+  -- These versions are pinned in hercules-ci-cnix-store
+  pkgconfig-depends: nix-main, nix-store
 
 executable cachix
   import:             defaults

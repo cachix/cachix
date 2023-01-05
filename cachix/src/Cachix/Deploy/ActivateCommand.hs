@@ -19,6 +19,7 @@ import qualified Control.Concurrent.Async as Async
 import qualified Data.Aeson as Aeson
 import Data.HashMap.Strict (filterWithKey)
 import qualified Data.HashMap.Strict as HM
+import qualified Data.Text as Text
 import qualified Data.Text.IO as Text
 import Data.UUID (UUID)
 import qualified Data.UUID as UUID
@@ -56,13 +57,13 @@ activate Env.Env {cachixoptions, clientenv} agentToken payload = do
 
   let agents = HM.toList (DeployResponse.agents deployResponse)
 
-  Text.putStrLn (renderOverview agents)
-  Text.putStrLn ""
+  Text.putStr (renderOverview agents)
+  Text.putStr "\n\n"
 
   results <- Async.mapConcurrently watchDeployments agents
 
-  Text.putStrLn ""
-  Text.putStrLn (renderSummary results)
+  Text.putStr "\n"
+  Text.putStr (renderSummary results)
 
   if all filterSuccessfulDeployments results
     then exitSuccess
@@ -123,7 +124,7 @@ printLogsToTerminal options agentName =
 
 renderOverview :: [(Text, DeployResponse.Details)] -> Text
 renderOverview agents =
-  unlines $
+  Text.intercalate "\n" $
     "Deploying agents:" :
       [ inBrackets agentName <> " " <> DeployResponse.url details
         | (agentName, details) <- agents
@@ -131,7 +132,7 @@ renderOverview agents =
 
 renderSummary :: [(Text, Deployment.Deployment)] -> Text
 renderSummary results =
-  unlines $
+  Text.intercalate "\n" $
     "Deployment summary:" :
       [ inBrackets agentName <> " " <> renderStatus (Deployment.status deployment)
         | (agentName, deployment) <- results

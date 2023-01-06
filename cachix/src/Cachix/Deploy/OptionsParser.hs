@@ -34,7 +34,8 @@ data AgentOptions = AgentOptions
 
 data ActivateOptions = ActivateOptions
   { payloadPath :: FilePath,
-    agents :: [Text]
+    agents :: [Text],
+    deployAsync :: Bool
   }
   deriving (Show)
 
@@ -68,3 +69,4 @@ parserActivateOptions =
               <> help "Deploy only specific agent(s)."
           )
       )
+    <*> switch (long "async" <> help "Skip waiting for the agents to deploy")

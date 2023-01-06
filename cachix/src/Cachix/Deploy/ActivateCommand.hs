@@ -33,7 +33,7 @@ import Servant.Conduit ()
 import System.Environment (getEnv)
 
 run :: Env.Env -> DeployOptions.ActivateOptions -> IO ()
-run env DeployOptions.ActivateOptions {DeployOptions.payloadPath, DeployOptions.agents} = do
+run env DeployOptions.ActivateOptions {DeployOptions.payloadPath, DeployOptions.agents, DeployOptions.deployAsync} = do
   -- TODO: improve the error message here
   agentToken <- toS <$> getEnv "CACHIX_ACTIVATE_TOKEN"
   Aeson.eitherDecodeFileStrict' payloadPath >>= \case
@@ -41,7 +41,7 @@ run env DeployOptions.ActivateOptions {DeployOptions.payloadPath, DeployOptions.
       hPutStrLn stderr $ "Error parsing the deployment spec: " <> err
       exitFailure
     Right deploySpec -> do
-      activate env agentToken (filterAgents agents deploySpec)
+      activate env deployAsync agentToken (filterAgents agents deploySpec)
   where
     filterAgents [] deploySpec = deploySpec
     filterAgents chosenAgents deploySpec =
@@ -50,8 +50,8 @@ run env DeployOptions.ActivateOptions {DeployOptions.payloadPath, DeployOptions.
         }
 
 -- TODO: use prettyprinter
-activate :: Env.Env -> ByteString -> Deploy -> IO ()
-activate Env.Env {cachixoptions, clientenv} agentToken payload = do
+activate :: Env.Env -> Bool -> ByteString -> Deploy -> IO ()
+activate Env.Env {cachixoptions, clientenv} deployAsync agentToken payload = do
   deployResponse <-
     escalate <=< (`runClientM` clientenv) $
       API.V2.activate deployClientV2 (Token agentToken) payload
@@ -59,8 +59,10 @@ activate Env.Env {cachixoptions, clientenv} agentToken payload = do
   let agents = HM.toList (DeployResponse.agents deployResponse)
 
   Text.putStr (renderOverview agents)
-  Text.putStr "\n\n"
 
+  when deployAsync exitSuccess
+
+  Text.putStr "\n\n"
   deployments <- Async.mapConcurrently watchDeployments agents
 
   Text.putStr "\n"

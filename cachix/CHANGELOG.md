@@ -5,16 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [1.2] - 2023-01-06
 
-# [1.1] - 2022-12-16
+### Added
+
+- NARs are now streamed without invoking an external process, so if
+you have a lot of small files, there should be some significant performance improvements
+
+- `cachix deploy activate` now by default waits for the agents to be deployed, displays the logs and exists if any deployments fail.
+  If you'd like to keep the old behaviour pass `--async` flag.
+
+## Changed
+
+- We no longer pin Nix to speed up version bumps of Nix
+
+## Fixed
+
+- A number of improvements to stability of the websocket connection used in cachix deploy.
+
+- Fixed a regression in `cachix deploy activate`, requiring `--agent` flag that should be optional.
+
+- Fixed a C++ crash that would sometimes happen on exceptions in rare conditions.
+
+## [1.1] - 2022-12-16
 
 ### Added 
 
 - Use ZSTD compresion method by default and allow overriding it via `--compression-method` back to XZ. You can also change the default permanently on your binary cache settings page.
-
-- nars are now streamed without invoking an external process, so if
-you have a lot of small files, there should be some significant performance improvements
 
 - Cachix Deploy got a complete rewrite with correctness in mind and reliablity.
 
@@ -24,13 +41,13 @@ you have a lot of small files, there should be some significant performance impr
 
 - Generated NixOS module now uses the naming of Nix settings as introduced in NixOS 22.05.
 
-# [1.0.1] - 2022-09-24
+## [1.0.1] - 2022-09-24
 
 ### Added 
 
 - `cachix config`: allow setting hostname
 
-# [1.0.0] - 2022-09-06
+## [1.0.0] - 2022-09-06
 
 - Cachix Deploy: auto rollback if the agent can't connect to the backend service anymore
 

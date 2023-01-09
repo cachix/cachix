@@ -149,8 +149,9 @@ deploy withLog Deployment {..} service logStream = do
     Activate.Failure e -> logDeploymentFailed e
     Activate.Rollback e -> logDeploymentFailed e
     Activate.Success -> do
+      -- NOTE: the activate command uses this message to detect the end of the log
       Log.streamLine logStream "Successfully activated the deployment."
-      withLog $ K.logLocM K.InfoS $ K.ls $ "Deployment #" <> deploymentIndex <> " finished"
+      withLog $ K.logLocM K.InfoS $ K.ls $ "Deployment #" <> deploymentIndex <> " finished."
 
   endDeployment activationStatus
   where
@@ -176,6 +177,7 @@ deploy withLog Deployment {..} service logStream = do
       Log.streamLine logStream $
         toS $
           unwords
+            -- NOTE: the activate command uses this message to detect the end of the log
             [ "Failed to activate the deployment.",
               toS $ displayException e
             ]

@@ -31,6 +31,8 @@ import Servant.Auth.Client (Token (..))
 import Servant.Client.Streaming (ClientEnv, runClientM)
 import Servant.Conduit ()
 import System.Environment (getEnv)
+import qualified Text.Megaparsec as Parse
+import qualified Text.Megaparsec.Char as Parse
 
 run :: Env.Env -> DeployOptions.ActivateOptions -> IO ()
 run env DeployOptions.ActivateOptions {DeployOptions.payloadPath, DeployOptions.agents, DeployOptions.deployAsync} = do
@@ -60,6 +62,7 @@ activate Env.Env {cachixoptions, clientenv} deployAsync agentToken payload = do
 
   Text.putStr (renderOverview agents)
 
+  -- Skip streaming the logs when run with the --async flag
   when deployAsync exitSuccess
 
   Text.putStr "\n\n"
@@ -93,9 +96,15 @@ activate Env.Env {cachixoptions, clientenv} deployAsync agentToken payload = do
                 WebSocket.identifier = identifier
               }
 
-      deployment <-
-        Async.withAsync (printLogsToTerminal options agentName) $ \_ ->
-          pollDeploymentStatus clientenv (Token agentToken) deploymentID
+      deployment <- Async.withAsync (printLogsToTerminal options agentName) $ \logThread -> do
+        deployment <- pollDeploymentStatus clientenv (Token agentToken) deploymentID
+
+        -- Wait for all the logs to arrive
+        let status = Deployment.status deployment
+        when (status == Deployment.Failed || status == Deployment.Succeeded) $
+          void (Async.waitCatch logThread)
+
+        pure deployment
 
       pure (agentName, deployment)
 
@@ -116,14 +125,28 @@ pollDeploymentStatus clientEnv token deploymentID = loop
           threadDelay (2 * 1000 * 1000)
           loop
 
-printLogsToTerminal :: WebSocket.Options -> Text -> IO a
+printLogsToTerminal :: WebSocket.Options -> Text -> IO ()
 printLogsToTerminal options agentName =
   WebSocket.runClientWith options WS.defaultConnectionOptions $ \connection ->
-    forever $ do
+    fix $ \loop -> do
       message <- WS.receiveData connection
       case Aeson.eitherDecodeStrict' message of
-        Left error -> Text.putStrLn $ "Error parsing the log message: " <> show error
-        Right msg -> Text.putStrLn $ unwords [inBrackets agentName, WSS.line msg]
+        Left error -> do
+          Text.putStrLn $ "Error parsing the log message: " <> show error
+          loop
+        Right msg -> do
+          putStrLn $ unwords [inBrackets agentName, WSS.line msg]
+          unless (isDeploymentDone (WSS.line msg)) loop
+  where
+    -- Parse each log line looking for the success/failure messages.
+    -- TODO: figure out a way to avoid this. How can we tell when the log is done?
+    isDeploymentDone :: Text -> Bool
+    isDeploymentDone = isRight . Parse.parse logEndMessageParser ""
+
+    logEndMessageParser :: Parse.Parsec Void Text Text
+    logEndMessageParser =
+      Parse.string "Successfully activated the deployment"
+        <|> Parse.string "Failed to activate the deployment"
 
 renderOverview :: [(Text, DeployResponse.Details)] -> Text
 renderOverview agents =

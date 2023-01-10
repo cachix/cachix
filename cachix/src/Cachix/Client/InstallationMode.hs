@@ -90,7 +90,7 @@ a) Run the same command as root to write NixOS configuration.
 b) Add the following to your configuration.nix to add your user as trusted 
    and then try again:
 
-  nix.trustedUsers = [ "root" "${user}" ];
+  nix.settings.trusted-users = [ "root" "${user}" ];
 
 |]
 addBinaryCache _ _ _ UntrustedRequiresSudo = do

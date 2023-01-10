@@ -34,6 +34,7 @@ import qualified System.Posix.Process as Posix
 import qualified System.Posix.Signals as Signals
 import qualified System.Posix.Types as Posix
 import qualified System.Posix.User as Posix.User
+import qualified System.Timeout as Timeout
 
 type ServiceWebSocket = WebSocket.WebSocket (WSS.Message WSS.AgentCommand) (WSS.Message WSS.BackendCommand)
 
@@ -56,7 +57,7 @@ agentIdentifier agentName = unwords [agentName, toS versionNumber]
 run :: Config.CachixOptions -> CLI.AgentOptions -> IO ()
 run cachixOptions agentOptions =
   Log.withLog logOptions $ \withLog ->
-    logAndExitWithFailure withLog $
+    logExceptions withLog $
       withAgentLock agentOptions $ do
         checkUserOwnsHome
 
@@ -83,9 +84,7 @@ run cachixOptions agentOptions =
         channel <- WebSocket.receive websocket
         shutdownWebsocket <- connectToService websocket
 
-        let signalSet = Signals.CatchOnce shutdownWebsocket
-        void $ Signals.installHandler Signals.sigINT signalSet Nothing
-        void $ Signals.installHandler Signals.sigTERM signalSet Nothing
+        installSignalHandlers shutdownWebsocket
 
         let agent =
               Agent
@@ -109,20 +108,6 @@ run cachixOptions agentOptions =
     agentName = CLI.name agentOptions
     profileName = fromMaybe "system" (CLI.profile agentOptions)
 
-    logAndExitWithFailure withLog action = withException action logException
-      where
-        logException :: SomeException -> IO ()
-        logException someE =
-          case fromException someE of
-            Nothing -> pure ()
-            Just ExitSuccess -> pure ()
-            Just e ->
-              withLog . K.logLocM K.ErrorS . K.ls $
-                unlines
-                  [ "The agent encountered an exception:",
-                    toS (displayException e)
-                  ]
-
     verbosity =
       if Config.verbose cachixOptions
         then Log.Verbose
@@ -135,16 +120,45 @@ run cachixOptions agentOptions =
           environment = "production"
         }
 
+logExceptions :: Log.WithLog -> IO a -> IO a
+logExceptions withLog action = withException action $ \someE -> do
+  case fromException someE of
+    Just ExitSuccess -> exitSuccess
+    Just e -> do
+      withLog . K.logLocM K.ErrorS . K.ls $
+        unlines
+          [ "The agent encountered an exception:",
+            toS (displayException e)
+          ]
+      exitFailure
+    Nothing -> exitFailure
+
 lockFilename :: Text -> FilePath
 lockFilename agentName = "agent-" <> toS agentName
 
 -- | Acquire a lock for this agent. Skip this step if we're bootstrapping the agent.
 withAgentLock :: CLI.AgentOptions -> IO () -> IO ()
 withAgentLock CLI.AgentOptions {bootstrap = True} action = action
-withAgentLock CLI.AgentOptions {name} action = do
-  lock <- Lock.withTryLockAndPid (lockFilename name) action
-  when (isNothing lock) $
-    throwIO (AgentAlreadyRunning name)
+withAgentLock CLI.AgentOptions {name} action = tryToAcquireLock 0
+  where
+    tryToAcquireLock :: Int -> IO ()
+    tryToAcquireLock attempts = do
+      lock <- Lock.withTryLockAndPid (lockFilename name) action
+      when (isNothing lock) $
+        if attempts >= 5
+          then throwIO (AgentAlreadyRunning name)
+          else do
+            threadDelay (3 * 1000 * 1000)
+            tryToAcquireLock (attempts + 1)
+
+installSignalHandlers :: IO () -> IO ()
+installSignalHandlers shutdown = do
+  void $ Signals.installHandler Signals.sigINT handler Nothing
+  void $ Signals.installHandler Signals.sigTERM handler Nothing
+  where
+    handler = Signals.CatchOnce $ do
+      void $ Timeout.timeout (5 * 1000 * 1000) shutdown
+      exitSuccess
 
 registerAgent :: Agent -> WSS.AgentInformation -> IO ()
 registerAgent Agent {agentState, withLog} agentInformation = do
@@ -228,7 +242,7 @@ connectToService websocket = do
   -- Block until the initial connection is established
   void $ MVar.readMVar (WebSocket.connection websocket)
 
-  once $ MVar.putMVar close () >> Async.wait thread
+  once $ MVar.tryPutMVar close () >> Async.wait thread
 
 -- | Fetch the home directory and verify that the owner matches the current user.
 -- Throws either 'NoHomeFound' or 'UserDoesNotOwnHome'.

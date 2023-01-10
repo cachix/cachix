@@ -316,7 +316,7 @@ sendPingEvery seconds onPing WebSocket {connection} = forever $ do
   threadDelay (seconds * 1000 * 1000)
 
 startGracePeriod :: IO a -> IO (Maybe a)
-startGracePeriod = Timeout.timeout (5 * 1000 * 1000)
+startGracePeriod = Timeout.timeout (3 * 1000 * 1000)
 
 -- | Try to gracefully close the WebSocket.
 --

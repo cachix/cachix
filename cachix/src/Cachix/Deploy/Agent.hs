@@ -152,13 +152,11 @@ withAgentLock CLI.AgentOptions {name} action = tryToAcquireLock 0
             tryToAcquireLock (attempts + 1)
 
 installSignalHandlers :: IO () -> IO ()
-installSignalHandlers shutdown = do
-  void $ Signals.installHandler Signals.sigINT handler Nothing
-  void $ Signals.installHandler Signals.sigTERM handler Nothing
+installSignalHandlers shutdown =
+  for_ [Signals.sigINT, Signals.sigTERM] $ \signal ->
+    Signals.installHandler signal handler Nothing
   where
-    handler = Signals.CatchOnce $ do
-      void $ Timeout.timeout (5 * 1000 * 1000) shutdown
-      exitSuccess
+    handler = Signals.CatchOnce shutdown
 
 registerAgent :: Agent -> WSS.AgentInformation -> IO ()
 registerAgent Agent {agentState, withLog} agentInformation = do
@@ -242,7 +240,9 @@ connectToService websocket = do
   -- Block until the initial connection is established
   void $ MVar.readMVar (WebSocket.connection websocket)
 
-  once $ MVar.tryPutMVar close () >> Async.wait thread
+  once $ do
+    void $ MVar.tryPutMVar close ()
+    void $ Timeout.timeout (5 * 1000 * 1000) (Async.wait thread)
 
 -- | Fetch the home directory and verify that the owner matches the current user.
 -- Throws either 'NoHomeFound' or 'UserDoesNotOwnHome'.

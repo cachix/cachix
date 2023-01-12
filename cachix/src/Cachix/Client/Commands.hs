@@ -106,11 +106,14 @@ IMPORTANT: Make sure to make a backup for the signing key above, as you have the
 notAuthenticatedBinaryCache :: Text -> CachixException
 notAuthenticatedBinaryCache name =
   AccessDeniedBinaryCache $
-    "Binary cache " <> name <> " doesn't exist or it's private. " <> Config.noAuthTokenError
+    "Binary cache " <> name <> " doesn't exist or it's private and you need a token: " <> Config.noAuthTokenError
 
-accessDeniedBinaryCache :: Text -> CachixException
-accessDeniedBinaryCache name =
-  AccessDeniedBinaryCache $ "Binary cache " <> name <> " doesn't exist or it's private and you don't have access it"
+accessDeniedBinaryCache :: Text -> Maybe ByteString -> CachixException
+accessDeniedBinaryCache name maybeBody =
+  AccessDeniedBinaryCache $ "Binary cache " <> name <> " doesn't exist or you don't have access." <> context maybeBody
+  where
+    context Nothing = ""
+    context (Just body) = " Error: " <> toS body
 
 use :: Env -> Text -> InstallationMode.UseOptions -> IO ()
 use env name useOptions = do
@@ -119,12 +122,7 @@ use env name useOptions = do
   -- 1. get cache public key
   res <- retryAll $ \_ -> (`runClientM` clientenv env) $ API.getCache cachixClient token name
   case res of
-    Left err
-      -- TODO: is checking for the existence of the config file the right thing to do here?
-      | isErr err status401 && isJust optionalAuthToken -> throwM $ accessDeniedBinaryCache name
-      | isErr err status401 -> throwM $ notAuthenticatedBinaryCache name
-      | isErr err status404 -> throwM $ BinaryCacheNotFound $ "Binary cache " <> name <> " does not exist."
-      | otherwise -> throwM err
+    Left err -> handleCacheResponse name optionalAuthToken err
     Right binaryCache -> do
       () <- escalateAs UnsupportedNixVersion =<< assertNixVersion
       user <- InstallationMode.getUser
@@ -139,6 +137,17 @@ use env name useOptions = do
               }
       InstallationMode.addBinaryCache (config env) binaryCache useOptions $
         InstallationMode.getInstallationMode nixEnv useOptions
+
+handleCacheResponse :: Text -> Maybe Token -> ClientError -> IO a
+handleCacheResponse name optionalAuthToken err
+  | isErr err status401 && isJust optionalAuthToken = throwM $ accessDeniedBinaryCache name (failureResponseBody err)
+  | isErr err status401 = throwM $ notAuthenticatedBinaryCache name
+  | isErr err status404 = throwM $ BinaryCacheNotFound $ "Binary cache " <> name <> " does not exist."
+  | otherwise = throwM err
+
+failureResponseBody :: ClientError -> Maybe ByteString
+failureResponseBody (FailureResponse _ response) = Just $ toS $ responseBody response
+failureResponseBody _ = Nothing
 
 push :: Env -> PushArguments -> IO ()
 push env (PushPaths opts name cliPaths) = do
@@ -205,10 +214,7 @@ pushStrategy :: Store -> Maybe Token -> PushOptions -> Text -> BinaryCache.Compr
 pushStrategy store authToken opts name compressionMethod storePath =
   PushStrategy
     { onAlreadyPresent = pass,
-      on401 =
-        if isJust authToken
-          then throwM (accessDeniedBinaryCache name)
-          else throwM (notAuthenticatedBinaryCache name),
+      on401 = handleCacheResponse name authToken,
       onError = throwM,
       onAttempt = \retrystatus size -> do
         path <- decodeUtf8With lenientDecode <$> storePathToPath store storePath
@@ -230,12 +236,7 @@ withPushParams env pushOpts name m = do
       let token = fromMaybe (Token "") authToken
       res <- retryAll $ \_ -> (`runClientM` clientenv env) $ API.getCache cachixClient token name
       case res of
-        Left err
-          -- TODO: is checking for the existence of the config file the right thing to do here?
-          | isErr err status401 && isJust authToken -> throwM $ accessDeniedBinaryCache name
-          | isErr err status401 -> throwM $ notAuthenticatedBinaryCache name
-          | isErr err status404 -> throwM $ BinaryCacheNotFound $ "Binary cache " <> name <> " does not exist."
-          | otherwise -> throwM err
+        Left err -> handleCacheResponse name authToken err
         Right binaryCache -> pure (Just $ BinaryCache.preferredCompressionMethod binaryCache)
   let compressionMethod = fromMaybe BinaryCache.ZSTD (head $ catMaybes [Cachix.Client.OptionsParser.compressionMethod pushOpts, compressionMethodBackend])
   withStore $ \store ->

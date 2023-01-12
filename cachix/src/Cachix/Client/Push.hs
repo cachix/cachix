@@ -86,7 +86,7 @@ data PushStrategy m r = PushStrategy
   { -- | Called when a path is already in the cache.
     onAlreadyPresent :: m r,
     onAttempt :: RetryStatus -> Int64 -> m (),
-    on401 :: m r,
+    on401 :: ClientError -> m r,
     onError :: ClientError -> m r,
     onDone :: m r,
     compressionMethod :: BinaryCache.CompressionMethod,
@@ -131,7 +131,7 @@ pushSingleStorePath cache storePath = retryAll $ \retrystatus -> do
     Right NoContent -> onAlreadyPresent strategy -- we're done as store path is already in the cache
     Left err
       | isErr err status404 -> uploadStorePath cache storePath retrystatus
-      | isErr err status401 -> on401 strategy
+      | isErr err status401 -> on401 strategy err
       | otherwise -> onError strategy err
 
 getCacheAuthToken :: PushSecret -> Token

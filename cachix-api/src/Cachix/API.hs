@@ -17,7 +17,7 @@ import qualified Cachix.Types.NarInfo as NarInfo
 import qualified Cachix.Types.NarInfoCreate as NarInfoCreate
 import qualified Cachix.Types.NarInfoHash as NarInfoHash
 import qualified Cachix.Types.NixCacheInfo as NixCacheInfo
-import Cachix.Types.Servant (Head)
+import Cachix.Types.Servant (Get302, Head)
 import Cachix.Types.Session (Session)
 import qualified Cachix.Types.SigningKeyCreate as SigningKeyCreate
 import Control.Monad.Trans.Resource
@@ -62,7 +62,7 @@ data BinaryCacheAPI route = BinaryCacheAPI
         :> Capture "name" Text
         :> "nar"
         :> Capture "nar" NarFileName
-        :> StreamGet NoFraming XNixNar (ConduitT () ByteStringStreaming.ByteStringStreaming (ResourceT IO) ()),
+        :> Get302 '[XNixNar] '[],
     -- cachix specific
     getCache ::
       route

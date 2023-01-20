@@ -12,16 +12,19 @@ where
 import qualified Cachix.Types.BinaryCache as BinaryCache
 import qualified Cachix.Types.ByteStringStreaming as ByteStringStreaming
 import Cachix.Types.ContentTypes
+import Cachix.Types.CreateNarResponse (CreateNarResponse)
 import Cachix.Types.NarFileName (NarFileName (..))
 import qualified Cachix.Types.NarInfo as NarInfo
 import qualified Cachix.Types.NarInfoCreate as NarInfoCreate
 import qualified Cachix.Types.NarInfoHash as NarInfoHash
 import qualified Cachix.Types.NixCacheInfo as NixCacheInfo
-import Cachix.Types.Servant (Head)
+import Cachix.Types.Servant (Get302, Head, Post302)
 import Cachix.Types.Session (Session)
 import qualified Cachix.Types.SigningKeyCreate as SigningKeyCreate
 import Control.Monad.Trans.Resource
+import qualified Data.ByteString.Lazy as LazyByteString
 import Data.Conduit (ConduitT)
+import Data.UUID (UUID)
 import Protolude
 import Servant.API hiding (BasicAuth)
 import Servant.API.Generic
@@ -62,7 +65,7 @@ data BinaryCacheAPI route = BinaryCacheAPI
         :> Capture "name" Text
         :> "nar"
         :> Capture "nar" NarFileName
-        :> StreamGet NoFraming XNixNar (ConduitT () ByteStringStreaming.ByteStringStreaming (ResourceT IO) ()),
+        :> Get302 '[XNixNar] '[],
     -- cachix specific
     getCache ::
       route
@@ -97,12 +100,47 @@ data BinaryCacheAPI route = BinaryCacheAPI
         :> Post '[JSON] NoContent,
     createNar ::
       route
-        :- CachixAuth
+        :- Summary "Create an empty NAR and initiate a multipart upload"
+        :> CachixAuth
+        :> "cache"
+        :> Capture "name" Text
+        :> "nar"
+        :> QueryParam "compression" BinaryCache.CompressionMethod
+        :> QueryFlag "uploads"
+        :> Post '[JSON] CreateNarResponse, -- UploadId
+    createAndUploadNar ::
+      route
+        :- Summary "Upload a NAR directly to the Cachix Server"
+        :> Description "This is a backwards-compatible API for legacy Cachix clients. Use 'createNar' instead."
+        :> CachixAuth
         :> "cache"
         :> Capture "name" Text
         :> "nar"
         :> QueryParam "compression" BinaryCache.CompressionMethod
         :> StreamBody NoFraming XNixNar (ConduitT () ByteStringStreaming.ByteStringStreaming (ResourceT IO) ())
+        :> Post '[JSON] NoContent,
+    uploadNarPart ::
+      route
+        :- Summary "Upload a part of a multipart NAR"
+        :> CachixAuth
+        :> "cache"
+        :> Capture "name" Text
+        :> "nar"
+        :> Capture "narId" UUID
+        :> QueryParam' '[Required] "uploadId" Text
+        :> QueryParam' '[Required] "partNumber" Int
+        :> ReqBody '[XNixNar] ByteStringStreaming.ByteStringStreaming
+        -- :> Verb 'PUT 307 '[XNixNar] (Headers '[Header "Location" Text] NoContent),
+        -- So, UVerb doesn't like NoContent
+        :> UVerb 'PUT '[XNixNar] '[WithStatus 307 (Headers '[Header "Location" Text] NoContent), WithStatus 200 NoContent],
+    completeNarUpload ::
+      route
+        :- Summary "Verify the hash digests of each uploaded NAR part"
+        :> CachixAuth
+        :> "cache"
+        :> Capture "name" Text
+        :> "nar"
+        :> QueryParam "uploadId" Text
         :> Post '[JSON] NoContent,
     serveNarContent ::
       route

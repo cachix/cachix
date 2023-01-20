@@ -34,7 +34,8 @@ import Cachix.Client.Retry (retryAll)
 import Cachix.Client.Secrets
 import Cachix.Client.Servant
 import qualified Cachix.Types.BinaryCache as BinaryCache
-import qualified Cachix.Types.ByteStringStreaming
+import Cachix.Types.ByteStringStreaming (ByteStringStreaming (..))
+import Cachix.Types.CreateNarResponse (CreateNarResponse (..))
 import qualified Cachix.Types.NarInfoCreate as Api
 import qualified Cachix.Types.NarInfoHash as NarInfoHash
 import Control.Concurrent.Async (mapConcurrently)
@@ -43,9 +44,11 @@ import Control.Exception.Safe (MonadMask, throwM)
 import Control.Monad.Trans.Resource (ResourceT)
 import Control.Retry (RetryStatus)
 import Crypto.Sign.Ed25519
+import qualified Data.ByteString as ByteString
 import qualified Data.ByteString.Base64 as B64
 import Data.Coerce (coerce)
 import Data.Conduit
+import Data.Conduit.Binary (sinkLbs)
 import qualified Data.Conduit.Lzma as Lzma (compress)
 import qualified Data.Conduit.Zstd as Zstd (compress)
 import Data.IORef
@@ -56,6 +59,8 @@ import Hercules.CNix (StorePath)
 import qualified Hercules.CNix.Std.Set as Std.Set
 import Hercules.CNix.Store (Store)
 import qualified Hercules.CNix.Store as Store
+import qualified Network.HTTP.Client as HTTP
+import qualified Network.HTTP.Conduit as HTTP.Conduit
 import Network.HTTP.Types (status401, status404)
 import Protolude hiding (toS)
 import Protolude.Conv
@@ -139,7 +144,7 @@ getCacheAuthToken (PushToken token) = token
 getCacheAuthToken (PushSigningKey token _) = token
 
 uploadStorePath ::
-  (MonadMask m, MonadIO m) =>
+  (MonadIO m, MonadMask m) =>
   -- | details for pushing to cache
   PushParams m r ->
   StorePath ->
@@ -176,20 +181,60 @@ uploadStorePath cache storePath retrystatus = do
             .| compressor
             .| passthroughSizeSink fileSizeRef
             .| passthroughHashSinkB16 fileHashRef
-    let subdomain =
-          -- TODO: multipart
-          if (fromIntegral storePathSize / (1024 * 1024) :: Double) > 100
-            then "api"
-            else toS name
-        newClientEnv =
-          clientEnv
-            { baseUrl = (baseUrl clientEnv) {baseUrlHost = subdomain <> "." <> baseUrlHost (baseUrl clientEnv)}
+            .| sinkLbs
+    -- if (fromIntegral storePathSize / (1024 * 1024) :: Double) > 100
+
+    let stripHeader "Authorization" = True
+        stripHeader _ = False
+    -- skipCodes3xx _ response = HTTP.statusIsRedirection
+    let stripHeadersOnRedirect baseUrl request =
+          (defaultMakeClientRequest baseUrl request)
+            { HTTP.checkResponse = \_ _ -> pure (),
+              HTTP.redirectCount = 1,
+              HTTP.shouldStripHeaderOnRedirect = stripHeader
             }
-    (_ :: NoContent) <- liftIO $ do
-      (`withClientM` newClientEnv)
-        (API.createNar cachixClient (getCacheAuthToken (pushParamsSecret cache)) name (Just $ compressionMethod strategy) (mapOutput coerce stream'))
-        escalate
-    (_ :: NoContent) <- liftIO $ do
+    let newClientEnv =
+          clientEnv
+            { baseUrl = (baseUrl clientEnv) {baseUrlHost = toS name <> "." <> baseUrlHost (baseUrl clientEnv)},
+              makeClientRequest = stripHeadersOnRedirect
+            }
+
+    -- Create an empty NAR and retrieve an upload URL
+    let authToken = getCacheAuthToken (pushParamsSecret cache)
+    CreateNarResponse {narId, uploadId} <-
+      liftIO $
+        (`withClientM` newClientEnv)
+          (API.createNar cachixClient authToken name (Just $ compressionMethod strategy) True)
+          escalate
+
+    print narId
+
+    bodyLbs <- liftIO (runConduitRes stream')
+    let body = bodyLbs & ByteString.toStrict & ByteStringStreaming
+
+    resp <-
+      liftIO $
+        runClientM
+          (API.uploadNarPart cachixClient authToken name narId uploadId 1 body)
+          newClientEnv
+
+    print "Uploaded!"
+    -- print (getHeaders . getHeadersHList $ resp)
+
+    liftIO exitSuccess
+
+    -- PUT the NAR to the provided URL
+    -- initUploadRequest <- HTTP.parseRequest (toS narUrl)
+    -- let uploadRequest =
+    --       initUploadRequest {
+    --         HTTP.method = "PUT",
+    --         HTTP.requestBody = HTTP.Conduit.requestBodySource 0 stream'
+    --       }
+    -- putResponse <- liftIO $ HTTP.httpNoBody uploadRequest (manager clientEnv)
+    -- print putResponse
+    -- liftIO exitSuccess
+
+    _ <- liftIO $ do
       narSize <- readIORef narSizeRef
       narHash <- ("sha256:" <>) . System.Nix.Base32.encode <$> readIORef narHashRef
       narHashNix <- Store.validPathInfoNarHash32 pathinfo

@@ -1,5 +1,7 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 module Cachix.Types.ContentTypes
   ( XNixNar,
@@ -55,3 +57,13 @@ instance MimeRender PlainText ByteStringStreaming.ByteStringStreaming where
 
 instance MimeUnrender PlainText ByteStringStreaming.ByteStringStreaming where
   mimeUnrender _ = Right . coerce . BSL.toStrict
+
+instance (Accept cts) => MimeUnrender cts NoContent where
+  mimeUnrender _ "" = Right NoContent
+  mimeUnrender _ _ = Left "Unexpected content"
+
+instance NFData (WithStatus sts NoContent) where
+  rnf (WithStatus status) = rnf status
+
+instance NFData (WithStatus sts (Headers '[Header "Location" Text] NoContent)) where
+  rnf (WithStatus status) = rnf status

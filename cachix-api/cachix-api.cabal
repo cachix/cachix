@@ -47,6 +47,7 @@ library
     Cachix.Types.BinaryCache
     Cachix.Types.ByteStringStreaming
     Cachix.Types.ContentTypes
+    Cachix.Types.CreateNarResponse
     Cachix.Types.Deploy
     Cachix.Types.Deployment
     Cachix.Types.DeployResponse

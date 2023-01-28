@@ -193,7 +193,12 @@ watchStore env opts name = do
 watchExec :: Env -> PushOptions -> Text -> Text -> [Text] -> IO ()
 watchExec env pushOpts name cmd args = withPushParams env pushOpts name $ \pushParams -> do
   stdoutOriginal <- hDuplicate stdout
-  let process = (System.Process.proc (toS cmd) (toS <$> args)) {System.Process.std_out = System.Process.UseHandle stdoutOriginal}
+  let process =
+        (System.Process.proc (toS cmd) (toS <$> args))
+          { System.Process.std_out = System.Process.UseHandle stdoutOriginal,
+            -- Interrupt the command first
+            System.Process.delegate_ctlc = True
+          }
       watch = do
         hDuplicateTo stderr stdout -- redirect all stdout to stderr
         WatchStore.startWorkers (pushParamsStore pushParams) (numJobs pushOpts) pushParams

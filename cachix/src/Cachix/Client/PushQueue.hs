@@ -16,14 +16,12 @@ import Cachix.Client.CNix (filterInvalidStorePath)
 import qualified Cachix.Client.Push as Push
 import Cachix.Client.Retry (retryAll)
 import Control.Concurrent.Async
-import Control.Concurrent.Extra (once)
 import Control.Concurrent.STM (TVar, modifyTVar', newTVarIO, readTVar)
 import qualified Control.Concurrent.STM.Lock as Lock
 import qualified Control.Concurrent.STM.TBQueue as TBQueue
 import qualified Data.Set as S
 import Hercules.CNix.Store (StorePath)
 import Protolude
-import qualified System.Posix.Signals as Signals
 import qualified System.Systemd.Daemon as Systemd
 
 type Queue = TBQueue.TBQueue StorePath
@@ -67,12 +65,10 @@ startWorkers numWorkers mkProducer pushParams = do
   progress <- newTVarIO 0
   let pushWorkerState = PushWorkerState newPushQueue progress
   pushWorker <- async $ replicateConcurrently_ numWorkers $ worker pushParams pushWorkerState
-  let signalset =
-        Signals.CatchOnce $
-          exitOnceQueueIsEmpty stopProducerCallback pushWorker queryWorker queryWorkerState pushWorkerState
-  void $ Signals.installHandler Signals.sigINT signalset Nothing
-  void $ Signals.installHandler Signals.sigTERM signalset Nothing
-  (_, eitherException) <- waitAnyCatchCancel [pushWorker, queryWorker]
+  let drainQueue =
+        exitOnceQueueIsEmpty stopProducerCallback pushWorker queryWorker queryWorkerState pushWorkerState
+
+  (_, eitherException) <- waitAnyCatchCancel [pushWorker, queryWorker] `finally` drainQueue
   case eitherException of
     Left exc | fromException exc == Just StopWorker -> return ()
     Left exc -> throwIO exc
@@ -103,15 +99,22 @@ queryLoop workerState pushqueue pushParams = do
   queryLoop (workerState {alreadyQueued = S.union missingStorePathsSet alreadyQueuedSet}) pushqueue pushParams
 
 -- | Stop watching the store and push all pending store paths.
--- This should only be used once per process.
 exitOnceQueueIsEmpty :: IO () -> Async () -> Async () -> QueryWorkerState -> PushWorkerState -> IO ()
-exitOnceQueueIsEmpty stopProducerCallback pushWorker queryWorker queryWorkerState pushWorkerState =
-  join . once $ do
-    putTextError "Stopped watching /nix/store and waiting for queue to empty ..."
-    void Systemd.notifyStopping
-    stopProducerCallback
-    go
+exitOnceQueueIsEmpty stopProducerCallback pushWorker queryWorker queryWorkerState pushWorkerState = do
+  putTextError "Stopped watching /nix/store and waiting for queue to empty ..."
+
+  -- Skip uploading the remaining paths when run in an interruptible mask.
+  getMaskingState >>= \case
+    MaskedUninterruptible -> stopWorkers
+    _ -> do
+      void Systemd.notifyStopping
+      stopProducerCallback
+      go
   where
+    stopWorkers = do
+      cancelWith queryWorker StopWorker
+      cancelWith pushWorker StopWorker
+
     go = do
       (isDone, inprogress, queueLength) <- atomically $ do
         pushQueueLength <- TBQueue.lengthTBQueue $ pushQueue pushWorkerState
@@ -122,9 +125,8 @@ exitOnceQueueIsEmpty stopProducerCallback pushWorker queryWorker queryWorkerStat
         return (isDone, inprogress, pushQueueLength)
       if isDone
         then do
+          stopWorkers
           putTextError "Done."
-          cancelWith queryWorker StopWorker
-          cancelWith pushWorker StopWorker
         else do
           -- extend shutdown for another 90s
           void $ Systemd.notify False $ "EXTEND_TIMEOUT_USEC=" <> show (90 * 1000 * 1000 :: Int)

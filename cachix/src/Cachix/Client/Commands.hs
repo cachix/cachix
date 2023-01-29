@@ -37,6 +37,7 @@ import Cachix.Client.Servant
 import qualified Cachix.Client.WatchStore as WatchStore
 import qualified Cachix.Types.BinaryCache as BinaryCache
 import qualified Cachix.Types.SigningKeyCreate as SigningKeyCreate
+import qualified Control.Concurrent.Async as Async
 import Control.Exception.Safe (throwM)
 import Control.Retry (RetryStatus (rsIterNumber))
 import Crypto.Sign.Ed25519 (PublicKey (PublicKey), createKeypair)
@@ -55,7 +56,6 @@ import Servant.Client.Streaming
 import Servant.Conduit ()
 import System.Directory (doesFileExist)
 import System.IO (hIsTerminalDevice)
-import qualified System.Posix.Signals as Signals
 import qualified System.Process
 
 -- TODO: check that token actually authenticates!
@@ -195,19 +195,29 @@ watchExec env pushOpts name cmd args = withPushParams env pushOpts name $ \pushP
   stdoutOriginal <- hDuplicate stdout
   let process =
         (System.Process.proc (toS cmd) (toS <$> args))
-          { System.Process.std_out = System.Process.UseHandle stdoutOriginal,
-            -- Interrupt the command first
-            System.Process.delegate_ctlc = True
+          { System.Process.std_out = System.Process.UseHandle stdoutOriginal
           }
       watch = do
         hDuplicateTo stderr stdout -- redirect all stdout to stderr
         WatchStore.startWorkers (pushParamsStore pushParams) (numJobs pushOpts) pushParams
-  (_, exitCode) <- concurrently watch $ do
-    (_, _, _, processHandle) <- System.Process.createProcess process
-    exitCode <- System.Process.waitForProcess processHandle
-    Signals.raiseSignal Signals.sigINT
-    return exitCode
-  exitWith exitCode
+
+  Async.withAsync watch $ \watchThread ->
+    bracketOnError
+      (getProcessHandle <$> System.Process.createProcess process)
+      ( \processHandle -> do
+          -- Terminate the process
+          uninterruptibleMask_ (System.Process.terminateProcess processHandle)
+          -- Wait for the process to clean up and exit
+          _ <- System.Process.waitForProcess processHandle
+          -- Stop watching the store and wait for all paths to be pushed
+          Async.cancel watchThread
+      )
+      $ \processHandle -> do
+        exitCode <- System.Process.waitForProcess processHandle
+        Async.cancel watchThread
+        exitWith exitCode
+  where
+    getProcessHandle (_, _, _, processHandle) = processHandle
 
 retryText :: RetryStatus -> Text
 retryText retrystatus =

@@ -12,7 +12,6 @@ where
 import qualified Cachix.Types.BinaryCache as BinaryCache
 import qualified Cachix.Types.ByteStringStreaming as ByteStringStreaming
 import Cachix.Types.ContentTypes
-import Cachix.Types.CreateNarResponse (CreateNarResponse)
 import qualified Cachix.Types.MultipartUpload as Multipart
 import Cachix.Types.NarFileName (NarFileName (..))
 import qualified Cachix.Types.NarInfo as NarInfo
@@ -100,16 +99,6 @@ data BinaryCacheAPI route = BinaryCacheAPI
         :> Capture "narinfohash" NarInfoHash.NarInfoHash
         :> ReqBody '[JSON] NarInfoCreate.NarInfoCreate
         :> Post '[JSON] NoContent,
-    createNar ::
-      route
-        :- Summary "Create an empty NAR and initiate a multipart upload"
-        :> CachixAuth
-        :> "cache"
-        :> Capture "name" Text
-        :> "nar"
-        :> QueryParam "compression" BinaryCache.CompressionMethod
-        :> QueryFlag "uploads"
-        :> Post '[JSON] CreateNarResponse, -- UploadId
     createAndUploadNar ::
       route
         :- Summary "Upload a NAR directly to the Cachix Server"
@@ -121,9 +110,19 @@ data BinaryCacheAPI route = BinaryCacheAPI
         :> QueryParam "compression" BinaryCache.CompressionMethod
         :> StreamBody NoFraming XNixNar (ConduitT () ByteStringStreaming.ByteStringStreaming (ResourceT IO) ())
         :> Post '[JSON] NoContent,
+    createNar ::
+      route
+        :- Summary "Create an empty NAR and initiate a multipart upload"
+        :> CachixAuth
+        :> "cache"
+        :> Capture "name" Text
+        :> "nar"
+        :> QueryParam "compression" BinaryCache.CompressionMethod
+        :> QueryFlag "uploads"
+        :> Post '[JSON] Multipart.CreateMultipartUploadResponse,
     uploadNarPart ::
       route
-        :- Summary "Upload a part of a multipart NAR"
+        :- Summary "Retrieve a presigned URL to upload a part of a multipart NAR"
         :> CachixAuth
         :> "cache"
         :> Capture "name" Text
@@ -131,9 +130,7 @@ data BinaryCacheAPI route = BinaryCacheAPI
         :> Capture "narId" UUID
         :> QueryParam' '[Required] "uploadId" Text
         :> QueryParam' '[Required] "partNumber" Int
-        :> Header' '[Required] "Content-Length" Int
-        :> Header' '[Required] "Content-MD5" (Digest MD5)
-        :> Get '[JSON] (Headers '[Header "Location" Text] NoContent),
+        :> Post '[JSON] Multipart.UploadPartResponse,
     completeNarUpload ::
       route
         :- Summary "Verify the hash digests of each uploaded NAR part"

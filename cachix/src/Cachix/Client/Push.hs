@@ -37,7 +37,6 @@ import Cachix.Client.Secrets
 import Cachix.Client.Servant
 import qualified Cachix.Types.BinaryCache as BinaryCache
 import Cachix.Types.ByteStringStreaming (ByteStringStreaming (..))
-import Cachix.Types.CreateNarResponse (CreateNarResponse (..))
 import qualified Cachix.Types.NarInfoCreate as Api
 import qualified Cachix.Types.NarInfoHash as NarInfoHash
 import Control.Concurrent.Async (mapConcurrently)

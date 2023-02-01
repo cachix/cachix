@@ -1,16 +1,18 @@
 module Cachix.Types.MultipartUpload where
 
 import Data.Aeson (FromJSON, ToJSON)
-import Data.Swagger (ToParamSchema (..), ToSchema)
-import Data.Text (Text)
+import Data.Swagger (ToSchema)
 import Data.UUID (UUID)
 import Protolude
-import Servant.API
 
-data CreateMultipartUpload = CreateMultipartUpload
-  { key :: UUID,
+data CreateMultipartUploadResponse = CreateMultipartUploadResponse
+  { narId :: UUID,
     uploadId :: Text
   }
+  deriving stock (Generic, Show)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, NFData)
+
+newtype UploadPartResponse = UploadPartResponse {uploadUrl :: Text}
   deriving stock (Generic, Show)
   deriving anyclass (ToJSON, FromJSON, ToSchema, NFData)
 

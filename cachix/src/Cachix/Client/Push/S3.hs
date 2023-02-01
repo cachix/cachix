@@ -10,7 +10,6 @@ import Cachix.API.Error
 import Cachix.Client.Push.Conduit (ChunkSize, chunkStream)
 import Cachix.Client.Servant (cachixClient)
 import Cachix.Types.BinaryCache
-import Cachix.Types.CreateNarResponse
 import qualified Cachix.Types.MultipartUpload as Multipart
 import Conduit (MonadResource, MonadUnliftIO, ResourceT)
 import Control.DeepSeq (rwhnf)
@@ -65,7 +64,7 @@ absoluteLinkURI burl apil =
 
 streamUpload :: forall m. (MonadUnliftIO m, MonadResource m) => ClientEnv -> Token -> Text -> Maybe CompressionMethod -> ConduitT ByteString Void m ()
 streamUpload env authToken cacheName compressionMethod = do
-  CreateNarResponse {narId, uploadId} <- createMultipartUpload
+  Multipart.CreateMultipartUploadResponse {narId, uploadId} <- createMultipartUpload
 
   chunkStream (Just partSize)
     .| CC.mapM (uploadPart narId uploadId)
@@ -81,16 +80,14 @@ streamUpload env authToken cacheName compressionMethod = do
 
     uploadPart :: UUID -> Text -> (Int, ByteString) -> m (Maybe Multipart.CompletedPart)
     uploadPart narId uploadId (partNumber, !part) = do
-      let partHash = Crypto.hash part :: Digest MD5
-          partLength = BS.length part
+      -- let partHash = Crypto.hash part :: Digest MD5
 
-      let uploadNarPartRequest = API.uploadNarPart cachixClient authToken cacheName narId uploadId partNumber partLength partHash
-      presignedResponse <- liftIO $ withClientM uploadNarPartRequest env escalate
-      let Header url = (lookupResponseHeader presignedResponse :: ResponseHeader "Location" Text)
+      let uploadNarPartRequest = API.uploadNarPart cachixClient authToken cacheName narId uploadId partNumber
+      Multipart.UploadPartResponse {uploadUrl} <- liftIO $ withClientM uploadNarPartRequest env escalate
 
-      liftIO $ print url
+      liftIO $ print uploadUrl
 
-      initialRequest <- liftIO $ HTTP.parseUrl (toS url)
+      initialRequest <- liftIO $ HTTP.parseRequest (toS uploadUrl)
       let request =
             initialRequest
               { HTTP.method = "PUT",

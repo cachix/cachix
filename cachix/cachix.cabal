@@ -22,6 +22,7 @@ extra-source-files:
 common defaults
   default-extensions:
     NoImplicitPrelude
+    NoImportQualifiedPost
     DeriveAnyClass
     DeriveGeneric
     DerivingVia
@@ -60,6 +61,8 @@ library
     Cachix.Client.NixVersion
     Cachix.Client.OptionsParser
     Cachix.Client.Push
+    Cachix.Client.Push.Conduit
+    Cachix.Client.Push.S3
     Cachix.Client.PushQueue
     Cachix.Client.Retry
     Cachix.Client.Secrets
@@ -96,6 +99,7 @@ library
     , containers
     , cookie
     , cryptonite
+    , deepseq
     , dhall                   >=1.28.0
     , directory
     , ed25519
@@ -118,6 +122,7 @@ library
     , memory
     , mmorph
     , netrc
+    , network-uri
     , optparse-applicative
     , pretty-terminal
     , prettyprinter

@@ -30,6 +30,8 @@ import Cachix.API.Error
 import Cachix.API.Signing (fingerprint, passthroughHashSink, passthroughHashSinkB16, passthroughSizeSink)
 import qualified Cachix.Client.Config as Config
 import Cachix.Client.Exception (CachixException (..))
+import Cachix.Client.Push.Conduit (chunkStream)
+import qualified Cachix.Client.Push.S3 as Push.S3
 import Cachix.Client.Retry (retryAll)
 import Cachix.Client.Secrets
 import Cachix.Client.Servant
@@ -44,7 +46,7 @@ import Control.Exception.Safe (MonadMask, throwM)
 import Control.Monad.Trans.Resource (ResourceT)
 import Control.Retry (RetryStatus)
 import Crypto.Sign.Ed25519
-import qualified Data.ByteString as ByteString
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base64 as B64
 import Data.Coerce (coerce)
 import Data.Conduit
@@ -174,6 +176,12 @@ uploadStorePath cache storePath retrystatus = do
       storePathSize = Store.validPathInfoNarSize pathinfo
   onAttempt strategy retrystatus storePathSize
   withCompressor $ \compressor -> do
+    let newClientEnv =
+          clientEnv
+            { baseUrl = (baseUrl clientEnv) {baseUrlHost = toS name <> "." <> baseUrlHost (baseUrl clientEnv)}
+            }
+    let authToken = getCacheAuthToken (pushParamsSecret cache)
+
     let stream' =
           streamNarIO narEffectsIO (toS storePathText) Data.Conduit.yield
             .| passthroughSizeSink narSizeRef
@@ -181,58 +189,9 @@ uploadStorePath cache storePath retrystatus = do
             .| compressor
             .| passthroughSizeSink fileSizeRef
             .| passthroughHashSinkB16 fileHashRef
-            .| sinkLbs
-    -- if (fromIntegral storePathSize / (1024 * 1024) :: Double) > 100
 
-    let stripHeader "Authorization" = True
-        stripHeader _ = False
-    -- skipCodes3xx _ response = HTTP.statusIsRedirection
-    let stripHeadersOnRedirect baseUrl request =
-          (defaultMakeClientRequest baseUrl request)
-            { HTTP.checkResponse = \_ _ -> pure (),
-              HTTP.redirectCount = 1,
-              HTTP.shouldStripHeaderOnRedirect = stripHeader
-            }
-    let newClientEnv =
-          clientEnv
-            { baseUrl = (baseUrl clientEnv) {baseUrlHost = toS name <> "." <> baseUrlHost (baseUrl clientEnv)},
-              makeClientRequest = stripHeadersOnRedirect
-            }
-
-    -- Create an empty NAR and retrieve an upload URL
-    let authToken = getCacheAuthToken (pushParamsSecret cache)
-    CreateNarResponse {narId, uploadId} <-
-      liftIO $
-        (`withClientM` newClientEnv)
-          (API.createNar cachixClient authToken name (Just $ compressionMethod strategy) True)
-          escalate
-
-    print narId
-
-    bodyLbs <- liftIO (runConduitRes stream')
-    let body = bodyLbs & ByteString.toStrict & ByteStringStreaming
-
-    resp <-
-      liftIO $
-        runClientM
-          (API.uploadNarPart cachixClient authToken name narId uploadId 1 body)
-          newClientEnv
-
-    print "Uploaded!"
-    -- print (getHeaders . getHeadersHList $ resp)
-
-    liftIO exitSuccess
-
-    -- PUT the NAR to the provided URL
-    -- initUploadRequest <- HTTP.parseRequest (toS narUrl)
-    -- let uploadRequest =
-    --       initUploadRequest {
-    --         HTTP.method = "PUT",
-    --         HTTP.requestBody = HTTP.Conduit.requestBodySource 0 stream'
-    --       }
-    -- putResponse <- liftIO $ HTTP.httpNoBody uploadRequest (manager clientEnv)
-    -- print putResponse
-    -- liftIO exitSuccess
+    let uploadStream = Push.S3.streamUpload newClientEnv authToken name (Just $ compressionMethod strategy)
+    _ <- liftIO $ runConduitRes $ stream' .| uploadStream
 
     _ <- liftIO $ do
       narSize <- readIORef narSizeRef

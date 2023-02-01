@@ -13,6 +13,7 @@ import qualified Cachix.Types.BinaryCache as BinaryCache
 import qualified Cachix.Types.ByteStringStreaming as ByteStringStreaming
 import Cachix.Types.ContentTypes
 import Cachix.Types.CreateNarResponse (CreateNarResponse)
+import qualified Cachix.Types.MultipartUpload as Multipart
 import Cachix.Types.NarFileName (NarFileName (..))
 import qualified Cachix.Types.NarInfo as NarInfo
 import qualified Cachix.Types.NarInfoCreate as NarInfoCreate
@@ -22,6 +23,7 @@ import Cachix.Types.Servant (Get302, Head, Post302)
 import Cachix.Types.Session (Session)
 import qualified Cachix.Types.SigningKeyCreate as SigningKeyCreate
 import Control.Monad.Trans.Resource
+import Crypto.Hash (Digest, MD5)
 import qualified Data.ByteString.Lazy as LazyByteString
 import Data.Conduit (ConduitT)
 import Data.UUID (UUID)
@@ -111,7 +113,7 @@ data BinaryCacheAPI route = BinaryCacheAPI
     createAndUploadNar ::
       route
         :- Summary "Upload a NAR directly to the Cachix Server"
-        :> Description "This is a backwards-compatible API for legacy Cachix clients. Use 'createNar' instead."
+        :> Description "This is a legacy API for older Cachix clients. Use 'createNar' instead."
         :> CachixAuth
         :> "cache"
         :> Capture "name" Text
@@ -129,10 +131,9 @@ data BinaryCacheAPI route = BinaryCacheAPI
         :> Capture "narId" UUID
         :> QueryParam' '[Required] "uploadId" Text
         :> QueryParam' '[Required] "partNumber" Int
-        :> ReqBody '[XNixNar] ByteStringStreaming.ByteStringStreaming
-        -- :> Verb 'PUT 307 '[XNixNar] (Headers '[Header "Location" Text] NoContent),
-        -- So, UVerb doesn't like NoContent
-        :> UVerb 'PUT '[XNixNar] '[WithStatus 307 (Headers '[Header "Location" Text] NoContent), WithStatus 200 NoContent],
+        :> Header' '[Required] "Content-Length" Int
+        :> Header' '[Required] "Content-MD5" (Digest MD5)
+        :> Get '[JSON] (Headers '[Header "Location" Text] NoContent),
     completeNarUpload ::
       route
         :- Summary "Verify the hash digests of each uploaded NAR part"
@@ -140,7 +141,9 @@ data BinaryCacheAPI route = BinaryCacheAPI
         :> "cache"
         :> Capture "name" Text
         :> "nar"
-        :> QueryParam "uploadId" Text
+        :> Capture "narId" UUID
+        :> QueryParam' '[Required] "uploadId" Text
+        :> ReqBody '[JSON] Multipart.CompletedMultipartUpload
         :> Post '[JSON] NoContent,
     serveNarContent ::
       route

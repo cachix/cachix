@@ -18,13 +18,16 @@ newtype UploadPartResponse = UploadPartResponse {uploadUrl :: Text}
 
 data CompletedPart = CompletedPart
   { partNumber :: Int,
+    partHash :: Text,
     eTag :: Text
   }
   deriving stock (Generic, Show)
   deriving anyclass (ToJSON, FromJSON, ToSchema, NFData)
 
 data CompletedMultipartUpload = CompletedMultipartUpload
-  { parts :: Maybe (NonEmpty CompletedPart)
+  { parts :: Maybe (NonEmpty CompletedPart),
+    fileHash :: Text,
+    fileSize :: Integer
   }
   deriving stock (Generic, Show)
   deriving anyclass (ToJSON, FromJSON, ToSchema, NFData)

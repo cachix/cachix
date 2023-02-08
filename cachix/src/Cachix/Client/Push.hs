@@ -145,7 +145,7 @@ getCacheAuthToken (PushToken token) = token
 getCacheAuthToken (PushSigningKey token _) = token
 
 uploadStorePath ::
-  (MonadIO m, MonadMask m) =>
+  (MonadIO m) =>
   -- | details for pushing to cache
   PushParams m r ->
   StorePath ->
@@ -158,6 +158,7 @@ uploadStorePath cache storePath retrystatus = do
   storePathText <- liftIO $ Store.storePathToPath store storePath
   let (storeHash, storeSuffix) = splitStorePath $ toS storePathText
       name = pushParamsName cache
+      authToken = getCacheAuthToken (pushParamsSecret cache)
       clientEnv = pushParamsClientEnv cache
       strategy = pushParamsStrategy cache storePath
       withCompressor = case compressionMethod strategy of
@@ -170,27 +171,24 @@ uploadStorePath cache storePath retrystatus = do
   -- This should be a noop because storePathText came from a StorePath
   normalized <- liftIO $ Store.followLinksToStorePath store $ toS storePathText
   pathinfo <- liftIO $ Store.queryPathInfo store normalized
-  -- stream store path as xz compressed nar file
   let storePathSize :: Int64
       storePathSize = Store.validPathInfoNarSize pathinfo
   onAttempt strategy retrystatus storePathSize
   withCompressor $ \compressor -> do
-    let newClientEnv =
+    let cacheClientEnv =
           clientEnv
             { baseUrl = (baseUrl clientEnv) {baseUrlHost = toS name <> "." <> baseUrlHost (baseUrl clientEnv)}
             }
-    let authToken = getCacheAuthToken (pushParamsSecret cache)
 
-    let stream' =
-          streamNarIO narEffectsIO (toS storePathText) Data.Conduit.yield
-            .| passthroughSizeSink narSizeRef
-            .| passthroughHashSink narHashRef
-            .| compressor
-            .| passthroughSizeSink fileSizeRef
-            .| passthroughHashSinkB16 fileHashRef
-
-    let uploadStream = Push.S3.streamUpload newClientEnv authToken name (Just $ compressionMethod strategy)
-    _ <- liftIO $ runConduitRes $ stream' .| uploadStream
+    _ <-
+      liftIO . runConduitRes $
+        streamNarIO narEffectsIO (toS storePathText) Data.Conduit.yield
+          .| passthroughSizeSink narSizeRef
+          .| passthroughHashSink narHashRef
+          .| compressor
+          .| passthroughSizeSink fileSizeRef
+          .| passthroughHashSinkB16 fileHashRef
+          .| Push.S3.streamUpload cacheClientEnv authToken name (compressionMethod strategy) fileSizeRef fileHashRef
 
     _ <- liftIO $ do
       narSize <- readIORef narSizeRef
@@ -208,9 +206,9 @@ uploadStorePath cache storePath retrystatus = do
       referencesPaths <- sort . fmap toS <$> for referencesPathSet (Store.storePathToPath store)
       references <- sort . fmap toS <$> for referencesPathSet Store.getStorePathBaseName
       let fp = fingerprint (decodeUtf8With lenientDecode storePathText) narHash narSize referencesPaths
-          (sig, authToken) = case pushParamsSecret cache of
-            PushToken token -> (Nothing, token)
-            PushSigningKey token signKey -> (Just $ toS $ B64.encode $ unSignature $ dsign (signingSecretKey signKey) fp, token)
+          sig = case pushParamsSecret cache of
+            PushToken _ -> Nothing
+            PushSigningKey _ signKey -> Just $ toS $ B64.encode $ unSignature $ dsign (signingSecretKey signKey) fp
           nic =
             Api.NarInfoCreate
               { Api.cStoreHash = storeHash,

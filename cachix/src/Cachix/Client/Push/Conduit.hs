@@ -13,7 +13,7 @@ import Protolude hiding (hash, yield)
 type ChunkSize = Int
 
 minimumChunkSize :: ChunkSize
-minimumChunkSize = 6 * 1024 * 1024
+minimumChunkSize = 5 * 1024 * 1024
 
 chunkStream :: (MonadUnliftIO m) => Maybe ChunkSize -> ConduitT ByteString (Int, ByteString) m ()
 chunkStream mChunkSize = do

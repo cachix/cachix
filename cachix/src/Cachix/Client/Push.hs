@@ -37,6 +37,7 @@ import Cachix.Client.Secrets
 import Cachix.Client.Servant
 import qualified Cachix.Types.BinaryCache as BinaryCache
 import Cachix.Types.ByteStringStreaming (ByteStringStreaming (..))
+import qualified Cachix.Types.MultipartUpload as Multipart
 import qualified Cachix.Types.NarInfoCreate as Api
 import qualified Cachix.Types.NarInfoHash as NarInfoHash
 import Control.Concurrent.Async (mapConcurrently)
@@ -157,30 +158,31 @@ uploadStorePath cache storePath retrystatus = do
   -- TODO: storePathText is redundant. Use storePath directly.
   storePathText <- liftIO $ Store.storePathToPath store storePath
   let (storeHash, storeSuffix) = splitStorePath $ toS storePathText
-      name = pushParamsName cache
+      cacheName = pushParamsName cache
       authToken = getCacheAuthToken (pushParamsSecret cache)
       clientEnv = pushParamsClientEnv cache
       strategy = pushParamsStrategy cache storePath
       withCompressor = case compressionMethod strategy of
         BinaryCache.XZ -> defaultWithXzipCompressorWithLevel (compressionLevel strategy)
         BinaryCache.ZSTD -> defaultWithZstdCompressorWithLevel (compressionLevel strategy)
+
   narSizeRef <- liftIO $ newIORef 0
   fileSizeRef <- liftIO $ newIORef 0
   narHashRef <- liftIO $ newIORef ("" :: ByteString)
   fileHashRef <- liftIO $ newIORef ("" :: ByteString)
+
   -- This should be a noop because storePathText came from a StorePath
   normalized <- liftIO $ Store.followLinksToStorePath store $ toS storePathText
   pathinfo <- liftIO $ Store.queryPathInfo store normalized
-  let storePathSize :: Int64
-      storePathSize = Store.validPathInfoNarSize pathinfo
+  let storePathSize = Store.validPathInfoNarSize pathinfo
   onAttempt strategy retrystatus storePathSize
   withCompressor $ \compressor -> do
     let cacheClientEnv =
           clientEnv
-            { baseUrl = (baseUrl clientEnv) {baseUrlHost = toS name <> "." <> baseUrlHost (baseUrl clientEnv)}
+            { baseUrl = (baseUrl clientEnv) {baseUrlHost = toS cacheName <> "." <> baseUrlHost (baseUrl clientEnv)}
             }
 
-    _ <-
+    (narId, uploadId, parts) <-
       liftIO . runConduitRes $
         streamNarIO narEffectsIO (toS storePathText) Data.Conduit.yield
           .| passthroughSizeSink narSizeRef
@@ -188,7 +190,7 @@ uploadStorePath cache storePath retrystatus = do
           .| compressor
           .| passthroughSizeSink fileSizeRef
           .| passthroughHashSinkB16 fileHashRef
-          .| Push.S3.streamUpload cacheClientEnv authToken name (compressionMethod strategy) fileSizeRef fileHashRef
+          .| Push.S3.streamUpload cacheClientEnv authToken cacheName (compressionMethod strategy)
 
     _ <- liftIO $ do
       narSize <- readIORef narSizeRef
@@ -222,14 +224,16 @@ uploadStorePath cache storePath retrystatus = do
                 Api.cSig = sig
               }
       escalate $ Api.isNarInfoCreateValid nic
-      -- Upload narinfo with signature
-      escalate <=< (`runClientM` clientEnv) $
-        API.createNarinfo
-          cachixClient
-          authToken
-          name
-          (NarInfoHash.NarInfoHash storeHash)
-          nic
+
+      -- Complete the multipart upload and upload the narinfo
+      let completeMultipartUploadRequest =
+            API.completeNarUpload cachixClient authToken cacheName narId uploadId $
+              Multipart.CompletedMultipartUpload
+                { Multipart.parts = parts,
+                  Multipart.narInfoCreate = nic
+                }
+      void . liftIO $ withClientM completeMultipartUploadRequest cacheClientEnv escalate
+
     onDone strategy
 
 -- | Push an entire closure

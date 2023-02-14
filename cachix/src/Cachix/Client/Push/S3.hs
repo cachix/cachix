@@ -41,16 +41,13 @@ streamUpload ::
   Token ->
   Text ->
   CompressionMethod ->
-  IORef.IORef Integer ->
-  IORef.IORef ByteString ->
-  ConduitT ByteString Void m ()
-streamUpload env authToken cacheName compressionMethod fileSizeRef fileHashRef = do
+  ConduitT ByteString Void m (UUID, Text, Maybe (NonEmpty Multipart.CompletedPart))
+streamUpload env authToken cacheName compressionMethod = do
   Multipart.CreateMultipartUploadResponse {narId, uploadId} <- createMultipartUpload
 
   chunkStream (Just partSize)
     .| concurrentMapM_ 10 5 (uploadPart narId uploadId)
     .| completeMultipartUpload narId uploadId
-    .| CC.sinkNull
   where
     manager = Client.manager env
 
@@ -82,17 +79,7 @@ streamUpload env authToken cacheName compressionMethod fileSizeRef fileHashRef =
       let !_ = rwhnf eTag
       return $ Multipart.CompletedPart partNumber (show partHash) <$> eTag
 
-    completeMultipartUpload :: UUID -> Text -> ConduitT (Maybe Multipart.CompletedPart) () m ()
+    -- completeMultipartUpload :: UUID -> Text -> ConduitT (Maybe Multipart.CompletedPart) o m (Maybe (NonEmpty Multipart.CompletedPart))
     completeMultipartUpload narId uploadId = do
       parts <- CC.sinkList
-      fileHash <- liftIO $ IORef.readIORef fileHashRef
-      fileSize <- liftIO $ IORef.readIORef fileSizeRef
-      let body =
-            Multipart.CompletedMultipartUpload
-              { parts = sequenceA $ NonEmpty.fromList parts,
-                fileHash = decodeUtf8 fileHash,
-                fileSize = fileSize
-              }
-      let completeMultipartUploadRequest = API.completeNarUpload cachixClient authToken cacheName narId uploadId body
-      _ <- liftIO $ withClientM completeMultipartUploadRequest env escalate
-      return ()
+      return (narId, uploadId, sequenceA $ NonEmpty.fromList parts)

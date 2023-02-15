@@ -18,7 +18,6 @@ import qualified Crypto.Hash as Crypto
 import Data.Conduit (ConduitT, (.|))
 import qualified Data.Conduit.Combinators as CC
 import Data.Conduit.ConcurrentMap (concurrentMapM_)
-import qualified Data.IORef as IORef
 import Data.List (lookup)
 import qualified Data.List.NonEmpty as NonEmpty
 import Data.UUID (UUID)
@@ -31,8 +30,26 @@ import qualified Servant.Client as Client
 import Servant.Client.Streaming
 import Servant.Conduit ()
 
+-- | The size of each uploaded part.
+--
+-- Common values for S3 are 8MB and 16MB.
+--
+-- Lower values will increase HTTP overhead. Some cloud services impose request body limits.
+-- For example, Amazon API Gateway caps out at 10MB.
 partSize :: ChunkSize
 partSize = 8 * 1024 * 1024
+
+-- | The number of parts to upload concurrently.
+-- Speeds up the upload of very large files.
+concurrentParts :: Int
+concurrentParts = 8
+
+-- | The size of the temporary output buffer.
+--
+-- Keep this value high to avoid stalling smaller uploads while waiting for a large upload to complete.
+-- Each completed upload response is very lightweight.
+outputBufferSize :: Int
+outputBufferSize = 100
 
 streamUpload ::
   forall m.
@@ -46,7 +63,7 @@ streamUpload env authToken cacheName compressionMethod = do
   Multipart.CreateMultipartUploadResponse {narId, uploadId} <- createMultipartUpload
 
   chunkStream (Just partSize)
-    .| concurrentMapM_ 10 5 (uploadPart narId uploadId)
+    .| concurrentMapM_ concurrentParts outputBufferSize (uploadPart narId uploadId)
     .| completeMultipartUpload narId uploadId
   where
     manager = Client.manager env

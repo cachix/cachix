@@ -72,7 +72,7 @@ streamUpload env authToken cacheName compressionMethod = do
     createMultipartUpload =
       liftIO $ withClientM createNarRequest env escalate
       where
-        createNarRequest = API.createNar cachixClient authToken cacheName (Just compressionMethod) True
+        createNarRequest = API.createNar cachixClient authToken cacheName (Just compressionMethod)
 
     uploadPart :: UUID -> Text -> (Int, ByteString) -> m (Maybe Multipart.CompletedPart)
     uploadPart narId uploadId (partNumber, !part) = do

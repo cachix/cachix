@@ -89,47 +89,6 @@ data BinaryCacheAPI route = BinaryCacheAPI
         :> "narurl"
         :> Capture "nar" NarFileName
         :> Get '[JSON] Text,
-    createNarinfo ::
-      route
-        :- CachixAuth
-        :> "cache"
-        :> Capture "name" Text
-        :> Capture "narinfohash" NarInfoHash.NarInfoHash
-        :> ReqBody '[JSON] NarInfoCreate.NarInfoCreate
-        :> Post '[JSON] NoContent,
-    createNar ::
-      route
-        :- Summary "Create an empty NAR and initiate a multipart upload"
-        :> CachixAuth
-        :> "cache"
-        :> Capture "name" Text
-        :> "nar"
-        :> QueryParam "compression" BinaryCache.CompressionMethod
-        :> QueryFlag "multipart"
-        :> Post '[JSON] Multipart.CreateMultipartUploadResponse,
-    completeNarUpload ::
-      route
-        :- Summary "Complete a multipart upload"
-        :> Description "Verify the hash digests of each uploaded NAR part"
-        :> CachixAuth
-        :> "cache"
-        :> Capture "name" Text
-        :> "nar"
-        :> Capture "narId" UUID
-        :> QueryParam' '[Required] "uploadId" Text
-        :> ReqBody '[JSON] Multipart.CompletedMultipartUpload
-        :> Post '[JSON] NoContent,
-    uploadNarPart ::
-      route
-        :- Summary "Retrieve a presigned URL to upload a part of a multipart NAR"
-        :> CachixAuth
-        :> "cache"
-        :> Capture "name" Text
-        :> "nar"
-        :> Capture "narId" UUID
-        :> QueryParam' '[Required] "uploadId" Text
-        :> QueryParam' '[Required] "partNumber" Int
-        :> Post '[JSON] Multipart.UploadPartResponse,
     createAndUploadNar ::
       route
         :- Summary "Upload a NAR directly to the Cachix Server"
@@ -140,6 +99,46 @@ data BinaryCacheAPI route = BinaryCacheAPI
         :> "nar"
         :> QueryParam "compression" BinaryCache.CompressionMethod
         :> StreamBody NoFraming XNixNar (ConduitT () ByteStringStreaming.ByteStringStreaming (ResourceT IO) ())
+        :> Post '[JSON] NoContent,
+    createNar ::
+      route
+        :- Summary "Create an empty NAR and initiate a multipart upload"
+        :> CachixAuth
+        :> "cache"
+        :> Capture "name" Text
+        :> "multipart-nar"
+        :> QueryParam "compression" BinaryCache.CompressionMethod
+        :> Post '[JSON] Multipart.CreateMultipartUploadResponse,
+    completeNarUpload ::
+      route
+        :- Summary "Complete a multipart upload"
+        :> Description "Verify the hash digests of each uploaded NAR part"
+        :> CachixAuth
+        :> "cache"
+        :> Capture "name" Text
+        :> "multipart-nar"
+        :> Capture "narId" UUID
+        :> QueryParam' '[Required] "uploadId" Text
+        :> ReqBody '[JSON] Multipart.CompletedMultipartUpload
+        :> Post '[JSON] NoContent,
+    uploadNarPart ::
+      route
+        :- Summary "Retrieve a presigned URL to upload a part of a multipart NAR"
+        :> CachixAuth
+        :> "cache"
+        :> Capture "name" Text
+        :> "multipart-nar"
+        :> Capture "narId" UUID
+        :> QueryParam' '[Required] "uploadId" Text
+        :> QueryParam' '[Required] "partNumber" Int
+        :> Post '[JSON] Multipart.UploadPartResponse,
+    createNarinfo ::
+      route
+        :- CachixAuth
+        :> "cache"
+        :> Capture "name" Text
+        :> Capture "narinfohash" NarInfoHash.NarInfoHash
+        :> ReqBody '[JSON] NarInfoCreate.NarInfoCreate
         :> Post '[JSON] NoContent,
     serveNarContent ::
       route

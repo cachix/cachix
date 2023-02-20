@@ -15,6 +15,8 @@ import Conduit (MonadResource, MonadUnliftIO)
 import Control.DeepSeq (rwhnf)
 import Crypto.Hash (Digest, SHA256)
 import qualified Crypto.Hash as Crypto
+import qualified Data.ByteArray as BA
+import qualified Data.ByteString.Base64 as B64
 import Data.Conduit (ConduitT, (.|))
 import qualified Data.Conduit.Combinators as CC
 import Data.Conduit.ConcurrentMap (concurrentMapM_)
@@ -74,13 +76,16 @@ streamUpload env authToken cacheName compressionMethod = do
       where
         createNarRequest = API.createNar cachixClient authToken cacheName (Just compressionMethod)
 
+    -- Cloudflare doesn't support SHA256 checksum verification.
     uploadPart :: UUID -> Text -> (Int, ByteString) -> m (Maybe Multipart.CompletedPart)
     uploadPart narId uploadId (partNumber, !part) = do
+      let partHash :: Digest SHA256 = Crypto.hash part
+          partHashB64 = decodeUtf8 $ B64.encode (BA.convert partHash)
+
       -- TODO: we could prefetch the upload URL beforehand
       let uploadNarPartRequest = API.uploadNarPart cachixClient authToken cacheName narId uploadId partNumber
       Multipart.UploadPartResponse {uploadUrl} <- liftIO $ withClientM uploadNarPartRequest env escalate
 
-      let partHash :: Digest SHA256 = Crypto.hash part
       initialRequest <- liftIO $ HTTP.parseUrlThrow (toS uploadUrl)
       let request =
             initialRequest
@@ -90,11 +95,12 @@ streamUpload env authToken cacheName compressionMethod = do
                   [ ("Content-Type", "application/octet-stream")
                   ]
               }
+
       response <- liftIO $ HTTP.httpNoBody request manager
       let eTag = decodeUtf8 <$> lookup HTTP.hETag (HTTP.responseHeaders response)
       -- Strictly evaluate each eTag after uploading each part
       let !_ = rwhnf eTag
-      return $ Multipart.CompletedPart partNumber (show partHash) <$> eTag
+      return $ Multipart.CompletedPart partNumber partHashB64 <$> eTag
 
     -- completeMultipartUpload :: UUID -> Text -> ConduitT (Maybe Multipart.CompletedPart) o m (Maybe (NonEmpty Multipart.CompletedPart))
     completeMultipartUpload narId uploadId = do

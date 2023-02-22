@@ -80,7 +80,6 @@ streamUpload env authToken cacheName compressionMethod = do
       let !partHash :: Digest SHA256 = Crypto.hash part
           !partHashB16 = convertToBase Base16 partHash
           !partHashT = decodeUtf8 partHashB16
-      print partHashT
 
       -- TODO: we could prefetch the upload URL beforehand
       let uploadNarPartRequest = API.uploadNarPart cachixClient authToken cacheName narId uploadId partNumber (Multipart.UploadPartRequest partHashT)

@@ -16,7 +16,7 @@ import Control.DeepSeq (rwhnf)
 import Crypto.Hash (Digest, SHA256)
 import qualified Crypto.Hash as Crypto
 import Data.ByteArray.Encoding (Base (..), convertToBase)
-import Data.Conduit (ConduitT, (.|))
+import Data.Conduit (ConduitT, handleC, (.|))
 import qualified Data.Conduit.Combinators as CC
 import Data.Conduit.ConcurrentMap (concurrentMapM_)
 import Data.List (lookup)
@@ -59,13 +59,18 @@ streamUpload ::
   Token ->
   Text ->
   CompressionMethod ->
-  ConduitT ByteString Void m (UUID, Text, Maybe (NonEmpty Multipart.CompletedPart))
+  ConduitT
+    ByteString
+    Void
+    m
+    (Either SomeException (UUID, Text, Maybe (NonEmpty Multipart.CompletedPart)))
 streamUpload env authToken cacheName compressionMethod = do
   Multipart.CreateMultipartUploadResponse {narId, uploadId} <- createMultipartUpload
 
-  chunkStream (Just partSize)
-    .| concurrentMapM_ concurrentParts outputBufferSize (uploadPart narId uploadId)
-    .| completeMultipartUpload narId uploadId
+  handleC (abortMultipartUpload narId uploadId) $
+    chunkStream (Just partSize)
+      .| concurrentMapM_ concurrentParts outputBufferSize (uploadPart narId uploadId)
+      .| completeMultipartUpload narId uploadId
   where
     manager = Client.manager env
 
@@ -104,4 +109,9 @@ streamUpload env authToken cacheName compressionMethod = do
 
     completeMultipartUpload narId uploadId = do
       parts <- CC.sinkList
-      return (narId, uploadId, sequenceA $ NonEmpty.fromList parts)
+      return $ Right (narId, uploadId, sequenceA $ NonEmpty.fromList parts)
+
+    abortMultipartUpload narId uploadId err = do
+      let abortMultipartUploadRequest = API.abortMultipartUpload cachixClient authToken cacheName narId uploadId
+      _ <- liftIO $ withClientM abortMultipartUploadRequest env escalate
+      return $ Left err

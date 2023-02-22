@@ -182,7 +182,7 @@ uploadStorePath cache storePath retrystatus = do
   onAttempt strategy retrystatus storePathSize
 
   withCompressor $ \compressor -> liftIO $ do
-    (narId, uploadId, parts) <-
+    uploadResult <-
       runConduitRes $
         streamNarIO narEffectsIO (toS storePathText) Data.Conduit.yield
           .| passthroughSizeSink narSizeRef
@@ -192,46 +192,49 @@ uploadStorePath cache storePath retrystatus = do
           .| passthroughHashSinkB16 fileHashRef
           .| Push.S3.streamUpload cacheClientEnv authToken cacheName (compressionMethod strategy)
 
-    narSize <- readIORef narSizeRef
-    narHash <- ("sha256:" <>) . System.Nix.Base32.encode <$> readIORef narHashRef
-    narHashNix <- Store.validPathInfoNarHash32 pathinfo
-    when (narHash /= toS narHashNix) $ throwM $ NarHashMismatch $ toS storePathText <> ": Nar hash mismatch between nix-store --dump and nix db. You can repair db metadata by running as root: $ nix-store --verify --repair --check-contents"
-    fileHash <- readIORef fileHashRef
-    fileSize <- readIORef fileSizeRef
-    deriverPath <-
-      if omitDeriver strategy
-        then pure Nothing
-        else Store.validPathInfoDeriver store pathinfo
-    deriver <- for deriverPath Store.getStorePathBaseName
-    referencesPathSet <- Store.validPathInfoReferences store pathinfo
-    referencesPaths <- sort . fmap toS <$> for referencesPathSet (Store.storePathToPath store)
-    references <- sort . fmap toS <$> for referencesPathSet Store.getStorePathBaseName
-    let fp = fingerprint (decodeUtf8With lenientDecode storePathText) narHash narSize referencesPaths
-        sig = case pushParamsSecret cache of
-          PushToken _ -> Nothing
-          PushSigningKey _ signKey -> Just $ toS $ B64.encode $ unSignature $ dsign (signingSecretKey signKey) fp
-        nic =
-          Api.NarInfoCreate
-            { Api.cStoreHash = storeHash,
-              Api.cStoreSuffix = storeSuffix,
-              Api.cNarHash = narHash,
-              Api.cNarSize = narSize,
-              Api.cFileSize = fileSize,
-              Api.cFileHash = toS fileHash,
-              Api.cReferences = references,
-              Api.cDeriver = maybe "unknown-deriver" (decodeUtf8With lenientDecode) deriver,
-              Api.cSig = sig
-            }
-    escalate $ Api.isNarInfoCreateValid nic
+    case uploadResult of
+      Left err -> throwIO err
+      Right (narId, uploadId, parts) -> do
+        narSize <- readIORef narSizeRef
+        narHash <- ("sha256:" <>) . System.Nix.Base32.encode <$> readIORef narHashRef
+        narHashNix <- Store.validPathInfoNarHash32 pathinfo
+        when (narHash /= toS narHashNix) $ throwM $ NarHashMismatch $ toS storePathText <> ": Nar hash mismatch between nix-store --dump and nix db. You can repair db metadata by running as root: $ nix-store --verify --repair --check-contents"
+        fileHash <- readIORef fileHashRef
+        fileSize <- readIORef fileSizeRef
+        deriverPath <-
+          if omitDeriver strategy
+            then pure Nothing
+            else Store.validPathInfoDeriver store pathinfo
+        deriver <- for deriverPath Store.getStorePathBaseName
+        referencesPathSet <- Store.validPathInfoReferences store pathinfo
+        referencesPaths <- sort . fmap toS <$> for referencesPathSet (Store.storePathToPath store)
+        references <- sort . fmap toS <$> for referencesPathSet Store.getStorePathBaseName
+        let fp = fingerprint (decodeUtf8With lenientDecode storePathText) narHash narSize referencesPaths
+            sig = case pushParamsSecret cache of
+              PushToken _ -> Nothing
+              PushSigningKey _ signKey -> Just $ toS $ B64.encode $ unSignature $ dsign (signingSecretKey signKey) fp
+            nic =
+              Api.NarInfoCreate
+                { Api.cStoreHash = storeHash,
+                  Api.cStoreSuffix = storeSuffix,
+                  Api.cNarHash = narHash,
+                  Api.cNarSize = narSize,
+                  Api.cFileSize = fileSize,
+                  Api.cFileHash = toS fileHash,
+                  Api.cReferences = references,
+                  Api.cDeriver = maybe "unknown-deriver" (decodeUtf8With lenientDecode) deriver,
+                  Api.cSig = sig
+                }
+        escalate $ Api.isNarInfoCreateValid nic
 
-    -- Complete the multipart upload and upload the narinfo
-    let completeMultipartUploadRequest =
-          API.completeNarUpload cachixClient authToken cacheName narId uploadId $
-            Multipart.CompletedMultipartUpload
-              { Multipart.parts = parts,
-                Multipart.narInfoCreate = nic
-              }
-    void $ withClientM completeMultipartUploadRequest cacheClientEnv escalate
+        -- Complete the multipart upload and upload the narinfo
+        let completeMultipartUploadRequest =
+              API.completeNarUpload cachixClient authToken cacheName narId uploadId $
+                Multipart.CompletedMultipartUpload
+                  { Multipart.parts = parts,
+                    Multipart.narInfoCreate = nic
+                  }
+        void $ withClientM completeMultipartUploadRequest cacheClientEnv escalate
 
   onDone strategy
 

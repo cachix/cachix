@@ -132,6 +132,17 @@ data BinaryCacheAPI route = BinaryCacheAPI
         :> QueryParam' '[Required] "uploadId" Text
         :> QueryParam' '[Required] "partNumber" Int
         :> Post '[JSON] Multipart.UploadPartResponse,
+    abortMultipartUpload ::
+      route
+        :- Summary "Abort a multipart upload"
+        :> CachixAuth
+        :> "cache"
+        :> Capture "name" Text
+        :> "multipart-nar"
+        :> Capture "narUuid" UUID
+        :> "abort"
+        :> QueryParam' '[Required] "uploadId" Text
+        :> Post '[JSON] NoContent,
     createNarinfo ::
       route
         :- CachixAuth

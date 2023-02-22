@@ -2,12 +2,12 @@ module Cachix.Client.Push.Conduit where
 
 import Conduit (MonadUnliftIO)
 import qualified Data.ByteString as BS
-import Data.ByteString.Builder.Extra (byteStringCopy, runBuilder)
-import Data.ByteString.Internal (ByteString (PS))
+import Data.ByteString.Internal (ByteString (PS), mallocByteString)
+import Data.ByteString.Unsafe (unsafeIndex)
 import Data.Conduit (ConduitT, await, yield, (.|))
-import qualified Data.Conduit.Combinators as CC
-import Foreign.ForeignPtr (ForeignPtr, mallocForeignPtrBytes, plusForeignPtr)
+import Foreign.ForeignPtr (ForeignPtr)
 import Foreign.ForeignPtr.Unsafe (unsafeForeignPtrToPtr)
+import Foreign.Storable (pokeByteOff)
 import Protolude hiding (hash, yield)
 
 type ChunkSize = Int
@@ -17,9 +17,7 @@ minimumChunkSize = 5 * 1024 * 1024
 
 chunkStream :: (MonadUnliftIO m) => Maybe ChunkSize -> ConduitT ByteString (Int, ByteString) m ()
 chunkStream mChunkSize = do
-  buffer <- liftIO $ allocBuffer chunkSize
-  unsafeWriteChunksToBuffer buffer
-    .| CC.map (bufferToByteString buffer)
+  processAndChunkOutputRaw chunkSize
     .| enumerateConduit
   where
     chunkSize :: ChunkSize
@@ -35,56 +33,39 @@ chunkStream mChunkSize = do
           loop (i + 1)
     {-# INLINE enumerateConduit #-}
 
--- The number of bytes remaining in a buffer, and the pointer that backs it.
-data Buffer = Buffer {remaining :: !Int, _fptr :: !(ForeignPtr Word8)}
+data S = S (ForeignPtr Word8) (Ptr Word8) {-# UNPACK #-} !Int
 
-data PutResult
-  = Ok Buffer -- Didn't fill the buffer, updated buffer.
-  | Full ByteString -- Buffer is full, the unwritten remaining string.
+newS :: ChunkSize -> IO S
+newS chunkSize = do
+  fptr <- mallocByteString chunkSize
+  return (S fptr (unsafeForeignPtrToPtr fptr) 0)
 
-data BufferResult = FullBuffer | Incomplete Int
-
--- Accepts @ByteString@s and writes them into @Buffer@. When the buffer is full,
--- @FullBuffer@ is emitted. If there is no more input, @Incomplete@ is emitted with
--- the number of bytes remaining in the buffer.
-unsafeWriteChunksToBuffer :: MonadIO m => Buffer -> ConduitT ByteString BufferResult m ()
-unsafeWriteChunksToBuffer buffer0 = awaitLoop buffer0
+processChunk :: ChunkSize -> ByteString -> S -> IO ([ByteString], S)
+processChunk chunkSize input =
+  loop identity 0
   where
-    awaitLoop buf =
-      await
-        >>= maybe
-          (yield $ Incomplete $ remaining buf)
-          ( liftIO . putBuffer buf >=> \case
-              Full next -> yield FullBuffer *> chunkLoop buffer0 next
-              Ok buf' -> awaitLoop buf'
-          )
+    loop front idxIn s@(S fptr ptr idxOut)
+      | idxIn >= BS.length input = return (front [], s)
+      | otherwise = do
+        pokeByteOff ptr idxOut (unsafeIndex input idxIn)
+        let idxOut' = idxOut + 1
+            idxIn' = idxIn + 1
+        if idxOut' >= chunkSize
+          then do
+            let bs = PS fptr 0 idxOut'
+            s' <- newS chunkSize
+            loop (front . (bs :)) idxIn' s'
+          else loop front idxIn' (S fptr ptr idxOut')
 
-    -- Handle inputs which are larger than the chunkSize
-    chunkLoop buf =
-      liftIO . putBuffer buf >=> \case
-        Full next -> yield FullBuffer *> chunkLoop buffer0 next
-        Ok buf' -> awaitLoop buf'
-
-bufferToByteString :: Buffer -> BufferResult -> ByteString
-bufferToByteString (Buffer bufSize fptr) FullBuffer = PS fptr 0 bufSize
-bufferToByteString (Buffer bufSize fptr) (Incomplete remaining) = PS fptr 0 (bufSize - remaining)
-
-allocBuffer :: Int -> IO Buffer
-allocBuffer chunkSize = Buffer chunkSize <$> mallocForeignPtrBytes chunkSize
-
-putBuffer :: Buffer -> ByteString -> IO PutResult
-putBuffer buffer bs
-  | BS.length bs <= remaining buffer =
-    Ok <$> unsafeWriteBuffer buffer bs
-  | otherwise = do
-    let (remainder, rest) = BS.splitAt (remaining buffer) bs
-    Full rest <$ unsafeWriteBuffer buffer remainder
-
--- The length of the bytestring must be less than or equal to the number
--- of bytes remaining.
-unsafeWriteBuffer :: Buffer -> ByteString -> IO Buffer
-unsafeWriteBuffer (Buffer remaining fptr) bs = do
-  let ptr = unsafeForeignPtrToPtr fptr
-      len = BS.length bs
-  _ <- runBuilder (byteStringCopy bs) ptr remaining
-  pure $ Buffer (remaining - len) (plusForeignPtr fptr len)
+processAndChunkOutputRaw :: MonadIO m => ChunkSize -> ConduitT ByteString ByteString m ()
+processAndChunkOutputRaw chunkSize =
+  liftIO (newS chunkSize) >>= loop
+  where
+    loop s@(S fptr _ len) = do
+      mbs <- await
+      case mbs of
+        Nothing -> yield $ PS fptr 0 len
+        Just bs -> do
+          (bss, s') <- liftIO $ processChunk chunkSize bs s
+          mapM_ yield bss
+          loop s'

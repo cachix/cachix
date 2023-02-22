@@ -15,8 +15,7 @@ import Conduit (MonadResource, MonadUnliftIO)
 import Control.DeepSeq (rwhnf)
 import Crypto.Hash (Digest, SHA256)
 import qualified Crypto.Hash as Crypto
-import qualified Data.ByteArray as BA
-import qualified Data.ByteString.Base64 as B64
+import Data.ByteArray.Encoding (Base (..), convertToBase)
 import Data.Conduit (ConduitT, (.|))
 import qualified Data.Conduit.Combinators as CC
 import Data.Conduit.ConcurrentMap (concurrentMapM_)
@@ -76,14 +75,15 @@ streamUpload env authToken cacheName compressionMethod = do
       where
         createNarRequest = API.createNar cachixClient authToken cacheName (Just compressionMethod)
 
-    -- Cloudflare doesn't support SHA256 checksum verification.
     uploadPart :: UUID -> Text -> (Int, ByteString) -> m (Maybe Multipart.CompletedPart)
     uploadPart narId uploadId (partNumber, !part) = do
-      let partHash :: Digest SHA256 = Crypto.hash part
-          partHashB64 = decodeUtf8 $ B64.encode (BA.convert partHash)
+      let !partHash :: Digest SHA256 = Crypto.hash part
+          !partHashB16 = convertToBase Base16 partHash
+          !partHashT = decodeUtf8 partHashB16
+      print partHashT
 
       -- TODO: we could prefetch the upload URL beforehand
-      let uploadNarPartRequest = API.uploadNarPart cachixClient authToken cacheName narId uploadId partNumber
+      let uploadNarPartRequest = API.uploadNarPart cachixClient authToken cacheName narId uploadId partNumber (Multipart.UploadPartRequest partHashT)
       Multipart.UploadPartResponse {uploadUrl} <- liftIO $ withClientM uploadNarPartRequest env escalate
 
       initialRequest <- liftIO $ HTTP.parseUrlThrow (toS uploadUrl)
@@ -92,7 +92,8 @@ streamUpload env authToken cacheName compressionMethod = do
               { HTTP.method = "PUT",
                 HTTP.requestBody = HTTP.RequestBodyBS part,
                 HTTP.requestHeaders =
-                  [ ("Content-Type", "application/octet-stream")
+                  [ ("Content-Type", "application/octet-stream"),
+                    ("X-Amz-Content-SHA256", partHashB16)
                   ]
               }
 
@@ -100,9 +101,8 @@ streamUpload env authToken cacheName compressionMethod = do
       let eTag = decodeUtf8 <$> lookup HTTP.hETag (HTTP.responseHeaders response)
       -- Strictly evaluate each eTag after uploading each part
       let !_ = rwhnf eTag
-      return $ Multipart.CompletedPart partNumber partHashB64 <$> eTag
+      return $ Multipart.CompletedPart partNumber partHashT <$> eTag
 
-    -- completeMultipartUpload :: UUID -> Text -> ConduitT (Maybe Multipart.CompletedPart) o m (Maybe (NonEmpty Multipart.CompletedPart))
     completeMultipartUpload narId uploadId = do
       parts <- CC.sinkList
       return (narId, uploadId, sequenceA $ NonEmpty.fromList parts)

@@ -109,6 +109,18 @@ data BinaryCacheAPI route = BinaryCacheAPI
         :> "multipart-nar"
         :> QueryParam "compression" BinaryCache.CompressionMethod
         :> Post '[JSON] Multipart.CreateMultipartUploadResponse,
+    uploadNarPart ::
+      route
+        :- Summary "Retrieve a presigned URL to upload a part of a multipart NAR"
+        :> CachixAuth
+        :> "cache"
+        :> Capture "name" Text
+        :> "multipart-nar"
+        :> Capture "narUuid" UUID
+        :> QueryParam' '[Required] "uploadId" Text
+        :> QueryParam' '[Required] "partNumber" Int
+        :> ReqBody '[JSON] Multipart.UploadPartRequest
+        :> Post '[JSON] Multipart.UploadPartResponse,
     completeNarUpload ::
       route
         :- Summary "Complete a multipart upload"
@@ -117,21 +129,11 @@ data BinaryCacheAPI route = BinaryCacheAPI
         :> "cache"
         :> Capture "name" Text
         :> "multipart-nar"
-        :> Capture "narId" UUID
+        :> Capture "narUuid" UUID
+        :> "complete"
         :> QueryParam' '[Required] "uploadId" Text
         :> ReqBody '[JSON] Multipart.CompletedMultipartUpload
         :> Post '[JSON] NoContent,
-    uploadNarPart ::
-      route
-        :- Summary "Retrieve a presigned URL to upload a part of a multipart NAR"
-        :> CachixAuth
-        :> "cache"
-        :> Capture "name" Text
-        :> "multipart-nar"
-        :> Capture "narId" UUID
-        :> QueryParam' '[Required] "uploadId" Text
-        :> QueryParam' '[Required] "partNumber" Int
-        :> Post '[JSON] Multipart.UploadPartResponse,
     abortMultipartUpload ::
       route
         :- Summary "Abort a multipart upload"

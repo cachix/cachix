@@ -13,6 +13,13 @@ data CreateMultipartUploadResponse = CreateMultipartUploadResponse
   deriving stock (Generic, Show)
   deriving anyclass (ToJSON, FromJSON, ToSchema, NFData)
 
+data UploadPartRequest = UploadPartRequest
+  { signedPartHash :: Text,
+    signedPartSize :: Int
+  }
+  deriving stock (Generic, Show)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, NFData)
+
 newtype UploadPartResponse = UploadPartResponse {uploadUrl :: Text}
   deriving stock (Generic, Show)
   deriving anyclass (ToJSON, FromJSON, ToSchema, NFData)

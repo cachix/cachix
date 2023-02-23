@@ -16,6 +16,7 @@ import Control.DeepSeq (rwhnf)
 import Crypto.Hash (Digest, SHA256)
 import qualified Crypto.Hash as Crypto
 import Data.ByteArray.Encoding (Base (..), convertToBase)
+import qualified Data.ByteString as BS
 import Data.Conduit (ConduitT, handleC, (.|))
 import qualified Data.Conduit.Combinators as CC
 import Data.Conduit.ConcurrentMap (concurrentMapM_)
@@ -33,12 +34,12 @@ import Servant.Conduit ()
 
 -- | The size of each uploaded part.
 --
--- Common values for S3 are 8MB and 16MB.
+-- Common values for S3 are 8MB and 16MB. The minimum is 5MB.
 --
 -- Lower values will increase HTTP overhead. Some cloud services impose request body limits.
 -- For example, Amazon API Gateway caps out at 10MB.
-partSize :: ChunkSize
-partSize = 8 * 1024 * 1024
+chunkSize :: ChunkSize
+chunkSize = 8 * 1024 * 1024
 
 -- | The number of parts to upload concurrently.
 -- Speeds up the upload of very large files.
@@ -68,7 +69,7 @@ streamUpload env authToken cacheName compressionMethod = do
   Multipart.CreateMultipartUploadResponse {narId, uploadId} <- createMultipartUpload
 
   handleC (abortMultipartUpload narId uploadId) $
-    chunkStream (Just partSize)
+    chunkStream (Just chunkSize)
       .| concurrentMapM_ concurrentParts outputBufferSize (uploadPart narId uploadId)
       .| completeMultipartUpload narId uploadId
   where
@@ -82,12 +83,12 @@ streamUpload env authToken cacheName compressionMethod = do
 
     uploadPart :: UUID -> Text -> (Int, ByteString) -> m (Maybe Multipart.CompletedPart)
     uploadPart narId uploadId (partNumber, !part) = do
-      let !partHash :: Digest SHA256 = Crypto.hash part
+      let !partSize = BS.length part
+          !partHash :: Digest SHA256 = Crypto.hash part
           !partHashB16 = convertToBase Base16 partHash
           !partHashT = decodeUtf8 partHashB16
 
-      -- TODO: we could prefetch the upload URL beforehand
-      let uploadNarPartRequest = API.uploadNarPart cachixClient authToken cacheName narId uploadId partNumber (Multipart.UploadPartRequest partHashT)
+      let uploadNarPartRequest = API.uploadNarPart cachixClient authToken cacheName narId uploadId partNumber (Multipart.UploadPartRequest partHashT partSize)
       Multipart.UploadPartResponse {uploadUrl} <- liftIO $ withClientM uploadNarPartRequest env escalate
 
       initialRequest <- liftIO $ HTTP.parseUrlThrow (toS uploadUrl)

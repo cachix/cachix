@@ -8,6 +8,7 @@ module Cachix.Client.Push.S3 where
 import qualified Cachix.API as API
 import Cachix.API.Error
 import Cachix.Client.Push.Conduit (ChunkSize, chunkStream)
+import Cachix.Client.Retry (retryAll)
 import Cachix.Client.Servant (cachixClient)
 import Cachix.Types.BinaryCache
 import qualified Cachix.Types.MultipartUpload as Multipart
@@ -102,7 +103,7 @@ streamUpload env authToken cacheName compressionMethod = do
                   ]
               }
 
-      response <- liftIO $ HTTP.httpNoBody request manager
+      response <- liftIO $ retryAll $ \_ -> HTTP.httpNoBody request manager
       let eTag = decodeUtf8 <$> lookup HTTP.hETag (HTTP.responseHeaders response)
       -- Strictly evaluate each eTag after uploading each part
       let !_ = rwhnf eTag

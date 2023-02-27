@@ -1,4 +1,4 @@
-module Cachix.Client.Push.Conduit where
+module Data.Conduit.ByteString where
 
 import Conduit (MonadUnliftIO)
 import qualified Data.ByteString as BS

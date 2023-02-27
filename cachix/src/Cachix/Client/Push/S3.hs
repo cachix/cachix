@@ -7,7 +7,6 @@ module Cachix.Client.Push.S3 where
 
 import qualified Cachix.API as API
 import Cachix.API.Error
-import Cachix.Client.Push.Conduit (ChunkSize, chunkStream)
 import Cachix.Client.Retry (retryAll)
 import Cachix.Client.Servant (cachixClient)
 import Cachix.Types.BinaryCache
@@ -19,6 +18,7 @@ import qualified Crypto.Hash as Crypto
 import Data.ByteArray.Encoding (Base (..), convertToBase)
 import qualified Data.ByteString as BS
 import Data.Conduit (ConduitT, handleC, (.|))
+import Data.Conduit.ByteString (ChunkSize, chunkStream)
 import qualified Data.Conduit.Combinators as CC
 import Data.Conduit.ConcurrentMap (concurrentMapM_)
 import Data.List (lookup)

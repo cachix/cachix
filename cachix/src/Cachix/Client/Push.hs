@@ -30,13 +30,11 @@ import Cachix.API.Error
 import Cachix.API.Signing (fingerprint, passthroughHashSink, passthroughHashSinkB16, passthroughSizeSink)
 import qualified Cachix.Client.Config as Config
 import Cachix.Client.Exception (CachixException (..))
-import Cachix.Client.Push.Conduit (chunkStream)
 import qualified Cachix.Client.Push.S3 as Push.S3
 import Cachix.Client.Retry (retryAll)
 import Cachix.Client.Secrets
 import Cachix.Client.Servant
 import qualified Cachix.Types.BinaryCache as BinaryCache
-import Cachix.Types.ByteStringStreaming (ByteStringStreaming (..))
 import qualified Cachix.Types.MultipartUpload as Multipart
 import qualified Cachix.Types.NarInfoCreate as Api
 import qualified Cachix.Types.NarInfoHash as NarInfoHash
@@ -46,11 +44,8 @@ import Control.Exception.Safe (MonadMask, throwM)
 import Control.Monad.Trans.Resource (ResourceT)
 import Control.Retry (RetryStatus)
 import Crypto.Sign.Ed25519
-import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base64 as B64
-import Data.Coerce (coerce)
 import Data.Conduit
-import Data.Conduit.Binary (sinkLbs)
 import qualified Data.Conduit.Lzma as Lzma (compress)
 import qualified Data.Conduit.Zstd as Zstd (compress)
 import Data.IORef
@@ -61,8 +56,6 @@ import Hercules.CNix (StorePath)
 import qualified Hercules.CNix.Std.Set as Std.Set
 import Hercules.CNix.Store (Store)
 import qualified Hercules.CNix.Store as Store
-import qualified Network.HTTP.Client as HTTP
-import qualified Network.HTTP.Conduit as HTTP.Conduit
 import Network.HTTP.Types (status401, status404)
 import Protolude hiding (toS)
 import Protolude.Conv

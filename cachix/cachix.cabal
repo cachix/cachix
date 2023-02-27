@@ -61,7 +61,6 @@ library
     Cachix.Client.NixVersion
     Cachix.Client.OptionsParser
     Cachix.Client.Push
-    Cachix.Client.Push.Conduit
     Cachix.Client.Push.S3
     Cachix.Client.PushQueue
     Cachix.Client.Retry
@@ -80,6 +79,7 @@ library
     Cachix.Deploy.StdinProcess
     Cachix.Deploy.Websocket
     Cachix.Deploy.WebsocketPong
+    Data.Conduit.ByteString
     System.Nix.Base32
 
   hs-source-dirs:    src

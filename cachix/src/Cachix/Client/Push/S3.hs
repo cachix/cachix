@@ -83,9 +83,10 @@ streamUpload env authToken cacheName compressionMethod = do
 
     uploadPart :: UUID -> Text -> (Int, ByteString) -> m (Maybe Multipart.CompletedPart)
     uploadPart narId uploadId (partNumber, !part) = do
-      let !partHashMD5 :: Digest MD5 = Crypto.hash part
+      let partHashMD5 :: Digest MD5 = Crypto.hash part
+          contentMD5 :: ByteString = convertToBase Base64 partHashMD5
 
-      let uploadNarPartRequest = API.uploadNarPart cachixClient authToken cacheName narId uploadId partNumber
+      let uploadNarPartRequest = API.uploadNarPart cachixClient authToken cacheName narId uploadId partNumber (Multipart.SigningData (decodeUtf8 contentMD5))
       Multipart.UploadPartResponse {uploadUrl} <- liftIO $ withClientM uploadNarPartRequest env escalate
 
       initialRequest <- liftIO $ HTTP.parseUrlThrow (toS uploadUrl)
@@ -95,7 +96,7 @@ streamUpload env authToken cacheName compressionMethod = do
                 HTTP.requestBody = HTTP.RequestBodyBS part,
                 HTTP.requestHeaders =
                   [ ("Content-Type", "application/octet-stream"),
-                    ("Content-MD5", convertToBase Base64 partHashMD5)
+                    ("Content-MD5", contentMD5)
                   ]
               }
 

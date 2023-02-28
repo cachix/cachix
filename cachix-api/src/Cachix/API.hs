@@ -119,6 +119,7 @@ data BinaryCacheAPI route = BinaryCacheAPI
         :> Capture "narUuid" UUID
         :> QueryParam' '[Required] "uploadId" Text
         :> QueryParam' '[Required] "partNumber" Int
+        :> ReqBody '[JSON] Multipart.SigningData
         :> Post '[JSON] Multipart.UploadPartResponse,
     completeNarUpload ::
       route

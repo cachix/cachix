@@ -13,6 +13,13 @@ data CreateMultipartUploadResponse = CreateMultipartUploadResponse
   deriving stock (Generic, Show)
   deriving anyclass (ToJSON, FromJSON, ToSchema, NFData)
 
+-- | Any hashes or headers required to create the presigned URL.
+data SigningData = SigningData
+  { contentMD5 :: Text
+  }
+  deriving stock (Generic, Show)
+  deriving anyclass (ToJSON, FromJSON, ToSchema, NFData)
+
 newtype UploadPartResponse = UploadPartResponse {uploadUrl :: Text}
   deriving stock (Generic, Show)
   deriving anyclass (ToJSON, FromJSON, ToSchema, NFData)

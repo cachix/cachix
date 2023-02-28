@@ -152,7 +152,7 @@ commandParser =
               <> short 'j'
               <> help "Number of threads used for pushing store paths."
               <> showDefault
-              <> value 4
+              <> value 8
           )
         <*> switch (long "omit-deriver" <> help "Do not publish which derivations built the store paths.")
     push = (\opts cache f -> Push $ f opts cache) <$> pushOptions <*> nameArg <*> (pushPaths <|> pushWatchStore)

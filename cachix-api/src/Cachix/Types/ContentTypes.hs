@@ -1,7 +1,5 @@
-{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# OPTIONS_GHC -Wno-orphans #-}
 
 module Cachix.Types.ContentTypes
   ( XNixNar,
@@ -11,15 +9,10 @@ module Cachix.Types.ContentTypes
 where
 
 import qualified Cachix.Types.ByteStringStreaming as ByteStringStreaming
-import qualified Cachix.Types.MultipartUpload as MultipartUpload
 import qualified Cachix.Types.NarInfo as NarInfo
 import qualified Cachix.Types.NixCacheInfo as NixCacheInfo
-import Crypto.Hash (Digest, HashAlgorithm, digestFromByteString)
-import Data.ByteArray.Encoding
-import Data.ByteString.Builder (stringUtf8)
 import qualified Data.ByteString.Lazy as BSL
 import Data.Coerce (coerce)
-import Data.Swagger (ToParamSchema (..), ToSchema)
 import qualified Network.HTTP.Media as M
 import Protolude
 import Servant.API
@@ -57,19 +50,8 @@ instance MimeUnrender XNixNar ByteStringStreaming.LazyByteStringStreaming where
 instance MimeRender XNixNar ByteStringStreaming.LazyByteStringStreaming where
   mimeRender _ = coerce
 
-instance MimeUnrender XNixNar ByteString where
-  mimeUnrender _ = Right . BSL.toStrict
+instance MimeRender PlainText ByteStringStreaming.ByteStringStreaming where
+  mimeRender _ = BSL.fromStrict . coerce
 
-instance MimeRender XNixNar ByteString where
-  mimeRender _ = BSL.fromStrict
-
-instance HashAlgorithm a => ToHttpApiData (Digest a) where
-  toHeader = convertToBase Base16
-
-instance HashAlgorithm a => FromHttpApiData (Digest a) where
-  parseHeader encoded = do
-    bs <- first toS (convertFromBase Base16 encoded)
-    maybeToEither "Invalid hash digest" $ digestFromByteString (bs :: ByteString)
-
-instance ToParamSchema (Digest a) where
-  toParamSchema _ = toParamSchema (Proxy :: Proxy Text)
+instance MimeUnrender PlainText ByteStringStreaming.ByteStringStreaming where
+  mimeUnrender _ = Right . coerce . BSL.toStrict

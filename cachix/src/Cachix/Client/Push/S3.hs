@@ -13,10 +13,9 @@ import Cachix.Types.BinaryCache
 import qualified Cachix.Types.MultipartUpload as Multipart
 import Conduit (MonadResource, MonadUnliftIO)
 import Control.DeepSeq (rwhnf)
-import Crypto.Hash (Digest, SHA256)
+import Crypto.Hash (Digest, MD5)
 import qualified Crypto.Hash as Crypto
 import Data.ByteArray.Encoding (Base (..), convertToBase)
-import qualified Data.ByteString as BS
 import Data.Conduit (ConduitT, handleC, (.|))
 import Data.Conduit.ByteString (ChunkSize, chunkStream)
 import qualified Data.Conduit.Combinators as CC
@@ -84,12 +83,9 @@ streamUpload env authToken cacheName compressionMethod = do
 
     uploadPart :: UUID -> Text -> (Int, ByteString) -> m (Maybe Multipart.CompletedPart)
     uploadPart narId uploadId (partNumber, !part) = do
-      let !partSize = BS.length part
-          !partHash :: Digest SHA256 = Crypto.hash part
-          !partHashB16 = convertToBase Base16 partHash
-          !partHashT = decodeUtf8 partHashB16
+      let !partHashMD5 :: Digest MD5 = Crypto.hash part
 
-      let uploadNarPartRequest = API.uploadNarPart cachixClient authToken cacheName narId uploadId partNumber (Multipart.UploadPartRequest partHashT partSize)
+      let uploadNarPartRequest = API.uploadNarPart cachixClient authToken cacheName narId uploadId partNumber
       Multipart.UploadPartResponse {uploadUrl} <- liftIO $ withClientM uploadNarPartRequest env escalate
 
       initialRequest <- liftIO $ HTTP.parseUrlThrow (toS uploadUrl)
@@ -99,7 +95,7 @@ streamUpload env authToken cacheName compressionMethod = do
                 HTTP.requestBody = HTTP.RequestBodyBS part,
                 HTTP.requestHeaders =
                   [ ("Content-Type", "application/octet-stream"),
-                    ("X-Amz-Content-SHA256", partHashB16)
+                    ("Content-MD5", convertToBase Base64 partHashMD5)
                   ]
               }
 
@@ -107,7 +103,7 @@ streamUpload env authToken cacheName compressionMethod = do
       let eTag = decodeUtf8 <$> lookup HTTP.hETag (HTTP.responseHeaders response)
       -- Strictly evaluate each eTag after uploading each part
       let !_ = rwhnf eTag
-      return $ Multipart.CompletedPart partNumber partHashT <$> eTag
+      return $ Multipart.CompletedPart partNumber <$> eTag
 
     completeMultipartUpload narId uploadId = do
       parts <- CC.sinkList

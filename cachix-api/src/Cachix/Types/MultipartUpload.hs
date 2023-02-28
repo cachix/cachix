@@ -30,6 +30,7 @@ type CompletedParts = Maybe (NonEmpty CompletedPart)
 data CompletedMultipartUpload = CompletedMultipartUpload
   { -- | A list of 'CompletedPart`, sorted by the 'partNumber'.
     parts :: CompletedParts,
+    -- | The narinfo to create after verifying the upload.
     narInfoCreate :: NarInfoCreate
   }
   deriving stock (Generic, Show)

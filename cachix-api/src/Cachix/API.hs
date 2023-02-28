@@ -123,7 +123,7 @@ data BinaryCacheAPI route = BinaryCacheAPI
     completeNarUpload ::
       route
         :- Summary "Complete a multipart upload"
-        :> Description "Verify the hash digests of each uploaded NAR part"
+        :> Description "Verify the etags for each part and create the narinfo"
         :> CachixAuth
         :> "cache"
         :> Capture "name" Text

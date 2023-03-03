@@ -52,6 +52,7 @@ library
     Cachix.Types.DeployResponse
     Cachix.Types.DeployResponse.V1
     Cachix.Types.DeployResponse.V2
+    Cachix.Types.MultipartUpload
     Cachix.Types.NarFileName
     Cachix.Types.NarInfo
     Cachix.Types.NarInfoCreate

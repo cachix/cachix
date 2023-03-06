@@ -34,6 +34,7 @@ import qualified Cachix.Client.Push.S3 as Push.S3
 import Cachix.Client.Retry (retryAll)
 import Cachix.Client.Secrets
 import Cachix.Client.Servant
+import qualified Cachix.Client.Store as Store
 import qualified Cachix.Types.BinaryCache as BinaryCache
 import qualified Cachix.Types.MultipartUpload as Multipart
 import qualified Cachix.Types.NarInfoCreate as Api
@@ -52,10 +53,6 @@ import Data.IORef
 import qualified Data.Set as Set
 import Data.String.Here
 import qualified Data.Text as T
-import Hercules.CNix (StorePath)
-import qualified Hercules.CNix.Std.Set as Std.Set
-import Hercules.CNix.Store (Store)
-import qualified Hercules.CNix.Store as Store
 import Network.HTTP.Types (status401, status404)
 import Protolude hiding (toS)
 import Protolude.Conv
@@ -76,10 +73,10 @@ data PushParams m r = PushParams
   { pushParamsName :: Text,
     pushParamsSecret :: PushSecret,
     -- | how to report results, (some) errors, and do some things
-    pushParamsStrategy :: StorePath -> PushStrategy m r,
+    pushParamsStrategy :: Store.StorePath -> PushStrategy m r,
     -- | cachix base url, connection manager, see 'Cachix.Client.URI.defaultCachixBaseUrl', 'Servant.Client.mkClientEnv'
     pushParamsClientEnv :: ClientEnv,
-    pushParamsStore :: Store
+    pushParamsStore :: Store.Store
   }
 
 data PushStrategy m r = PushStrategy
@@ -111,11 +108,10 @@ pushSingleStorePath ::
   -- | details for pushing to cache
   PushParams m r ->
   -- | store path
-  StorePath ->
+  Store.StorePath ->
   -- | r is determined by the 'PushStrategy'
   m r
 pushSingleStorePath cache storePath = retryAll $ \retrystatus -> do
-  storeHash <- liftIO $ Store.getStorePathHash storePath
   let name = pushParamsName cache
       strategy = pushParamsStrategy cache storePath
   -- Check if narinfo already exists
@@ -126,7 +122,7 @@ pushSingleStorePath cache storePath = retryAll $ \retrystatus -> do
           cachixClient
           (getCacheAuthToken (pushParamsSecret cache))
           name
-          (NarInfoHash.NarInfoHash (decodeUtf8With lenientDecode storeHash))
+          (NarInfoHash.NarInfoHash (Store.getStorePathHash storePath))
   case res of
     Right NoContent -> onAlreadyPresent strategy -- we're done as store path is already in the cache
     Left err
@@ -142,14 +138,13 @@ uploadStorePath ::
   (MonadIO m) =>
   -- | details for pushing to cache
   PushParams m r ->
-  StorePath ->
+  Store.StorePath ->
   RetryStatus ->
   -- | r is determined by the 'PushStrategy'
   m r
 uploadStorePath cache storePath retrystatus = do
   let store = pushParamsStore cache
-  -- TODO: storePathText is redundant. Use storePath directly.
-  storePathText <- liftIO $ Store.storePathToPath store storePath
+      storePathText = Store.getPath storePath
   let (storeHash, storeSuffix) = splitStorePath $ toS storePathText
       cacheName = pushParamsName cache
       authToken = getCacheAuthToken (pushParamsSecret cache)
@@ -168,10 +163,9 @@ uploadStorePath cache storePath retrystatus = do
   narHashRef <- liftIO $ newIORef ("" :: ByteString)
   fileHashRef <- liftIO $ newIORef ("" :: ByteString)
 
-  -- This should be a noop because storePathText came from a StorePath
   normalized <- liftIO $ Store.followLinksToStorePath store $ toS storePathText
-  pathinfo <- liftIO $ Store.queryPathInfo store normalized
-  let storePathSize = Store.validPathInfoNarSize pathinfo
+  pathinfo <- liftIO $ escalateAs FatalError =<< liftIO (Store.queryPathInfo store (toS normalized))
+  let storePathSize = Store.narSize pathinfo
   onAttempt strategy retrystatus storePathSize
 
   withCompressor $ \compressor -> liftIO $ do
@@ -190,19 +184,16 @@ uploadStorePath cache storePath retrystatus = do
       Right (narId, uploadId, parts) -> do
         narSize <- readIORef narSizeRef
         narHash <- ("sha256:" <>) . System.Nix.Base32.encode <$> readIORef narHashRef
-        narHashNix <- Store.validPathInfoNarHash32 pathinfo
-        when (narHash /= toS narHashNix) $ throwM $ NarHashMismatch $ toS storePathText <> ": Nar hash mismatch between nix-store --dump and nix db. You can repair db metadata by running as root: $ nix-store --verify --repair --check-contents"
+        nixNarHash <- escalateAs (FatalError . toS) $ Store.base16to32 $ Store.narHash pathinfo
+        when (narHash /= nixNarHash) $ throwM $ NarHashMismatch $ toS storePathText <> ": Nar hash mismatch between nix-store --dump (" <> narHash <> ") and nix db (" <> nixNarHash <> ").\nYou can repair db metadata by running as root: $ nix-store --verify --repair --check-contents"
         fileHash <- readIORef fileHashRef
         fileSize <- readIORef fileSizeRef
-        deriverPath <-
-          if omitDeriver strategy
-            then pure Nothing
-            else Store.validPathInfoDeriver store pathinfo
-        deriver <- for deriverPath Store.getStorePathBaseName
-        referencesPathSet <- Store.validPathInfoReferences store pathinfo
-        referencesPaths <- sort . fmap toS <$> for referencesPathSet (Store.storePathToPath store)
-        references <- sort . fmap toS <$> for referencesPathSet Store.getStorePathBaseName
-        let fp = fingerprint (decodeUtf8With lenientDecode storePathText) narHash narSize referencesPaths
+        let deriver =
+              if omitDeriver strategy
+                then Nothing
+                else Just $ Store.getStorePathBaseName . Store.StorePath $ Store.deriver pathinfo
+            references = sort $ Store.references pathinfo
+        let fp = fingerprint storePathText narHash narSize references
             sig = case pushParamsSecret cache of
               PushToken _ -> Nothing
               PushSigningKey _ signKey -> Just $ toS $ B64.encode $ unSignature $ dsign (signingSecretKey signKey) fp
@@ -214,8 +205,8 @@ uploadStorePath cache storePath retrystatus = do
                   Api.cNarSize = narSize,
                   Api.cFileSize = fileSize,
                   Api.cFileHash = toS fileHash,
-                  Api.cReferences = references,
-                  Api.cDeriver = maybe "unknown-deriver" (decodeUtf8With lenientDecode) deriver,
+                  Api.cReferences = Store.getStorePathBaseName . Store.StorePath <$> references,
+                  Api.cDeriver = maybe "unknown-deriver" identity deriver,
                   Api.cSig = sig
                 }
         escalate $ Api.isNarInfoCreateValid nic
@@ -242,26 +233,20 @@ pushClosure ::
   (forall a b. (a -> m b) -> [a] -> m [b]) ->
   PushParams m r ->
   -- | Initial store paths
-  [StorePath] ->
+  [Store.StorePath] ->
   -- | Every @r@ per store path of the entire closure of store paths
   m [r]
 pushClosure traversal pushParams inputStorePaths = do
   missingPaths <- getMissingPathsForClosure pushParams inputStorePaths
   traversal (\path -> retryAll $ \retrystatus -> uploadStorePath pushParams path retrystatus) missingPaths
 
-getMissingPathsForClosure :: (MonadIO m, MonadMask m) => PushParams m r -> [StorePath] -> m [StorePath]
+getMissingPathsForClosure :: (MonadIO m, MonadMask m) => PushParams m r -> [Store.StorePath] -> m [Store.StorePath]
 getMissingPathsForClosure pushParams inputPaths = do
   let store = pushParamsStore pushParams
       clientEnv = pushParamsClientEnv pushParams
   -- Get the transitive closure of dependencies
-  (paths :: [Store.StorePath]) <-
-    liftIO $ do
-      inputs <- Std.Set.new
-      for_ inputPaths $ \path -> do
-        Std.Set.insertFP inputs path
-      closure <- Store.computeFSClosure store Store.defaultClosureParams inputs
-      Std.Set.toListFP closure
-  hashes <- for paths (liftIO . fmap (decodeUtf8With lenientDecode) . Store.getStorePathHash)
+  paths <- liftIO $ Store.computeClosure store inputPaths
+  let pathsAndHashes = (\path -> (,) (Store.getStorePathHash path) path) <$> paths
   -- Check what store paths are missing
   missingHashesList <-
     retryAll $ \_ ->
@@ -272,14 +257,9 @@ getMissingPathsForClosure pushParams inputPaths = do
                 cachixClient
                 (getCacheAuthToken (pushParamsSecret pushParams))
                 (pushParamsName pushParams)
-                hashes
+                (map fst pathsAndHashes)
           )
-  let missingHashes = Set.fromList (encodeUtf8 <$> missingHashesList)
-  pathsAndHashes <- liftIO $
-    for paths $
-      \path -> do
-        hash_ <- Store.getStorePathHash path
-        pure (hash_, path)
+  let missingHashes = Set.fromList missingHashesList
   return $ map snd $ filter (\(hash_, _path) -> Set.member hash_ missingHashes) pathsAndHashes
 
 -- TODO: move to a separate module specific to cli

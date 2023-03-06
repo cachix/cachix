@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [1.3] - 2023-03-06
+
+### Added
+
+- Upload nars using multiple parts, improving bandwidth speed and parallelization.
+
+### Changed
+
+- Bump defaults jobs to 8.
+- Improve 401 erros by showing the body of backend response.
+- Deploy: improve agent startup and shutdown.
+
+### Fixed
+
+- Unblock interrupt signal on darwin (possibly also Linux).
+- Deploy: wait for the logs to finish when activating.
+
 ## [1.2] - 2023-01-06
 
 ### Added
@@ -15,11 +32,11 @@ you have a lot of small files, there should be some significant performance impr
 - `cachix deploy activate` now by default waits for the agents to be deployed, displays the logs and exists if any deployments fail.
   If you'd like to keep the old behaviour pass `--async` flag.
 
-## Changed
+### Changed
 
 - We no longer pin Nix to speed up version bumps of Nix
 
-## Fixed
+### Fixed
 
 - A number of improvements to stability of the websocket connection used in cachix deploy.
 

@@ -2,6 +2,7 @@
   description = "CLI for Hosted Nix binary caches";
 
   inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-22.11";
     devenv = {
       url = "github:cachix/devenv";
       inputs.flake-compat.follows = "flake-compat";

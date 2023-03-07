@@ -2,9 +2,14 @@
   description = "CLI for Hosted Nix binary caches";
 
   inputs = {
-    devenv.url = "github:cachix/devenv";
-    hnix-store-core.url = "github:haskell-nix/hnix-store/core-0.6.1.0";
-    hnix-store-core.flake = false;
+    devenv = {
+      url = "github:cachix/devenv";
+      inputs.flake-compat.follows = "flake-compat";
+    };
+    hnix-store-core = {
+      url = "github:haskell-nix/hnix-store/core-0.6.1.0";
+      flake = false;
+    };
     flake-compat = {
       url = "github:edolstra/flake-compat";
       flake = false;
@@ -14,8 +19,11 @@
   outputs = { self, nixpkgs, hnix-store-core, ... }@inputs: let
     systems = [ "x86_64-linux" "i686-linux" "x86_64-darwin" "aarch64-linux" "aarch64-darwin" ];
     forAllSystems = f: builtins.listToAttrs (map (name: { inherit name; value = f name; }) systems);
-    # TODO: get from nixpkgs
-    getNix = pkgs: pkgs.nixVersions.nix_2_9;
+
+    # Try to use the same Nix version as cnix-store, if available.
+    getNix = pkgs:
+      pkgs.haskellPackages.hercules-ci-cnix-store.passthru.nixPackage
+        or pkgs.nixVersions.nix_2_9;
   in
     {
       packages = forAllSystems (system: 

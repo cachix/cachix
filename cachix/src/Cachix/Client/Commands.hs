@@ -202,7 +202,10 @@ watchExec env pushOpts name cmd args = withPushParams env pushOpts name $ \pushP
         hDuplicateTo stderr stdout -- redirect all stdout to stderr
         WatchStore.startWorkers (pushParamsStore pushParams) (numJobs pushOpts) pushParams
 
-  Async.withAsync watch $ \_ -> do
+  Async.withAsync watch $ \watchThread -> do
+    -- Throw any errors encountered by the workers
+    Async.link watchThread
+
     exitCode <-
       bracketOnError
         (getProcessHandle <$> System.Process.createProcess process)

@@ -56,6 +56,7 @@ import Servant.Client.Streaming
 import Servant.Conduit ()
 import System.Directory (doesFileExist)
 import System.IO (hIsTerminalDevice)
+import qualified System.Posix.Signals as Signals
 import qualified System.Process
 
 -- TODO: check that token actually authenticates!
@@ -201,21 +202,25 @@ watchExec env pushOpts name cmd args = withPushParams env pushOpts name $ \pushP
         hDuplicateTo stderr stdout -- redirect all stdout to stderr
         WatchStore.startWorkers (pushParamsStore pushParams) (numJobs pushOpts) pushParams
 
-  Async.withAsync watch $ \watchThread ->
-    bracketOnError
-      (getProcessHandle <$> System.Process.createProcess process)
-      ( \processHandle -> do
-          -- Terminate the process
-          uninterruptibleMask_ (System.Process.terminateProcess processHandle)
-          -- Wait for the process to clean up and exit
-          _ <- System.Process.waitForProcess processHandle
-          -- Stop watching the store and wait for all paths to be pushed
-          Async.cancel watchThread
-      )
-      $ \processHandle -> do
-        exitCode <- System.Process.waitForProcess processHandle
-        Async.cancel watchThread
-        exitWith exitCode
+  Async.withAsync watch $ \watchThread -> do
+    -- Throw any errors encountered by the workers
+    Async.link watchThread
+
+    exitCode <-
+      bracketOnError
+        (getProcessHandle <$> System.Process.createProcess process)
+        ( \processHandle -> do
+            -- Terminate the process
+            uninterruptibleMask_ (System.Process.terminateProcess processHandle)
+            -- Wait for the process to clean up and exit
+            _ <- System.Process.waitForProcess processHandle
+            -- Stop watching the store and wait for all paths to be pushed
+            Signals.raiseSignal Signals.sigINT
+        )
+        System.Process.waitForProcess
+
+    Signals.raiseSignal Signals.sigINT
+    exitWith exitCode
   where
     getProcessHandle (_, _, _, processHandle) = processHandle
 

@@ -56,6 +56,7 @@ import Servant.Client.Streaming
 import Servant.Conduit ()
 import System.Directory (doesFileExist)
 import System.IO (hIsTerminalDevice)
+import qualified System.Posix.Signals as Signals
 import qualified System.Process
 
 -- TODO: check that token actually authenticates!
@@ -201,7 +202,7 @@ watchExec env pushOpts name cmd args = withPushParams env pushOpts name $ \pushP
         hDuplicateTo stderr stdout -- redirect all stdout to stderr
         WatchStore.startWorkers (pushParamsStore pushParams) (numJobs pushOpts) pushParams
 
-  Async.withAsync watch $ \watchThread -> do
+  Async.withAsync watch $ \_ -> do
     exitCode <-
       bracketOnError
         (getProcessHandle <$> System.Process.createProcess process)
@@ -211,11 +212,11 @@ watchExec env pushOpts name cmd args = withPushParams env pushOpts name $ \pushP
             -- Wait for the process to clean up and exit
             _ <- System.Process.waitForProcess processHandle
             -- Stop watching the store and wait for all paths to be pushed
-            Async.cancel watchThread
+            Signals.raiseSignal Signals.sigINT
         )
         System.Process.waitForProcess
 
-    Async.cancel watchThread
+    Signals.raiseSignal Signals.sigINT
     exitWith exitCode
   where
     getProcessHandle (_, _, _, processHandle) = processHandle

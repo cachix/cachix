@@ -16,12 +16,14 @@ import Cachix.Client.CNix (filterInvalidStorePath)
 import qualified Cachix.Client.Push as Push
 import Cachix.Client.Retry (retryAll)
 import Control.Concurrent.Async
+import Control.Concurrent.Extra (once)
 import Control.Concurrent.STM (TVar, modifyTVar', newTVarIO, readTVar)
 import qualified Control.Concurrent.STM.Lock as Lock
 import qualified Control.Concurrent.STM.TBQueue as TBQueue
 import qualified Data.Set as S
 import Hercules.CNix.Store (StorePath)
 import Protolude
+import qualified System.Posix.Signals as Signals
 import qualified System.Systemd.Daemon as Systemd
 
 type Queue = TBQueue.TBQueue StorePath
@@ -60,15 +62,21 @@ startWorkers numWorkers mkProducer pushParams = do
       (,,) <$> TBQueue.newTBQueue 10000 <*> TBQueue.newTBQueue 10000 <*> Lock.new
   let queryWorkerState = QueryWorkerState newQueryQueue S.empty newLock
   queryWorker <- async $ queryLoop queryWorkerState newPushQueue pushParams
+
   -- start push workers
   stopProducerCallback <- mkProducer newQueryQueue
   progress <- newTVarIO 0
   let pushWorkerState = PushWorkerState newPushQueue progress
   pushWorker <- async $ replicateConcurrently_ numWorkers $ worker pushParams pushWorkerState
-  let drainQueue =
-        exitOnceQueueIsEmpty stopProducerCallback pushWorker queryWorker queryWorkerState pushWorkerState
 
-  (_, eitherException) <- waitAnyCatchCancel [pushWorker, queryWorker] `finally` drainQueue
+  -- Gracefully shutdown the workers on interrupt
+  let handler =
+        Signals.CatchOnce $
+          exitOnceQueueIsEmpty stopProducerCallback pushWorker queryWorker queryWorkerState pushWorkerState
+  for_ [Signals.sigINT, Signals.sigTERM] $ \signal ->
+    Signals.installHandler signal handler Nothing
+
+  (_, eitherException) <- waitAnyCatchCancel [pushWorker, queryWorker]
   case eitherException of
     Left exc | fromException exc == Just StopWorker -> return ()
     Left exc -> throwIO exc
@@ -100,17 +108,21 @@ queryLoop workerState pushqueue pushParams = do
 
 -- | Stop watching the store and push all pending store paths.
 exitOnceQueueIsEmpty :: IO () -> Async () -> Async () -> QueryWorkerState -> PushWorkerState -> IO ()
-exitOnceQueueIsEmpty stopProducerCallback pushWorker queryWorker queryWorkerState pushWorkerState = do
-  putTextError "Stopped watching /nix/store and waiting for queue to empty ..."
+exitOnceQueueIsEmpty stopProducerCallback pushWorker queryWorker queryWorkerState pushWorkerState =
+  join . once $ do
+    putTextError "Stopped watching /nix/store and waiting for queue to empty ..."
 
-  -- Skip uploading the remaining paths when run in an interruptible mask.
-  getMaskingState >>= \case
-    MaskedUninterruptible -> stopWorkers
-    _ -> do
-      void Systemd.notifyStopping
-      stopProducerCallback
-      go
+    -- Skip uploading the remaining paths when run in an interruptible mask to avoid hanging on IO.
+    getMaskingState >>= \case
+      MaskedUninterruptible -> stopWorkers
+      _ -> do
+        void Systemd.notifyStopping
+        stopProducerCallback
+        go
   where
+    -- We can safely skip calling the interrupt handler on Nix and
+    -- avoid seeing the generic interrupt message.
+    -- Nix only uses it to cancel file transfers, which we don't use.
     stopWorkers = do
       cancelWith queryWorker StopWorker
       cancelWith pushWorker StopWorker

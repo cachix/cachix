@@ -47,6 +47,8 @@ Available commands:
     $ nix-env -iA cachix -f https://cachix.org/api/v1/install
 ```
 
+(or `pkgs.cachix` from [nixpkgs](https://github.com/NixOS/nixpkgs))
+
 2. Login via https://www.cachix.org/api/v1/login to start using the service
 
 ## Development

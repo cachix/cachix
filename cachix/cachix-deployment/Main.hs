@@ -6,6 +6,8 @@ module Main
 where
 
 import Cachix.API.Error (escalateAs)
+import qualified Cachix.API.WebSocketSubprotocol as AgentInformation (AgentInformation (..))
+import qualified Cachix.API.WebSocketSubprotocol as DeploymentDetails (DeploymentDetails (..))
 import qualified Cachix.API.WebSocketSubprotocol as WSS
 import qualified Cachix.Client.URI as URI
 import qualified Cachix.Deploy.Activate as Activate
@@ -51,7 +53,7 @@ main = do
     } <-
     escalateAs (FatalError . toS) . Aeson.eitherDecode . toS =<< getContents
 
-  let deploymentID = WSS.id (deploymentDetails :: WSS.DeploymentDetails)
+  let deploymentID = DeploymentDetails.id deploymentDetails
   let headers = WebSocket.createHeaders agentName agentToken
   let port = fromMaybe (URI.Port 80) (URI.getPortFor (URI.getScheme host))
   let logWebsocketOptions =
@@ -155,9 +157,9 @@ deploy withLog Deployment {..} service logStream = do
 
   endDeployment activationStatus
   where
-    storePath = WSS.storePath deploymentDetails
-    deploymentID = WSS.id (deploymentDetails :: WSS.DeploymentDetails)
-    deploymentIndex = show (WSS.index deploymentDetails)
+    storePath = DeploymentDetails.storePath deploymentDetails
+    deploymentID = DeploymentDetails.id deploymentDetails
+    deploymentIndex = show (DeploymentDetails.index deploymentDetails)
 
     handleAsActivationStatus :: IO Activate.Status -> IO Activate.Status
     handleAsActivationStatus action =
@@ -219,7 +221,7 @@ deploy withLog Deployment {..} service logStream = do
           { WSS.method = method,
             WSS.command = command,
             WSS.id = uuid,
-            WSS.agent = Just $ WSS.id (agentInformation :: WSS.AgentInformation)
+            WSS.agent = Just $ AgentInformation.id agentInformation
           }
       where
         -- TODO: move to WSS

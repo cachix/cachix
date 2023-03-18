@@ -202,25 +202,26 @@ watchExec env pushOpts name cmd args = withPushParams env pushOpts name $ \pushP
         hDuplicateTo stderr stdout -- redirect all stdout to stderr
         WatchStore.startWorkers (pushParamsStore pushParams) (numJobs pushOpts) pushParams
 
-  Async.withAsync watch $ \watchThread -> do
-    -- Throw any errors encountered by the workers
-    Async.link watchThread
+  (_, exitCode) <-
+    Async.concurrently watch $ do
+      exitCode <-
+        bracketOnError
+          (getProcessHandle <$> System.Process.createProcess process)
+          ( \processHandle -> do
+              -- Terminate the process
+              uninterruptibleMask_ (System.Process.terminateProcess processHandle)
+              -- Wait for the process to clean up and exit
+              _ <- System.Process.waitForProcess processHandle
+              -- Stop watching the store and wait for all paths to be pushed
+              Signals.raiseSignal Signals.sigINT
+          )
+          System.Process.waitForProcess
 
-    exitCode <-
-      bracketOnError
-        (getProcessHandle <$> System.Process.createProcess process)
-        ( \processHandle -> do
-            -- Terminate the process
-            uninterruptibleMask_ (System.Process.terminateProcess processHandle)
-            -- Wait for the process to clean up and exit
-            _ <- System.Process.waitForProcess processHandle
-            -- Stop watching the store and wait for all paths to be pushed
-            Signals.raiseSignal Signals.sigINT
-        )
-        System.Process.waitForProcess
+      -- Stop watching the store and wait for all paths to be pushed
+      Signals.raiseSignal Signals.sigINT
+      return exitCode
 
-    Signals.raiseSignal Signals.sigINT
-    exitWith exitCode
+  exitWith exitCode
   where
     getProcessHandle (_, _, _, processHandle) = processHandle
 

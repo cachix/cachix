@@ -151,18 +151,18 @@ printLogsToTerminal options agentName =
 renderOverview :: [(Text, DeployResponse.Details)] -> Text
 renderOverview agents =
   Text.intercalate "\n" $
-    "Deploying agents:" :
-      [ inBrackets agentName <> " " <> DeployResponse.url details
-        | (agentName, details) <- agents
-      ]
+    "Deploying agents:"
+      : [ inBrackets agentName <> " " <> DeployResponse.url details
+          | (agentName, details) <- agents
+        ]
 
 renderSummary :: [(Text, Deployment.Deployment)] -> Text
 renderSummary results =
   Text.intercalate "\n" $
-    "Deployment summary:" :
-      [ inBrackets agentName <> " " <> renderStatus (Deployment.status deployment)
-        | (agentName, deployment) <- results
-      ]
+    "Deployment summary:"
+      : [ inBrackets agentName <> " " <> renderStatus (Deployment.status deployment)
+          | (agentName, deployment) <- results
+        ]
   where
     renderStatus = \case
       Deployment.Succeeded -> "Deployed successfully"

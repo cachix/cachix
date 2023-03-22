@@ -191,7 +191,7 @@ uploadStorePath cache storePath retrystatus = do
         let deriver =
               if omitDeriver strategy
                 then Nothing
-                else Just $ Store.getStorePathBaseName . Store.StorePath $ Store.deriver pathinfo
+                else Store.getStorePathBaseName . Store.StorePath <$> Store.deriver pathinfo
             references = sort $ Store.references pathinfo
         let fp = fingerprint storePathText narHash narSize references
             sig = case pushParamsSecret cache of

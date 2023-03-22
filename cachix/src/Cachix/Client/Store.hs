@@ -20,7 +20,7 @@ data StorePath = StorePath Text
   deriving (Eq, Ord)
 
 data PathInfo = PathInfo
-  { deriver :: Text,
+  { deriver :: Maybe Text,
     narSize :: Int64,
     narHash :: Text,
     references :: [Text]
@@ -71,13 +71,13 @@ queryPathInfo store path = do
   rows <- query store queryNarinfo [(":path", SQLite.SQLText path)]
   case rows of
     [] -> return $ Left $ "no such path " <> path
-    [[id_, SQLite.SQLText hash_, SQLite.SQLText deriver, SQLite.SQLInteger narSize]] -> do
+    [[id_, SQLite.SQLText hash_, deriver, SQLite.SQLInteger narSize]] -> do
       references <- query store queryReferences [(":id", id_)]
       refs <- traverse go references
       return $
         Right $
           PathInfo
-            { deriver = deriver,
+            { deriver = getDeriver deriver,
               narSize = narSize,
               narHash = hash_,
               references = refs
@@ -86,6 +86,10 @@ queryPathInfo store path = do
   where
     go [SQLite.SQLText path_] = return path_
     go a = throwIO $ FatalError $ "invalid reference type " <> show a
+
+    getDeriver :: SQLite.SQLData -> Maybe Text
+    getDeriver (SQLite.SQLText deriver) = Just deriver
+    getDeriver _ = Nothing
 
 computeClosure :: Store -> [StorePath] -> IO [StorePath]
 computeClosure store initialPaths = do

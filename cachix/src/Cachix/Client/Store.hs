@@ -13,6 +13,7 @@ import Protolude hiding (toS)
 import Protolude.Conv
 import System.Directory (canonicalizePath)
 import qualified System.Nix.Base32
+import System.Process (readProcessWithExitCode)
 
 data Store = Store Text SQLite.Database
 
@@ -40,7 +41,12 @@ withStore storePrefix =
     flags = [SQLite.SQLOpenReadOnly, SQLite.SQLOpenURI]
     close (Store _ db) = SQLite.close db
     open = do
-      conn <- SQLite.open2 uri flags SQLite.SQLVFSDefault
+      (_, out, _) <- readProcessWithExitCode "nix" ["show-config", "--extra-experimental-features", "nix-command"] mempty
+      let vfs =
+            if "use-sqlite-wal = false" `T.isInfixOf` toS out
+              then SQLite.SQLVFSUnixDotFile
+              else SQLite.SQLVFSDefault
+      conn <- SQLite.open2 uri flags vfs
       return $ Store storePrefix conn
 
 queryNarinfo :: Text

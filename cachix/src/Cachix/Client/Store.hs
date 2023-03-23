@@ -8,7 +8,6 @@ import qualified Data.Set as Set
 import qualified Data.Text as T
 import Database.SQLite3 (SQLData)
 import qualified Database.SQLite3 as SQLite
-import qualified Dhall.Deriving as T
 import Protolude hiding (toS)
 import Protolude.Conv
 import System.Console.Pretty (Color (..), color)
@@ -120,7 +119,15 @@ getPath (StorePath storePath) = storePath
 
 getStorePathBaseName :: Store -> StorePath -> Text
 getStorePathBaseName (Store storePrefix _) (StorePath storePath) =
-  T.dropPrefix storePrefix storePath
+  dropPrefix (dropSuffix "/" storePrefix <> "/store/") storePath
+  where
+    dropPrefix :: Text -> Text -> Text
+    dropPrefix prefix str =
+      fromMaybe str (T.stripPrefix prefix str)
+
+    dropSuffix :: Text -> Text -> Text
+    dropSuffix suffix str =
+      fromMaybe str (T.stripSuffix suffix str)
 
 base16to32 :: Text -> Either Text Text
 base16to32 path =

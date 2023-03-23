@@ -3,7 +3,7 @@
 module Cachix.Client.Store (withStore, Store, PathInfo (..), StorePath (..), base16to32, computeClosure, queryPathInfo, followLinksToStorePath, getStorePathHash, getStorePathBaseName, getPath) where
 
 import Cachix.Client.ProcessGraph (processGraph)
-import qualified Data.ByteString.Base16 as Base16
+import Data.ByteArray.Encoding (Base (..), convertFromBase)
 import qualified Data.List as List
 import qualified Data.Set as Set
 import qualified Data.Text as T
@@ -122,6 +122,6 @@ base16to32 path =
   where
     convert :: Text -> Either Text Text
     convert stripped =
-      case Base16.decode (toS stripped) of
+      case convertFromBase Base16 (toS stripped :: ByteString) of
         Left err -> Left $ toS err
         Right decoded -> Right $ ("sha256:" <>) $ System.Nix.Base32.encode decoded

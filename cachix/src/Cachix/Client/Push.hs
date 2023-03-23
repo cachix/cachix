@@ -45,7 +45,7 @@ import Control.Exception.Safe (MonadMask, throwM)
 import Control.Monad.Trans.Resource (ResourceT)
 import Control.Retry (RetryStatus)
 import Crypto.Sign.Ed25519
-import qualified Data.ByteString.Base64 as B64
+import Data.ByteArray.Encoding (Base (..), convertToBase)
 import Data.Conduit
 import qualified Data.Conduit.Lzma as Lzma (compress)
 import qualified Data.Conduit.Zstd as Zstd (compress)
@@ -196,7 +196,7 @@ uploadStorePath cache storePath retrystatus = do
         let fp = fingerprint storePathText narHash narSize references
             sig = case pushParamsSecret cache of
               PushToken _ -> Nothing
-              PushSigningKey _ signKey -> Just $ toS $ B64.encode $ unSignature $ dsign (signingSecretKey signKey) fp
+              PushSigningKey _ signKey -> Just $ (toS :: ByteString -> Text) $ convertToBase Base64 $ unSignature $ dsign (signingSecretKey signKey) fp
             nic =
               Api.NarInfoCreate
                 { Api.cStoreHash = storeHash,

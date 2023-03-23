@@ -9,13 +9,16 @@ import qualified Data.Set as Set
 import qualified Data.Text as T
 import Database.SQLite3 (SQLData)
 import qualified Database.SQLite3 as SQLite
+import qualified Dhall.Deriving as T
 import Protolude hiding (toS)
 import Protolude.Conv
 import System.Directory (canonicalizePath)
 import qualified System.Nix.Base32
 import System.Process (readProcessWithExitCode)
 
-data Store = Store Text SQLite.Database
+type StorePrefix = Text
+
+data Store = Store StorePrefix SQLite.Database
 
 data StorePath = StorePath Text
   deriving (Eq, Ord)
@@ -99,23 +102,23 @@ queryPathInfo store path = do
 
 computeClosure :: Store -> [StorePath] -> IO [StorePath]
 computeClosure store initialPaths = do
-  allPaths <- 
+  allPaths <-
     processGraph (getPath <$> initialPaths) $
       queryPathInfo store >=> \case
         Left _ -> pure []
         Right pathInfo -> pure $ references pathInfo
   return $ StorePath <$> Set.toList allPaths
 
-getStorePathHash :: StorePath -> Text
-getStorePathHash storePath =
-  T.take 32 $ getStorePathBaseName storePath
+getStorePathHash :: Store -> StorePath -> Text
+getStorePathHash store storePath =
+  T.take 32 $ getStorePathBaseName store storePath
 
 getPath :: StorePath -> Text
 getPath (StorePath storePath) = storePath
 
-getStorePathBaseName :: StorePath -> Text
-getStorePathBaseName (StorePath storePath) =
-  T.drop 11 storePath
+getStorePathBaseName :: Store -> StorePath -> Text
+getStorePathBaseName (Store storePrefix _) (StorePath storePath) =
+  T.dropPrefix storePrefix storePath
 
 base16to32 :: Text -> Either Text Text
 base16to32 path =

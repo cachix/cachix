@@ -113,6 +113,7 @@ pushSingleStorePath ::
   m r
 pushSingleStorePath cache storePath = retryAll $ \retrystatus -> do
   let name = pushParamsName cache
+      store = pushParamsStore cache
       strategy = pushParamsStrategy cache storePath
   -- Check if narinfo already exists
   res <-
@@ -122,7 +123,7 @@ pushSingleStorePath cache storePath = retryAll $ \retrystatus -> do
           cachixClient
           (getCacheAuthToken (pushParamsSecret cache))
           name
-          (NarInfoHash.NarInfoHash (Store.getStorePathHash storePath))
+          (NarInfoHash.NarInfoHash (Store.getStorePathHash store storePath))
   case res of
     Right NoContent -> onAlreadyPresent strategy -- we're done as store path is already in the cache
     Left err
@@ -191,7 +192,7 @@ uploadStorePath cache storePath retrystatus = do
         let deriver =
               if omitDeriver strategy
                 then Nothing
-                else Store.getStorePathBaseName . Store.StorePath <$> Store.deriver pathinfo
+                else Store.getStorePathBaseName store . Store.StorePath <$> Store.deriver pathinfo
             references = sort $ Store.references pathinfo
         let fp = fingerprint storePathText narHash narSize references
             sig = case pushParamsSecret cache of
@@ -205,7 +206,7 @@ uploadStorePath cache storePath retrystatus = do
                   Api.cNarSize = narSize,
                   Api.cFileSize = fileSize,
                   Api.cFileHash = toS fileHash,
-                  Api.cReferences = Store.getStorePathBaseName . Store.StorePath <$> references,
+                  Api.cReferences = Store.getStorePathBaseName store . Store.StorePath <$> references,
                   Api.cDeriver = fromMaybe "unknown-deriver" deriver,
                   Api.cSig = sig
                 }
@@ -246,7 +247,7 @@ getMissingPathsForClosure pushParams inputPaths = do
       clientEnv = pushParamsClientEnv pushParams
   -- Get the transitive closure of dependencies
   paths <- liftIO $ Store.computeClosure store inputPaths
-  let pathsAndHashes = (\path -> (,) (Store.getStorePathHash path) path) <$> paths
+  let pathsAndHashes = (\path -> (,) (Store.getStorePathHash store path) path) <$> paths
   -- Check what store paths are missing
   missingHashesList <-
     retryAll $ \_ ->

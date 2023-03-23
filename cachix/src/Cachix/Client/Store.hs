@@ -58,10 +58,10 @@ queryReferences :: Text
 queryReferences = "select path from Refs join ValidPaths on reference = id where referrer = :id"
 
 query :: Store -> Text -> [(Text, SQLData)] -> IO [[SQLite.SQLData]]
-query (Store _ conn) txt bindings = do
-  stmt <- SQLite.prepare conn txt
-  SQLite.bindNamed stmt bindings
-  getRows stmt
+query (Store _ conn) txt bindings =
+  bracket (SQLite.prepare conn txt) SQLite.finalize $ \stmt -> do
+    SQLite.bindNamed stmt bindings
+    getRows stmt
 
 getRows :: SQLite.Statement -> IO [[SQLite.SQLData]]
 getRows stmt = do
@@ -71,7 +71,6 @@ getRows stmt = do
       rows <- getRows stmt
       return $ row : rows
     SQLite.Done -> do
-      SQLite.finalize stmt
       return []
 
 queryPathInfo :: Store -> Text -> IO (Either Text PathInfo)

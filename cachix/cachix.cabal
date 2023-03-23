@@ -102,7 +102,7 @@ library
     , cryptonite
     , deepseq
     , dhall                   >=1.28.0
-    , direct-sqlite
+    , direct-sqlite           >=2.3.28
     , directory
     , ed25519
     , either

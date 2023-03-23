@@ -99,7 +99,11 @@ queryPathInfo store path = do
 
 computeClosure :: Store -> [StorePath] -> IO [StorePath]
 computeClosure store initialPaths = do
-  allPaths <- processGraph (getPath <$> initialPaths) (fmap (concatMap references . rights . List.singleton) . queryPathInfo store)
+  allPaths <- 
+    processGraph (getPath <$> initialPaths) $
+      queryPathInfo store >=> \case
+        Left _ -> pure []
+        Right pathInfo -> pure $ references pathInfo
   return $ StorePath <$> Set.toList allPaths
 
 getStorePathHash :: StorePath -> Text

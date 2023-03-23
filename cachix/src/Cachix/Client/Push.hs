@@ -164,7 +164,7 @@ uploadStorePath cache storePath retrystatus = do
   fileHashRef <- liftIO $ newIORef ("" :: ByteString)
 
   normalized <- liftIO $ Store.followLinksToStorePath store $ toS storePathText
-  pathinfo <- liftIO $ escalateAs FatalError =<< liftIO (Store.queryPathInfo store (toS normalized))
+  pathinfo <- liftIO $ escalateAs FatalError =<< Store.queryPathInfo store (toS normalized)
   let storePathSize = Store.narSize pathinfo
   onAttempt strategy retrystatus storePathSize
 
@@ -206,7 +206,7 @@ uploadStorePath cache storePath retrystatus = do
                   Api.cFileSize = fileSize,
                   Api.cFileHash = toS fileHash,
                   Api.cReferences = Store.getStorePathBaseName . Store.StorePath <$> references,
-                  Api.cDeriver = maybe "unknown-deriver" identity deriver,
+                  Api.cDeriver = fromMaybe "unknown-deriver" deriver,
                   Api.cSig = sig
                 }
         escalate $ Api.isNarInfoCreateValid nic

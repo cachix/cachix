@@ -45,10 +45,9 @@ source-repository head
   location: https://github.com/cachix/cachix
 
 library
-  import:            defaults
+  import:          defaults
   exposed-modules:
     Cachix.Client
-    Cachix.Client.CNix
     Cachix.Client.Commands
     Cachix.Client.Config
     Cachix.Client.Config.Orphans
@@ -60,12 +59,14 @@ library
     Cachix.Client.NixConf
     Cachix.Client.NixVersion
     Cachix.Client.OptionsParser
+    Cachix.Client.ProcessGraph
     Cachix.Client.Push
     Cachix.Client.Push.S3
     Cachix.Client.PushQueue
     Cachix.Client.Retry
     Cachix.Client.Secrets
     Cachix.Client.Servant
+    Cachix.Client.Store
     Cachix.Client.URI
     Cachix.Client.Version
     Cachix.Client.WatchStore
@@ -80,11 +81,10 @@ library
     Cachix.Deploy.Websocket
     Cachix.Deploy.WebsocketPong
     Data.Conduit.ByteString
-    System.Nix.Base32
 
-  hs-source-dirs:    src
-  other-modules:     Paths_cachix
-  autogen-modules:   Paths_cachix
+  hs-source-dirs:  src
+  other-modules:   Paths_cachix
+  autogen-modules: Paths_cachix
   build-depends:
     , aeson
     , async
@@ -102,20 +102,19 @@ library
     , cryptonite
     , deepseq
     , dhall                   >=1.28.0
+    , direct-sqlite           >=2.3.28
     , directory
     , ed25519
     , either
     , extra
     , filepath
     , fsnotify                >=0.4.1
-    , hercules-ci-cnix-store
     , here
     , hnix-store-core         >=0.6.1.0
     , http-client
     , http-client-tls
     , http-conduit
     , http-types
-    , inline-c-cpp
     , katip
     , lukko
     , lzma-conduit
@@ -153,9 +152,6 @@ library
     , versions
     , websockets
     , wuss
-
-  -- These versions are pinned in hercules-ci-cnix-store
-  pkgconfig-depends: nix-main, nix-store
 
 executable cachix
   import:             defaults

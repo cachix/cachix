@@ -15,9 +15,9 @@ where
 
 import qualified Cachix.API as API
 import Cachix.API.Error
-import Cachix.Client.CNix (filterInvalidStorePath)
 import qualified Cachix.Client.Config as Config
 import Cachix.Client.Env (Env (..))
+import qualified Cachix.Client.Env as Env
 import Cachix.Client.Exception (CachixException (..))
 import Cachix.Client.HumanSize (humanSize)
 import qualified Cachix.Client.InstallationMode as InstallationMode
@@ -34,6 +34,7 @@ import Cachix.Client.Secrets
     exportSigningKey,
   )
 import Cachix.Client.Servant
+import qualified Cachix.Client.Store as Store
 import qualified Cachix.Client.WatchStore as WatchStore
 import qualified Cachix.Types.BinaryCache as BinaryCache
 import qualified Cachix.Types.SigningKeyCreate as SigningKeyCreate
@@ -46,7 +47,6 @@ import Data.String.Here
 import qualified Data.Text as T
 import qualified Data.Text.IO as T.IO
 import GHC.IO.Handle (hDuplicate, hDuplicateTo)
-import Hercules.CNix.Store (Store, StorePath, followLinksToStorePath, storePathToPath, withStore)
 import Network.HTTP.Types (status401, status404)
 import Protolude hiding (toS)
 import Protolude.Conv
@@ -167,14 +167,12 @@ push env (PushPaths opts name cliPaths) = do
     normalized <-
       liftIO $
         for inputStorePaths $
-          \path -> do
-            storePath <- followLinksToStorePath (pushParamsStore pushParams) (encodeUtf8 path)
-            filterInvalidStorePath (pushParamsStore pushParams) storePath
+          \path -> Store.followLinksToStorePath (pushParamsStore pushParams) (toS path)
     pushedPaths <-
       pushClosure
         (mapConcurrentlyBounded (numJobs opts))
         pushParams
-        (catMaybes normalized)
+        (Store.StorePath . toS <$> normalized)
     case (length normalized, length pushedPaths) of
       (0, _) -> putTextError "Nothing to push."
       (_, 0) -> putTextError "Nothing to push - all store paths are already on Cachix."
@@ -231,14 +229,14 @@ retryText retrystatus =
     then ""
     else "(retry #" <> show (rsIterNumber retrystatus) <> ") "
 
-pushStrategy :: Store -> Maybe Token -> PushOptions -> Text -> BinaryCache.CompressionMethod -> StorePath -> PushStrategy IO ()
-pushStrategy store authToken opts name compressionMethod storePath =
+pushStrategy :: Store.Store -> Maybe Token -> PushOptions -> Text -> BinaryCache.CompressionMethod -> Store.StorePath -> PushStrategy IO ()
+pushStrategy _ authToken opts name compressionMethod storePath =
   PushStrategy
     { onAlreadyPresent = pass,
       on401 = handleCacheResponse name authToken,
       onError = throwM,
       onAttempt = \retrystatus size -> do
-        path <- decodeUtf8With lenientDecode <$> storePathToPath store storePath
+        let path = Store.getPath storePath
         -- we append newline instead of putStrLn due to https://github.com/haskell/text/issues/242
         putStr $ retryText retrystatus <> "compressing using " <> T.toLower (show compressionMethod) <> " and pushing " <> path <> " (" <> humanSize (fromIntegral size) <> ")\n",
       onDone = pass,
@@ -260,7 +258,7 @@ withPushParams env pushOpts name m = do
         Left err -> handleCacheResponse name authToken err
         Right binaryCache -> pure (Just $ BinaryCache.preferredCompressionMethod binaryCache)
   let compressionMethod = fromMaybe BinaryCache.ZSTD (head $ catMaybes [Cachix.Client.OptionsParser.compressionMethod pushOpts, compressionMethodBackend])
-  withStore $ \store ->
+  Store.withStore (Env.storePrefix env) $ \store ->
     m
       PushParams
         { pushParamsName = name,

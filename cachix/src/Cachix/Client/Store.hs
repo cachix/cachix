@@ -4,7 +4,6 @@ module Cachix.Client.Store (withStore, Store, PathInfo (..), StorePath (..), bas
 
 import Cachix.Client.ProcessGraph (processGraph)
 import Data.ByteArray.Encoding (Base (..), convertFromBase)
-import qualified Data.List as List
 import qualified Data.Set as Set
 import qualified Data.Text as T
 import Database.SQLite3 (SQLData)
@@ -12,6 +11,7 @@ import qualified Database.SQLite3 as SQLite
 import qualified Dhall.Deriving as T
 import Protolude hiding (toS)
 import Protolude.Conv
+import System.Console.Pretty (Color (..), color)
 import System.Directory (canonicalizePath)
 import qualified System.Nix.Base32
 import System.Process (readProcessWithExitCode)
@@ -103,9 +103,11 @@ queryPathInfo store path = do
 computeClosure :: Store -> [StorePath] -> IO [StorePath]
 computeClosure store initialPaths = do
   allPaths <-
-    processGraph (getPath <$> initialPaths) $
-      queryPathInfo store >=> \case
-        Left _ -> pure []
+    processGraph (getPath <$> initialPaths) $ \path -> do
+      queryPathInfo store path >>= \case
+        Left _ -> do
+          hPutStrLn stderr $ color Yellow $ "Warning: " <> path <> " is not valid, skipping"
+          return []
         Right pathInfo -> pure $ references pathInfo
   return $ StorePath <$> Set.toList allPaths
 

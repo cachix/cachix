@@ -1,6 +1,6 @@
 cabal-version:      2.2
 name:               cachix
-version:            1.3.3
+version:            1.4
 license:            Apache-2.0
 license-file:       LICENSE
 copyright:          2018 Domen Kozar

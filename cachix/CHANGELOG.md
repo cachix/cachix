@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [1.4] - 2023-03-26
+
+### Changed
+
+- Rewrote C++ bindings to Nix in Haskell, reducing the closure and making it easy to
+statically compile Cachix.
+
 ## [1.3.3] - 2023-03-18
 
 ### Fixed

@@ -1,9 +1,6 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# OPTIONS_GHC -O0 #-}
-
--- TODO https://github.com/haskell-servant/servant/issues/986
 
 module Cachix.Client.Servant
   ( isErr,

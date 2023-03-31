@@ -35,7 +35,8 @@ followLinksToStorePath (Store prefix _) path = do
   let storePath' = T.drop (T.length prefix) (toS storePath)
   return $ toS $ prefix <> T.intercalate "/" (take 3 $ T.splitOn "/" storePath')
 
-withStore :: Text -> (Store -> IO ()) -> IO ()
+-- | Run an 'IO' action while retaining a 'Store' resource for the duration of the action.
+withStore :: Text -> (Store -> IO a) -> IO a
 withStore storePrefix =
   bracket open close
   where

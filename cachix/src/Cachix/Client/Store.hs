@@ -39,8 +39,8 @@ withStore :: Text -> (Store -> IO ()) -> IO ()
 withStore storePrefix =
   bracket open close
   where
-    uri = "file:" <> toS storePrefix <> "/var/nix/db/db.sqlite?immutable=1"
-    flags = [SQLite.SQLOpenReadOnly, SQLite.SQLOpenURI]
+    uri = toS storePrefix <> "/var/nix/db/db.sqlite"
+    flags = [SQLite.SQLOpenReadOnly]
     close (Store _ db) = SQLite.close db
     open = do
       (_, out, _) <- readProcessWithExitCode "nix" ["show-config", "--extra-experimental-features", "nix-command"] mempty

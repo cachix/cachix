@@ -1,6 +1,24 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Cachix.Client.Store (withStore, Store, PathInfo (..), StorePath (..), base16to32, computeClosure, queryPathInfo, followLinksToStorePath, getStorePathHash, getStorePathBaseName, getPath) where
+module Cachix.Client.Store
+  ( -- * Opening a store
+    LocalStoreOptions (..),
+    withLocalStore,
+    withStore,
+    Store,
+
+    -- * Working store contents
+    PathInfo (..),
+    StorePath (..),
+    base16to32,
+    computeClosure,
+    queryPathInfo,
+    followLinksToStorePath,
+    getStorePathHash,
+    getStorePathBaseName,
+    getPath,
+  )
+where
 
 import Cachix.Client.ProcessGraph (processGraph)
 import Data.ByteArray.Encoding (Base (..), convertFromBase)
@@ -35,22 +53,47 @@ followLinksToStorePath (Store prefix _) path = do
   let storePath' = T.drop (T.length prefix) (toS storePath)
   return $ toS $ prefix <> T.intercalate "/" (take 3 $ T.splitOn "/" storePath')
 
+-- | Options for `withLocalStore`.
+data LocalStoreOptions = LocalStoreOptions
+  { -- | The path to the Nix store directory. Typically: @"/nix"@
+    storePrefix :: !Text,
+    -- | Whether to use SQLite Write-Ahead Logging (WAL) mode.
+    --
+    -- This needs to match the ambient configuration, because otherwise, the db
+    -- may be corrupted: https://github.com/cachix/cachix/issues/475
+    useSqliteWAL :: !Bool
+  }
+
 -- | Run an 'IO' action while retaining a 'Store' resource for the duration of the action.
-withStore :: Text -> (Store -> IO a) -> IO a
-withStore storePrefix =
+--
+-- This does not rely on the @nix@ command being available.
+withLocalStore :: LocalStoreOptions -> (Store -> IO a) -> IO a
+withLocalStore opts =
   bracket open close
   where
-    uri = toS storePrefix <> "/var/nix/db/db.sqlite"
+    uri = toS (storePrefix opts) <> "/var/nix/db/db.sqlite"
     flags = [SQLite.SQLOpenReadOnly]
     close (Store _ db) = SQLite.close db
+    vfs =
+      if useSqliteWAL opts
+        then SQLite.SQLVFSDefault
+        else SQLite.SQLVFSUnixDotFile
     open = do
-      (_, out, _) <- readProcessWithExitCode "nix" ["show-config", "--extra-experimental-features", "nix-command"] mempty
-      let vfs =
-            if "use-sqlite-wal = false" `T.isInfixOf` toS out
-              then SQLite.SQLVFSUnixDotFile
-              else SQLite.SQLVFSDefault
       conn <- SQLite.open2 uri flags vfs
-      return $ Store storePrefix conn
+      return $ Store (storePrefix opts) conn
+
+-- | 'withLocalStore' but infers 'useSqliteWAL' from the @nix show-config@ command.
+withStore :: Text -> (Store -> IO a) -> IO a
+withStore storePrefix_ f = do
+  useWAL <- do
+    (_, out, _) <- readProcessWithExitCode "nix" ["show-config", "--extra-experimental-features", "nix-command"] mempty
+    pure (not ("use-sqlite-wal = false" `T.isInfixOf` toS out))
+  withLocalStore
+    LocalStoreOptions
+      { storePrefix = storePrefix_,
+        useSqliteWAL = useWAL
+      }
+    f
 
 queryNarinfo :: Text
 queryNarinfo = "select id, hash, deriver, narSize from ValidPaths where path = :path"

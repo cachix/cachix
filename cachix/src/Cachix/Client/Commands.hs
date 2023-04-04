@@ -167,7 +167,7 @@ push env (PushPaths opts name cliPaths) = do
     normalized <-
       liftIO $
         for inputStorePaths $
-          \path -> Store.followLinksToStorePath (pushParamsStore pushParams) (toS path)
+          \path -> Store.followLinksToStorePath (Env.storePrefix env) (toS path)
     pushedPaths <-
       pushClosure
         (mapConcurrentlyBounded (numJobs opts))
@@ -187,7 +187,7 @@ putTextError = hPutStrLn stderr
 watchStore :: Env -> PushOptions -> Text -> IO ()
 watchStore env opts name = do
   withPushParams env opts name $ \pushParams ->
-    WatchStore.startWorkers (pushParamsStore pushParams) (numJobs opts) pushParams
+    WatchStore.startWorkers (numJobs opts) pushParams
 
 watchExec :: Env -> PushOptions -> Text -> Text -> [Text] -> IO ()
 watchExec env pushOpts name cmd args = withPushParams env pushOpts name $ \pushParams -> do
@@ -198,7 +198,7 @@ watchExec env pushOpts name cmd args = withPushParams env pushOpts name $ \pushP
           }
       watch = do
         hDuplicateTo stderr stdout -- redirect all stdout to stderr
-        WatchStore.startWorkers (pushParamsStore pushParams) (numJobs pushOpts) pushParams
+        WatchStore.startWorkers (numJobs pushOpts) pushParams
 
   (_, exitCode) <-
     Async.concurrently watch $ do
@@ -229,8 +229,8 @@ retryText retrystatus =
     then ""
     else "(retry #" <> show (rsIterNumber retrystatus) <> ") "
 
-pushStrategy :: Store.Store -> Maybe Token -> PushOptions -> Text -> BinaryCache.CompressionMethod -> Store.StorePath -> PushStrategy IO ()
-pushStrategy _ authToken opts name compressionMethod storePath =
+pushStrategy :: Maybe Token -> PushOptions -> Text -> BinaryCache.CompressionMethod -> Store.StorePath -> PushStrategy IO ()
+pushStrategy authToken opts name compressionMethod storePath =
   PushStrategy
     { onAlreadyPresent = pass,
       on401 = handleCacheResponse name authToken,
@@ -246,7 +246,7 @@ pushStrategy _ authToken opts name compressionMethod storePath =
     }
 
 withPushParams :: Env -> PushOptions -> Text -> (PushParams IO () -> IO ()) -> IO ()
-withPushParams env pushOpts name m = do
+withPushParams env pushOpts name action = do
   pushSecret <- findPushSecret (config env) name
   authToken <- Config.getAuthTokenMaybe (config env)
   compressionMethodBackend <- case pushSecret of
@@ -258,12 +258,17 @@ withPushParams env pushOpts name m = do
         Left err -> handleCacheResponse name authToken err
         Right binaryCache -> pure (Just $ BinaryCache.preferredCompressionMethod binaryCache)
   let compressionMethod = fromMaybe BinaryCache.ZSTD (head $ catMaybes [Cachix.Client.OptionsParser.compressionMethod pushOpts, compressionMethodBackend])
-  Store.withStore (Env.storePrefix env) $ \store ->
-    m
-      PushParams
-        { pushParamsName = name,
-          pushParamsSecret = pushSecret,
-          pushParamsClientEnv = clientenv env,
-          pushParamsStrategy = pushStrategy store authToken pushOpts name compressionMethod,
-          pushParamsStore = store
-        }
+  wal <- Store.getUseSqliteWAL
+  action
+    PushParams
+      { pushParamsName = name,
+        pushParamsSecret = pushSecret,
+        pushParamsClientEnv = clientenv env,
+        pushParamsStrategy = pushStrategy authToken pushOpts name compressionMethod,
+        pushParamsWithStore =
+          Store.withLocalStore $
+            Store.LocalStoreOptions
+              { Store.storePrefix = Env.storePrefix env,
+                Store.useSqliteWAL = wal
+              }
+      }

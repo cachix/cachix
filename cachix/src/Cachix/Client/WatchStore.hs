@@ -11,13 +11,13 @@ import Protolude
 import System.FSNotify
 import qualified System.Systemd.Daemon as Systemd
 
-startWorkers :: Store.Store -> Int -> PushParams IO () -> IO ()
-startWorkers store numWorkers pushParams = do
+startWorkers :: Int -> PushParams IO () -> IO ()
+startWorkers numWorkers pushParams = do
   void Systemd.notifyReady
-  withManager $ \mgr -> PushQueue.startWorkers numWorkers (producer store mgr) pushParams
+  withManager $ \mgr -> PushQueue.startWorkers numWorkers (producer mgr) pushParams
 
-producer :: Store.Store -> WatchManager -> PushQueue.Queue -> IO (IO ())
-producer _ mgr queue = do
+producer :: WatchManager -> PushQueue.Queue -> IO (IO ())
+producer mgr queue = do
   putTextError "Watching /nix/store for new store paths ..."
   watchDir mgr "/nix/store" filterOnlyStorePaths (queueStorePathAction queue)
 

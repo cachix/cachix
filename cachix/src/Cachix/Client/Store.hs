@@ -5,11 +5,12 @@ module Cachix.Client.Store
     LocalStoreOptions (..),
     withLocalStore,
     withStore,
-    Store,
+    Store (..),
 
     -- * Working store contents
     PathInfo (..),
     StorePath (..),
+    getUseSqliteWAL,
     base16to32,
     computeClosure,
     queryPathInfo,
@@ -47,8 +48,8 @@ data PathInfo = PathInfo
     references :: [Text]
   }
 
-followLinksToStorePath :: Store -> FilePath -> IO FilePath
-followLinksToStorePath (Store prefix _) path = do
+followLinksToStorePath :: Text -> FilePath -> IO FilePath
+followLinksToStorePath prefix path = do
   storePath <- canonicalizePath path
   let storePath' = T.drop (T.length prefix) (toS storePath)
   return $ toS $ prefix <> T.intercalate "/" (take 3 $ T.splitOn "/" storePath')
@@ -71,8 +72,8 @@ withLocalStore :: LocalStoreOptions -> (Store -> IO a) -> IO a
 withLocalStore opts =
   bracket open close
   where
-    uri = toS (storePrefix opts) <> "/var/nix/db/db.sqlite"
-    flags = [SQLite.SQLOpenReadOnly]
+    uri = "file:" <> toS (storePrefix opts) <> "/var/nix/db/db.sqlite?immutable=1"
+    flags = [SQLite.SQLOpenReadOnly, SQLite.SQLOpenURI]
     close (Store _ db) = SQLite.close db
     vfs =
       if useSqliteWAL opts
@@ -85,15 +86,18 @@ withLocalStore opts =
 -- | 'withLocalStore' but infers 'useSqliteWAL' from the @nix show-config@ command.
 withStore :: Text -> (Store -> IO a) -> IO a
 withStore storePrefix_ f = do
-  useWAL <- do
-    (_, out, _) <- readProcessWithExitCode "nix" ["show-config", "--extra-experimental-features", "nix-command"] mempty
-    pure (not ("use-sqlite-wal = false" `T.isInfixOf` toS out))
+  wal <- getUseSqliteWAL
   withLocalStore
     LocalStoreOptions
       { storePrefix = storePrefix_,
-        useSqliteWAL = useWAL
+        useSqliteWAL = wal
       }
     f
+
+getUseSqliteWAL :: IO Bool
+getUseSqliteWAL = do
+  (_, out, _) <- readProcessWithExitCode "nix" ["show-config", "--extra-experimental-features", "nix-command"] mempty
+  pure (not ("use-sqlite-wal = false" `T.isInfixOf` toS out))
 
 queryNarinfo :: Text
 queryNarinfo = "select id, hash, deriver, narSize from ValidPaths where path = :path"

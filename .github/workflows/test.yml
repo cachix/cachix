@@ -22,3 +22,5 @@ jobs:
     - run:  nix build -L '.#ci' '.#cachix' --show-trace
     # make sure it's all uploaded to cachix
     - run: echo > /tmp/store-path-pre-build
+    # test watch-exec
+    - run: cachix watch-exec cachix -- nix-build genpaths.nix --substituters 'https://cache.nixos.org'

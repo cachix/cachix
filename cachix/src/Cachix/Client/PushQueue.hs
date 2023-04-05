@@ -44,7 +44,7 @@ worker pushParams workerState = forever $ do
   bracket_ (inProgressModify (+ 1)) (inProgressModify (\x -> x - 1)) $
     retryAll $
       \retrystatus -> do
-        Push.uploadStorePath pushParams storePath retrystatus
+        Push.uploadStorePath Nothing pushParams storePath retrystatus
   where
     inProgressModify f =
       atomically $ modifyTVar' (inProgress workerState) f
@@ -96,7 +96,7 @@ queryLoop workerState pushqueue pushParams = do
       if isEmpty
         then return S.empty
         else return $ alreadyQueued workerState
-    missingStorePaths <- Push.getMissingPathsForClosure pushParams storePaths
+    missingStorePaths <- Push.getMissingPathsForClosure Nothing pushParams storePaths
     let missingStorePathsSet = S.fromList missingStorePaths
         uncachedMissingStorePaths = S.difference missingStorePathsSet alreadyQueuedSet
     atomically $ for_ uncachedMissingStorePaths $ TBQueue.writeTBQueue pushqueue

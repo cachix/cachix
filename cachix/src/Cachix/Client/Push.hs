@@ -76,7 +76,7 @@ data PushParams m r = PushParams
     pushParamsStrategy :: Store.StorePath -> PushStrategy m r,
     -- | cachix base url, connection manager, see 'Cachix.Client.URI.defaultCachixBaseUrl', 'Servant.Client.mkClientEnv'
     pushParamsClientEnv :: ClientEnv,
-    pushParamsStore :: Store.Store
+    pushParamsWithStore :: forall a. (Store.Store -> m a) -> m a
   }
 
 data PushStrategy m r = PushStrategy
@@ -105,15 +105,17 @@ defaultWithZstdCompressorWithLevel l = ($ Zstd.compress l)
 
 pushSingleStorePath ::
   (MonadMask m, MonadIO m) =>
+  Maybe Store.Store ->
   -- | details for pushing to cache
   PushParams m r ->
   -- | store path
   Store.StorePath ->
   -- | r is determined by the 'PushStrategy'
   m r
-pushSingleStorePath cache storePath = retryAll $ \retrystatus -> do
+pushSingleStorePath Nothing cache storePath = pushParamsWithStore cache $ \store ->
+  pushSingleStorePath (Just store) cache storePath
+pushSingleStorePath (Just store) cache storePath = retryAll $ \retrystatus -> do
   let name = pushParamsName cache
-      store = pushParamsStore cache
       strategy = pushParamsStrategy cache storePath
   -- Check if narinfo already exists
   res <-
@@ -127,7 +129,7 @@ pushSingleStorePath cache storePath = retryAll $ \retrystatus -> do
   case res of
     Right NoContent -> onAlreadyPresent strategy -- we're done as store path is already in the cache
     Left err
-      | isErr err status404 -> uploadStorePath cache storePath retrystatus
+      | isErr err status404 -> uploadStorePath (Just store) cache storePath retrystatus
       | isErr err status401 -> on401 strategy err
       | otherwise -> onError strategy err
 
@@ -137,15 +139,17 @@ getCacheAuthToken (PushSigningKey token _) = token
 
 uploadStorePath ::
   (MonadIO m) =>
+  Maybe Store.Store ->
   -- | details for pushing to cache
   PushParams m r ->
   Store.StorePath ->
   RetryStatus ->
   -- | r is determined by the 'PushStrategy'
   m r
-uploadStorePath cache storePath retrystatus = do
-  let store = pushParamsStore cache
-      storePathText = Store.getPath storePath
+uploadStorePath Nothing cache storePath retrystatus = pushParamsWithStore cache $ \store ->
+  uploadStorePath (Just store) cache storePath retrystatus
+uploadStorePath (Just store@(Store.Store storePrefix _)) cache storePath retrystatus = do
+  let storePathText = Store.getPath storePath
   let (storeHash, storeSuffix) = splitStorePath $ toS storePathText
       cacheName = pushParamsName cache
       authToken = getCacheAuthToken (pushParamsSecret cache)
@@ -164,7 +168,7 @@ uploadStorePath cache storePath retrystatus = do
   narHashRef <- liftIO $ newIORef ("" :: ByteString)
   fileHashRef <- liftIO $ newIORef ("" :: ByteString)
 
-  normalized <- liftIO $ Store.followLinksToStorePath store $ toS storePathText
+  normalized <- liftIO $ Store.followLinksToStorePath storePrefix $ toS storePathText
   pathinfo <- liftIO $ escalateAs FatalError =<< Store.queryPathInfo store (toS normalized)
   let storePathSize = Store.narSize pathinfo
   onAttempt strategy retrystatus storePathSize
@@ -237,14 +241,15 @@ pushClosure ::
   [Store.StorePath] ->
   -- | Every @r@ per store path of the entire closure of store paths
   m [r]
-pushClosure traversal pushParams inputStorePaths = do
-  missingPaths <- getMissingPathsForClosure pushParams inputStorePaths
-  traversal (\path -> retryAll $ \retrystatus -> uploadStorePath pushParams path retrystatus) missingPaths
+pushClosure traversal pushParams inputStorePaths = pushParamsWithStore pushParams $ \store -> do
+  missingPaths <- getMissingPathsForClosure (Just store) pushParams inputStorePaths
+  traversal (\path -> retryAll $ \retrystatus -> uploadStorePath (Just store) pushParams path retrystatus) missingPaths
 
-getMissingPathsForClosure :: (MonadIO m, MonadMask m) => PushParams m r -> [Store.StorePath] -> m [Store.StorePath]
-getMissingPathsForClosure pushParams inputPaths = do
-  let store = pushParamsStore pushParams
-      clientEnv = pushParamsClientEnv pushParams
+getMissingPathsForClosure :: Maybe Store.Store -> (MonadIO m, MonadMask m) => PushParams m r -> [Store.StorePath] -> m [Store.StorePath]
+getMissingPathsForClosure Nothing pushParams inputPaths = pushParamsWithStore pushParams $ \store ->
+  getMissingPathsForClosure (Just store) pushParams inputPaths
+getMissingPathsForClosure (Just store) pushParams inputPaths = do
+  let clientEnv = pushParamsClientEnv pushParams
   -- Get the transitive closure of dependencies
   paths <- liftIO $ Store.computeClosure store inputPaths
   let pathsAndHashes = (\path -> (,) (Store.getStorePathHash store path) path) <$> paths

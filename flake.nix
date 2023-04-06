@@ -55,6 +55,7 @@
               pkgs.libsodium
               # sync with stack.yaml LTS
               pkgs.haskell.compiler.ghc927
+              (pkgs.haskell-language-server.override { supportedGhcVersions = [ "927" ]; })
             ];
 
             pre-commit.hooks = {

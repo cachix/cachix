@@ -10,6 +10,7 @@ module Cachix.Client.Commands
     watchStore,
     watchExec,
     use,
+    pin,
   )
 where
 
@@ -24,7 +25,8 @@ import qualified Cachix.Client.InstallationMode as InstallationMode
 import qualified Cachix.Client.NixConf as NixConf
 import Cachix.Client.NixVersion (assertNixVersion)
 import Cachix.Client.OptionsParser
-  ( PushArguments (..),
+  ( PinOptions (..),
+    PushArguments (..),
     PushOptions (..),
   )
 import Cachix.Client.Push
@@ -37,6 +39,7 @@ import Cachix.Client.Servant
 import qualified Cachix.Client.Store as Store
 import qualified Cachix.Client.WatchStore as WatchStore
 import qualified Cachix.Types.BinaryCache as BinaryCache
+import qualified Cachix.Types.PinCreate as PinCreate
 import qualified Cachix.Types.SigningKeyCreate as SigningKeyCreate
 import qualified Control.Concurrent.Async as Async
 import Control.Exception.Safe (throwM)
@@ -183,6 +186,28 @@ push _ _ =
 
 putTextError :: Text -> IO ()
 putTextError = hPutStrLn stderr
+
+pin :: Env -> PinOptions -> IO ()
+pin env pinOpts = do
+  authToken <- Config.getAuthTokenRequired (config env)
+  storePath <- Store.followLinksToStorePath (Env.storePrefix env) (toS $ pinStorePath pinOpts)
+  traverse_ (validateArtifact (toS storePath)) (pinArtifacts pinOpts)
+  let pinCreate =
+        PinCreate.PinCreate
+          { name = pinName pinOpts,
+            storePath = toS storePath,
+            artifacts = pinArtifacts pinOpts,
+            keep = pinKeep pinOpts
+          }
+  void $ escalate <=< retryAll $ \_ ->
+    (`runClientM` clientenv env) $ API.createPin cachixClient authToken (pinCacheName pinOpts) pinCreate
+  where
+    validateArtifact :: Text -> Text -> IO ()
+    validateArtifact storePath artifact = do
+      -- strip prefix / from artifact path if it exists
+      let artifactPath = storePath <> "/" <> fromMaybe artifact (T.stripPrefix "/" artifact)
+      exists <- doesFileExist (toS artifactPath)
+      unless exists $ throwIO $ ArtifactNotFound $ "Artifact " <> artifactPath <> " doesn't exist."
 
 watchStore :: Env -> PushOptions -> Text -> IO ()
 watchStore env opts name = do

@@ -23,6 +23,7 @@ main = do
     Config configCommand -> Config.run cachixOptions configCommand
     GenerateKeypair name -> Commands.generateKeypair env name
     Push pushArgs -> Commands.push env pushArgs
+    Pin pingArgs -> Commands.pin env pingArgs
     WatchStore watchArgs name -> Commands.watchStore env watchArgs name
     WatchExec pushArgs name cmd args -> Commands.watchExec env pushArgs name cmd args
     Use name useOptions -> Commands.use env name useOptions

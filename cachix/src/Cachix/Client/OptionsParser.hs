@@ -4,6 +4,7 @@ module Cachix.Client.OptionsParser
   ( CachixCommand (..),
     PushArguments (..),
     PushOptions (..),
+    PinOptions (..),
     BinaryCacheName,
     getOpts,
     Flags (..),
@@ -16,9 +17,10 @@ import Cachix.Client.URI (URI)
 import qualified Cachix.Client.URI as URI
 import qualified Cachix.Deploy.OptionsParser as DeployOptions
 import qualified Cachix.Types.BinaryCache as BinaryCache
+import Cachix.Types.PinCreate (Keep (..))
 import qualified Data.Text as T
 import Options.Applicative
-import Protolude hiding (option, toS)
+import Protolude hiding (toS)
 import Protolude.Conv
 import qualified Prelude
 
@@ -77,6 +79,7 @@ data CachixCommand
   | Config Config.Command
   | GenerateKeypair BinaryCacheName
   | Push PushArguments
+  | Pin PinOptions
   | WatchStore PushOptions Text
   | WatchExec PushOptions Text Text [Text]
   | Use BinaryCacheName InstallationMode.UseOptions
@@ -87,6 +90,15 @@ data CachixCommand
 data PushArguments
   = PushPaths PushOptions Text [Text]
   | PushWatchStore PushOptions Text
+  deriving (Show)
+
+data PinOptions = PinOptions
+  { pinCacheName :: BinaryCacheName,
+    pinName :: Text,
+    pinStorePath :: Text,
+    pinArtifacts :: [Text],
+    pinKeep :: Maybe Keep
+  }
   deriving (Show)
 
 data PushOptions = PushOptions
@@ -104,6 +116,7 @@ commandParser =
       <> command "config" (Config <$> Config.parser)
       <> command "generate-keypair" (infoH generateKeypair (progDesc "Generate signing key pair for a binary cache"))
       <> command "push" (infoH push (progDesc "Upload Nix store paths to a binary cache"))
+      <> command "pin" (infoH pin (progDesc "Pin a store path to prevent it from being garbage collected"))
       <> command "watch-exec" (infoH watchExec (progDesc "Run a command while it's running watch /nix/store for newly added store paths and upload them to a binary cache"))
       <> command "watch-store" (infoH watchStore (progDesc "Indefinitely watch /nix/store for newly added store paths and upload them to a binary cache"))
       <> command "use" (infoH use (progDesc "Configure a binary cache by writing nix.conf and netrc files"))
@@ -159,6 +172,19 @@ commandParser =
     pushPaths =
       (\paths opts cache -> PushPaths opts cache paths)
         <$> many (strArgument (metavar "PATHS..."))
+    keepParser = daysParser <|> revisionsParser <|> foreverParser <|> pure Nothing
+    -- these three flag are mutually exclusive
+    daysParser = Just . Days <$> option auto (long "keep-days" <> metavar "INT")
+    revisionsParser = Just . Revisions <$> option auto (long "keep-revisions" <> metavar "INT")
+    foreverParser = flag' (Just Forever) (long "keep-forever")
+    pinOptions =
+      PinOptions
+        <$> nameArg
+        <*> strArgument (metavar "PIN-NAME")
+        <*> strArgument (metavar "STORE-PATH")
+        <*> many (strOption (metavar "ARTIFACTS..." <> long "artifact" <> short 'a'))
+        <*> keepParser
+    pin = Pin <$> pinOptions
     watchExec = WatchExec <$> pushOptions <*> nameArg <*> strArgument (metavar "CMD") <*> many (strArgument (metavar "-- ARGS"))
     watchStore = WatchStore <$> pushOptions <*> nameArg
     pushWatchStore =

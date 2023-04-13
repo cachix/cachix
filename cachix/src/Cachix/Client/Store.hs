@@ -151,8 +151,8 @@ computeClosure store initialPaths = do
   allPaths <-
     processGraph (getPath <$> initialPaths) $ \path -> do
       queryPathInfo store path >>= \case
-        Left _ -> do
-          hPutStrLn stderr $ color Yellow $ "Warning: " <> path <> " is not valid, skipping"
+        Left err -> do
+          hPutStrLn stderr $ color Yellow $ "Warning: " <> path <> " is not valid, skipping due to an error: " <> show err
           return []
         Right pathInfo -> pure $ references pathInfo
   return $ StorePath <$> Set.toList allPaths

@@ -30,7 +30,7 @@ import qualified Database.SQLite3 as SQLite
 import Protolude hiding (toS)
 import Protolude.Conv
 import System.Console.Pretty (Color (..), color)
-import System.Directory (canonicalizePath)
+import System.Directory (getSymbolicLinkTarget, pathIsSymbolicLink)
 import qualified System.Nix.Base32
 import System.Process (readProcessWithExitCode)
 
@@ -48,9 +48,18 @@ data PathInfo = PathInfo
     references :: [Text]
   }
 
+resolveSymlinkUntilStorePath :: Text -> FilePath -> IO FilePath
+resolveSymlinkUntilStorePath prefix path = do
+  isLink <- pathIsSymbolicLink path
+  if not isLink || prefix `T.isPrefixOf` toS path
+    then return path
+    else do
+      linkTarget <- getSymbolicLinkTarget path
+      resolveSymlinkUntilStorePath prefix linkTarget
+
 followLinksToStorePath :: Text -> FilePath -> IO FilePath
 followLinksToStorePath prefix path = do
-  storePath <- canonicalizePath path
+  storePath <- resolveSymlinkUntilStorePath prefix path
   let storePath' = T.drop (T.length prefix) (toS storePath)
   return $ toS $ prefix <> T.intercalate "/" (take 3 $ T.splitOn "/" storePath')
 

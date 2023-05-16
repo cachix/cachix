@@ -38,148 +38,148 @@ data BinaryCacheAPI route = BinaryCacheAPI
     nixCacheInfo ::
       route
         :- CachixAuth
-          :> "cache"
-          :> Capture "name" Text
-          :> "nix-cache-info"
-          :> Get '[XNixCacheInfo, JSON] NixCacheInfo.NixCacheInfo,
+        :> "cache"
+        :> Capture "name" Text
+        :> "nix-cache-info"
+        :> Get '[XNixCacheInfo, JSON] NixCacheInfo.NixCacheInfo,
     -- Hydra: src/lib/Hydra/View/NARInfo.pm
     narinfo ::
       route
         :- CachixAuth
-          :> "cache"
-          :> Capture "name" Text
-          :> Capture "narinfohash" NarInfoHash.NarInfoHash
-          :> Get '[XNixNarInfo, JSON] (Headers '[Header "Cache-Control" Text] NarInfo.CachixNarInfo),
+        :> "cache"
+        :> Capture "name" Text
+        :> Capture "narinfohash" NarInfoHash.NarInfoHash
+        :> Get '[XNixNarInfo, JSON] (Headers '[Header "Cache-Control" Text] NarInfo.CachixNarInfo),
     narinfoHead ::
       route
         :- CachixAuth
-          :> "cache"
-          :> Capture "name" Text
-          :> Capture "narinfohash" NarInfoHash.NarInfoHash
-          :> Head,
+        :> "cache"
+        :> Capture "name" Text
+        :> Capture "narinfohash" NarInfoHash.NarInfoHash
+        :> Head,
     -- Hydra: src/lib/Hydra/View/NixNAR.pm
     nar ::
       route
         :- CachixAuth
-          :> "cache"
-          :> Capture "name" Text
-          :> "nar"
-          :> Capture "nar" NarFileName
-          :> Get302 '[XNixNar] '[],
+        :> "cache"
+        :> Capture "name" Text
+        :> "nar"
+        :> Capture "nar" NarFileName
+        :> Get302 '[XNixNar] '[],
     -- cachix specific
     getCache ::
       route
         :- CachixAuth
-          :> "cache"
-          :> Capture "name" Text
-          :> Get '[JSON] BinaryCache.BinaryCache,
+        :> "cache"
+        :> Capture "name" Text
+        :> Get '[JSON] BinaryCache.BinaryCache,
     narinfoBulk ::
       route
         :- CachixAuth
-          :> "cache"
-          :> Capture "name" Text
-          :> "narinfo"
-          :> Summary "Given a list of store hashes, return a list of those that are missing"
-          :> ReqBody '[JSON] [Text]
-          :> Post '[JSON] [Text],
+        :> "cache"
+        :> Capture "name" Text
+        :> "narinfo"
+        :> Summary "Given a list of store hashes, return a list of those that are missing"
+        :> ReqBody '[JSON] [Text]
+        :> Post '[JSON] [Text],
     narURL ::
       route
         :- CachixAuth
-          :> "cache"
-          :> Capture "name" Text
-          :> "narurl"
-          :> Capture "nar" NarFileName
-          :> Get '[JSON] Text,
+        :> "cache"
+        :> Capture "name" Text
+        :> "narurl"
+        :> Capture "nar" NarFileName
+        :> Get '[JSON] Text,
     createAndUploadNar ::
       route
         :- Summary "Upload a NAR directly to the Cachix Server"
-          :> Description "This is a legacy API for older Cachix clients. Prefer 'createNar' instead."
-          :> CachixAuth
-          :> "cache"
-          :> Capture "name" Text
-          :> "nar"
-          :> QueryParam "compression" BinaryCache.CompressionMethod
-          :> StreamBody NoFraming XNixNar (ConduitT () ByteStringStreaming.ByteStringStreaming (ResourceT IO) ())
-          :> Post '[JSON] NoContent,
+        :> Description "This is a legacy API for older Cachix clients. Prefer 'createNar' instead."
+        :> CachixAuth
+        :> "cache"
+        :> Capture "name" Text
+        :> "nar"
+        :> QueryParam "compression" BinaryCache.CompressionMethod
+        :> StreamBody NoFraming XNixNar (ConduitT () ByteStringStreaming.ByteStringStreaming (ResourceT IO) ())
+        :> Post '[JSON] NoContent,
     createNar ::
       route
         :- Summary "Create an empty NAR and initiate a multipart upload"
-          :> CachixAuth
-          :> "cache"
-          :> Capture "name" Text
-          :> "multipart-nar"
-          :> QueryParam "compression" BinaryCache.CompressionMethod
-          :> Post '[JSON] Multipart.CreateMultipartUploadResponse,
+        :> CachixAuth
+        :> "cache"
+        :> Capture "name" Text
+        :> "multipart-nar"
+        :> QueryParam "compression" BinaryCache.CompressionMethod
+        :> Post '[JSON] Multipart.CreateMultipartUploadResponse,
     uploadNarPart ::
       route
         :- Summary "Retrieve a presigned URL to upload a part of a multipart NAR"
-          :> CachixAuth
-          :> "cache"
-          :> Capture "name" Text
-          :> "multipart-nar"
-          :> Capture "narUuid" UUID
-          :> QueryParam' '[Required] "uploadId" Text
-          :> QueryParam' '[Required] "partNumber" Int
-          :> ReqBody '[JSON] Multipart.SigningData
-          :> Post '[JSON] Multipart.UploadPartResponse,
+        :> CachixAuth
+        :> "cache"
+        :> Capture "name" Text
+        :> "multipart-nar"
+        :> Capture "narUuid" UUID
+        :> QueryParam' '[Required] "uploadId" Text
+        :> QueryParam' '[Required] "partNumber" Int
+        :> ReqBody '[JSON] Multipart.SigningData
+        :> Post '[JSON] Multipart.UploadPartResponse,
     completeNarUpload ::
       route
         :- Summary "Complete a multipart upload"
-          :> Description "Verify the etags for each part and create the narinfo"
-          :> CachixAuth
-          :> "cache"
-          :> Capture "name" Text
-          :> "multipart-nar"
-          :> Capture "narUuid" UUID
-          :> "complete"
-          :> QueryParam' '[Required] "uploadId" Text
-          :> ReqBody '[JSON] Multipart.CompletedMultipartUpload
-          :> Post '[JSON] NoContent,
+        :> Description "Verify the etags for each part and create the narinfo"
+        :> CachixAuth
+        :> "cache"
+        :> Capture "name" Text
+        :> "multipart-nar"
+        :> Capture "narUuid" UUID
+        :> "complete"
+        :> QueryParam' '[Required] "uploadId" Text
+        :> ReqBody '[JSON] Multipart.CompletedMultipartUpload
+        :> Post '[JSON] NoContent,
     abortMultipartUpload ::
       route
         :- Summary "Abort a multipart upload"
-          :> CachixAuth
-          :> "cache"
-          :> Capture "name" Text
-          :> "multipart-nar"
-          :> Capture "narUuid" UUID
-          :> "abort"
-          :> QueryParam' '[Required] "uploadId" Text
-          :> Post '[JSON] NoContent,
+        :> CachixAuth
+        :> "cache"
+        :> Capture "name" Text
+        :> "multipart-nar"
+        :> Capture "narUuid" UUID
+        :> "abort"
+        :> QueryParam' '[Required] "uploadId" Text
+        :> Post '[JSON] NoContent,
     createNarinfo ::
       route
         :- CachixAuth
-          :> "cache"
-          :> Capture "name" Text
-          :> Capture "narinfohash" NarInfoHash.NarInfoHash
-          :> ReqBody '[JSON] NarInfoCreate.NarInfoCreate
-          :> Post '[JSON] NoContent,
+        :> "cache"
+        :> Capture "name" Text
+        :> Capture "narinfohash" NarInfoHash.NarInfoHash
+        :> ReqBody '[JSON] NarInfoCreate.NarInfoCreate
+        :> Post '[JSON] NoContent,
     serveNarContent ::
       route
         :- CachixAuth
-          :> "cache"
-          :> Capture "name" Text
-          :> "serve"
-          :> Capture "storehash" Text
-          :> CaptureAll "filepath" Text
-          :> Summary "Serve a file from a given store path"
-          :> Get '[XNixNar] (Headers '[Header "X-Content-Type-Options" Text, Header "Cache-Control" Text] ByteStringStreaming.LazyByteStringStreaming),
+        :> "cache"
+        :> Capture "name" Text
+        :> "serve"
+        :> Capture "storehash" Text
+        :> CaptureAll "filepath" Text
+        :> Summary "Serve a file from a given store path"
+        :> Get '[XNixNar] (Headers '[Header "X-Content-Type-Options" Text, Header "Cache-Control" Text] ByteStringStreaming.LazyByteStringStreaming),
     createKey ::
       route
         :- CachixAuth
-          :> "cache"
-          :> Capture "name" Text
-          :> "key"
-          :> ReqBody '[JSON] SigningKeyCreate.SigningKeyCreate
-          :> Post '[JSON] NoContent,
+        :> "cache"
+        :> Capture "name" Text
+        :> "key"
+        :> ReqBody '[JSON] SigningKeyCreate.SigningKeyCreate
+        :> Post '[JSON] NoContent,
     createPin ::
       route
         :- CachixAuth
-          :> "cache"
-          :> Capture "name" Text
-          :> "pin"
-          :> ReqBody '[JSON] PinCreate.PinCreate
-          :> Post '[JSON] NoContent
+        :> "cache"
+        :> Capture "name" Text
+        :> "pin"
+        :> ReqBody '[JSON] PinCreate.PinCreate
+        :> Post '[JSON] NoContent
   }
   deriving (Generic)
 

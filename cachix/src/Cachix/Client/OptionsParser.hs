@@ -196,8 +196,7 @@ commandParser =
               <> help "DEPRECATED: use watch-store command instead."
           )
     use =
-      Use
-        <$> nameArg
+      Use <$> nameArg
         <*> ( InstallationMode.UseOptions
                 <$> optional
                   ( option

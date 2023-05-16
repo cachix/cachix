@@ -12,15 +12,16 @@ module Cachix.Client.PushQueue
   )
 where
 
+import Cachix.Client.CNix (filterInvalidStorePath)
 import qualified Cachix.Client.Push as Push
 import Cachix.Client.Retry (retryAll)
-import Cachix.Client.Store (StorePath)
 import Control.Concurrent.Async
 import Control.Concurrent.Extra (once)
 import Control.Concurrent.STM (TVar, modifyTVar', newTVarIO, readTVar)
 import qualified Control.Concurrent.STM.Lock as Lock
 import qualified Control.Concurrent.STM.TBQueue as TBQueue
 import qualified Data.Set as S
+import Hercules.CNix.Store (StorePath)
 import Protolude
 import qualified System.Posix.Signals as Signals
 import qualified System.Systemd.Daemon as Systemd
@@ -44,7 +45,9 @@ worker pushParams workerState = forever $ do
   bracket_ (inProgressModify (+ 1)) (inProgressModify (\x -> x - 1)) $
     retryAll $
       \retrystatus -> do
-        Push.uploadStorePath Nothing pushParams storePath retrystatus
+        maybeStorePath <- filterInvalidStorePath (Push.pushParamsStore pushParams) storePath
+        for_ maybeStorePath $ \validatedStorePath ->
+          Push.uploadStorePath pushParams validatedStorePath retrystatus
   where
     inProgressModify f =
       atomically $ modifyTVar' (inProgress workerState) f
@@ -96,7 +99,7 @@ queryLoop workerState pushqueue pushParams = do
       if isEmpty
         then return S.empty
         else return $ alreadyQueued workerState
-    missingStorePaths <- Push.getMissingPathsForClosure Nothing pushParams storePaths
+    missingStorePaths <- Push.getMissingPathsForClosure pushParams storePaths
     let missingStorePathsSet = S.fromList missingStorePaths
         uncachedMissingStorePaths = S.difference missingStorePathsSet alreadyQueuedSet
     atomically $ for_ uncachedMissingStorePaths $ TBQueue.writeTBQueue pushqueue

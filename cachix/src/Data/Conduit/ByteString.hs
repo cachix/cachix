@@ -47,15 +47,15 @@ processChunk chunkSize input =
     loop front idxIn s@(S fptr ptr idxOut)
       | idxIn >= BS.length input = return (front [], s)
       | otherwise = do
-          pokeByteOff ptr idxOut (unsafeIndex input idxIn)
-          let idxOut' = idxOut + 1
-              idxIn' = idxIn + 1
-          if idxOut' >= chunkSize
-            then do
-              let bs = PS fptr 0 idxOut'
-              s' <- newS chunkSize
-              loop (front . (bs :)) idxIn' s'
-            else loop front idxIn' (S fptr ptr idxOut')
+        pokeByteOff ptr idxOut (unsafeIndex input idxIn)
+        let idxOut' = idxOut + 1
+            idxIn' = idxIn + 1
+        if idxOut' >= chunkSize
+          then do
+            let bs = PS fptr 0 idxOut'
+            s' <- newS chunkSize
+            loop (front . (bs :)) idxIn' s'
+          else loop front idxIn' (S fptr ptr idxOut')
 
 processAndChunkOutputRaw :: MonadIO m => ChunkSize -> ConduitT ByteString ByteString m ()
 processAndChunkOutputRaw chunkSize =

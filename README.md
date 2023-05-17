@@ -28,6 +28,8 @@ Available commands:
   config                   Manage configuration settings for cachix
   generate-keypair         Generate signing key pair for a binary cache
   push                     Upload Nix store paths to a binary cache
+  pin                      Pin a store path to prevent it from being garbage
+                           collected
   watch-exec               Run a command while it's running watch /nix/store for
                            newly added store paths and upload them to a binary
                            cache

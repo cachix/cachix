@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [1.5] - 2023-05-17
+
+### Added
+
+- `cachix pin` - See https://docs.cachix.org/pins
+
+### Fixed
+
+- Reverted "Rewrite C++ bits to Haskell"
+  
+  This reverts 15 commits related towards getting Cachix to
+  built statically without C++ code in Nix.
+  
+  Since it's not possible to interact with Nix sqlite directly
+  in a reliable manner, we'll go the route of autogenerating C++
+  binding without Template Haskell, at some point.
+  
 ## [1.4.2] - 2023-04-05
 
 ### Fixed

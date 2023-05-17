@@ -19,7 +19,7 @@ jobs:
         name: cachix
         installCommand: NIXPKGS_ALLOW_BROKEN=1 nix-env -if .
         signingKey: '${{ secrets.CACHIX_SIGNING_KEY }}'
-    - run:  nix build -L '.#ci' '.#cachix' --show-trace
+    - run:  nix build -L '.#ci' '.#cachix' --show-trace --impure
     # make sure it's all uploaded to cachix
     - run: echo > /tmp/store-path-pre-build
     # test watch-exec

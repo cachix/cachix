@@ -192,7 +192,9 @@ putTextError = hPutStrLn stderr
 pin :: Env -> PinOptions -> IO ()
 pin env pinOpts = do
   authToken <- Config.getAuthTokenRequired (config env)
-  storePath <- Store.followLinksToStorePath (Env.storePrefix env) (toS $ pinStorePath pinOpts)
+  storePath <- withStore $ \store -> do
+    path <- followLinksToStorePath store (encodeUtf8 $ pinStorePath pinOpts)
+    storePathToPath store path
   traverse_ (validateArtifact (toS storePath)) (pinArtifacts pinOpts)
   let pinCreate =
         PinCreate.PinCreate

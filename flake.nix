@@ -2,7 +2,7 @@
   description = "CLI for Hosted Nix binary caches";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-22.11";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     devenv = {
       url = "github:cachix/devenv";
       inputs.flake-compat.follows = "flake-compat";
@@ -63,8 +63,8 @@
               pkgs.stack
               pkgs.pkg-config
               pkgs.libsodium
-              # sync with stack.yaml LTS
               (getNix { inherit pkgs; })
+              # sync with stack.yaml LTS
               pkgs.haskell.compiler.ghc927
               (pkgs.haskell-language-server.override { supportedGhcVersions = [ "927" ]; })
             ];

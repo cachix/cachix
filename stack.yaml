@@ -1,10 +1,10 @@
 # Match resolver with nixos-unstable haskellPackages
-resolver: lts-20.4
+resolver: lts-20.21
 packages:
 - cachix
 - cachix-api
 extra-deps:
-- hercules-ci-cnix-store-0.3.3.2
+- hercules-ci-cnix-store-0.3.3.5
 - cabal-pkg-config-version-hook-0.1.0.0
 - nix-narinfo-0.1.0.1
 - fsnotify-0.4.1.0

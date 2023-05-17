@@ -10,21 +10,23 @@ module Cachix.Client.Commands
     watchStore,
     watchExec,
     use,
+    pin,
   )
 where
 
 import qualified Cachix.API as API
 import Cachix.API.Error
+import Cachix.Client.CNix (filterInvalidStorePath)
 import qualified Cachix.Client.Config as Config
 import Cachix.Client.Env (Env (..))
-import qualified Cachix.Client.Env as Env
 import Cachix.Client.Exception (CachixException (..))
 import Cachix.Client.HumanSize (humanSize)
 import qualified Cachix.Client.InstallationMode as InstallationMode
 import qualified Cachix.Client.NixConf as NixConf
 import Cachix.Client.NixVersion (assertNixVersion)
 import Cachix.Client.OptionsParser
-  ( PushArguments (..),
+  ( PinOptions (..),
+    PushArguments (..),
     PushOptions (..),
   )
 import Cachix.Client.Push
@@ -34,9 +36,9 @@ import Cachix.Client.Secrets
     exportSigningKey,
   )
 import Cachix.Client.Servant
-import qualified Cachix.Client.Store as Store
 import qualified Cachix.Client.WatchStore as WatchStore
 import qualified Cachix.Types.BinaryCache as BinaryCache
+import qualified Cachix.Types.PinCreate as PinCreate
 import qualified Cachix.Types.SigningKeyCreate as SigningKeyCreate
 import qualified Control.Concurrent.Async as Async
 import Control.Exception.Safe (throwM)
@@ -47,6 +49,7 @@ import Data.String.Here
 import qualified Data.Text as T
 import qualified Data.Text.IO as T.IO
 import GHC.IO.Handle (hDuplicate, hDuplicateTo)
+import Hercules.CNix.Store (Store, StorePath, followLinksToStorePath, storePathToPath, withStore)
 import Network.HTTP.Types (status401, status404)
 import Protolude hiding (toS)
 import Protolude.Conv
@@ -167,12 +170,14 @@ push env (PushPaths opts name cliPaths) = do
     normalized <-
       liftIO $
         for inputStorePaths $
-          \path -> Store.followLinksToStorePath (Env.storePrefix env) (toS path)
+          \path -> do
+            storePath <- followLinksToStorePath (pushParamsStore pushParams) (encodeUtf8 path)
+            filterInvalidStorePath (pushParamsStore pushParams) storePath
     pushedPaths <-
       pushClosure
         (mapConcurrentlyBounded (numJobs opts))
         pushParams
-        (Store.StorePath . toS <$> normalized)
+        (catMaybes normalized)
     case (length normalized, length pushedPaths) of
       (0, _) -> putTextError "Nothing to push."
       (_, 0) -> putTextError "Nothing to push - all store paths are already on Cachix."
@@ -184,10 +189,34 @@ push _ _ =
 putTextError :: Text -> IO ()
 putTextError = hPutStrLn stderr
 
+pin :: Env -> PinOptions -> IO ()
+pin env pinOpts = do
+  authToken <- Config.getAuthTokenRequired (config env)
+  storePath <- withStore $ \store -> do
+    path <- followLinksToStorePath store (encodeUtf8 $ pinStorePath pinOpts)
+    storePathToPath store path
+  traverse_ (validateArtifact (toS storePath)) (pinArtifacts pinOpts)
+  let pinCreate =
+        PinCreate.PinCreate
+          { name = pinName pinOpts,
+            storePath = toS storePath,
+            artifacts = pinArtifacts pinOpts,
+            keep = pinKeep pinOpts
+          }
+  void $ escalate <=< retryAll $ \_ ->
+    (`runClientM` clientenv env) $ API.createPin cachixClient authToken (pinCacheName pinOpts) pinCreate
+  where
+    validateArtifact :: Text -> Text -> IO ()
+    validateArtifact storePath artifact = do
+      -- strip prefix / from artifact path if it exists
+      let artifactPath = storePath <> "/" <> fromMaybe artifact (T.stripPrefix "/" artifact)
+      exists <- doesFileExist (toS artifactPath)
+      unless exists $ throwIO $ ArtifactNotFound $ "Artifact " <> artifactPath <> " doesn't exist."
+
 watchStore :: Env -> PushOptions -> Text -> IO ()
 watchStore env opts name = do
   withPushParams env opts name $ \pushParams ->
-    WatchStore.startWorkers (numJobs opts) pushParams
+    WatchStore.startWorkers (pushParamsStore pushParams) (numJobs opts) pushParams
 
 watchExec :: Env -> PushOptions -> Text -> Text -> [Text] -> IO ()
 watchExec env pushOpts name cmd args = withPushParams env pushOpts name $ \pushParams -> do
@@ -198,7 +227,7 @@ watchExec env pushOpts name cmd args = withPushParams env pushOpts name $ \pushP
           }
       watch = do
         hDuplicateTo stderr stdout -- redirect all stdout to stderr
-        WatchStore.startWorkers (numJobs pushOpts) pushParams
+        WatchStore.startWorkers (pushParamsStore pushParams) (numJobs pushOpts) pushParams
 
   (_, exitCode) <-
     Async.concurrently watch $ do
@@ -229,14 +258,14 @@ retryText retrystatus =
     then ""
     else "(retry #" <> show (rsIterNumber retrystatus) <> ") "
 
-pushStrategy :: Maybe Token -> PushOptions -> Text -> BinaryCache.CompressionMethod -> Store.StorePath -> PushStrategy IO ()
-pushStrategy authToken opts name compressionMethod storePath =
+pushStrategy :: Store -> Maybe Token -> PushOptions -> Text -> BinaryCache.CompressionMethod -> StorePath -> PushStrategy IO ()
+pushStrategy store authToken opts name compressionMethod storePath =
   PushStrategy
     { onAlreadyPresent = pass,
       on401 = handleCacheResponse name authToken,
       onError = throwM,
       onAttempt = \retrystatus size -> do
-        let path = Store.getPath storePath
+        path <- decodeUtf8With lenientDecode <$> storePathToPath store storePath
         -- we append newline instead of putStrLn due to https://github.com/haskell/text/issues/242
         putStr $ retryText retrystatus <> "compressing using " <> T.toLower (show compressionMethod) <> " and pushing " <> path <> " (" <> humanSize (fromIntegral size) <> ")\n",
       onDone = pass,
@@ -246,7 +275,7 @@ pushStrategy authToken opts name compressionMethod storePath =
     }
 
 withPushParams :: Env -> PushOptions -> Text -> (PushParams IO () -> IO ()) -> IO ()
-withPushParams env pushOpts name action = do
+withPushParams env pushOpts name m = do
   pushSecret <- findPushSecret (config env) name
   authToken <- Config.getAuthTokenMaybe (config env)
   compressionMethodBackend <- case pushSecret of
@@ -258,17 +287,12 @@ withPushParams env pushOpts name action = do
         Left err -> handleCacheResponse name authToken err
         Right binaryCache -> pure (Just $ BinaryCache.preferredCompressionMethod binaryCache)
   let compressionMethod = fromMaybe BinaryCache.ZSTD (head $ catMaybes [Cachix.Client.OptionsParser.compressionMethod pushOpts, compressionMethodBackend])
-  wal <- Store.getUseSqliteWAL
-  action
-    PushParams
-      { pushParamsName = name,
-        pushParamsSecret = pushSecret,
-        pushParamsClientEnv = clientenv env,
-        pushParamsStrategy = pushStrategy authToken pushOpts name compressionMethod,
-        pushParamsWithStore =
-          Store.withLocalStore $
-            Store.LocalStoreOptions
-              { Store.storePrefix = Env.storePrefix env,
-                Store.useSqliteWAL = wal
-              }
-      }
+  withStore $ \store ->
+    m
+      PushParams
+        { pushParamsName = name,
+          pushParamsSecret = pushSecret,
+          pushParamsClientEnv = clientenv env,
+          pushParamsStrategy = pushStrategy store authToken pushOpts name compressionMethod,
+          pushParamsStore = store
+        }

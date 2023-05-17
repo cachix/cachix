@@ -18,6 +18,7 @@ import qualified Cachix.Types.NarInfo as NarInfo
 import qualified Cachix.Types.NarInfoCreate as NarInfoCreate
 import qualified Cachix.Types.NarInfoHash as NarInfoHash
 import qualified Cachix.Types.NixCacheInfo as NixCacheInfo
+import qualified Cachix.Types.PinCreate as PinCreate
 import Cachix.Types.Servant (Get302, Head)
 import Cachix.Types.Session (Session)
 import qualified Cachix.Types.SigningKeyCreate as SigningKeyCreate
@@ -170,6 +171,14 @@ data BinaryCacheAPI route = BinaryCacheAPI
           :> Capture "name" Text
           :> "key"
           :> ReqBody '[JSON] SigningKeyCreate.SigningKeyCreate
+          :> Post '[JSON] NoContent,
+    createPin ::
+      route
+        :- CachixAuth
+          :> "cache"
+          :> Capture "name" Text
+          :> "pin"
+          :> ReqBody '[JSON] PinCreate.PinCreate
           :> Post '[JSON] NoContent
   }
   deriving (Generic)

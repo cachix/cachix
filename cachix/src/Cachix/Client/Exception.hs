@@ -15,6 +15,7 @@ data CachixException
   | NarStreamingError ExitCode Text
   | NarHashMismatch Text
   | DeprecatedCommand Text
+  | ArtifactNotFound Text
   | AccessDeniedBinaryCache Text
   | BinaryCacheNotFound Text
   deriving (Show, Typeable)
@@ -27,6 +28,7 @@ instance Exception CachixException where
   displayException (AmbiguousInput s) = toS s
   displayException (NoInput s) = toS s
   displayException (NoConfig s) = toS s
+  displayException (ArtifactNotFound s) = toS s
   displayException (NoSigningKey s) = toS s
   displayException (NetRcParseError s) = toS s
   displayException (NarStreamingError _ s) = toS s

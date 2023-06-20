@@ -12,9 +12,10 @@ import Cachix.Deploy.ActivateCommand as ActivateCommand
 import qualified Cachix.Deploy.Agent as AgentCommand
 import qualified Cachix.Deploy.OptionsParser as DeployOptions
 import Protolude
+import System.Console.AsciiProgress (displayConsoleRegions)
 
 main :: IO ()
-main = do
+main = displayConsoleRegions $ do
   (flags, command) <- getOpts
   env <- mkEnv flags
   let cachixOptions = cachixoptions env

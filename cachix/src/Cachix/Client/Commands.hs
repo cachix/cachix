@@ -57,6 +57,7 @@ import Servant.API (NoContent)
 import Servant.Auth.Client
 import Servant.Client.Streaming
 import Servant.Conduit ()
+import System.Console.AsciiProgress
 import System.Directory (doesFileExist)
 import System.IO (hIsTerminalDevice)
 import qualified System.Posix.Signals as Signals
@@ -266,8 +267,21 @@ pushStrategy store authToken opts name compressionMethod storePath =
       onError = throwM,
       onAttempt = \retrystatus size -> do
         path <- decodeUtf8With lenientDecode <$> storePathToPath store storePath
-        -- we append newline instead of putStrLn due to https://github.com/haskell/text/issues/242
-        putStr $ retryText retrystatus <> "compressing using " <> T.toLower (show compressionMethod) <> " and pushing " <> path <> " (" <> humanSize (fromIntegral size) <> ")\n",
+        let hSize = toS $ humanSize $ fromIntegral size
+            bar = "[:bar] " <> toS path <> " (:percent of " <> hSize <> ")"
+            barLength = T.length $ T.replace ":percent" "  0%" (T.replace "[:bar]" "" (toS bar))
+        progressBar <-
+          liftIO $
+            newProgressBar
+              def
+                { pgTotal = fromIntegral size,
+                  -- size of the bar is this value minus the bar width
+                  -- https://github.com/yamadapc/haskell-ascii-progress/issues/24
+                  pgWidth = 20 + barLength,
+                  pgOnCompletion = Just $ "✓ " <> toS path <> " (" <> hSize <> ")",
+                  pgFormat = bar
+                }
+        return $ Just progressBar,
       onDone = pass,
       Cachix.Client.Push.compressionMethod = compressionMethod,
       Cachix.Client.Push.compressionLevel = Cachix.Client.OptionsParser.compressionLevel opts,

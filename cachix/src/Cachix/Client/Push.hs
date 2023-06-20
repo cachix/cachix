@@ -44,6 +44,7 @@ import Control.Exception.Safe (MonadMask, throwM)
 import Control.Monad.Trans.Resource (ResourceT)
 import Control.Retry (RetryStatus)
 import Crypto.Sign.Ed25519
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base64 as B64
 import Data.Conduit
 import qualified Data.Conduit.Lzma as Lzma (compress)
@@ -64,6 +65,7 @@ import Servant.Auth ()
 import Servant.Auth.Client
 import Servant.Client.Streaming
 import Servant.Conduit ()
+import System.Console.AsciiProgress
 import System.Environment (lookupEnv)
 import qualified System.Nix.Base32
 import System.Nix.Nar
@@ -85,7 +87,7 @@ data PushParams m r = PushParams
 data PushStrategy m r = PushStrategy
   { -- | Called when a path is already in the cache.
     onAlreadyPresent :: m r,
-    onAttempt :: RetryStatus -> Int64 -> m (),
+    onAttempt :: RetryStatus -> Int64 -> m (Maybe ProgressBar),
     on401 :: ClientError -> m r,
     onError :: ClientError -> m r,
     onDone :: m r,
@@ -138,6 +140,18 @@ getCacheAuthToken :: PushSecret -> Token
 getCacheAuthToken (PushToken token) = token
 getCacheAuthToken (PushSigningKey token _) = token
 
+updateProgressBar :: MonadIO m => Maybe ProgressBar -> ConduitM ByteString ByteString m ()
+updateProgressBar Nothing = awaitForever Data.Conduit.yield
+updateProgressBar (Just pg) =
+  await
+    >>= maybe
+      (return ())
+      ( \chunk -> do
+          liftIO $ tickN pg $ BS.length chunk
+          Data.Conduit.yield chunk
+          updateProgressBar (Just pg)
+      )
+
 uploadStorePath ::
   (MonadIO m) =>
   -- | details for pushing to cache
@@ -172,7 +186,7 @@ uploadStorePath cache storePath retrystatus = do
   normalized <- liftIO $ Store.followLinksToStorePath store $ toS storePathText
   pathinfo <- liftIO $ Store.queryPathInfo store normalized
   let storePathSize = Store.validPathInfoNarSize pathinfo
-  onAttempt strategy retrystatus storePathSize
+  maybeProgressBar <- onAttempt strategy retrystatus storePathSize
 
   withCompressor $ \compressor -> liftIO $ do
     uploadResult <-
@@ -180,10 +194,13 @@ uploadStorePath cache storePath retrystatus = do
         streamNarIO narEffectsIO (toS storePathText) Data.Conduit.yield
           .| passthroughSizeSink narSizeRef
           .| passthroughHashSink narHashRef
+          .| updateProgressBar maybeProgressBar
           .| compressor
           .| passthroughSizeSink fileSizeRef
           .| passthroughHashSinkB16 fileHashRef
           .| Push.S3.streamUpload cacheClientEnv authToken cacheName (compressionMethod strategy)
+
+    for_ maybeProgressBar $ \progressBar -> liftIO $ wait $ pgFuture progressBar
 
     case uploadResult of
       Left err -> throwIO err

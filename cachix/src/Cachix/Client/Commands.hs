@@ -58,6 +58,7 @@ import Servant.Auth.Client
 import Servant.Client.Streaming
 import Servant.Conduit ()
 import System.Console.AsciiProgress
+import System.Console.Pretty
 import System.Directory (doesFileExist)
 import System.IO (hIsTerminalDevice)
 import qualified System.Posix.Signals as Signals
@@ -268,7 +269,7 @@ pushStrategy store authToken opts name compressionMethod storePath =
       onAttempt = \retrystatus size -> do
         path <- decodeUtf8With lenientDecode <$> storePathToPath store storePath
         let hSize = toS $ humanSize $ fromIntegral size
-            bar = "[:bar] " <> toS path <> " (:percent of " <> hSize <> ")"
+            bar = color Blue "[:bar] " <> toS path <> " (:percent of " <> hSize <> ")"
             barLength = T.length $ T.replace ":percent" "  0%" (T.replace "[:bar]" "" (toS bar))
         progressBar <-
           liftIO $
@@ -278,7 +279,7 @@ pushStrategy store authToken opts name compressionMethod storePath =
                   -- size of the bar is this value minus the bar width
                   -- https://github.com/yamadapc/haskell-ascii-progress/issues/24
                   pgWidth = 20 + barLength,
-                  pgOnCompletion = Just $ "✓ " <> toS path <> " (" <> hSize <> ")",
+                  pgOnCompletion = Just $ color Green "✓ " <> toS path <> " (" <> hSize <> ")",
                   pgFormat = bar
                 }
         return $ Just progressBar,

@@ -258,7 +258,7 @@ retryText :: RetryStatus -> Text
 retryText retrystatus =
   if rsIterNumber retrystatus == 0
     then ""
-    else "(retry #" <> show (rsIterNumber retrystatus) <> ") "
+    else "retry #" <> show (rsIterNumber retrystatus) <> " "
 
 pushStrategy :: Store -> Maybe Token -> PushOptions -> Text -> BinaryCache.CompressionMethod -> StorePath -> PushStrategy IO ()
 pushStrategy store authToken opts name compressionMethod storePath =
@@ -269,7 +269,7 @@ pushStrategy store authToken opts name compressionMethod storePath =
       onAttempt = \retrystatus size -> do
         path <- decodeUtf8With lenientDecode <$> storePathToPath store storePath
         let hSize = toS $ humanSize $ fromIntegral size
-            bar = color Blue "[:bar] " <> toS path <> " (:percent of " <> hSize <> ")"
+            bar = color Blue "[:bar] " <> toS (retryText retrystatus) <> toS path <> " (:percent of " <> hSize <> ")"
             barLength = T.length $ T.replace ":percent" "  0%" (T.replace "[:bar]" "" (toS bar))
         progressBar <-
           liftIO $

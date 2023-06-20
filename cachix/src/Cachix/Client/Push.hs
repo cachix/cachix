@@ -200,8 +200,6 @@ uploadStorePath cache storePath retrystatus = do
           .| passthroughHashSinkB16 fileHashRef
           .| Push.S3.streamUpload cacheClientEnv authToken cacheName (compressionMethod strategy)
 
-    for_ maybeProgressBar $ \progressBar -> liftIO $ wait $ pgFuture progressBar
-
     case uploadResult of
       Left err -> throwIO err
       Right (narId, uploadId, parts) -> do

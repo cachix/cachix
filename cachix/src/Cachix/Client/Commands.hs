@@ -258,7 +258,7 @@ retryText :: RetryStatus -> Text
 retryText retrystatus =
   if rsIterNumber retrystatus == 0
     then ""
-    else "retry #" <> show (rsIterNumber retrystatus) <> " "
+    else color Yellow $ "retry #" <> show (rsIterNumber retrystatus) <> " "
 
 pushStrategy :: Store -> Maybe Token -> PushOptions -> Text -> BinaryCache.CompressionMethod -> StorePath -> PushStrategy IO ()
 pushStrategy store authToken opts name compressionMethod storePath =
@@ -276,7 +276,6 @@ pushStrategy store authToken opts name compressionMethod storePath =
             newProgressBar
               def
                 { pgTotal = fromIntegral size,
-                  -- size of the bar is this value minus the bar width
                   -- https://github.com/yamadapc/haskell-ascii-progress/issues/24
                   pgWidth = 20 + barLength,
                   pgOnCompletion = Just $ color Green "✓ " <> toS path <> " (" <> hSize <> ")",

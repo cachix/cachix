@@ -281,6 +281,11 @@ pushStrategy store authToken opts name compressionMethod storePath =
                   pgOnCompletion = Just $ color Green "✓ " <> toS path <> " (" <> hSize <> ")",
                   pgFormat = bar
                 }
+        isTerminal <- hIsTerminalDevice stdout
+        unless isTerminal $ do
+          -- we append newline instead of putStrLn due to https://github.com/haskell/text/issues/242
+          let compression = T.toLower (show compressionMethod)
+          putStr $ retryText retrystatus <> "compressing using " <> compression <> " and pushing " <> path <> " (" <> toS hSize <> ")\n"
         return $ Just progressBar,
       onDone = pass,
       Cachix.Client.Push.compressionMethod = compressionMethod,

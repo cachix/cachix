@@ -44,7 +44,9 @@ import qualified Control.Concurrent.Async as Async
 import Control.Exception.Safe (throwM)
 import Control.Retry (RetryStatus (rsIterNumber))
 import Crypto.Sign.Ed25519 (PublicKey (PublicKey), createKeypair)
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base64 as B64
+import qualified Data.Conduit as Conduit
 import Data.String.Here
 import qualified Data.Text as T
 import qualified Data.Text.IO as T.IO
@@ -266,11 +268,13 @@ pushStrategy store authToken opts name compressionMethod storePath =
     { onAlreadyPresent = pass,
       on401 = handleCacheResponse name authToken,
       onError = throwM,
-      onAttempt = \retrystatus size -> do
-        path <- decodeUtf8With lenientDecode <$> storePathToPath store storePath
+      onAttempt = \_ _ -> return (),
+      onStream = \retrystatus size -> do
+        path <- liftIO $ decodeUtf8With lenientDecode <$> storePathToPath store storePath
         let hSize = toS $ humanSize $ fromIntegral size
             bar = color Blue "[:bar] " <> toS (retryText retrystatus) <> toS path <> " (:percent of " <> hSize <> ")"
             barLength = T.length $ T.replace ":percent" "  0%" (T.replace "[:bar]" "" (toS bar))
+
         progressBar <-
           liftIO $
             newProgressBar
@@ -281,12 +285,16 @@ pushStrategy store authToken opts name compressionMethod storePath =
                   pgOnCompletion = Just $ color Green "✓ " <> toS path <> " (" <> hSize <> ")",
                   pgFormat = bar
                 }
-        isTerminal <- hIsTerminalDevice stdout
+
+        isTerminal <- liftIO $ hIsTerminalDevice stdout
         unless isTerminal $ do
           -- we append newline instead of putStrLn due to https://github.com/haskell/text/issues/242
           let compression = T.toLower (show compressionMethod)
           putStr $ retryText retrystatus <> "compressing using " <> compression <> " and pushing " <> path <> " (" <> toS hSize <> ")\n"
-        return $ Just progressBar,
+
+        Conduit.awaitForever $ \chunk -> do
+          Conduit.yield chunk
+          liftIO $ tickN progressBar $ BS.length chunk,
       onDone = pass,
       Cachix.Client.Push.compressionMethod = compressionMethod,
       Cachix.Client.Push.compressionLevel = Cachix.Client.OptionsParser.compressionLevel opts,

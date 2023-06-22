@@ -38,13 +38,13 @@ import qualified Cachix.Types.BinaryCache as BinaryCache
 import qualified Cachix.Types.MultipartUpload as Multipart
 import qualified Cachix.Types.NarInfoCreate as Api
 import qualified Cachix.Types.NarInfoHash as NarInfoHash
+import Conduit (MonadUnliftIO)
 import Control.Concurrent.Async (mapConcurrently)
 import qualified Control.Concurrent.QSem as QSem
 import Control.Exception.Safe (MonadMask, throwM)
 import Control.Monad.Trans.Resource (ResourceT)
 import Control.Retry (RetryStatus)
 import Crypto.Sign.Ed25519
-import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base64 as B64
 import Data.Conduit
 import qualified Data.Conduit.Lzma as Lzma (compress)
@@ -65,7 +65,6 @@ import Servant.Auth ()
 import Servant.Auth.Client
 import Servant.Client.Streaming
 import Servant.Conduit ()
-import System.Console.AsciiProgress
 import System.Environment (lookupEnv)
 import qualified System.Nix.Base32
 import System.Nix.Nar
@@ -85,31 +84,38 @@ data PushParams m r = PushParams
   }
 
 data PushStrategy m r = PushStrategy
-  { -- | Called when a path is already in the cache.
+  { -- | An action to call when a path is already in the cache.
     onAlreadyPresent :: m r,
-    onAttempt :: RetryStatus -> Int64 -> m (Maybe ProgressBar),
+    -- | An action to run on each push attempt.
+    onAttempt :: RetryStatus -> Int64 -> m (),
+    -- | A conduit to inspect the NAR stream before compression.
+    -- This is useful for tracking progress and computing hashes. The conduit must not modify the stream.
+    onStream :: RetryStatus -> Int64 -> ConduitT ByteString ByteString (ResourceT m) (),
+    -- | An action to run when authentication fails.
     on401 :: ClientError -> m r,
+    -- | An action to run when an error occurs.
     onError :: ClientError -> m r,
+    -- | An action to run after the path is pushed successfully.
     onDone :: m r,
     compressionMethod :: BinaryCache.CompressionMethod,
     compressionLevel :: Int,
     omitDeriver :: Bool
   }
 
-defaultWithXzipCompressor :: forall m a. (ConduitM ByteString ByteString (ResourceT IO) () -> m a) -> m a
+defaultWithXzipCompressor :: (MonadIO m) => (ConduitT ByteString ByteString m () -> b) -> b
 defaultWithXzipCompressor = ($ Lzma.compress (Just 2))
 
-defaultWithXzipCompressorWithLevel :: Int -> forall m a. (ConduitM ByteString ByteString (ResourceT IO) () -> m a) -> m a
+defaultWithXzipCompressorWithLevel :: (MonadIO m) => Int -> (ConduitT ByteString ByteString m () -> b) -> b
 defaultWithXzipCompressorWithLevel l = ($ Lzma.compress (Just l))
 
-defaultWithZstdCompressor :: forall m a. (ConduitM ByteString ByteString (ResourceT IO) () -> m a) -> m a
+defaultWithZstdCompressor :: (MonadIO m) => (ConduitT ByteString ByteString m () -> b) -> b
 defaultWithZstdCompressor = ($ Zstd.compress 8)
 
-defaultWithZstdCompressorWithLevel :: Int -> forall m a. (ConduitM ByteString ByteString (ResourceT IO) () -> m a) -> m a
+defaultWithZstdCompressorWithLevel :: (MonadIO m) => Int -> (ConduitT ByteString ByteString m () -> b) -> b
 defaultWithZstdCompressorWithLevel l = ($ Zstd.compress l)
 
 pushSingleStorePath ::
-  (MonadMask m, MonadIO m) =>
+  (MonadMask m, MonadUnliftIO m) =>
   -- | details for pushing to cache
   PushParams m r ->
   -- | store path
@@ -140,15 +146,8 @@ getCacheAuthToken :: PushSecret -> Token
 getCacheAuthToken (PushToken token) = token
 getCacheAuthToken (PushSigningKey token _) = token
 
-updateProgressBar :: MonadIO m => Maybe ProgressBar -> ConduitM ByteString ByteString m ()
-updateProgressBar Nothing = awaitForever Data.Conduit.yield
-updateProgressBar (Just pg) =
-  awaitForever $ \chunk -> do
-    Data.Conduit.yield chunk
-    liftIO $ tickN pg $ BS.length chunk
-
 uploadStorePath ::
-  (MonadIO m) =>
+  (MonadUnliftIO m) =>
   -- | details for pushing to cache
   PushParams m r ->
   StorePath ->
@@ -181,15 +180,15 @@ uploadStorePath cache storePath retrystatus = do
   normalized <- liftIO $ Store.followLinksToStorePath store $ toS storePathText
   pathinfo <- liftIO $ Store.queryPathInfo store normalized
   let storePathSize = Store.validPathInfoNarSize pathinfo
-  maybeProgressBar <- onAttempt strategy retrystatus storePathSize
+  onAttempt strategy retrystatus storePathSize
 
-  withCompressor $ \compressor -> liftIO $ do
+  withCompressor $ \compressor -> do
     uploadResult <-
       runConduitRes $
         streamNarIO narEffectsIO (toS storePathText) Data.Conduit.yield
           .| passthroughSizeSink narSizeRef
           .| passthroughHashSink narHashRef
-          .| updateProgressBar maybeProgressBar
+          .| onStream strategy retrystatus storePathSize
           .| compressor
           .| passthroughSizeSink fileSizeRef
           .| passthroughHashSinkB16 fileHashRef
@@ -197,7 +196,7 @@ uploadStorePath cache storePath retrystatus = do
 
     case uploadResult of
       Left err -> throwIO err
-      Right (narId, uploadId, parts) -> do
+      Right (narId, uploadId, parts) -> liftIO $ do
         narSize <- readIORef narSizeRef
         narHash <- ("sha256:" <>) . System.Nix.Base32.encode <$> readIORef narHashRef
         narHashNix <- Store.validPathInfoNarHash32 pathinfo
@@ -245,7 +244,7 @@ uploadStorePath cache storePath retrystatus = do
 --
 -- Note: 'onAlreadyPresent' will be called less often in the future.
 pushClosure ::
-  (MonadIO m, MonadMask m) =>
+  (MonadMask m, MonadUnliftIO m) =>
   -- | Traverse paths, responsible for bounding parallel processing of paths
   --
   -- For example: @'mapConcurrentlyBounded' 4@

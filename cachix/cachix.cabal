@@ -87,6 +87,7 @@ library
   autogen-modules:   Paths_cachix
   build-depends:
     , aeson
+    , ascii-progress
     , async
     , base                    >=4.7     && <5
     , base64-bytestring

@@ -44,7 +44,9 @@ import qualified Control.Concurrent.Async as Async
 import Control.Exception.Safe (throwM)
 import Control.Retry (RetryStatus (rsIterNumber))
 import Crypto.Sign.Ed25519 (PublicKey (PublicKey), createKeypair)
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base64 as B64
+import qualified Data.Conduit as Conduit
 import Data.String.Here
 import qualified Data.Text as T
 import qualified Data.Text.IO as T.IO
@@ -57,6 +59,8 @@ import Servant.API (NoContent)
 import Servant.Auth.Client
 import Servant.Client.Streaming
 import Servant.Conduit ()
+import System.Console.AsciiProgress
+import System.Console.Pretty
 import System.Directory (doesFileExist)
 import System.IO (hIsTerminalDevice)
 import qualified System.Posix.Signals as Signals
@@ -252,27 +256,58 @@ watchExec env pushOpts name cmd args = withPushParams env pushOpts name $ \pushP
   where
     getProcessHandle (_, _, _, processHandle) = processHandle
 
-retryText :: RetryStatus -> Text
-retryText retrystatus =
-  if rsIterNumber retrystatus == 0
-    then ""
-    else "(retry #" <> show (rsIterNumber retrystatus) <> ") "
-
 pushStrategy :: Store -> Maybe Token -> PushOptions -> Text -> BinaryCache.CompressionMethod -> StorePath -> PushStrategy IO ()
 pushStrategy store authToken opts name compressionMethod storePath =
   PushStrategy
     { onAlreadyPresent = pass,
       on401 = handleCacheResponse name authToken,
       onError = throwM,
-      onAttempt = \retrystatus size -> do
-        path <- decodeUtf8With lenientDecode <$> storePathToPath store storePath
-        -- we append newline instead of putStrLn due to https://github.com/haskell/text/issues/242
-        putStr $ retryText retrystatus <> "compressing using " <> T.toLower (show compressionMethod) <> " and pushing " <> path <> " (" <> humanSize (fromIntegral size) <> ")\n",
+      onAttempt = \_ _ -> pass,
+      onUncompressedNARStream = showUploadProgress,
       onDone = pass,
       Cachix.Client.Push.compressionMethod = compressionMethod,
       Cachix.Client.Push.compressionLevel = Cachix.Client.OptionsParser.compressionLevel opts,
       Cachix.Client.Push.omitDeriver = Cachix.Client.OptionsParser.omitDeriver opts
     }
+  where
+    retryText :: RetryStatus -> Text
+    retryText retryStatus =
+      if rsIterNumber retryStatus == 0
+        then ""
+        else color Yellow $ "retry #" <> show (rsIterNumber retryStatus) <> " "
+
+    showUploadProgress retryStatus size = do
+      let hSize = toS $ humanSize $ fromIntegral size
+      path <- liftIO $ decodeUtf8With lenientDecode <$> storePathToPath store storePath
+
+      isTerminal <- liftIO $ hIsTerminalDevice stdout
+      onTick <-
+        if isTerminal
+          then do
+            let bar = color Blue "[:bar] " <> toS (retryText retryStatus) <> toS path <> " (:percent of " <> hSize <> ")"
+                barLength = T.length $ T.replace ":percent" "  0%" (T.replace "[:bar]" "" (toS bar))
+
+            progressBar <-
+              liftIO $
+                newProgressBar
+                  def
+                    { pgTotal = fromIntegral size,
+                      -- https://github.com/yamadapc/haskell-ascii-progress/issues/24
+                      pgWidth = 20 + barLength,
+                      pgOnCompletion = Just $ color Green "✓ " <> toS path <> " (" <> hSize <> ")",
+                      pgFormat = bar
+                    }
+
+            return $ liftIO . tickN progressBar . BS.length
+          else do
+            -- we append newline instead of putStrLn due to https://github.com/haskell/text/issues/242
+            let compression = T.toLower (show compressionMethod)
+            putStr $ retryText retryStatus <> "compressing using " <> compression <> " and pushing " <> path <> " (" <> toS hSize <> ")\n"
+            return $ const pass
+
+      Conduit.awaitForever $ \chunk -> do
+        Conduit.yield chunk
+        onTick chunk
 
 withPushParams :: Env -> PushOptions -> Text -> (PushParams IO () -> IO ()) -> IO ()
 withPushParams env pushOpts name m = do

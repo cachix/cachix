@@ -256,50 +256,58 @@ watchExec env pushOpts name cmd args = withPushParams env pushOpts name $ \pushP
   where
     getProcessHandle (_, _, _, processHandle) = processHandle
 
-retryText :: RetryStatus -> Text
-retryText retrystatus =
-  if rsIterNumber retrystatus == 0
-    then ""
-    else color Yellow $ "retry #" <> show (rsIterNumber retrystatus) <> " "
-
 pushStrategy :: Store -> Maybe Token -> PushOptions -> Text -> BinaryCache.CompressionMethod -> StorePath -> PushStrategy IO ()
 pushStrategy store authToken opts name compressionMethod storePath =
   PushStrategy
     { onAlreadyPresent = pass,
       on401 = handleCacheResponse name authToken,
       onError = throwM,
-      onAttempt = \_ _ -> return (),
-      onStream = \retrystatus size -> do
-        path <- liftIO $ decodeUtf8With lenientDecode <$> storePathToPath store storePath
-        let hSize = toS $ humanSize $ fromIntegral size
-            bar = color Blue "[:bar] " <> toS (retryText retrystatus) <> toS path <> " (:percent of " <> hSize <> ")"
-            barLength = T.length $ T.replace ":percent" "  0%" (T.replace "[:bar]" "" (toS bar))
-
-        progressBar <-
-          liftIO $
-            newProgressBar
-              def
-                { pgTotal = fromIntegral size,
-                  -- https://github.com/yamadapc/haskell-ascii-progress/issues/24
-                  pgWidth = 20 + barLength,
-                  pgOnCompletion = Just $ color Green "✓ " <> toS path <> " (" <> hSize <> ")",
-                  pgFormat = bar
-                }
-
-        isTerminal <- liftIO $ hIsTerminalDevice stdout
-        unless isTerminal $ do
-          -- we append newline instead of putStrLn due to https://github.com/haskell/text/issues/242
-          let compression = T.toLower (show compressionMethod)
-          putStr $ retryText retrystatus <> "compressing using " <> compression <> " and pushing " <> path <> " (" <> toS hSize <> ")\n"
-
-        Conduit.awaitForever $ \chunk -> do
-          Conduit.yield chunk
-          liftIO $ tickN progressBar $ BS.length chunk,
+      onAttempt = \_ _ -> pass,
+      onStream = showUploadProgress,
       onDone = pass,
       Cachix.Client.Push.compressionMethod = compressionMethod,
       Cachix.Client.Push.compressionLevel = Cachix.Client.OptionsParser.compressionLevel opts,
       Cachix.Client.Push.omitDeriver = Cachix.Client.OptionsParser.omitDeriver opts
     }
+  where
+    retryText :: RetryStatus -> Text
+    retryText retrystatus =
+      if rsIterNumber retrystatus == 0
+        then ""
+        else color Yellow $ "retry #" <> show (rsIterNumber retrystatus) <> " "
+
+    showUploadProgress retrystatus size = do
+      let hSize = toS $ humanSize $ fromIntegral size
+      path <- liftIO $ decodeUtf8With lenientDecode <$> storePathToPath store storePath
+
+      isTerminal <- liftIO $ hIsTerminalDevice stdout
+      onTick <-
+        if isTerminal
+          then do
+            let bar = color Blue "[:bar] " <> toS (retryText retrystatus) <> toS path <> " (:percent of " <> hSize <> ")"
+                barLength = T.length $ T.replace ":percent" "  0%" (T.replace "[:bar]" "" (toS bar))
+
+            progressBar <-
+              liftIO $
+                newProgressBar
+                  def
+                    { pgTotal = fromIntegral size,
+                      -- https://github.com/yamadapc/haskell-ascii-progress/issues/24
+                      pgWidth = 20 + barLength,
+                      pgOnCompletion = Just $ color Green "✓ " <> toS path <> " (" <> hSize <> ")",
+                      pgFormat = bar
+                    }
+
+            return $ liftIO . tickN progressBar . BS.length
+          else do
+            -- we append newline instead of putStrLn due to https://github.com/haskell/text/issues/242
+            let compression = T.toLower (show compressionMethod)
+            putStr $ retryText retrystatus <> "compressing using " <> compression <> " and pushing " <> path <> " (" <> toS hSize <> ")\n"
+            return $ const pass
+
+      Conduit.awaitForever $ \chunk -> do
+        Conduit.yield chunk
+        onTick chunk
 
 withPushParams :: Env -> PushOptions -> Text -> (PushParams IO () -> IO ()) -> IO ()
 withPushParams env pushOpts name m = do

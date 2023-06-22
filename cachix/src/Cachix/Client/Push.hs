@@ -90,7 +90,7 @@ data PushStrategy m r = PushStrategy
     onAttempt :: RetryStatus -> Int64 -> m (),
     -- | A conduit to inspect the NAR stream before compression.
     -- This is useful for tracking progress and computing hashes. The conduit must not modify the stream.
-    onStream :: RetryStatus -> Int64 -> ConduitT ByteString ByteString (ResourceT m) (),
+    onUncompressedNARStream :: RetryStatus -> Int64 -> ConduitT ByteString ByteString (ResourceT m) (),
     -- | An action to run when authentication fails.
     on401 :: ClientError -> m r,
     -- | An action to run when an error occurs.
@@ -188,7 +188,7 @@ uploadStorePath cache storePath retrystatus = do
         streamNarIO narEffectsIO (toS storePathText) Data.Conduit.yield
           .| passthroughSizeSink narSizeRef
           .| passthroughHashSink narHashRef
-          .| onStream strategy retrystatus storePathSize
+          .| onUncompressedNARStream strategy retrystatus storePathSize
           .| compressor
           .| passthroughSizeSink fileSizeRef
           .| passthroughHashSinkB16 fileHashRef

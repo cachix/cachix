@@ -143,14 +143,9 @@ getCacheAuthToken (PushSigningKey token _) = token
 updateProgressBar :: MonadIO m => Maybe ProgressBar -> ConduitM ByteString ByteString m ()
 updateProgressBar Nothing = awaitForever Data.Conduit.yield
 updateProgressBar (Just pg) =
-  await
-    >>= maybe
-      (return ())
-      ( \chunk -> do
-          liftIO $ tickN pg $ BS.length chunk
-          Data.Conduit.yield chunk
-          updateProgressBar (Just pg)
-      )
+  awaitForever $ \chunk -> do
+    Data.Conduit.yield chunk
+    liftIO $ tickN pg $ BS.length chunk
 
 uploadStorePath ::
   (MonadIO m) =>

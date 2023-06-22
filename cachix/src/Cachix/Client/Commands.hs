@@ -271,12 +271,12 @@ pushStrategy store authToken opts name compressionMethod storePath =
     }
   where
     retryText :: RetryStatus -> Text
-    retryText retrystatus =
-      if rsIterNumber retrystatus == 0
+    retryText retryStatus =
+      if rsIterNumber retryStatus == 0
         then ""
-        else color Yellow $ "retry #" <> show (rsIterNumber retrystatus) <> " "
+        else color Yellow $ "retry #" <> show (rsIterNumber retryStatus) <> " "
 
-    showUploadProgress retrystatus size = do
+    showUploadProgress retryStatus size = do
       let hSize = toS $ humanSize $ fromIntegral size
       path <- liftIO $ decodeUtf8With lenientDecode <$> storePathToPath store storePath
 
@@ -284,7 +284,7 @@ pushStrategy store authToken opts name compressionMethod storePath =
       onTick <-
         if isTerminal
           then do
-            let bar = color Blue "[:bar] " <> toS (retryText retrystatus) <> toS path <> " (:percent of " <> hSize <> ")"
+            let bar = color Blue "[:bar] " <> toS (retryText retryStatus) <> toS path <> " (:percent of " <> hSize <> ")"
                 barLength = T.length $ T.replace ":percent" "  0%" (T.replace "[:bar]" "" (toS bar))
 
             progressBar <-
@@ -302,7 +302,7 @@ pushStrategy store authToken opts name compressionMethod storePath =
           else do
             -- we append newline instead of putStrLn due to https://github.com/haskell/text/issues/242
             let compression = T.toLower (show compressionMethod)
-            putStr $ retryText retrystatus <> "compressing using " <> compression <> " and pushing " <> path <> " (" <> toS hSize <> ")\n"
+            putStr $ retryText retryStatus <> "compressing using " <> compression <> " and pushing " <> path <> " (" <> toS hSize <> ")\n"
             return $ const pass
 
       Conduit.awaitForever $ \chunk -> do

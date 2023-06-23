@@ -13,6 +13,7 @@ module Cachix.Client.URI
     requiresSSL,
     parseURI,
     serialize,
+    toByteString,
     getBaseUrl,
     defaultCachixURI,
     defaultCachixBaseUrl,
@@ -50,6 +51,9 @@ newtype URI = URI {getUri :: UBS.URIRef UBS.Absolute}
 
 fromURIRef :: UBS.URIRef UBS.Absolute -> URI
 fromURIRef = URI
+
+toByteString :: URI -> ByteString
+toByteString = UBS.serializeURIRef' . getUri
 
 getScheme :: URI -> UBS.Scheme
 getScheme = UBS.uriScheme . getUri

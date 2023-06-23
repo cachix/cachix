@@ -28,6 +28,7 @@ main = displayConsoleRegions $ do
     WatchStore watchArgs name -> Commands.watchStore env watchArgs name
     WatchExec pushArgs name cmd args -> Commands.watchExec env pushArgs name cmd args
     Use name useOptions -> Commands.use env name useOptions
+    Remove name -> Commands.remove env name
     Version -> putText cachixVersion
     DeployCommand deployCommand ->
       case deployCommand of

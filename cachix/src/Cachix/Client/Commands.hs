@@ -10,6 +10,7 @@ module Cachix.Client.Commands
     watchStore,
     watchExec,
     use,
+    remove,
     pin,
   )
 where
@@ -123,6 +124,19 @@ accessDeniedBinaryCache name maybeBody =
     context Nothing = ""
     context (Just body) = " Error: " <> toS body
 
+getNixEnv :: IO InstallationMode.NixEnv
+getNixEnv = do
+  user <- InstallationMode.getUser
+  nc <- NixConf.read NixConf.Global
+  isTrusted <- InstallationMode.isTrustedUser $ NixConf.readLines (catMaybes [nc]) NixConf.isTrustedUsers
+  isNixOS <- doesFileExist "/run/current-system/nixos-version"
+  return $
+    InstallationMode.NixEnv
+      { InstallationMode.isRoot = user == "root",
+        InstallationMode.isTrusted = isTrusted,
+        InstallationMode.isNixOS = isNixOS
+      }
+
 use :: Env -> Text -> InstallationMode.UseOptions -> IO ()
 use env name useOptions = do
   optionalAuthToken <- Config.getAuthTokenMaybe (config env)
@@ -133,18 +147,15 @@ use env name useOptions = do
     Left err -> handleCacheResponse name optionalAuthToken err
     Right binaryCache -> do
       () <- escalateAs UnsupportedNixVersion =<< assertNixVersion
-      user <- InstallationMode.getUser
-      nc <- NixConf.read NixConf.Global
-      isTrusted <- InstallationMode.isTrustedUser $ NixConf.readLines (catMaybes [nc]) NixConf.isTrustedUsers
-      isNixOS <- doesFileExist "/run/current-system/nixos-version"
-      let nixEnv =
-            InstallationMode.NixEnv
-              { InstallationMode.isRoot = user == "root",
-                InstallationMode.isTrusted = isTrusted,
-                InstallationMode.isNixOS = isNixOS
-              }
+      nixEnv <- getNixEnv
       InstallationMode.addBinaryCache (config env) binaryCache useOptions $
         InstallationMode.getInstallationMode nixEnv useOptions
+
+remove :: Env -> Text -> IO ()
+remove env name = do
+  nixEnv <- getNixEnv
+  InstallationMode.removeBinaryCache (Config.hostname $ config env) name $
+    InstallationMode.getInstallationMode nixEnv InstallationMode.defaultUseOptions
 
 handleCacheResponse :: Text -> Maybe Token -> ClientError -> IO a
 handleCacheResponse name optionalAuthToken err

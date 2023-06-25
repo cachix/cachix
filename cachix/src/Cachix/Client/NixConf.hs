@@ -17,6 +17,7 @@ module Cachix.Client.NixConf
     NixConfLoc (..),
     render,
     add,
+    remove,
     read,
     update,
     write,
@@ -32,11 +33,12 @@ module Cachix.Client.NixConf
   )
 where
 
+import qualified Cachix.Client.URI as URI
 import qualified Cachix.Types.BinaryCache as BinaryCache
-import Data.Char (isSpace)
 import Data.List (nub)
 import qualified Data.Text as T
-import Protolude
+import Protolude hiding (toS)
+import Protolude.Conv (toS)
 import System.Directory
   ( XdgDirectory (..),
     createDirectoryIfMissing,
@@ -93,6 +95,19 @@ add bc toRead toWrite =
     -- Note: some defaults are always appended since overriding some setttings in nix.conf overrides defaults otherwise
     substituters = (defaultPublicURI : readLines toRead isSubstituter) <> [BinaryCache.uri bc]
     publicKeys = (defaultSigningKey : readLines toRead isPublicKey) <> BinaryCache.publicSigningKeys bc
+
+remove :: URI.URI -> Text -> [NixConf] -> NixConf -> (NixConf, Bool)
+remove uri name toRead toWrite =
+  (newconf, oldsubstituters /= substituters)
+  where
+    newconf =
+      writeLines isPublicKey (TrustedPublicKeys $ nub publicKeys) $
+        writeLines isSubstituter (Substituters $ nub substituters) toWrite
+    oldsubstituters = readLines toRead isSubstituter
+    substituters = filter (toS (URI.toByteString fulluri) /=) oldsubstituters
+    oldpublicKeys = readLines toRead isPublicKey
+    publicKeys = filter (not . T.isPrefixOf (toS $ URI.hostBS $ URI.getHostname fulluri)) oldpublicKeys
+    fulluri = URI.appendSubdomain name uri
 
 defaultPublicURI :: Text
 defaultPublicURI = "https://cache.nixos.org"

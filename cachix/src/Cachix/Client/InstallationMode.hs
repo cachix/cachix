@@ -5,11 +5,13 @@ module Cachix.Client.InstallationMode
     NixEnv (..),
     getInstallationMode,
     addBinaryCache,
+    removeBinaryCache,
     isTrustedUser,
     getUser,
     fromString,
     toString,
     UseOptions (..),
+    defaultUseOptions,
   )
 where
 
@@ -18,11 +20,13 @@ import qualified Cachix.Client.Config as Config
 import Cachix.Client.Exception (CachixException (..))
 import qualified Cachix.Client.NetRc as NetRc
 import qualified Cachix.Client.NixConf as NixConf
+import qualified Cachix.Client.URI as URI
 import qualified Cachix.Types.BinaryCache as BinaryCache
 import qualified Data.Maybe
 import Data.String.Here
 import qualified Data.Text as T
-import Protolude
+import Protolude hiding (toS)
+import Protolude.Conv (toS)
 import System.Directory (Permissions, createDirectoryIfMissing, getPermissions, writable)
 import System.Environment (lookupEnv)
 import System.FilePath (replaceFileName, (</>))
@@ -49,6 +53,14 @@ data UseOptions = UseOptions
     useOutputDirectory :: Maybe FilePath
   }
   deriving (Show)
+
+defaultUseOptions :: UseOptions
+defaultUseOptions =
+  UseOptions
+    { useMode = Nothing,
+      useNixOSFolder = "/etc/nixos",
+      useOutputDirectory = Nothing
+    }
 
 fromString :: String -> Maybe InstallationMode
 fromString "root-nixconf" = Just $ Install NixConf.Global
@@ -111,6 +123,21 @@ b) Run the following command to add your user as trusted
 addBinaryCache config bc useOptions WriteNixOS =
   nixosBinaryCache config bc useOptions
 addBinaryCache config bc _ (Install ncl) = do
+  (input, output) <- prepareNixConf ncl
+  netrcLocMaybe <- forM (guard $ not (BinaryCache.isPublic bc)) $ const $ addPrivateBinaryCacheNetRC config bc ncl
+  let addNetRCLine :: NixConf.NixConf -> NixConf.NixConf
+      addNetRCLine = fromMaybe identity $ do
+        netrcLoc <- netrcLocMaybe :: Maybe FilePath
+        -- We only add the netrc line for local user configs for now.
+        -- On NixOS we assume it will be picked up from the default location.
+        guard (ncl == NixConf.Local)
+        pure (NixConf.setNetRC $ toS netrcLoc)
+  NixConf.write ncl $ addNetRCLine $ NixConf.add bc input output
+  filename <- NixConf.getFilename ncl
+  putStrLn $ "Configured " <> BinaryCache.uri bc <> " binary cache in " <> toS filename
+
+prepareNixConf :: NixConf.NixConfLoc -> IO ([NixConf.NixConf], NixConf.NixConf)
+prepareNixConf ncl = do
   -- TODO: might need locking one day
   gnc <- NixConf.read NixConf.Global
   (input, output) <-
@@ -122,18 +149,21 @@ addBinaryCache config bc _ (Install ncl) = do
       NixConf.Custom _ -> do
         lnc <- NixConf.read ncl
         return ([lnc], lnc)
-  let nixconf = fromMaybe (NixConf.NixConf []) output
-  netrcLocMaybe <- forM (guard $ not (BinaryCache.isPublic bc)) $ const $ addPrivateBinaryCacheNetRC config bc ncl
-  let addNetRCLine :: NixConf.NixConf -> NixConf.NixConf
-      addNetRCLine = fromMaybe identity $ do
-        netrcLoc <- netrcLocMaybe :: Maybe FilePath
-        -- We only add the netrc line for local user configs for now.
-        -- On NixOS we assume it will be picked up from the default location.
-        guard (ncl == NixConf.Local)
-        pure (NixConf.setNetRC $ toS netrcLoc)
-  NixConf.write ncl $ addNetRCLine $ NixConf.add bc (catMaybes input) nixconf
+  return (catMaybes input, fromMaybe (NixConf.NixConf []) output)
+
+removeBinaryCache :: URI.URI -> Text -> InstallationMode -> IO ()
+removeBinaryCache uri name (Install ncl) = do
+  (input, output) <- prepareNixConf ncl
+  let (final, removed) = NixConf.remove uri name input output
+  NixConf.write ncl final
   filename <- NixConf.getFilename ncl
-  putStrLn $ "Configured " <> BinaryCache.uri bc <> " binary cache in " <> toS filename
+  if removed
+    then putStrLn $ "Removed " <> host <> " binary cache in " <> toS filename
+    else putStrLn $ "No " <> host <> " binary cache found in " <> toS filename
+  where
+    host = URI.toByteString (URI.appendSubdomain name uri)
+removeBinaryCache _ _ _ = do
+  putText "Removing binary caches is only supported for nix.conf"
 
 nixosBinaryCache :: Config -> BinaryCache.BinaryCache -> UseOptions -> IO ()
 nixosBinaryCache config bc UseOptions {useNixOSFolder = baseDirectory} = do

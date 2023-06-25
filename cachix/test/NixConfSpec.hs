@@ -3,7 +3,7 @@
 module NixConfSpec where
 
 import Cachix.Client.NixConf as NixConf
-import Cachix.Types.BinaryCache (BinaryCache (..))
+import Cachix.Types.BinaryCache (BinaryCache (..), CompressionMethod (..))
 import Cachix.Types.Permission (Permission (..))
 import Data.String.Here
 import Protolude
@@ -20,7 +20,8 @@ bc =
       isPublic = True,
       permission = Admin,
       publicSigningKeys = ["pub"],
-      githubUsername = "foobar"
+      githubUsername = "foobar",
+      preferredCompressionMethod = ZSTD
     }
 
 spec :: Spec
@@ -112,6 +113,28 @@ spec = do
                 TrustedPublicKeys [defaultSigningKey, "pub"]
               ]
        in add bc [globalConf, localConf] localConf `shouldBe` result
+  describe "remove" $ do
+    it "removes a binary cache" $
+      let localConf =
+            NixConf
+              [ Substituters [defaultPublicURI, "https://name.cachix.org"],
+                TrustedPublicKeys [defaultSigningKey, "name.cachix.org-1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa="]
+              ]
+          result =
+            NixConf
+              [ Substituters [defaultPublicURI],
+                TrustedPublicKeys [defaultSigningKey]
+              ]
+       in remove "https://cachix.org" "name" [localConf] localConf `shouldBe` (result, True)
+    it "removes nothing if the binary cache is missing" $
+      let globalConf =
+            NixConf
+              [ Substituters [defaultPublicURI],
+                TrustedPublicKeys [defaultSigningKey]
+              ]
+          localConf = globalConf
+          result = localConf
+       in remove "https://cachix.org" "name" [globalConf, localConf] localConf `shouldBe` (result, False)
   describe "parse" $ do
     it "parses substituters" $
       parse "substituters = a\n"

@@ -13,6 +13,7 @@ module Cachix.Client.URI
     requiresSSL,
     parseURI,
     serialize,
+    toByteString,
     getBaseUrl,
     defaultCachixURI,
     defaultCachixBaseUrl,
@@ -29,6 +30,7 @@ import qualified Data.ByteString.Char8 as Char8
 import Data.Either.Validation (Validation (Failure, Success))
 import qualified Data.Map.Strict as Map
 import Data.Maybe (fromJust)
+import Data.String
 import qualified Dhall
 import qualified Dhall.Core
 import Protolude hiding (toS)
@@ -50,6 +52,9 @@ newtype URI = URI {getUri :: UBS.URIRef UBS.Absolute}
 
 fromURIRef :: UBS.URIRef UBS.Absolute -> URI
 fromURIRef = URI
+
+toByteString :: URI -> ByteString
+toByteString = UBS.serializeURIRef' . getUri
 
 getScheme :: URI -> UBS.Scheme
 getScheme = UBS.uriScheme . getUri
@@ -86,6 +91,9 @@ parseURI bs = fromURIRef <$> UBS.parseURI UBS.strictURIParserOptions bs
 
 serialize :: StringConv BS.ByteString s => URI -> s
 serialize = toS . UBS.serializeURIRef' . getUri
+
+instance IsString URI where
+  fromString = either (panic . show) identity . parseURI . toS
 
 instance Aeson.ToJSON URI where
   toJSON (URI uri) = Aeson.String . toS . UBS.serializeURIRef' $ uri

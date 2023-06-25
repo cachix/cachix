@@ -35,7 +35,6 @@ where
 
 import qualified Cachix.Client.URI as URI
 import qualified Cachix.Types.BinaryCache as BinaryCache
-import Data.Char (isSpace)
 import Data.List (nub)
 import qualified Data.Text as T
 import Protolude hiding (toS)
@@ -49,7 +48,6 @@ import System.Directory
 import System.FilePath.Posix (takeDirectory)
 import qualified Text.Megaparsec as Mega
 import Text.Megaparsec.Char
-import qualified URI.ByteString as URIBS
 
 data NixConfLine
   = Substituters [Text]
@@ -108,7 +106,7 @@ remove uri name toRead toWrite =
     oldsubstituters = readLines toRead isSubstituter
     substituters = filter (toS (URI.toByteString fulluri) /=) oldsubstituters
     oldpublicKeys = readLines toRead isPublicKey
-    publicKeys = filter (not . T.isPrefixOf (toS $ URIBS.hostBS $ URI.getHostname fulluri)) oldpublicKeys
+    publicKeys = filter (not . T.isPrefixOf (toS $ URI.hostBS $ URI.getHostname fulluri)) oldpublicKeys
     fulluri = URI.appendSubdomain name uri
 
 defaultPublicURI :: Text

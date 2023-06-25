@@ -99,7 +99,7 @@ queryLoop workerState pushqueue pushParams = do
       if isEmpty
         then return S.empty
         else return $ alreadyQueued workerState
-    missingStorePaths <- Push.getMissingPathsForClosure pushParams storePaths
+    (missingStorePaths, _) <- Push.getMissingPathsForClosure pushParams storePaths
     let missingStorePathsSet = S.fromList missingStorePaths
         uncachedMissingStorePaths = S.difference missingStorePathsSet alreadyQueuedSet
     atomically $ for_ uncachedMissingStorePaths $ TBQueue.writeTBQueue pushqueue

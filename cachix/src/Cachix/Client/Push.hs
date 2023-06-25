@@ -73,16 +73,29 @@ data PushSecret
   = PushToken Token
   | PushSigningKey Token SigningKey
 
+-- | Parameters for pushing a closure of store paths, to be passed to 'pushClosure'.
+-- This also contains the parameters for pushing a single path, in 'pushParamStrategy'.
 data PushParams m r = PushParams
   { pushParamsName :: Text,
     pushParamsSecret :: PushSecret,
-    -- | how to report results, (some) errors, and do some things
+    -- | An action to run on each closure push attempt.
+    -- It receives a list of all paths in the closure and a subset of those paths missing from the cache.
+    -- It should return a list of paths to push to the cache.
+    pushOnClosureAttempt ::
+      -- All paths in the closure
+      [StorePath] ->
+      -- Paths that are missing in the cache
+      [StorePath] ->
+      -- Paths to push to the cache
+      m [StorePath],
+    -- | Hooks into different stages of the single path push process.
     pushParamsStrategy :: StorePath -> PushStrategy m r,
     -- | cachix base url, connection manager, see 'Cachix.Client.URI.defaultCachixBaseUrl', 'Servant.Client.mkClientEnv'
     pushParamsClientEnv :: ClientEnv,
     pushParamsStore :: Store
   }
 
+-- | Parameters for pushing a single store path. See 'pushSingleStorePath'
 data PushStrategy m r = PushStrategy
   { -- | An action to call when a path is already in the cache.
     onAlreadyPresent :: m r,
@@ -255,10 +268,11 @@ pushClosure ::
   -- | Every @r@ per store path of the entire closure of store paths
   m [r]
 pushClosure traversal pushParams inputStorePaths = do
-  missingPaths <- getMissingPathsForClosure pushParams inputStorePaths
-  traversal (\path -> retryAll $ \retrystatus -> uploadStorePath pushParams path retrystatus) missingPaths
+  (allPaths, missingPaths) <- getMissingPathsForClosure pushParams inputStorePaths
+  paths <- pushOnClosureAttempt pushParams allPaths missingPaths
+  traversal (\storePath -> retryAll $ \retrystatus -> uploadStorePath pushParams storePath retrystatus) paths
 
-getMissingPathsForClosure :: (MonadIO m, MonadMask m) => PushParams m r -> [StorePath] -> m [StorePath]
+getMissingPathsForClosure :: (MonadIO m, MonadMask m) => PushParams m r -> [StorePath] -> m ([StorePath], [StorePath])
 getMissingPathsForClosure pushParams inputPaths = do
   let store = pushParamsStore pushParams
       clientEnv = pushParamsClientEnv pushParams
@@ -289,7 +303,8 @@ getMissingPathsForClosure pushParams inputPaths = do
       \path -> do
         hash_ <- Store.getStorePathHash path
         pure (hash_, path)
-  return $ map snd $ filter (\(hash_, _path) -> Set.member hash_ missingHashes) pathsAndHashes
+  let missing = map snd $ filter (\(hash_, _path) -> Set.member hash_ missingHashes) pathsAndHashes
+  return (paths, missing)
 
 -- TODO: move to a separate module specific to cli
 

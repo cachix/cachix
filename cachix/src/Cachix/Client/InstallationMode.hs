@@ -153,8 +153,8 @@ prepareNixConf ncl = do
 
 removeBinaryCache :: URI.URI -> Text -> InstallationMode -> IO ()
 removeBinaryCache uri name (Install ncl) = do
-  (input, output) <- prepareNixConf ncl
-  let (final, removed) = NixConf.remove uri name input output
+  contents <- fromMaybe (NixConf.NixConf []) <$> NixConf.read ncl
+  let (final, removed) = NixConf.remove uri name [contents] contents
   NixConf.write ncl final
   filename <- NixConf.getFilename ncl
   if removed

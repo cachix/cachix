@@ -37,6 +37,7 @@ Available commands:
                            paths and upload them to a binary cache
   use                      Configure a binary cache by writing nix.conf and
                            netrc files
+  remove                   Remove a binary cache from nix.conf
   deploy                   Cachix Deploy commands
 ```
 

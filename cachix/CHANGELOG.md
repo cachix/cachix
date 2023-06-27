@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [1.6] - 2023-06-27
+
+## Added
+
+- `cachix remove MYCACHE`: reverses `cachix use MYCACHE`.
+
+## Changed
+
+- `cachix push` now displays a progress bar and summary before pushing.
+
 ## [1.5] - 2023-05-17
 
 ### Added

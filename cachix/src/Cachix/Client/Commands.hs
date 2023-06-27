@@ -312,8 +312,7 @@ pushStrategy store authToken opts name compressionMethod storePath =
             return $ liftIO . tickN progressBar . BS.length
           else do
             -- we append newline instead of putStrLn due to https://github.com/haskell/text/issues/242
-            let compression = T.toLower (show compressionMethod)
-            putStr $ retryText retryStatus <> "compressing using " <> compression <> " and pushing " <> path <> " (" <> toS hSize <> ")\n"
+            putStr $ retryText retryStatus <> "Pushing " <> path <> " (" <> toS hSize <> ")\n"
             return $ const pass
 
       Conduit.awaitForever $ \chunk -> do
@@ -339,6 +338,12 @@ withPushParams env pushOpts name m = do
         { pushParamsName = name,
           pushParamsSecret = pushSecret,
           pushParamsClientEnv = clientenv env,
+          pushOnClosureAttempt = \full missing -> do
+            unless (null missing) $ do
+              let numMissing = length missing
+                  numCached = length full - numMissing
+              putTextError $ "Pushing " <> show numMissing <> " paths (" <> show numCached <> " are already present) using " <> T.toLower (show compressionMethod) <> " to cache " <> name <> " ⏳\n"
+            return missing,
           pushParamsStrategy = pushStrategy store authToken pushOpts name compressionMethod,
           pushParamsStore = store
         }

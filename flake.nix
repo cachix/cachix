@@ -1,6 +1,11 @@
 {
   description = "CLI for Hosted Nix binary caches";
 
+  nixConfig = {
+    extra-substituters = "https://cachix.cachix.org";
+    extra-trusted-public-keys = "cachix.cachix.org-1:eWNHQldwUO7G2VkjpnjDbWwy4KQ/HNxht7H4SSoMckM=";
+  };
+
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     pre-commit-hooks = {

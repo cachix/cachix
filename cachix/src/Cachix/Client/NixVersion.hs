@@ -1,5 +1,3 @@
-{-# LANGUAGE CPP #-}
-
 module Cachix.Client.NixVersion
   ( assertNixVersion,
     parseNixVersion,
@@ -32,10 +30,4 @@ parseNixVersion output =
 
 minimalVersion :: SemVer
 minimalVersion =
-  SemVer 2 0 1 []
-
-#if MIN_VERSION_versions(0,5,0)
-    Nothing
-#else
-    []
-#endif
+  semver "2.0.1" & fromRight (panic "Couldn't parse minimalVersion")

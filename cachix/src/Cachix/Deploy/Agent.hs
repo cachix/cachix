@@ -17,7 +17,7 @@ import qualified Cachix.Deploy.Websocket as WebSocket
 import qualified Control.Concurrent.Async as Async
 import Control.Concurrent.Extra (once)
 import qualified Control.Concurrent.MVar as MVar
-import Control.Exception.Safe (onException, throwString, withException)
+import Control.Exception.Safe (onException, throwString)
 import qualified Control.Exception.Safe as Safe
 import qualified Control.Retry as Retry
 import qualified Data.Aeson as Aeson
@@ -120,18 +120,24 @@ run cachixOptions agentOptions =
           environment = "production"
         }
 
-logExceptions :: Log.WithLog -> IO a -> IO a
-logExceptions withLog action = withException action $ \someE -> do
-  case fromException someE of
-    Just ExitSuccess -> exitSuccess
-    Just e -> do
+logExceptions :: Log.WithLog -> IO () -> IO ()
+logExceptions withLog action =
+  action `catches` [agentHandler, exceptionHandler]
+  where
+    -- Pretty-print any errors thrown by the agent
+    agentHandler =
+      Handler $ \(e :: AgentError) -> do
+        withLog . K.logLocM K.ErrorS . K.ls $ displayException e
+        exitFailure
+
+    -- Handle any unexcepted exceptions
+    exceptionHandler = Handler $ \(e :: SomeException) -> do
       withLog . K.logLocM K.ErrorS . K.ls $
         unlines
           [ "The agent encountered an exception:",
             toS (displayException e)
           ]
       exitFailure
-    Nothing -> exitFailure
 
 lockFilename :: Text -> FilePath
 lockFilename agentName = "agent-" <> toS agentName
@@ -262,7 +268,7 @@ checkUserOwnsHome = do
           home = home
         }
 
-data Error
+data AgentError
   = -- | An agent with the same name is already running.
     AgentAlreadyRunning Text
   | -- | No home directory.
@@ -276,7 +282,7 @@ data Error
       }
   deriving (Show)
 
-instance Exception Error where
+instance Exception AgentError where
   displayException = \case
     AgentAlreadyRunning agentName -> toS $ unwords ["The agent", agentName, "is already running."]
     NoHomeFound -> "Could not find the user’s home directory. Make sure to set the $HOME variable."

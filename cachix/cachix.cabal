@@ -80,7 +80,6 @@ library
     Cachix.Deploy.Websocket
     Cachix.Deploy.WebsocketPong
     Data.Conduit.ByteString
-    System.Nix.Base32
 
   hs-source-dirs:    src
   other-modules:     Paths_cachix

@@ -3,6 +3,7 @@ module Cachix.Client.WatchStore
   )
 where
 
+import Cachix.Client.CNix (filterInvalidStorePath)
 import Cachix.Client.Push
 import qualified Cachix.Client.PushQueue as PushQueue
 import qualified Control.Concurrent.STM.TBQueue as TBQueue
@@ -25,7 +26,9 @@ producer store mgr queue = do
 queueStorePathAction :: Store -> PushQueue.Queue -> Event -> IO ()
 queueStorePathAction store queue (Removed lockFile _ _) = do
   sp <- Store.parseStorePath store (encodeUtf8 $ toS $ dropLast 5 lockFile)
-  atomically $ TBQueue.writeTBQueue queue sp
+  filterInvalidStorePath store sp >>= \case
+    Nothing -> return ()
+    Just p -> atomically $ TBQueue.writeTBQueue queue p
 queueStorePathAction _ _ _ = return ()
 
 dropLast :: Int -> [a] -> [a]

@@ -19,7 +19,6 @@ import Protolude
 import Servant.API.Generic
 import Servant.Auth.Client ()
 import qualified Servant.Client
-import Servant.Client.Generic (AsClientT)
 import Servant.Client.Streaming
 import Servant.Conduit ()
 

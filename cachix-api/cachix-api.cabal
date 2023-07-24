@@ -1,33 +1,54 @@
-cabal-version:      2.2
-name:               cachix-api
-version:            1.6
-synopsis:           Servant HTTP API specification for https://cachix.org
-homepage:           https://github.com/cachix/cachix#readme
-bug-reports:        https://github.com/cachix/cachix/issues
-author:             Domen Kozar
-maintainer:         domen@cachix.org
-copyright:          2018 Domen Kozar
-category:           Nix
-license:            Apache-2.0
-license-file:       LICENSE
-build-type:         Simple
-extra-source-files:
+cabal-version:   2.2
+name:            cachix-api
+version:         1.6
+synopsis:        Servant HTTP API specification for https://cachix.org
+homepage:        https://github.com/cachix/cachix#readme
+bug-reports:     https://github.com/cachix/cachix/issues
+author:          Domen Kozar
+maintainer:      domen@cachix.org
+copyright:       2018 Domen Kozar
+category:        Nix
+license:         Apache-2.0
+license-file:    LICENSE
+build-type:      Simple
+extra-doc-files:
   CHANGELOG.md
   README.md
 
+source-repository head
+  type:     git
+  location: https://github.com/cachix/cachix
+  subdir:   cachix-api
+
 common defaults
+  build-depends:      base >=4.7 && <5
   default-extensions:
     NoImplicitPrelude
+    NoImportQualifiedPost
     DeriveAnyClass
     DeriveGeneric
     DerivingVia
+    LambdaCase
+    NamedFieldPuns
     OverloadedStrings
+    RecordWildCards
+    ScopedTypeVariables
 
   ghc-options:
     -Wall -Wcompat -Wincomplete-record-updates
     -Wincomplete-uni-patterns -Wredundant-constraints -fwarn-tabs
     -fwarn-unused-imports -fwarn-missing-signatures
     -fwarn-name-shadowing -fwarn-incomplete-patterns
+
+  -- TODO: address partial record fields in Cachix Deploy
+  -- if impl(ghc >= 8.4)
+  --   ghc-options:       -Wpartial-fields
+
+  if impl(ghc >=8.10)
+    ghc-options: -Wunused-packages
+
+  if impl(ghc >=9.2)
+    ghc-options: -Wredundant-bang-patterns
 
   default-language:   Haskell2010
 
@@ -68,19 +89,13 @@ library
   build-depends:
     , aeson
     , async
-    , base                  >=4.7    && <5
-    , base16-bytestring
     , bytestring
     , conduit               >=1.3.0
-    , cookie
     , cryptonite
-    , deepseq
     , deriving-aeson
     , exceptions
-    , http-api-data
     , http-media
     , jose
-    , lens
     , memory
     , nix-narinfo
     , protolude
@@ -88,14 +103,10 @@ library
     , safe-exceptions
     , servant               >=0.14.1
     , servant-auth
-    , servant-auth-swagger
-    , servant-client
     , stm-chans
-    , string-conv
     , swagger2
     , text
     , time
-    , transformers
     , unordered-containers
     , uuid
     , websockets
@@ -111,28 +122,9 @@ test-suite cachix-api-test
   hs-source-dirs:     test
   build-depends:
     , aeson
-    , base                     >=4.7    && <5
-    , base16-bytestring
     , bytestring
     , cachix-api
-    , conduit                  >=1.3.0
-    , cookie
-    , cryptonite
     , hspec
-    , http-api-data
-    , http-media
-    , lens
-    , memory
     , protolude
-    , servant                  >=0.14.1
-    , servant-auth
-    , servant-auth-swagger
-    , servant-swagger
-    , servant-swagger-ui-core
-    , string-conv
-    , swagger2
-    , text
-    , transformers
-    , unordered-containers
 
   build-tool-depends: hspec-discover:hspec-discover

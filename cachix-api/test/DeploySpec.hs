@@ -3,7 +3,6 @@ module DeploySpec where
 import Cachix.Types.Deploy
 import Data.Aeson (eitherDecode, encode)
 import qualified Data.ByteString.Lazy as BSL
-import Data.HashMap.Strict
 import Protolude
 import Test.Hspec
 import qualified Prelude

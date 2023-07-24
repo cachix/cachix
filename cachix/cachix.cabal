@@ -1,25 +1,33 @@
 cabal-version:      2.2
 name:               cachix
 version:            1.6
-license:            Apache-2.0
-license-file:       LICENSE
-copyright:          2018 Domen Kozar
-category:           Nix
-maintainer:         domen@cachix.org
-author:             Domen Kozar
+synopsis:
+  Command-line client for Nix binary cache hosting https://cachix.org
+
 homepage:           https://github.com/cachix/cachix#readme
 bug-reports:        https://github.com/cachix/cachix/issues
-synopsis:
-  Command line client for Nix binary cache hosting https://cachix.org
-
+author:             Domen Kozar
+maintainer:         domen@cachix.org
+copyright:          2018 Domen Kozar
+category:           Nix
+license:            Apache-2.0
+license-file:       LICENSE
 build-type:         Simple
-extra-source-files:
+extra-doc-files:
   CHANGELOG.md
   README.md
+
+extra-source-files:
   test/data/*.input
   test/data/*.output
 
+source-repository head
+  type:     git
+  location: https://github.com/cachix/cachix
+  subdir:   cachix
+
 common defaults
+  build-depends:      base >=4.7 && <5
   default-extensions:
     NoImplicitPrelude
     NoImportQualifiedPost
@@ -38,11 +46,17 @@ common defaults
     -fwarn-unused-imports -fwarn-missing-signatures
     -fwarn-name-shadowing -fwarn-incomplete-patterns
 
-  default-language:   Haskell2010
+  -- TODO: address partial record fields in Cachix Deploy
+  -- if impl(ghc >= 8.4)
+  --   ghc-options:       -Wpartial-fields
 
-source-repository head
-  type:     git
-  location: https://github.com/cachix/cachix
+  if impl(ghc >=8.10)
+    ghc-options: -Wunused-packages
+
+  if impl(ghc >=9.2)
+    ghc-options: -Wredundant-bang-patterns
+
+  default-language:   Haskell2010
 
 library
   import:            defaults
@@ -88,7 +102,6 @@ library
     , aeson
     , ascii-progress
     , async
-    , base                    >=4.7     && <5
     , base64-bytestring
     , bytestring
     , cachix-api
@@ -98,7 +111,6 @@ library
     , conduit-extra
     , conduit-zstd
     , containers
-    , cookie
     , cryptonite
     , deepseq
     , dhall                   >=1.28.0
@@ -115,15 +127,12 @@ library
     , http-client-tls
     , http-conduit
     , http-types
-    , inline-c-cpp
     , katip
     , lukko
     , lzma-conduit
     , megaparsec              >=7.0.0
     , memory
-    , mmorph
     , netrc
-    , network-uri
     , optparse-applicative
     , pretty-terminal
     , prettyprinter
@@ -136,7 +145,6 @@ library
     , servant-auth
     , servant-auth-client     >=0.3.3.0
     , servant-client          >=0.16
-    , servant-client-core     >=0.16
     , servant-conduit
     , stm
     , stm-chans
@@ -158,52 +166,43 @@ library
   pkgconfig-depends: nix-main, nix-store
 
 executable cachix
-  import:             defaults
-  main-is:            Main.hs
-  build-tool-depends: hspec-discover:hspec-discover
-  ghc-options:        -threaded -rtsopts -with-rtsopts=-maxN8
-  hs-source-dirs:     cachix
-  other-modules:      Paths_cachix
-  autogen-modules:    Paths_cachix
+  import:          defaults
+  main-is:         Main.hs
+  ghc-options:     -threaded -rtsopts -with-rtsopts=-maxN8
+  hs-source-dirs:  cachix
+  other-modules:   Paths_cachix
+  autogen-modules: Paths_cachix
   build-depends:
-    , base             >=4.7 && <5
     , cachix
-    , cachix-api
     , safe-exceptions
 
 executable .cachix-deployment
-  import:             defaults
-  main-is:            Main.hs
-  build-tool-depends: hspec-discover:hspec-discover
-  ghc-options:        -g -threaded -rtsopts -with-rtsopts=-maxN8
-  hs-source-dirs:     cachix-deployment
-  other-modules:      Paths_cachix
-  autogen-modules:    Paths_cachix
+  import:          defaults
+  main-is:         Main.hs
+  ghc-options:     -g -threaded -rtsopts -with-rtsopts=-maxN8
+  hs-source-dirs:  cachix-deployment
+  other-modules:   Paths_cachix
+  autogen-modules: Paths_cachix
   build-depends:
     , aeson
     , async
-    , base             >=4.7 && <5
     , cachix
     , cachix-api
-    , conduit
-    , http-conduit
     , katip
     , protolude
     , safe-exceptions
-    , stm
     , stm-chans
     , stm-conduit
     , time
     , uuid
     , websockets
-    , wuss
 
 test-suite cachix-test
-  import:         defaults
-  type:           exitcode-stdio-1.0
-  ghc-options:    -threaded -rtsopts -with-rtsopts=-N
-  main-is:        Main.hs
-  hs-source-dirs: test
+  import:             defaults
+  type:               exitcode-stdio-1.0
+  ghc-options:        -threaded -rtsopts -with-rtsopts=-N
+  main-is:            Main.hs
+  hs-source-dirs:     test
   other-modules:
     InstallationModeSpec
     NetRcSpec
@@ -214,7 +213,6 @@ test-suite cachix-test
 
   build-depends:
     , aeson
-    , base                 >=4.7 && <5
     , bytestring
     , cachix
     , cachix-api
@@ -227,3 +225,5 @@ test-suite cachix-test
     , servant-auth-client
     , servant-client-core
     , temporary
+
+  build-tool-depends: hspec-discover:hspec-discover

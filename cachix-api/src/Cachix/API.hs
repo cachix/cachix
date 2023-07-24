@@ -1,5 +1,4 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE TypeOperators #-}
 
 module Cachix.API
@@ -27,7 +26,6 @@ import Data.Conduit (ConduitT)
 import Data.UUID (UUID)
 import Protolude
 import Servant.API hiding (BasicAuth)
-import Servant.API.Generic
 import Servant.Auth
 
 type CachixAuth = Auth '[Cookie, JWT, BasicAuth] Session

@@ -261,12 +261,7 @@ checkUserOwnsHome = do
   when (userId /= Posix.Files.fileOwner stat) $ do
     userName <- Posix.User.userName <$> Posix.User.getUserEntryForID userId
     sudoUser <- lookupEnv "SUDO_USER"
-    throwIO $
-      UserDoesNotOwnHome
-        { userName = userName,
-          sudoUser = sudoUser,
-          home = home
-        }
+    throwIO $ UserDoesNotOwnHome userName sudoUser home
 
 data AgentError
   = -- | An agent with the same name is already running.
@@ -276,17 +271,19 @@ data AgentError
   | -- | Safeguard against creating root-owned files in user directories.
     -- This is an issue on macOS, where, by default, sudo does not reset $HOME.
     UserDoesNotOwnHome
-      { userName :: String,
-        sudoUser :: Maybe String,
-        home :: FilePath
-      }
+      String
+      -- ^ The current user name
+      (Maybe String)
+      -- ^ The sudo user name, if any
+      FilePath
+      -- ^ The home directory
   deriving (Show)
 
 instance Exception AgentError where
   displayException = \case
     AgentAlreadyRunning agentName -> toS $ unwords ["The agent", agentName, "is already running."]
     NoHomeFound -> "Could not find the user’s home directory. Make sure to set the $HOME variable."
-    UserDoesNotOwnHome {userName = userName, sudoUser = sudoUser, home = home} ->
+    UserDoesNotOwnHome userName sudoUser home ->
       if isJust sudoUser
         then toS $ unlines [warningMessage, suggestSudoFlagH]
         else toS warningMessage

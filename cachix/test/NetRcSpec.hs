@@ -1,7 +1,7 @@
 module NetRcSpec where
 
 import qualified Cachix.Client.NetRc as NetRc
-import Cachix.Types.BinaryCache (BinaryCache (..))
+import Cachix.Types.BinaryCache (BinaryCache (..), CompressionMethod (..))
 import Cachix.Types.Permission (Permission (..))
 import Protolude
 import Servant.Auth.Client (Token (..))
@@ -17,7 +17,8 @@ bc1 =
       publicSigningKeys = ["pub"],
       isPublic = False,
       githubUsername = "foobar",
-      permission = Read
+      permission = Read,
+      preferredCompressionMethod = ZSTD
     }
 
 bc2 :: BinaryCache
@@ -28,7 +29,8 @@ bc2 =
       publicSigningKeys = ["pub2"],
       isPublic = False,
       githubUsername = "foobar2",
-      permission = Read
+      permission = Read,
+      preferredCompressionMethod = ZSTD
     }
 
 -- TODO: poor man's golden tests, use https://github.com/stackbuilders/hspec-golden

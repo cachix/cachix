@@ -1,5 +1,4 @@
 {-# LANGUAGE QuasiQuotes #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 
 -- | A high-level, multiple reader, single writer interface for Websocket clients.
 module Cachix.Deploy.Websocket where

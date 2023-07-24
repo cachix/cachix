@@ -15,7 +15,8 @@ instance Dhall.FromDhall Token where
       ex _ = panic "Unexpected Dhall value. Did it typecheck?"
 
 instance Dhall.ToDhall Token where
-  injectWith _ = Dhall.Encoder
-    { Dhall.embed = Dhall.Core.TextLit . Dhall.Core.Chunks [] . toS . getToken,
-      Dhall.declared = Dhall.Core.Text
-    }
+  injectWith _ =
+    Dhall.Encoder
+      { Dhall.embed = Dhall.Core.TextLit . Dhall.Core.Chunks [] . toS . getToken,
+        Dhall.declared = Dhall.Core.Text
+      }

@@ -1,5 +1,4 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE TypeOperators #-}
 
 module Cachix.API.Deploy.V2 where
@@ -9,7 +8,6 @@ import qualified Cachix.Types.Deploy as Deploy
 import qualified Cachix.Types.DeployResponse.V2 as DeployResponse.V2
 import Protolude
 import Servant.API
-import Servant.API.Generic
 
 type API = "api" :> "v2" :> ToServantApi DeployAPI
 

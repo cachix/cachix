@@ -12,7 +12,6 @@ where
 import Crypto.Sign.Ed25519
 import qualified Data.ByteString.Base64 as B64
 import qualified Data.ByteString.Char8 as BC
-import Data.Char (isSpace)
 import Protolude hiding (toS)
 import Protolude.Conv
 

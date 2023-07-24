@@ -89,6 +89,10 @@
             # sync with stack.yaml LTS
             pkgs.haskell.compiler.ghc927
             (pkgs.haskell-language-server.override { supportedGhcVersions = [ "927" ]; })
+          ]
+          ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
+            pkgs.darwin.apple_sdk.frameworks.Cocoa
+            pkgs.darwin.apple_sdk.frameworks.CoreServices
           ];
         in
         rec {

@@ -1,5 +1,5 @@
 # Match resolver with nixos-unstable haskellPackages
-resolver: lts-20.21
+resolver: lts-20.26
 packages:
 - cachix
 - cachix-api

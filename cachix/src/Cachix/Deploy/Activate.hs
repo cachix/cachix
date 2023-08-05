@@ -145,8 +145,7 @@ getActivationScript profile storePath = do
        in ( profilePath,
             [ ("mkdir", ["-p", "-m", "0755", "/nix/var/nix/profiles/system-profiles"]),
               setNewProfile profilePath,
-              (toS storePath </> "activate-user", []),
-              (toS storePath </> "activate", [])
+              (toS storePath </> "sw/bin/darwin-rebuild", ["activate"])
             ]
           )
     (_, _, True) ->

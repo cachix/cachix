@@ -50,7 +50,6 @@
       cabal-fmt.enable = true;
       hlint.enable = true;
       ormolu.enable = true;
-      ormolu.excludes = [ "Cachix/Client/Servant\.hs$" "Cachix/Client/Config/Orphans\.hs$" "Cachix/Types/SwaggerOrphans\.hs$" ];
       shellcheck.enable = true;
     };
   in

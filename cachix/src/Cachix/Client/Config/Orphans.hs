@@ -2,6 +2,7 @@
 
 module Cachix.Client.Config.Orphans where
 
+import qualified Data.Aeson as Aeson
 import qualified Dhall
 import qualified Dhall.Core
 import Protolude hiding (toS)
@@ -20,3 +21,9 @@ instance Dhall.ToDhall Token where
       { Dhall.embed = Dhall.Core.TextLit . Dhall.Core.Chunks [] . toS . getToken,
         Dhall.declared = Dhall.Core.Text
       }
+
+instance Aeson.FromJSON Token where
+  parseJSON = Aeson.withText "Token" $ pure . Token . toS
+
+instance Aeson.ToJSON Token where
+  toJSON = Aeson.String . toS . getToken

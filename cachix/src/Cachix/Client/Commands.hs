@@ -11,6 +11,7 @@ module Cachix.Client.Commands
     use,
     remove,
     pin,
+    withPushParams,
   )
 where
 

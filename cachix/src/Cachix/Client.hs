@@ -5,8 +5,9 @@ where
 
 import Cachix.Client.Commands as Commands
 import qualified Cachix.Client.Config as Config
+import qualified Cachix.Client.Daemon as Daemon
 import Cachix.Client.Env (cachixoptions, mkEnv)
-import Cachix.Client.OptionsParser (CachixCommand (..), getOpts)
+import Cachix.Client.OptionsParser (CachixCommand (..), DaemonCommand (..), getOpts)
 import Cachix.Client.Version (cachixVersion)
 import Cachix.Deploy.ActivateCommand as ActivateCommand
 import qualified Cachix.Deploy.Agent as AgentCommand
@@ -22,6 +23,8 @@ main = displayConsoleRegions $ do
   case command of
     AuthToken token -> Commands.authtoken env token
     Config configCommand -> Config.run cachixOptions configCommand
+    Daemon (DaemonRun pushOptions daemonOptions) -> Daemon.run env pushOptions daemonOptions
+    Daemon (DaemonPushPaths cacheName storePaths) -> Daemon.push env cacheName storePaths
     GenerateKeypair name -> Commands.generateKeypair env name
     Push pushArgs -> Commands.push env pushArgs
     Pin pingArgs -> Commands.pin env pingArgs
@@ -30,7 +33,5 @@ main = displayConsoleRegions $ do
     Use name useOptions -> Commands.use env name useOptions
     Remove name -> Commands.remove env name
     Version -> putText cachixVersion
-    DeployCommand deployCommand ->
-      case deployCommand of
-        DeployOptions.Agent opts -> AgentCommand.run cachixOptions opts
-        DeployOptions.Activate opts -> ActivateCommand.run env opts
+    DeployCommand (DeployOptions.Agent opts) -> AgentCommand.run cachixOptions opts
+    DeployCommand (DeployOptions.Activate opts) -> ActivateCommand.run env opts

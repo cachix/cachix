@@ -66,6 +66,10 @@ library
     Cachix.Client.Commands
     Cachix.Client.Config
     Cachix.Client.Config.Orphans
+    Cachix.Client.Daemon
+    Cachix.Client.Daemon.Listen
+    Cachix.Client.Daemon.Push
+    Cachix.Client.Daemon.Types
     Cachix.Client.Env
     Cachix.Client.Exception
     Cachix.Client.HumanSize
@@ -117,6 +121,7 @@ library
     , directory
     , ed25519
     , either
+    , exceptions
     , extra
     , filepath
     , fsnotify                >=0.4.1
@@ -127,12 +132,14 @@ library
     , http-client-tls
     , http-conduit
     , http-types
+    , immortal
     , katip
     , lukko
     , lzma-conduit
     , megaparsec              >=7.0.0
     , memory
     , netrc
+    , network
     , optparse-applicative
     , pretty-terminal
     , prettyprinter
@@ -154,6 +161,7 @@ library
     , text
     , time
     , unix
+    , unliftio-core
     , unordered-containers
     , uri-bytestring
     , uuid

@@ -16,6 +16,7 @@ import qualified Cachix.Client.InstallationMode as InstallationMode
 import Cachix.Client.URI (URI)
 import qualified Cachix.Client.URI as URI
 import qualified Cachix.Deploy.OptionsParser as DeployOptions
+import Cachix.Types.BinaryCache (BinaryCacheName)
 import qualified Cachix.Types.BinaryCache as BinaryCache
 import Cachix.Types.PinCreate (Keep (..))
 import qualified Data.Text as T
@@ -71,8 +72,6 @@ flagParser defaultConfigPath = do
 uriOption :: ReadM URI
 uriOption = eitherReader $ \s ->
   first show $ URI.parseURI (toS s)
-
-type BinaryCacheName = Text
 
 data CachixCommand
   = AuthToken (Maybe Text)

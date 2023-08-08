@@ -6,6 +6,8 @@ import Data.Swagger (ToParamSchema (..), ToSchema)
 import Protolude
 import Servant.API
 
+type BinaryCacheName = Text
+
 data BinaryCache = BinaryCache
   { name :: Text,
     uri :: Text,

@@ -110,7 +110,7 @@ queryLoop workerState pushqueue pushParams = do
 exitOnceQueueIsEmpty :: IO () -> Async () -> Async () -> QueryWorkerState -> PushWorkerState -> IO ()
 exitOnceQueueIsEmpty stopProducerCallback pushWorker queryWorker queryWorkerState pushWorkerState =
   join . once $ do
-    putTextError "Stopped watching /nix/store and waiting for queue to empty ..."
+    putErrText "Stopped watching /nix/store and waiting for queue to empty ..."
 
     -- Skip uploading the remaining paths when run in an interruptible mask to avoid hanging on IO.
     getMaskingState >>= \case
@@ -138,13 +138,10 @@ exitOnceQueueIsEmpty stopProducerCallback pushWorker queryWorker queryWorkerStat
       if isDone
         then do
           stopWorkers
-          putTextError "Done."
+          putErrText "Done."
         else do
           -- extend shutdown for another 90s
           void $ Systemd.notify False $ "EXTEND_TIMEOUT_USEC=" <> show (90 * 1000 * 1000 :: Int)
-          putTextError $ "Waiting to finish: " <> show inprogress <> " pushing, " <> show queueLength <> " in queue"
+          putErrText $ "Waiting to finish: " <> show inprogress <> " pushing, " <> show queueLength <> " in queue"
           threadDelay (1000 * 1000)
           go
-
-putTextError :: Text -> IO ()
-putTextError = hPutStrLn stderr

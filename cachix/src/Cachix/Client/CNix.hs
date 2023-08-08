@@ -15,5 +15,5 @@ filterInvalidStorePath store storePath = do
     then return $ Just storePath
     else do
       path <- storePathToPath store storePath
-      hPutStrLn stderr $ color Yellow $ "Warning: " <> decodeUtf8With lenientDecode path <> " is not valid, skipping"
+      putErrText $ color Yellow $ "Warning: " <> decodeUtf8With lenientDecode path <> " is not valid, skipping"
       return Nothing

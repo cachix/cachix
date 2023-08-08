@@ -40,7 +40,7 @@ run env DeployOptions.ActivateOptions {DeployOptions.payloadPath, DeployOptions.
   agentToken <- toS <$> getEnv "CACHIX_ACTIVATE_TOKEN"
   Aeson.eitherDecodeFileStrict' payloadPath >>= \case
     Left err -> do
-      hPutStrLn stderr $ "Error parsing the deployment spec: " <> err
+      putErrText $ "Error parsing the deployment spec: " <> toS err
       exitFailure
     Right deploySpec -> do
       activate env deployAsync agentToken (filterAgents agents deploySpec)

@@ -20,7 +20,7 @@ startWorkers store numWorkers pushParams = do
 
 producer :: Store -> WatchManager -> PushQueue.Queue -> IO (IO ())
 producer store mgr queue = do
-  putTextError "Watching /nix/store for new store paths ..."
+  putErrText "Watching /nix/store for new store paths ..."
   watchDir mgr "/nix/store" filterOnlyStorePaths (queueStorePathAction store queue)
 
 queueStorePathAction :: Store -> PushQueue.Queue -> Event -> IO ()
@@ -40,6 +40,3 @@ filterOnlyStorePaths (Removed fp _ _)
   | ".drv.lock" `isSuffixOf` fp = False
   | ".lock" `isSuffixOf` fp = True
 filterOnlyStorePaths _ = False
-
-putTextError :: Text -> IO ()
-putTextError = hPutStrLn stderr

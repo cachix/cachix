@@ -193,15 +193,12 @@ push env (PushPaths opts name cliPaths) = do
         pushParams
         (catMaybes normalized)
     case (length normalized, length pushedPaths) of
-      (0, _) -> putTextError "Nothing to push."
-      (_, 0) -> putTextError "Nothing to push - all store paths are already on Cachix."
-      _ -> putTextError "\nAll done."
+      (0, _) -> putErrText "Nothing to push."
+      (_, 0) -> putErrText "Nothing to push - all store paths are already on Cachix."
+      _ -> putErrText "\nAll done."
 push _ _ =
   throwIO $
     DeprecatedCommand "DEPRECATED: cachix watch-store has replaced cachix push --watch-store."
-
-putTextError :: Text -> IO ()
-putTextError = hPutStrLn stderr
 
 pin :: Env -> PinOptions -> IO ()
 pin env pinOpts = do
@@ -341,7 +338,7 @@ withPushParams env pushOpts name m = do
             unless (null missing) $ do
               let numMissing = length missing
                   numCached = length full - numMissing
-              putTextError $ "Pushing " <> show numMissing <> " paths (" <> show numCached <> " are already present) using " <> T.toLower (show compressionMethod) <> " to cache " <> name <> " ⏳\n"
+              putErrText $ "Pushing " <> show numMissing <> " paths (" <> show numCached <> " are already present) using " <> T.toLower (show compressionMethod) <> " to cache " <> name <> " ⏳\n"
             return missing,
           pushParamsStrategy = pushStrategy store authToken pushOpts name compressionMethod,
           pushParamsStore = store

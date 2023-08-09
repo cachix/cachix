@@ -276,32 +276,28 @@ getMissingPathsForClosure pushParams inputPaths = do
   let store = pushParamsStore pushParams
       clientEnv = pushParamsClientEnv pushParams
   -- Get the transitive closure of dependencies
-  (paths :: [Store.StorePath]) <-
-    liftIO $ do
-      inputs <- Std.Set.new
-      for_ inputPaths $ \path -> do
-        Std.Set.insertFP inputs path
-      closure <- Store.computeFSClosure store Store.defaultClosureParams inputs
-      Std.Set.toListFP closure
-  hashes <- for paths (liftIO . fmap (decodeUtf8With lenientDecode) . Store.getStorePathHash)
+  paths <- liftIO $ do
+    inputs <- Std.Set.new
+    for_ inputPaths $ Std.Set.insertFP inputs
+    closure <- Store.computeFSClosure store Store.defaultClosureParams inputs
+    Std.Set.toListFP closure
+  hashes <- liftIO $ for paths (fmap (decodeUtf8With lenientDecode) . Store.getStorePathHash)
   -- Check what store paths are missing
   missingHashesList <-
     retryAll $ \_ ->
-      escalate
-        =<< liftIO
-          ( (`runClientM` clientEnv) $
-              API.narinfoBulk
-                cachixClient
-                (getCacheAuthToken (pushParamsSecret pushParams))
-                (pushParamsName pushParams)
-                hashes
-          )
+      liftIO $
+        escalate
+          =<< API.narinfoBulk
+            cachixClient
+            (getCacheAuthToken (pushParamsSecret pushParams))
+            (pushParamsName pushParams)
+            hashes
+          `runClientM` clientEnv
   let missingHashes = Set.fromList (encodeUtf8 <$> missingHashesList)
   pathsAndHashes <- liftIO $
-    for paths $
-      \path -> do
-        hash_ <- Store.getStorePathHash path
-        pure (hash_, path)
+    for paths $ \path -> do
+      hash_ <- Store.getStorePathHash path
+      pure (hash_, path)
   let missing = map snd $ filter (\(hash_, _path) -> Set.member hash_ missingHashes) pathsAndHashes
   return (paths, missing)
 

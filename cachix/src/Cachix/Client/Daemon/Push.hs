@@ -13,6 +13,7 @@ import Protolude
 -- | Queue up push requests with the daemon
 --
 -- TODO: wait for the daemon to response that it has received the request
+-- TODO: allow customizing the socket path
 push :: Env -> BinaryCacheName -> [FilePath] -> IO ()
 push Env {config, cachixoptions} cacheName storePaths = do
   socketPath <- maybe getSocketPath pure Nothing

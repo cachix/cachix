@@ -23,12 +23,13 @@ import qualified Data.Text as T
 import qualified Hercules.CNix.Store as Store
 import qualified Network.Socket as Socket
 import Protolude
+import System.Posix.Process (getProcessID)
 
 run :: Env -> PushOptions -> DaemonOptions -> IO ()
 run env pushOptions daemonOptions = do
   socketPath <- maybe getSocketPath pure (daemonSocketPath daemonOptions)
   runWithSocket env pushOptions socketPath
-  putErrText "Daemon shut down."
+    `finally` putErrText "Daemon shut down."
 
 runWithSocket :: Env -> PushOptions -> FilePath -> IO ()
 runWithSocket env pushOptions socketPath = do
@@ -39,7 +40,7 @@ runWithSocket env pushOptions socketPath = do
     -- TODO: retry the connection on socket errors
     bracket (Daemon.openSocket socketPath) Socket.close $ \sock -> do
       Socket.listen sock Socket.maxListenQueue
-      putText (readyMessage socketPath)
+      putText =<< readyMessage socketPath
       Daemon.listen queue sock
   where
     startWorker queue =
@@ -79,9 +80,13 @@ handleRequest env pushOptions (QueuedPushRequest {..}) = do
         pushParams
         (catMaybes normalized)
 
-readyMessage :: FilePath -> Text
-readyMessage socketPath =
-  [i|
+readyMessage :: FilePath -> IO Text
+readyMessage socketPath = do
+  -- Get the PID of the process
+  pid <- getProcessID
+  return
+    [i|
 Cachix Daemon is ready to push store paths.
+PID: ${show pid :: Text}
 Listening on socket: ${socketPath}
   |]

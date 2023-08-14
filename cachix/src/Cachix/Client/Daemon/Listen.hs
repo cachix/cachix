@@ -1,13 +1,14 @@
 module Cachix.Client.Daemon.Listen
   ( listen,
     getSocketPath,
+    openSocket,
   )
 where
 
 import Cachix.Client.Config.Orphans ()
 import Cachix.Client.Daemon.Types (QueuedPushRequest (..))
 import Control.Concurrent.STM.TBMQueue
-import Control.Monad.Catch as E
+import qualified Control.Exception.Safe as Safe
 import qualified Data.Aeson as Aeson
 import qualified Network.Socket as Socket
 import qualified Network.Socket.ByteString as Socket.BS
@@ -16,24 +17,52 @@ import System.Directory
   ( XdgDirectory (..),
     createDirectoryIfMissing,
     getXdgDirectory,
+    removeFile,
   )
 import qualified System.Environment as System
 import System.FilePath ((</>))
+import System.IO.Error (isDoesNotExistError)
+
+data ListenError
+  = SocketError SomeException
+  | DecodingError Text
+  deriving stock (Show)
+
+instance Exception ListenError where
+  displayException = \case
+    SocketError err -> "Failed to read from the daemon socket: " <> show err
+    DecodingError err -> "Failed to decode request: " <> toS err
 
 listen :: TBMQueue QueuedPushRequest -> Socket.Socket -> IO ()
-listen queue sock =
-  forever $ E.handleAll logException $ do
-    (conn, _peerAddr) <- Socket.accept sock
-    bs <- Socket.BS.recv conn 4096
-
-    -- TODO: ignore empty requests (means that the connection was closed)
-    case Aeson.eitherDecodeStrict bs of
-      Left err -> putErrText $ "Failed to decode push request: " <> show err
-      Right pushRequest -> do
-        -- Socket.BS.sendAll conn "OK"
-        atomically $ writeTBMQueue queue $ QueuedPushRequest pushRequest conn
+listen queue sock = loop
   where
-    logException e = putErrText $ "Exception in daemon listen thread: " <> show e
+    loop = do
+      result <- runExceptT $ readPushRequest sock
+
+      case result of
+        Right pushRequest -> do
+          atomically $ writeTBMQueue queue pushRequest
+          loop
+        Left (DecodingError err) -> do
+          putErrText $ "Failed to decode request: " <> err
+          loop
+        Left err -> throwIO err
+
+readPushRequest :: Socket.Socket -> ExceptT ListenError IO QueuedPushRequest
+readPushRequest sock = do
+  (bs, clientConn) <- readFromSocket `mapSyncException` SocketError
+  decodeMessage clientConn bs
+  where
+    readFromSocket = liftIO $ do
+      -- NOTE: this sets up a non-blocking socket to the client
+      (conn, _peerAddr) <- Socket.accept sock
+      bs <- Socket.BS.recv conn 4096
+      return (bs, conn)
+
+    decodeMessage conn bs =
+      case Aeson.eitherDecodeStrict bs of
+        Left err -> throwE $ DecodingError (toS err)
+        Right pushRequest -> return $ QueuedPushRequest pushRequest conn
 
 mapSyncException :: (Exception e1, Exception e2, Safe.MonadCatch m) => m a -> (e1 -> e2) -> m a
 mapSyncException a f = a `Safe.catch` (Safe.throwM . f)
@@ -57,3 +86,19 @@ getXdgRuntimeDir = do
   xdgRuntimeDir <- System.lookupEnv "XDG_RUNTIME_DIR"
   cacheFallback <- getXdgDirectory XdgCache ""
   return $ fromMaybe cacheFallback xdgRuntimeDir
+
+-- TODO: lock the socket
+openSocket :: FilePath -> IO Socket.Socket
+openSocket socketFilePath = do
+  deleteSocketFileIfExists socketFilePath
+  sock <- Socket.socket Socket.AF_UNIX Socket.Stream Socket.defaultProtocol
+  Socket.bind sock $ Socket.SockAddrUnix socketFilePath
+  -- setFileMode socketFilePath socketFileMode
+  return sock
+  where
+    deleteSocketFileIfExists path =
+      removeFile path `catch` handleDoesNotExist
+
+    handleDoesNotExist e
+      | isDoesNotExistError e = return ()
+      | otherwise = throwIO e

@@ -11,6 +11,7 @@ import Servant.Auth.Client (Token)
 data PushRequest = PushRequest
   { authToken :: Token,
     binaryCacheName :: Text,
+    -- Host is not currently supported
     host :: URI,
     storePaths :: [FilePath]
   }

@@ -23,53 +23,41 @@ import qualified Data.Text as T
 import qualified Hercules.CNix.Store as Store
 import qualified Network.Socket as Socket
 import Protolude
-import System.Directory (removeFile)
-import System.IO.Error (isDoesNotExistError)
 
 run :: Env -> PushOptions -> DaemonOptions -> IO ()
 run env pushOptions daemonOptions = do
   socketPath <- maybe getSocketPath pure (daemonSocketPath daemonOptions)
   runWithSocket env pushOptions socketPath
+  putErrText "Daemon shut down."
 
 runWithSocket :: Env -> PushOptions -> FilePath -> IO ()
-runWithSocket env pushOptions socketPath =
-  bracket (open socketPath) Socket.close $ \sock -> do
-    Socket.listen sock Socket.maxListenQueue
+runWithSocket env pushOptions socketPath = do
+  -- Create a queue of push requests for the workers to process
+  queue <- newTBMQueueIO 1000
 
-    -- Create a queue of push requests for the workers to process
-    queue <- newTBMQueueIO 1000
-    bracket (startWorkers queue) (shutdownWorkers queue) $ \_ -> do
-      putText $ readyMessage socketPath
+  bracket (startWorker queue) (shutdownWorker queue) $ \_ -> do
+    -- TODO: retry the connection on socket errors
+    bracket (Daemon.openSocket socketPath) Socket.close $ \sock -> do
+      Socket.listen sock Socket.maxListenQueue
+      putText (readyMessage socketPath)
       Daemon.listen queue sock
   where
-    startWorkers queue =
-      replicateM 1 $ do
-        Immortal.create $ \thread ->
-          Immortal.onUnexpectedFinish thread logException $
-            runWorker env pushOptions queue
+    startWorker queue =
+      Immortal.create $ \thread ->
+        Immortal.onUnexpectedFinish thread logWorkerException $
+          runWorker env pushOptions queue
 
-    shutdownWorkers queue workers = do
+    shutdownWorker queue worker = do
+      putErrText "Shutting down daemon..."
       atomically $ closeTBMQueue queue
-      mapM_ Immortal.mortalize workers
-      mapM_ Immortal.wait workers
+      Immortal.mortalize worker
+      putErrText "Waiting for worker to finish..."
+      Immortal.wait worker
 
-    logException e =
-      putErrText $ "Exception in daemon worker thread: " <> show e
-
-    -- TODO: lock the socket
-    open socketFilePath = do
-      deleteSocketFileIfExists socketFilePath
-      sock <- Socket.socket Socket.AF_UNIX Socket.Stream Socket.defaultProtocol
-      Socket.bind sock $ Socket.SockAddrUnix socketFilePath
-      -- setFileMode socketFilePath socketFileMode
-      return sock
-
-    deleteSocketFileIfExists path =
-      removeFile path `catch` handleDoesNotExist
-
-    handleDoesNotExist e
-      | isDoesNotExistError e = return ()
-      | otherwise = throwIO e
+logWorkerException :: Either SomeException () -> IO ()
+logWorkerException (Left err) =
+  putErrText $ "Exception in daemon worker thread: " <> show err
+logWorkerException _ = return ()
 
 runWorker :: Env -> PushOptions -> TBMQueue QueuedPushRequest -> IO ()
 runWorker env pushOptions queue =
@@ -79,13 +67,12 @@ runWorker env pushOptions queue =
 
 handleRequest :: Env -> PushOptions -> QueuedPushRequest -> IO ()
 handleRequest env pushOptions (QueuedPushRequest {..}) = do
-  putText $ "Pushing " <> show (length $ storePaths pushRequest) <> " store paths"
-
   Commands.withPushParams env pushOptions (binaryCacheName pushRequest) $ \pushParams -> do
     normalized <-
       for (storePaths pushRequest) $ \fp -> do
         storePath <- Store.followLinksToStorePath (pushParamsStore pushParams) (encodeUtf8 $ T.pack fp)
         filterInvalidStorePath (pushParamsStore pushParams) storePath
+
     void $
       pushClosure
         (mapConcurrentlyBounded (numJobs pushOptions))

@@ -309,7 +309,7 @@ pushStrategy store authToken opts name compressionMethod storePath =
             return $ liftIO . tickN progressBar . BS.length
           else do
             -- we append newline instead of putStrLn due to https://github.com/haskell/text/issues/242
-            putStr $ retryText retryStatus <> "Pushing " <> path <> " (" <> toS hSize <> ")\n"
+            putErrText $ retryText retryStatus <> "Pushing " <> path <> " (" <> toS hSize <> ")\n"
             return $ const pass
 
       Conduit.awaitForever $ \chunk -> do

@@ -70,10 +70,14 @@ logWorkerException (Left err) =
 logWorkerException _ = return ()
 
 runWorker :: Env -> PushOptions -> TBMQueue QueuedPushRequest -> IO ()
-runWorker env pushOptions queue =
-  atomically (readTBMQueue queue) >>= \case
-    Nothing -> return ()
-    Just msg -> handleRequest env pushOptions msg
+runWorker env pushOptions queue = loop
+  where
+    loop =
+      atomically (readTBMQueue queue) >>= \case
+        Nothing -> return ()
+        Just msg -> do
+          handleRequest env pushOptions msg
+          loop
 
 handleRequest :: Env -> PushOptions -> QueuedPushRequest -> IO ()
 handleRequest env pushOptions (QueuedPushRequest {..}) = do

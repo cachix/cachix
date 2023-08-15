@@ -25,8 +25,8 @@ import qualified Network.Socket as Socket
 import Protolude
 import System.Posix.Process (getProcessID)
 
-run :: Env -> PushOptions -> DaemonOptions -> IO ()
-run env pushOptions daemonOptions = do
+run :: Env -> DaemonOptions -> PushOptions -> IO ()
+run env daemonOptions pushOptions = do
   socketPath <- maybe getSocketPath pure (daemonSocketPath daemonOptions)
   runWithSocket env pushOptions socketPath
     `finally` putErrText "Daemon shut down."

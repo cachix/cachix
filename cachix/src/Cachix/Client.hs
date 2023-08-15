@@ -24,6 +24,7 @@ main = displayConsoleRegions $ do
     AuthToken token -> Commands.authtoken env token
     Config configCommand -> Config.run cachixOptions configCommand
     Daemon (DaemonRun daemonOptions pushOptions) -> Daemon.run env daemonOptions pushOptions
+    Daemon (DaemonStop daemonOptions) -> Daemon.stop env daemonOptions
     Daemon (DaemonPushPaths daemonOptions cacheName storePaths) -> Daemon.push env daemonOptions cacheName storePaths
     GenerateKeypair name -> Commands.generateKeypair env name
     Push pushArgs -> Commands.push env pushArgs

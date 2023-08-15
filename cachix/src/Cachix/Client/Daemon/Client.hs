@@ -1,8 +1,8 @@
-module Cachix.Client.Daemon.Push (push) where
+module Cachix.Client.Daemon.Client (push, stop) where
 
 import Cachix.Client.Config as Config
 import Cachix.Client.Daemon.Listen (getSocketPath)
-import Cachix.Client.Daemon.Types (PushRequest (..))
+import Cachix.Client.Daemon.Types (ClientMessage (..), PushRequest (..))
 import Cachix.Client.Env as Env
 import Cachix.Client.OptionsParser (DaemonOptions (..))
 import Cachix.Types.BinaryCache (BinaryCacheName)
@@ -16,11 +16,21 @@ import Protolude
 -- TODO: wait for the daemon to response that it has received the request
 push :: Env -> DaemonOptions -> BinaryCacheName -> [FilePath] -> IO ()
 push Env {config, cachixoptions} daemonOptions cacheName storePaths = do
-  socketPath <- maybe getSocketPath pure (daemonSocketPath daemonOptions)
+  sock <- connectToDaemon (daemonSocketPath daemonOptions)
+  Socket.LBS.sendAll sock (Aeson.encode pushRequest)
+  where
+    pushRequest =
+      ClientPushRequest $
+        PushRequest (Config.authToken config) cacheName (Config.host cachixoptions) storePaths
+
+stop :: Env -> DaemonOptions -> IO ()
+stop _env daemonOptions = do
+  sock <- connectToDaemon (daemonSocketPath daemonOptions)
+  Socket.LBS.sendAll sock (Aeson.encode ClientStop)
+
+connectToDaemon :: Maybe FilePath -> IO Socket.Socket
+connectToDaemon optionalSocketPath = do
+  socketPath <- maybe getSocketPath pure optionalSocketPath
   sock <- Socket.socket Socket.AF_UNIX Socket.Stream Socket.defaultProtocol
   Socket.connect sock (Socket.SockAddrUnix socketPath)
-
-  Socket.LBS.sendAll sock (Aeson.encode payload)
-  where
-    payload =
-      PushRequest (Config.authToken config) cacheName (Config.host cachixoptions) storePaths
+  return sock

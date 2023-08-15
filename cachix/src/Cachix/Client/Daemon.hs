@@ -4,18 +4,20 @@ module Cachix.Client.Daemon
   ( run,
     runWithSocket,
     push,
+    stop,
   )
 where
 
 import Cachix.Client.CNix (filterInvalidStorePath)
 import qualified Cachix.Client.Commands as Commands
 import Cachix.Client.Config.Orphans ()
+import Cachix.Client.Daemon.Client (push, stop)
 import Cachix.Client.Daemon.Listen as Daemon
-import Cachix.Client.Daemon.Push (push)
 import Cachix.Client.Daemon.Types
 import Cachix.Client.Env as Env
 import Cachix.Client.OptionsParser as Options
 import Cachix.Client.Push
+import Control.Concurrent.Extra (once)
 import Control.Concurrent.STM.TBMQueue
 import qualified Control.Immortal as Immortal
 import Data.String.Here (i)
@@ -36,24 +38,28 @@ runWithSocket env pushOptions socketPath = do
   -- Create a queue of push requests for the workers to process
   queue <- newTBMQueueIO 1000
 
-  bracket (startWorker queue) (shutdownWorker queue) $ \_ -> do
+  bracket (startWorker queue) identity $ \shutdownWorker -> do
     -- TODO: retry the connection on socket errors
     bracket (Daemon.openSocket socketPath) Socket.close $ \sock -> do
       Socket.listen sock Socket.maxListenQueue
+
       putText =<< readyMessage socketPath
       Daemon.listen queue sock
+
+      -- Gracefully shutdown the worker before closing the socket
+      shutdownWorker
   where
-    startWorker queue =
-      Immortal.create $ \thread ->
+    startWorker queue = do
+      worker <- Immortal.create $ \thread ->
         Immortal.onUnexpectedFinish thread logWorkerException $
           runWorker env pushOptions queue
 
-    shutdownWorker queue worker = do
-      putErrText "Shutting down daemon..."
-      atomically $ closeTBMQueue queue
-      Immortal.mortalize worker
-      putErrText "Waiting for worker to finish..."
-      Immortal.wait worker
+      once $ do
+        putErrText "Shutting down daemon..."
+        atomically $ closeTBMQueue queue
+        Immortal.mortalize worker
+        putErrText "Waiting for worker to finish..."
+        Immortal.wait worker
 
 logWorkerException :: Either SomeException () -> IO ()
 logWorkerException (Left err) =

@@ -115,6 +115,7 @@ data PushOptions = PushOptions
 data DaemonCommand
   = DaemonPushPaths DaemonOptions BinaryCacheName [FilePath]
   | DaemonRun DaemonOptions PushOptions
+  | DaemonStop DaemonOptions
   deriving (Show)
 
 data DaemonOptions = DaemonOptions
@@ -204,8 +205,10 @@ commandParser =
       subparser $
         command "push" (infoH daemonPush (progDesc "Push store paths to the daemon"))
           <> command "run" (infoH daemonRun (progDesc "Launch the daemon"))
+          <> command "stop" (infoH daemonStop (progDesc "Stop the daemon and wait for any queued paths to be pushed"))
     daemonPush = DaemonPushPaths <$> daemonOptions <*> nameArg <*> many (strArgument (metavar "PATHS..."))
     daemonRun = DaemonRun <$> daemonOptions <*> pushOptions
+    daemonStop = DaemonStop <$> daemonOptions
     daemonOptions = DaemonOptions <$> optional (strOption (long "socket" <> short 's' <> metavar "SOCKET"))
     watchExec = WatchExec <$> pushOptions <*> nameArg <*> strArgument (metavar "CMD") <*> many (strArgument (metavar "-- ARGS"))
     watchStore = WatchStore <$> pushOptions <*> nameArg

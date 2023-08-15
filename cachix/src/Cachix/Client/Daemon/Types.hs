@@ -7,6 +7,12 @@ import qualified Network.Socket as Socket
 import Protolude
 import Servant.Auth.Client (Token)
 
+data ClientMessage
+  = ClientPushRequest PushRequest
+  | ClientStop
+  deriving stock (Generic)
+  deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)
+
 -- | A request sent to the daemon to push a store path to a binary cache.
 data PushRequest = PushRequest
   { authToken :: Token,

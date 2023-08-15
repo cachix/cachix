@@ -6,7 +6,7 @@ module Cachix.Client.Daemon.Listen
 where
 
 import Cachix.Client.Config.Orphans ()
-import Cachix.Client.Daemon.Types (QueuedPushRequest (..))
+import Cachix.Client.Daemon.Types
 import Control.Concurrent.STM.TBMQueue
 import qualified Control.Exception.Safe as Safe
 import qualified Data.Aeson as Aeson
@@ -40,15 +40,18 @@ listen queue sock = loop
       result <- runExceptT $ readPushRequest sock
 
       case result of
-        Right pushRequest -> do
-          atomically $ writeTBMQueue queue pushRequest
+        Right (ClientStop, _clientConn) -> do
+          putText "Received stop request, shutting down..."
+        Right (ClientPushRequest pushRequest, clientConn) -> do
+          let queuedRequest = QueuedPushRequest pushRequest clientConn
+          atomically $ writeTBMQueue queue queuedRequest
           loop
         Left (DecodingError err) -> do
           putErrText $ "Failed to decode request: " <> err
           loop
         Left err -> throwIO err
 
-readPushRequest :: Socket.Socket -> ExceptT ListenError IO QueuedPushRequest
+readPushRequest :: Socket.Socket -> ExceptT ListenError IO (ClientMessage, Socket.Socket)
 readPushRequest sock = do
   (bs, clientConn) <- readFromSocket `mapSyncException` SocketError
   decodeMessage clientConn bs
@@ -62,7 +65,7 @@ readPushRequest sock = do
     decodeMessage conn bs =
       case Aeson.eitherDecodeStrict bs of
         Left err -> throwE $ DecodingError (toS err)
-        Right pushRequest -> return $ QueuedPushRequest pushRequest conn
+        Right pushRequest -> return (pushRequest, conn)
 
 mapSyncException :: (Exception e1, Exception e2, Safe.MonadCatch m) => m a -> (e1 -> e2) -> m a
 mapSyncException a f = a `Safe.catch` (Safe.throwM . f)

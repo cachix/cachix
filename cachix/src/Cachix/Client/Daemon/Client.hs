@@ -10,6 +10,7 @@ import qualified Data.Aeson as Aeson
 import qualified Network.Socket as Socket
 import qualified Network.Socket.ByteString.Lazy as Socket.LBS
 import Protolude
+import qualified System.Posix.IO as Posix
 
 -- | Queue up push requests with the daemon
 --
@@ -28,9 +29,17 @@ stop _env daemonOptions = do
   sock <- connectToDaemon (daemonSocketPath daemonOptions)
   Socket.LBS.sendAll sock (Aeson.encode ClientStop)
 
+  -- Wait for the socket to close
+  void $ Socket.LBS.recv sock 1
+
 connectToDaemon :: Maybe FilePath -> IO Socket.Socket
 connectToDaemon optionalSocketPath = do
   socketPath <- maybe getSocketPath pure optionalSocketPath
   sock <- Socket.socket Socket.AF_UNIX Socket.Stream Socket.defaultProtocol
   Socket.connect sock (Socket.SockAddrUnix socketPath)
+
+  -- Network.Socket.accept sets the socket to non-blocking by default.
+  Socket.withFdSocket sock $ \fd ->
+    Posix.setFdOption (fromIntegral fd) Posix.NonBlockingRead False
+
   return sock

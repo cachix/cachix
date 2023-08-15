@@ -33,15 +33,16 @@ instance Exception ListenError where
     SocketError err -> "Failed to read from the daemon socket: " <> show err
     DecodingError err -> "Failed to decode request: " <> toS err
 
-listen :: TBMQueue QueuedPushRequest -> Socket.Socket -> IO ()
+listen :: TBMQueue QueuedPushRequest -> Socket.Socket -> IO Socket.Socket
 listen queue sock = loop
   where
     loop = do
       result <- runExceptT $ readPushRequest sock
 
       case result of
-        Right (ClientStop, _clientConn) -> do
+        Right (ClientStop, clientConn) -> do
           putText "Received stop request, shutting down..."
+          return clientConn
         Right (ClientPushRequest pushRequest, clientConn) -> do
           let queuedRequest = QueuedPushRequest pushRequest clientConn
           atomically $ writeTBMQueue queue queuedRequest

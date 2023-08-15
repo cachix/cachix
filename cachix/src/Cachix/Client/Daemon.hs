@@ -44,10 +44,13 @@ runWithSocket env pushOptions socketPath = do
       Socket.listen sock Socket.maxListenQueue
 
       putText =<< readyMessage socketPath
-      Daemon.listen queue sock
+      clientStopConn <- Daemon.listen queue sock
 
       -- Gracefully shutdown the worker before closing the socket
+      -- TODO: consider shutdown from Network.Socket
       shutdownWorker
+
+      Socket.gracefulClose clientStopConn 5000
   where
     startWorker queue = do
       worker <- Immortal.create $ \thread ->

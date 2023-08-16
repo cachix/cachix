@@ -38,9 +38,9 @@ runWithSocket env pushOptions socketPath = do
   -- Create a queue of push requests for the workers to process
   queue <- newTBMQueueIO 1000
 
-  bracket (startWorker queue) identity $ \shutdownWorker -> do
+  bracketOnError (startWorker queue) identity $ \shutdownWorker -> do
     -- TODO: retry the connection on socket errors
-    bracket (Daemon.openSocket socketPath) Socket.close $ \sock -> do
+    bracketOnError (Daemon.openSocket socketPath) Socket.close $ \sock -> do
       Socket.listen sock Socket.maxListenQueue
 
       putText =<< readyMessage socketPath

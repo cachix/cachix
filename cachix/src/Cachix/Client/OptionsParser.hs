@@ -128,7 +128,7 @@ commandParser =
   subparser $
     command "authtoken" (infoH authtoken (progDesc "Configure authentication token for communication to HTTP API"))
       <> command "config" (Config <$> Config.parser)
-      <> command "daemon" (infoH (Daemon <$> daemon) (progDesc "Run a daemon that listens for store paths on a unix socket"))
+      <> (hidden <> command "daemon" (infoH (Daemon <$> daemon) (progDesc "Run a daemon that listens push requests over a unix socket")))
       <> command "generate-keypair" (infoH generateKeypair (progDesc "Generate signing key pair for a binary cache"))
       <> command "push" (infoH push (progDesc "Upload Nix store paths to a binary cache"))
       <> command "pin" (infoH pin (progDesc "Pin a store path to prevent it from being garbage collected"))

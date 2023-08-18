@@ -33,6 +33,9 @@ instance Exception ListenError where
     SocketError err -> "Failed to read from the daemon socket: " <> show err
     DecodingError err -> "Failed to decode request: " <> toS err
 
+-- | The main daemon server loop.
+--
+-- The daemon listens for incoming push requests on the provided socket and queues them up for the worker thread.
 listen :: TBMQueue QueuedPushRequest -> Socket.Socket -> IO Socket.Socket
 listen queue sock = loop
   where
@@ -52,6 +55,7 @@ listen queue sock = loop
           loop
         Left err -> throwIO err
 
+-- | Try to read and decode a push request.
 readPushRequest :: Socket.Socket -> ExceptT ListenError IO (ClientMessage, Socket.Socket)
 readPushRequest sock = do
   (bs, clientConn) <- readFromSocket `mapSyncException` SocketError

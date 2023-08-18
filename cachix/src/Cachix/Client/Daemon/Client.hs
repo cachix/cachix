@@ -14,7 +14,7 @@ import qualified System.Posix.IO as Posix
 
 -- | Queue up push requests with the daemon
 --
--- TODO: wait for the daemon to response that it has received the request
+-- TODO: wait for the daemon to respond that it has received the request
 push :: Env -> DaemonOptions -> BinaryCacheName -> [FilePath] -> IO ()
 push Env {config, cachixoptions} daemonOptions cacheName storePaths = do
   sock <- connectToDaemon (daemonSocketPath daemonOptions)
@@ -24,6 +24,7 @@ push Env {config, cachixoptions} daemonOptions cacheName storePaths = do
       ClientPushRequest $
         PushRequest (Config.authToken config) cacheName (Config.host cachixoptions) storePaths
 
+-- | Tell the daemon to stop and wait for it gracefully exit
 stop :: Env -> DaemonOptions -> IO ()
 stop _env daemonOptions = do
   sock <- connectToDaemon (daemonSocketPath daemonOptions)

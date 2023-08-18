@@ -121,7 +121,6 @@ library
     , directory
     , ed25519
     , either
-    , exceptions
     , extra
     , filepath
     , fsnotify                >=0.4.1
@@ -161,7 +160,6 @@ library
     , text
     , time
     , unix
-    , unliftio-core
     , unordered-containers
     , uri-bytestring
     , uuid

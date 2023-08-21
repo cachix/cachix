@@ -2,6 +2,8 @@
 
 module Cachix.Client.OptionsParser
   ( CachixCommand (..),
+    DaemonCommand (..),
+    DaemonOptions (..),
     PushArguments (..),
     PushOptions (..),
     PinOptions (..),
@@ -16,6 +18,7 @@ import qualified Cachix.Client.InstallationMode as InstallationMode
 import Cachix.Client.URI (URI)
 import qualified Cachix.Client.URI as URI
 import qualified Cachix.Deploy.OptionsParser as DeployOptions
+import Cachix.Types.BinaryCache (BinaryCacheName)
 import qualified Cachix.Types.BinaryCache as BinaryCache
 import Cachix.Types.PinCreate (Keep (..))
 import qualified Data.Text as T
@@ -72,11 +75,10 @@ uriOption :: ReadM URI
 uriOption = eitherReader $ \s ->
   first show $ URI.parseURI (toS s)
 
-type BinaryCacheName = Text
-
 data CachixCommand
   = AuthToken (Maybe Text)
   | Config Config.Command
+  | Daemon DaemonCommand
   | GenerateKeypair BinaryCacheName
   | Push PushArguments
   | Pin PinOptions
@@ -110,11 +112,23 @@ data PushOptions = PushOptions
   }
   deriving (Show)
 
+data DaemonCommand
+  = DaemonPushPaths DaemonOptions BinaryCacheName [FilePath]
+  | DaemonRun DaemonOptions PushOptions
+  | DaemonStop DaemonOptions
+  deriving (Show)
+
+data DaemonOptions = DaemonOptions
+  { daemonSocketPath :: Maybe FilePath
+  }
+  deriving (Show)
+
 commandParser :: Parser CachixCommand
 commandParser =
   subparser $
     command "authtoken" (infoH authtoken (progDesc "Configure authentication token for communication to HTTP API"))
       <> command "config" (Config <$> Config.parser)
+      <> (hidden <> command "daemon" (infoH (Daemon <$> daemon) (progDesc "Run a daemon that listens push requests over a unix socket")))
       <> command "generate-keypair" (infoH generateKeypair (progDesc "Generate signing key pair for a binary cache"))
       <> command "push" (infoH push (progDesc "Upload Nix store paths to a binary cache"))
       <> command "pin" (infoH pin (progDesc "Pin a store path to prevent it from being garbage collected"))
@@ -187,6 +201,15 @@ commandParser =
         <*> many (strOption (metavar "ARTIFACTS..." <> long "artifact" <> short 'a'))
         <*> keepParser
     pin = Pin <$> pinOptions
+    daemon =
+      subparser $
+        command "push" (infoH daemonPush (progDesc "Push store paths to the daemon"))
+          <> command "run" (infoH daemonRun (progDesc "Launch the daemon"))
+          <> command "stop" (infoH daemonStop (progDesc "Stop the daemon and wait for any queued paths to be pushed"))
+    daemonPush = DaemonPushPaths <$> daemonOptions <*> nameArg <*> many (strArgument (metavar "PATHS..."))
+    daemonRun = DaemonRun <$> daemonOptions <*> pushOptions
+    daemonStop = DaemonStop <$> daemonOptions
+    daemonOptions = DaemonOptions <$> optional (strOption (long "socket" <> short 's' <> metavar "SOCKET"))
     watchExec = WatchExec <$> pushOptions <*> nameArg <*> strArgument (metavar "CMD") <*> many (strArgument (metavar "-- ARGS"))
     watchStore = WatchStore <$> pushOptions <*> nameArg
     pushWatchStore =

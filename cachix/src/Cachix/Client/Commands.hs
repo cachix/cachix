@@ -11,6 +11,7 @@ module Cachix.Client.Commands
     use,
     remove,
     pin,
+    withPushParams,
   )
 where
 
@@ -308,7 +309,7 @@ pushStrategy store authToken opts name compressionMethod storePath =
             return $ liftIO . tickN progressBar . BS.length
           else do
             -- we append newline instead of putStrLn due to https://github.com/haskell/text/issues/242
-            putStr $ retryText retryStatus <> "Pushing " <> path <> " (" <> toS hSize <> ")\n"
+            appendErrText $ retryText retryStatus <> "Pushing " <> path <> " (" <> toS hSize <> ")\n"
             return $ const pass
 
       Conduit.awaitForever $ \chunk -> do
@@ -343,3 +344,9 @@ withPushParams env pushOpts name m = do
           pushParamsStrategy = pushStrategy store authToken pushOpts name compressionMethod,
           pushParamsStore = store
         }
+
+-- | Put text to stderr without a new line.
+--
+-- This is safe to use when printing from multiple threads, unlike hPutStrLn which may fail to insert the newline at the right place.
+appendErrText :: (MonadIO m) => Text -> m ()
+appendErrText = hPutStr stderr

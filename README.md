@@ -44,13 +44,13 @@ Available commands:
 
 ## Installation
 
-1. Install Cachix client using Nix:
+1. Install the Cachix client using Nix:
 
-```
-    $ nix-env -iA cachix -f https://cachix.org/api/v1/install
+```bash
+nix-env -iA cachix -f https://cachix.org/api/v1/install
 ```
 
-(or `pkgs.cachix` from [nixpkgs](https://github.com/NixOS/nixpkgs))
+Also available as `pkgs.cachix` in [nixpkgs](https://github.com/NixOS/nixpkgs).
 
 2. Login via https://www.cachix.org/api/v1/login to start using the service
 
@@ -58,14 +58,14 @@ Available commands:
 
 Install Cachix from master:
 
-```
-    $ nix-env -if https://github.com/cachix/cachix/tarball/master --substituters 'https://cache.nixos.org https://cachix.cachix.org' --trusted-public-keys 'cachix.cachix.org-1:eWNHQldwUO7G2VkjpnjDbWwy4KQ/HNxht7H4SSoMckM= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY='
+```bash
+nix-env -if https://github.com/cachix/cachix/tarball/master --substituters 'https://cache.nixos.org https://cachix.cachix.org' --trusted-public-keys 'cachix.cachix.org-1:eWNHQldwUO7G2VkjpnjDbWwy4KQ/HNxht7H4SSoMckM= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY='
 ```
 
 Or with Nix 2.4+:
 
-```
-    $ nix profile install github:cachix/cachix/latest
+```bash
+nix profile install github:cachix/cachix/latest
 ```
 
 ## Support

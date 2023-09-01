@@ -41,6 +41,7 @@ lockFilename agentName = "deployment-" <> toS agentName
 main :: IO ()
 main = do
   setLocaleEncoding utf8
+  setFileSystemEncoding utf8
   hSetBuffering stdout LineBuffering
   hSetBuffering stderr LineBuffering
 

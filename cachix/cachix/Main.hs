@@ -10,6 +10,7 @@ import System.IO
 main :: IO ()
 main = do
   setLocaleEncoding utf8
+  setFileSystemEncoding utf8
   hSetBuffering stdout LineBuffering
   hSetBuffering stderr LineBuffering
   handleExceptions CC.main

@@ -29,6 +29,7 @@ import Cachix.API.Error
 import Cachix.API.Signing (fingerprint, passthroughHashSink, passthroughHashSinkB16, passthroughSizeSink)
 import qualified Cachix.Client.Config as Config
 import Cachix.Client.Exception (CachixException (..))
+import Cachix.Client.HumanSize (humanSize)
 import qualified Cachix.Client.Push.S3 as Push.S3
 import Cachix.Client.Retry (retryAll)
 import Cachix.Client.Secrets
@@ -44,6 +45,7 @@ import Control.Exception.Safe (MonadMask, throwM)
 import Control.Monad.Trans.Resource (ResourceT)
 import Control.Retry (RetryStatus)
 import Crypto.Sign.Ed25519
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base64 as B64
 import Data.Conduit
 import qualified Data.Conduit.Lzma as Lzma (compress)
@@ -64,7 +66,10 @@ import Servant.Auth ()
 import Servant.Auth.Client
 import Servant.Client.Streaming
 import Servant.Conduit ()
+import System.Console.AsciiProgress
+import System.Console.Pretty
 import System.Environment (lookupEnv)
+import System.IO (hIsTerminalDevice)
 import qualified System.Nix.Base32
 import System.Nix.Nar
 
@@ -158,6 +163,37 @@ getCacheAuthToken :: PushSecret -> Token
 getCacheAuthToken (PushToken token) = token
 getCacheAuthToken (PushSigningKey token _) = token
 
+showUploadProgress store storePath retryStatus size = do
+  let hSize = toS $ humanSize $ fromIntegral size
+  path <- liftIO $ decodeUtf8With lenientDecode <$> Store.storePathToPath store storePath
+
+  isTerminal <- liftIO $ hIsTerminalDevice stdout
+  if isTerminal
+    then do
+      let bar = color Blue "[:bar] " <> toS path <> " (:percent of " <> hSize <> ")"
+          barLength = T.length $ T.replace ":percent" "  0%" (T.replace "[:bar]" "" (toS bar))
+
+      progressBar <-
+        liftIO $
+          newProgressBar
+            def
+              { pgTotal = fromIntegral size,
+                -- https://github.com/yamadapc/haskell-ascii-progress/issues/24
+                pgWidth = 20 + barLength,
+                pgCompletedChar = '█',
+                pgPendingChar = ' ',
+                -- pgOnCompletion = Just $ color Green "✓ " <> toS path <> " (" <> hSize <> ")",
+                pgOnCompletion = Nothing,
+                pgFormat = bar
+              }
+
+      let onTick ratio = liftIO . tickN progressBar . ceiling . (max 1 ratio *) . fromIntegral . BS.length
+      return (onTick, complete progressBar)
+    else do
+      -- we append newline instead of putStrLn due to https://github.com/haskell/text/issues/242
+      putStr $ show retryStatus <> "Pushing " <> path <> " (" <> toS hSize <> ")\n"
+      return (\_ -> const pass, pass)
+
 uploadStorePath ::
   (MonadUnliftIO m) =>
   -- | details for pushing to cache
@@ -194,61 +230,73 @@ uploadStorePath cache storePath retrystatus = do
   let storePathSize = Store.validPathInfoNarSize pathinfo
   onAttempt strategy retrystatus storePathSize
 
-  withCompressor $ \compressor -> do
-    uploadResult <-
-      runConduitRes $
-        streamNarIO narEffectsIO (toS storePathText) Data.Conduit.yield
-          .| passthroughSizeSink narSizeRef
-          .| passthroughHashSink narHashRef
-          .| onUncompressedNARStream strategy retrystatus storePathSize
-          .| compressor
-          .| passthroughSizeSink fileSizeRef
-          .| passthroughHashSinkB16 fileHashRef
-          .| Push.S3.streamUpload cacheClientEnv authToken cacheName (compressionMethod strategy)
+  (onUpload, finishProgress) <- showUploadProgress store storePath retrystatus storePathSize
 
-    case uploadResult of
-      Left err -> throwIO err
-      Right (narId, uploadId, parts) -> liftIO $ do
+  let modifiedOnUpload bs = do
         narSize <- readIORef narSizeRef
-        narHash <- ("sha256:" <>) . System.Nix.Base32.encode <$> readIORef narHashRef
-        narHashNix <- Store.validPathInfoNarHash32 pathinfo
-        when (narHash /= toS narHashNix) $ throwM $ NarHashMismatch $ toS storePathText <> ": Nar hash mismatch between nix-store --dump and nix db. You can repair db metadata by running as root: $ nix-store --verify --repair --check-contents"
-        fileHash <- readIORef fileHashRef
         fileSize <- readIORef fileSizeRef
-        deriverPath <-
-          if omitDeriver strategy
-            then pure Nothing
-            else Store.validPathInfoDeriver store pathinfo
-        deriver <- for deriverPath Store.getStorePathBaseName
-        referencesPathSet <- Store.validPathInfoReferences store pathinfo
-        referencesPaths <- sort . fmap toS <$> for referencesPathSet (Store.storePathToPath store)
-        references <- sort . fmap toS <$> for referencesPathSet Store.getStorePathBaseName
-        let fp = fingerprint (decodeUtf8With lenientDecode storePathText) narHash narSize referencesPaths
-            sig = case pushParamsSecret cache of
-              PushToken _ -> Nothing
-              PushSigningKey _ signKey -> Just $ toS $ B64.encode $ unSignature $ dsign (signingSecretKey signKey) fp
-            nic =
-              Api.NarInfoCreate
-                { Api.cStoreHash = storeHash,
-                  Api.cStoreSuffix = storeSuffix,
-                  Api.cNarHash = narHash,
-                  Api.cNarSize = narSize,
-                  Api.cFileSize = fileSize,
-                  Api.cFileHash = toS fileHash,
-                  Api.cReferences = references,
-                  Api.cDeriver = maybe "unknown-deriver" (decodeUtf8With lenientDecode) deriver,
-                  Api.cSig = sig
-                }
-        escalate $ Api.isNarInfoCreateValid nic
+        let ratio :: Double = fromIntegral narSize / fromIntegral fileSize
+        onUpload ratio bs
 
-        -- Complete the multipart upload and upload the narinfo
-        let completeMultipartUploadRequest =
-              API.completeNarUpload cachixClient authToken cacheName narId uploadId $
-                Multipart.CompletedMultipartUpload
-                  { Multipart.parts = parts,
-                    Multipart.narInfoCreate = nic
-                  }
-        void $ withClientM completeMultipartUploadRequest cacheClientEnv escalate
+  uploadResult <- withCompressor $ \compressor ->
+    runConduitRes $
+      streamNarIO narEffectsIO (toS storePathText) Data.Conduit.yield
+        .| passthroughSizeSink narSizeRef
+        .| passthroughHashSink narHashRef
+        .| onUncompressedNARStream strategy retrystatus storePathSize
+        .| compressor
+        .| passthroughSizeSink fileSizeRef
+        .| passthroughHashSinkB16 fileHashRef
+        .| Push.S3.streamUpload cacheClientEnv authToken cacheName (compressionMethod strategy) modifiedOnUpload
+
+  liftIO finishProgress
+
+  case uploadResult of
+    Left err -> throwIO err
+    Right (narId, uploadId, parts) -> liftIO $ do
+      narSize <- readIORef narSizeRef
+      narHash <- ("sha256:" <>) . System.Nix.Base32.encode <$> readIORef narHashRef
+      narHashNix <- Store.validPathInfoNarHash32 pathinfo
+      when (narHash /= toS narHashNix) $ do
+        print narHash
+        print narHashNix
+        throwM $ NarHashMismatch $ toS storePathText <> ": Nar hash mismatch between nix-store --dump and nix db. You can repair db metadata by running as root: $ nix-store --verify --repair --check-contents"
+      fileHash <- readIORef fileHashRef
+      fileSize <- readIORef fileSizeRef
+      deriverPath <-
+        if omitDeriver strategy
+          then pure Nothing
+          else Store.validPathInfoDeriver store pathinfo
+      deriver <- for deriverPath Store.getStorePathBaseName
+      referencesPathSet <- Store.validPathInfoReferences store pathinfo
+      referencesPaths <- sort . fmap toS <$> for referencesPathSet (Store.storePathToPath store)
+      references <- sort . fmap toS <$> for referencesPathSet Store.getStorePathBaseName
+      let fp = fingerprint (decodeUtf8With lenientDecode storePathText) narHash narSize referencesPaths
+          sig = case pushParamsSecret cache of
+            PushToken _ -> Nothing
+            PushSigningKey _ signKey -> Just $ toS $ B64.encode $ unSignature $ dsign (signingSecretKey signKey) fp
+          nic =
+            Api.NarInfoCreate
+              { Api.cStoreHash = storeHash,
+                Api.cStoreSuffix = storeSuffix,
+                Api.cNarHash = narHash,
+                Api.cNarSize = narSize,
+                Api.cFileSize = fileSize,
+                Api.cFileHash = toS fileHash,
+                Api.cReferences = references,
+                Api.cDeriver = maybe "unknown-deriver" (decodeUtf8With lenientDecode) deriver,
+                Api.cSig = sig
+              }
+      escalate $ Api.isNarInfoCreateValid nic
+
+      -- Complete the multipart upload and upload the narinfo
+      let completeMultipartUploadRequest =
+            API.completeNarUpload cachixClient authToken cacheName narId uploadId $
+              Multipart.CompletedMultipartUpload
+                { Multipart.parts = parts,
+                  Multipart.narInfoCreate = nic
+                }
+      void $ withClientM completeMultipartUploadRequest cacheClientEnv escalate
 
   onDone strategy
 
@@ -269,7 +317,8 @@ pushClosure ::
 pushClosure traversal pushParams inputStorePaths = do
   (allPaths, missingPaths) <- getMissingPathsForClosure pushParams inputStorePaths
   paths <- pushOnClosureAttempt pushParams allPaths missingPaths
-  traversal (\storePath -> retryAll $ \retrystatus -> uploadStorePath pushParams storePath retrystatus) paths
+  flip traversal paths $ \storePath ->
+    retryAll $ \retrystatus -> uploadStorePath pushParams storePath retrystatus
 
 getMissingPathsForClosure :: (MonadIO m, MonadMask m) => PushParams m r -> [StorePath] -> m ([StorePath], [StorePath])
 getMissingPathsForClosure pushParams inputPaths = do

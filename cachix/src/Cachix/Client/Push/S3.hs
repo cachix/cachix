@@ -15,14 +15,17 @@ import Control.DeepSeq (rwhnf)
 import Crypto.Hash (Digest, MD5)
 import qualified Crypto.Hash as Crypto
 import Data.ByteArray.Encoding (Base (..), convertToBase)
-import Data.Conduit (ConduitT, handleC, (.|))
+import qualified Data.ByteString as BS
+import Data.Conduit (ConduitT, await, handleC, yield, ($$+), ($$++), (.|))
 import Data.Conduit.ByteString (ChunkSize, chunkStream)
 import qualified Data.Conduit.Combinators as CC
 import Data.Conduit.ConcurrentMap (concurrentMapM_)
+import Data.IORef
 import Data.List (lookup)
 import qualified Data.List.NonEmpty as NonEmpty
 import Data.UUID (UUID)
 import Network.HTTP.Client as HTTP
+import Network.HTTP.Client.Conduit
 import qualified Network.HTTP.Types.Header as HTTP
 import Protolude
 import Servant.Auth ()
@@ -53,63 +56,129 @@ outputBufferSize :: Int
 outputBufferSize = 100
 
 streamUpload ::
-  forall m.
   (MonadUnliftIO m, MonadResource m) =>
   ClientEnv ->
   Token ->
   Text ->
   CompressionMethod ->
+  (ByteString -> IO ()) ->
   ConduitT
     ByteString
     Void
     m
     (Either SomeException (UUID, Text, Maybe (NonEmpty Multipart.CompletedPart)))
-streamUpload env authToken cacheName compressionMethod = do
-  Multipart.CreateMultipartUploadResponse {narId, uploadId} <- createMultipartUpload
+streamUpload env authToken cacheName compressionMethod onUpload = do
+  Multipart.CreateMultipartUploadResponse {narId, uploadId} <- createMultipartUpload env authToken cacheName compressionMethod
 
-  handleC (abortMultipartUpload narId uploadId) $
+  handleC (abortMultipartUpload env authToken cacheName narId uploadId) $
     chunkStream (Just chunkSize)
-      .| concurrentMapM_ concurrentParts outputBufferSize (uploadPart narId uploadId)
+      -- .| CC.mapM (uploadPart env manager authToken cacheName narId uploadId onUpload)
+      .| concurrentMapM_ concurrentParts outputBufferSize (uploadPart env manager authToken cacheName narId uploadId onUpload)
       .| completeMultipartUpload narId uploadId
   where
     manager = Client.manager env
 
-    createMultipartUpload :: ConduitT ByteString Void m Multipart.CreateMultipartUploadResponse
-    createMultipartUpload =
-      liftIO $ withClientM createNarRequest env escalate
-      where
-        createNarRequest = API.createNar cachixClient authToken cacheName (Just compressionMethod)
+uploadPart :: (MonadResource m) => ClientEnv -> Manager -> Token -> Text -> UUID -> Text -> (ByteString -> IO ()) -> (Int, ByteString) -> m (Maybe Multipart.CompletedPart)
+uploadPart env manager authToken cacheName narId uploadId onUpload (partNumber, !part) = do
+  let partHashMD5 :: Digest MD5 = Crypto.hash part
+      contentMD5 :: ByteString = convertToBase Base64 partHashMD5
 
-    uploadPart :: UUID -> Text -> (Int, ByteString) -> m (Maybe Multipart.CompletedPart)
-    uploadPart narId uploadId (partNumber, !part) = do
-      let partHashMD5 :: Digest MD5 = Crypto.hash part
-          contentMD5 :: ByteString = convertToBase Base64 partHashMD5
+  let uploadNarPartRequest = API.uploadNarPart cachixClient authToken cacheName narId uploadId partNumber (Multipart.SigningData (decodeUtf8 contentMD5))
+  Multipart.UploadPartResponse {uploadUrl} <- liftIO $ withClientM uploadNarPartRequest env escalate
 
-      let uploadNarPartRequest = API.uploadNarPart cachixClient authToken cacheName narId uploadId partNumber (Multipart.SigningData (decodeUtf8 contentMD5))
-      Multipart.UploadPartResponse {uploadUrl} <- liftIO $ withClientM uploadNarPartRequest env escalate
+  -- TODO: return from chunker
+  let partSize = fromIntegral $ BS.length part
 
-      initialRequest <- liftIO $ HTTP.parseUrlThrow (toS uploadUrl)
-      let request =
-            initialRequest
-              { HTTP.method = "PUT",
-                HTTP.requestBody = HTTP.RequestBodyBS part,
-                HTTP.requestHeaders =
-                  [ ("Content-Type", "application/octet-stream"),
-                    ("Content-MD5", contentMD5)
-                  ]
-              }
+  -- let filePopper :: Handle -> Popper
+  --     filePopper h = do
+  --       bs <- S.hGetSome h defaultChunkSize
+  --       currentPosition <- fromIntegral <$> hTell h
+  --       obs $
+  --         StreamFileStatus
+  --           { fileSize = size
+  --           , readSoFar = currentPosition
+  --           , thisChunkSize = S.length bs
+  --           }
+  --       return bs
+  --
+  --     givesFilePopper :: GivesPopper ()
+  --     givesFilePopper k = withBinaryFile path ReadMode $ \h -> do
+  --       k (filePopper h)
 
-      response <- liftIO $ retryAll $ \_ -> HTTP.httpNoBody request manager
-      let eTag = decodeUtf8 <$> lookup HTTP.hETag (HTTP.responseHeaders response)
-      -- Strictly evaluate each eTag after uploading each part
-      let !_ = rwhnf eTag
-      return $ Multipart.CompletedPart partNumber <$> eTag
+  -- putText $ show narId <> ": uploading part " <> show partNumber <> " of " <> show partSize <> "\n"
+  uploaded <- liftIO $ newIORef 0
+  let trackUpload p = do
+        currentPos <- atomicModifyIORef' uploaded $ \c -> (c + BS.length p, c + BS.length p)
+        liftIO $ putText $ show narId <> ": uploaded " <> show currentPos <> " bytes\n"
 
-    completeMultipartUpload narId uploadId = do
-      parts <- CC.sinkList
-      return $ Right (narId, uploadId, sequenceA $ NonEmpty.fromList parts)
+  -- let streamPart =
+  --       Data.Conduit.yield part
+  --         .| CC.takeE 1024
+  --         .| CC.iterM trackUpload
 
-    abortMultipartUpload narId uploadId err = do
-      let abortMultipartUploadRequest = API.abortMultipartUpload cachixClient authToken cacheName narId uploadId
-      _ <- liftIO $ withClientM abortMultipartUploadRequest env escalate
-      return $ Left err
+  let srcToPopperIO src f = do
+        (rsrc0, ()) <- src $$+ return ()
+        irsrc <- newIORef rsrc0
+        let popper :: IO ByteString
+            popper = do
+              rsrc <- readIORef irsrc
+              (rsrc', mres) <- rsrc $$++ await
+              writeIORef irsrc rsrc'
+              case mres of
+                Nothing -> return BS.empty
+                Just bs
+                  | BS.null bs -> popper
+                  | otherwise -> return bs
+        f popper
+
+  let byteStringPopper callback b sink = do
+        ioref <- newIORef b
+        let getnextchunk = do
+              bs <- readIORef ioref
+              -- Read 128kb at a time
+              let (c, cs) = BS.splitAt 1024 bs
+              writeIORef ioref cs
+              callback c
+              return c
+        sink getnextchunk
+
+  -- let requestBodyStream = requestBodySource partSize streamPart
+  -- let requestBodyStream = RequestBodyStream partSize (srcToPopperIO part)
+  let requestBodyStream = RequestBodyStream partSize (byteStringPopper onUpload part)
+
+  -- or copy srcIOToPopper from
+  -- https://hackage.haskell.org/package/http-conduit-2.3.8.3/docs/src/Network.HTTP.Client.Conduit.html#requestBodySource
+  -- let requestBodyStream = HTTP.RequestBodyStream partSize partStream
+
+  initialRequest <- liftIO $ HTTP.parseUrlThrow (toS uploadUrl)
+  let request =
+        initialRequest
+          { HTTP.method = "PUT",
+            HTTP.requestBody = requestBodyStream,
+            HTTP.requestHeaders =
+              [ ("Content-Type", "application/octet-stream"),
+                ("Content-MD5", contentMD5)
+              ]
+          }
+
+  response <- liftIO $ HTTP.httpNoBody request manager
+  -- putText $ show narId <> ": uploaded part " <> show partNumber <> "\n"
+  let eTag = decodeUtf8 <$> lookup HTTP.hETag (HTTP.responseHeaders response)
+  -- Strictly evaluate each eTag after uploading each part
+  let !_ = rwhnf eTag
+  return $ Multipart.CompletedPart partNumber <$> eTag
+
+completeMultipartUpload narId uploadId = do
+  parts <- CC.sinkList
+  return $ Right (narId, uploadId, sequenceA $ NonEmpty.fromList parts)
+
+abortMultipartUpload env authToken cacheName narId uploadId err = do
+  let abortMultipartUploadRequest = API.abortMultipartUpload cachixClient authToken cacheName narId uploadId
+  _ <- liftIO $ withClientM abortMultipartUploadRequest env escalate
+  return $ Left err
+
+createMultipartUpload :: (MonadIO m) => ClientEnv -> Token -> Text -> CompressionMethod -> ConduitT ByteString Void m Multipart.CreateMultipartUploadResponse
+createMultipartUpload env authToken cacheName compressionMethod =
+  liftIO $ withClientM createNarRequest env escalate
+  where
+    createNarRequest = API.createNar cachixClient authToken cacheName (Just compressionMethod)

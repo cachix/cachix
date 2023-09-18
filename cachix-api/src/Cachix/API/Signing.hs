@@ -27,14 +27,16 @@ fingerprint storePath narHash narSize references =
       ["1", storePath, narHash, show narSize, T.intercalate "," references]
 
 -- Useful sinks for streaming nars
-sizeSink :: MonadIO m => ConduitT ByteString o m Integer
-sizeSink = CC.foldM (\p n -> return (p + fromIntegral (BS.length n))) 0
+sizeSink :: MonadIO m => IORef Integer -> ConduitT ByteString o m ()
+sizeSink ioref = CC.mapM_ $ \n ->
+  liftIO $ atomicModifyIORef' ioref $ \p ->
+    (p + fromIntegral (BS.length n), ())
 
 hashSink :: MonadIO m => ConduitT ByteString o m (Context SHA256)
 hashSink = CC.foldM (\p n -> return (hashUpdate p n)) hashInit
 
 passthroughSizeSink :: MonadIO m => IORef Integer -> ConduitT ByteString ByteString m ()
-passthroughSizeSink ioref = passthroughSink sizeSink (liftIO . writeIORef ioref)
+passthroughSizeSink ioref = passthroughSink (sizeSink ioref) (\_ -> pure ())
 
 passthroughHashSinkBase :: MonadIO m => (Digest SHA256 -> ByteString) -> IORef ByteString -> ConduitT ByteString ByteString m ()
 passthroughHashSinkBase f ioref = passthroughSink hashSink (liftIO . writeIORef ioref . f . hashFinalize)

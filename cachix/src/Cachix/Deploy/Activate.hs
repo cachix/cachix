@@ -120,6 +120,7 @@ getActivationScript profile storePath = do
   let checkPath p = Directory.doesPathExist $ toS storePath </> p
   isNixOS <- checkPath "nixos-version"
   isNixDarwin <- checkPath "darwin-version"
+  isNixDarwinJSON <- checkPath "darwin-version.json"
   isHomeManager <- checkPath "hm-version"
   user <- InstallationMode.getUser
   let systemProfileDir = "/nix/var/nix/profiles"
@@ -131,7 +132,7 @@ getActivationScript profile storePath = do
   -- TODO: document what happens if the wrong user is used for the agent
   let setNewProfile profilePath =
         ("nix-env", ["-p", profilePath, "--set", storePath])
-  return $ case (isNixOS, isNixDarwin, isHomeManager) of
+  return $ case (isNixOS, isNixDarwin || isNixDarwinJSON, isHomeManager) of
     (True, _, _) ->
       let profilePath = mkProfilePath systemProfileDir "system"
        in ( profilePath,

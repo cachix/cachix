@@ -27,20 +27,20 @@ fingerprint storePath narHash narSize references =
       ["1", storePath, narHash, show narSize, T.intercalate "," references]
 
 -- Useful sinks for streaming nars
-sizeSink :: MonadIO m => ConduitT ByteString o m Integer
+sizeSink :: (MonadIO m) => ConduitT ByteString o m Integer
 sizeSink = CC.foldM (\p n -> return (p + fromIntegral (BS.length n))) 0
 
-hashSink :: MonadIO m => ConduitT ByteString o m (Context SHA256)
+hashSink :: (MonadIO m) => ConduitT ByteString o m (Context SHA256)
 hashSink = CC.foldM (\p n -> return (hashUpdate p n)) hashInit
 
-passthroughSizeSink :: MonadIO m => IORef Integer -> ConduitT ByteString ByteString m ()
+passthroughSizeSink :: (MonadIO m) => IORef Integer -> ConduitT ByteString ByteString m ()
 passthroughSizeSink ioref = passthroughSink sizeSink (liftIO . writeIORef ioref)
 
-passthroughHashSinkBase :: MonadIO m => (Digest SHA256 -> ByteString) -> IORef ByteString -> ConduitT ByteString ByteString m ()
+passthroughHashSinkBase :: (MonadIO m) => (Digest SHA256 -> ByteString) -> IORef ByteString -> ConduitT ByteString ByteString m ()
 passthroughHashSinkBase f ioref = passthroughSink hashSink (liftIO . writeIORef ioref . f . hashFinalize)
 
-passthroughHashSink :: MonadIO m => IORef ByteString -> ConduitT ByteString ByteString m ()
+passthroughHashSink :: (MonadIO m) => IORef ByteString -> ConduitT ByteString ByteString m ()
 passthroughHashSink = passthroughHashSinkBase BA.convert
 
-passthroughHashSinkB16 :: MonadIO m => IORef ByteString -> ConduitT ByteString ByteString m ()
+passthroughHashSinkB16 :: (MonadIO m) => IORef ByteString -> ConduitT ByteString ByteString m ()
 passthroughHashSinkB16 = passthroughHashSinkBase (convertToBase Base16)

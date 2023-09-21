@@ -57,7 +57,7 @@ processChunk chunkSize input =
               loop (front . (bs :)) idxIn' s'
             else loop front idxIn' (S fptr ptr idxOut')
 
-processAndChunkOutputRaw :: MonadIO m => ChunkSize -> ConduitT ByteString ByteString m ()
+processAndChunkOutputRaw :: (MonadIO m) => ChunkSize -> ConduitT ByteString ByteString m ()
 processAndChunkOutputRaw chunkSize =
   liftIO (newS chunkSize) >>= loop
   where

@@ -50,10 +50,10 @@ data AgentCommand
   | DeploymentFinished {id :: UUID, time :: UTCTime, hasSucceeded :: Bool}
   deriving (Show, Eq, Generic, Aeson.FromJSON, Aeson.ToJSON)
 
-parseMessage :: Aeson.FromJSON cmd => ByteString -> Either Text (Message cmd)
+parseMessage :: (Aeson.FromJSON cmd) => ByteString -> Either Text (Message cmd)
 parseMessage = first toS . Aeson.eitherDecodeStrict'
 
-sendMessage :: Aeson.ToJSON cmd => WS.Connection -> Message cmd -> IO ()
+sendMessage :: (Aeson.ToJSON cmd) => WS.Connection -> Message cmd -> IO ()
 sendMessage connection cmd =
   WS.sendTextData connection (Aeson.encode cmd)
 

@@ -292,7 +292,7 @@ getMissingPathsForClosure pushParams inputPaths = do
             (getCacheAuthToken (pushParamsSecret pushParams))
             (pushParamsName pushParams)
             hashes
-          `runClientM` clientEnv
+            `runClientM` clientEnv
   let missingHashes = Set.fromList (encodeUtf8 <$> missingHashesList)
   pathsAndHashes <- liftIO $
     for paths $ \path -> do
@@ -335,7 +335,7 @@ and if missing also looked up from ~/.config/cachix/cachix.dhall
 Read https://mycache.cachix.org for instructions how to push to your binary cache.
     |]
 
-mapConcurrentlyBounded :: Traversable t => Int -> (a -> IO b) -> t a -> IO (t b)
+mapConcurrentlyBounded :: (Traversable t) => Int -> (a -> IO b) -> t a -> IO (t b)
 mapConcurrentlyBounded bound action items = do
   qs <- QSem.newQSem bound
   let wrapped x = bracket_ (QSem.waitQSem qs) (QSem.signalQSem qs) (action x)

@@ -50,7 +50,7 @@
     };
   in
     {
-      packages = forAllSystems (system: 
+      packages = forAllSystems (system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
           inherit (customHaskellPackages { inherit pkgs; inherit (pkgs) haskellPackages; })
@@ -82,8 +82,8 @@
             pkgs.libsodium
             (getNix { inherit pkgs; })
             # sync with stack.yaml LTS
-            pkgs.haskell.compiler.ghc928
-            (pkgs.haskell-language-server.override { supportedGhcVersions = [ "928" ]; })
+            pkgs.haskell.compiler.ghc946
+            (pkgs.haskell-language-server.override { supportedGhcVersions = [ "946" ]; })
           ]
           ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
             pkgs.darwin.apple_sdk.frameworks.Cocoa

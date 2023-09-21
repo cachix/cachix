@@ -17,17 +17,13 @@
       inputs.flake-compat.follows = "flake-compat";
       inputs.pre-commit-hooks.follows = "pre-commit-hooks";
     };
-    hnix-store-core = {
-      url = "github:haskell-nix/hnix-store/core-0.6.1.0";
-      flake = false;
-    };
     flake-compat = {
       url = "github:edolstra/flake-compat";
       flake = false;
     };
   };
 
-  outputs = { self, nixpkgs, pre-commit-hooks, hnix-store-core, ... }@inputs: let
+  outputs = { self, nixpkgs, pre-commit-hooks, ... }@inputs: let
     systems = [ "x86_64-linux" "i686-linux" "x86_64-darwin" "aarch64-linux" "aarch64-darwin" ];
     forAllSystems = f: builtins.listToAttrs (map (name: { inherit name; value = f name; }) systems);
 
@@ -41,7 +37,7 @@
       cachix = haskellPackages.callCabal2nix "cachix" ./cachix {
         inherit cachix-api;
         fsnotify = haskellPackages.fsnotify_0_4_1_0 or haskellPackages.fsnotify;
-        hnix-store-core = haskellPackages.callCabal2nix "hnix-store-core" "${hnix-store-core}/hnix-store-core" {};
+        hnix-store-core = haskellPackages.hnix-store-core_0_6_1_0 or haskellPackages.hnix-store-core;
         nix = getNix { inherit pkgs haskellPackages; };
       };
     };

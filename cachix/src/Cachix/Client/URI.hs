@@ -89,7 +89,7 @@ requiresSSL _ = False
 parseURI :: ByteString -> Either UBS.URIParseError URI
 parseURI bs = fromURIRef <$> UBS.parseURI UBS.strictURIParserOptions bs
 
-serialize :: StringConv BS.ByteString s => URI -> s
+serialize :: (StringConv BS.ByteString s) => URI -> s
 serialize = toS . UBS.serializeURIRef' . getUri
 
 instance IsString URI where

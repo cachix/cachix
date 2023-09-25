@@ -232,7 +232,7 @@ handleIncomingJSON websocket@WebSocket {connection, rx, withLog} = do
 
         broadcast (ControlMessage controlMsg)
 
-handleOutgoingJSON :: forall tx rx. Aeson.ToJSON tx => WebSocket tx rx -> IO ()
+handleOutgoingJSON :: forall tx rx. (Aeson.ToJSON tx) => WebSocket tx rx -> IO ()
 handleOutgoingJSON WebSocket {connection, tx} = do
   activeConnection <- MVar.readMVar connection
   Conduit.runConduit $

@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [1.6.1] - 2023-09-25
+
+## Fixed
+
+- deploy: Correctly format `cachix deploy agent` exception messages
+
+- deploy: use high-level activate script for Darwin
+
+- deploy: Support darwin-version.json
+
+- #547: Filter invalid paths when watching the store
+
+- Filter out existing upstream paths when using watch-exec
+
+- Retrying is now printed as stderr, which is important for watch-exec automation
+
+- Set the file system encoding to utf8 to fix some hash mismatch errors
+
+## Added
+
+- Implement a daemon for pushing store paths (more on this feature later on blog.cachix.org)
+
 ## [1.6] - 2023-06-27
 
 ## Added

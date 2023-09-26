@@ -132,6 +132,7 @@ library
     , http-conduit
     , http-types
     , immortal
+    , inline-c-cpp
     , katip
     , lukko
     , lzma-conduit
@@ -159,6 +160,7 @@ library
     , temporary
     , text
     , time
+    , transformers
     , unix
     , unordered-containers
     , uri-bytestring

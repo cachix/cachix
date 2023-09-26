@@ -59,7 +59,7 @@
         {
           cachix = pkgs.haskell.lib.justStaticExecutables cachix;
           default = pkgs.haskell.lib.justStaticExecutables cachix;
-          ci = self.devShells.${system}.default.ci;
+          ci = self.devShells.${system}.devenv.ci;
         });
 
       checks = forAllSystems (system: {
@@ -91,7 +91,7 @@
           ];
         in
         rec {
-          default = devenv;
+          default = nixDevShell;
 
           # Temporary nixpkgs.mkShell until the LD_LIBRARY issues in devenv are resolved
           nixDevShell = pkgs.mkShell {

@@ -55,4 +55,4 @@ jobs:
         signingKey: '${{ secrets.CACHIX_SIGNING_KEY }}'
 
     - name: Build with Stack
-      run: nix develop -L --impure .#nixDevShell  --command bash -c "stack build --no-nix --system-ghc"
+      run: stack build

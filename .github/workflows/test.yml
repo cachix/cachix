@@ -55,4 +55,5 @@ jobs:
         signingKey: '${{ secrets.CACHIX_SIGNING_KEY }}'
 
     - name: Build with Stack
+      shell: nix develop -L --impure --command bash -e {0}
       run: stack build

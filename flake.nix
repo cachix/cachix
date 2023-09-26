@@ -96,7 +96,13 @@
           # Temporary nixpkgs.mkShell until the LD_LIBRARY issues in devenv are resolved
           nixDevShell = pkgs.mkShell {
             inherit packages;
-            inherit (self.checks.${system}.pre-commit-check) shellHook;
+            shellHook = let
+              precommitHooks = self.checks.${system}.pre-commit-check.shellHook;
+            in ''
+              ${precommitHooks}
+              # For stack builds in CI
+              export NIX_PATH=nixpkgs=${nixpkgs.outPath}
+            '';
           };
 
           devenv = inputs.devenv.lib.mkShell {

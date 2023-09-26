@@ -4,11 +4,12 @@ packages:
 - cachix
 - cachix-api
 extra-deps:
-- hercules-ci-cnix-store-0.3.3.5
+- hercules-ci-cnix-store-0.3.4.0
 - cabal-pkg-config-version-hook-0.1.0.0
 - nix-narinfo-0.1.0.1
 - fsnotify-0.4.1.0
 - hnix-store-core-0.6.1.0
+- algebraic-graphs-0.6.1
 - saltine-0.2.0.1
 nix:
   enable: true

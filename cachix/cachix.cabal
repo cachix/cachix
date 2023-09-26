@@ -194,6 +194,7 @@ executable .cachix-deployment
     , async
     , cachix
     , cachix-api
+    , hs-opentelemetry-sdk
     , katip
     , protolude
     , safe-exceptions

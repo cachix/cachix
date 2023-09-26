@@ -27,6 +27,7 @@ import qualified Data.UUID.V4 as UUID
 import GHC.IO.Encoding
 import qualified Katip as K
 import qualified Network.WebSockets as WS
+import OpenTelemetry.Trace
 import Protolude hiding (toS)
 import Protolude.Conv
 import System.IO (BufferMode (..), hSetBuffering)
@@ -45,52 +46,54 @@ main = do
   hSetBuffering stdout LineBuffering
   hSetBuffering stderr LineBuffering
 
-  deployment@Deployment
-    { agentName,
-      agentToken,
-      host,
-      logOptions,
-      deploymentDetails
-    } <-
-    escalateAs (FatalError . toS) . Aeson.eitherDecode . toS =<< getContents
+  withTracer $ \tracer ->
+    inSpan' tracer "deployment" defaultSpanArguments $ \span -> do
+      deployment@Deployment
+        { agentName,
+          agentToken,
+          host,
+          logOptions,
+          deploymentDetails
+        } <-
+        escalateAs (FatalError . toS) . Aeson.eitherDecode . toS =<< getContents
 
-  let deploymentID = DeploymentDetails.id deploymentDetails
-  let headers = WebSocket.createHeaders agentName agentToken
-  let port = fromMaybe (URI.Port 80) (URI.getPortFor (URI.getScheme host))
-  let logWebsocketOptions =
-        WebSocket.Options
-          { WebSocket.host = URI.getHostname host,
-            WebSocket.port = port,
-            WebSocket.path = "/api/v1/deploy/log/" <> UUID.toText deploymentID,
-            WebSocket.useSSL = URI.requiresSSL (URI.getScheme host),
-            WebSocket.headers = headers,
-            WebSocket.identifier = Agent.agentIdentifier agentName
-          }
-  let serviceWebsocketOptions =
-        WebSocket.Options
-          { WebSocket.host = URI.getHostname host,
-            WebSocket.port = port,
-            WebSocket.path = "/ws-deployment",
-            WebSocket.useSSL = URI.requiresSSL (URI.getScheme host),
-            WebSocket.headers = headers,
-            WebSocket.identifier = Agent.agentIdentifier agentName
-          }
+      let deploymentID = DeploymentDetails.id deploymentDetails
+      let headers = WebSocket.createHeaders agentName agentToken
+      let port = fromMaybe (URI.Port 80) (URI.getPortFor (URI.getScheme host))
+      let logWebsocketOptions =
+            WebSocket.Options
+              { WebSocket.host = URI.getHostname host,
+                WebSocket.port = port,
+                WebSocket.path = "/api/v1/deploy/log/" <> UUID.toText deploymentID,
+                WebSocket.useSSL = URI.requiresSSL (URI.getScheme host),
+                WebSocket.headers = headers,
+                WebSocket.identifier = Agent.agentIdentifier agentName
+              }
+      let serviceWebsocketOptions =
+            WebSocket.Options
+              { WebSocket.host = URI.getHostname host,
+                WebSocket.port = port,
+                WebSocket.path = "/ws-deployment",
+                WebSocket.useSSL = URI.requiresSSL (URI.getScheme host),
+                WebSocket.headers = headers,
+                WebSocket.identifier = Agent.agentIdentifier agentName
+              }
 
-  Log.withLog logOptions $ \withLog ->
-    void . Lock.withTryLock (lockFilename agentName) $ do
-      -- Open a connection to logging stream
-      (logQueue, loggingThread) <- runLogStream withLog logWebsocketOptions
+      Log.withLog logOptions $ \withLog ->
+        void . Lock.withTryLock (lockFilename agentName) $ do
+          -- Open a connection to logging stream
+          (logQueue, loggingThread) <- runLogStream withLog logWebsocketOptions
 
-      -- Open a connection to Cachix and block until it's ready.
-      service <- WebSocket.new withLog serviceWebsocketOptions
-      shutdownService <- Agent.connectToService service
+          -- Open a connection to Cachix and block until it's ready.
+          service <- WebSocket.new withLog serviceWebsocketOptions
+          shutdownService <- Agent.connectToService service
 
-      deploy withLog deployment service (Conduit.sinkTMQueue logQueue)
-        `finally` do
-          withLog $ K.logLocM K.DebugS "Cleaning up websocket connections"
-          atomically $ TMQueue.closeTMQueue logQueue
-          shutdownService
-          Async.wait loggingThread
+          deploy withLog deployment service (Conduit.sinkTMQueue logQueue) span
+            `finally` do
+              withLog $ K.logLocM K.DebugS "Cleaning up websocket connections"
+              atomically $ TMQueue.closeTMQueue logQueue
+              shutdownService
+              Async.wait loggingThread
 
 -- | Run the deployment commands
 deploy ::
@@ -101,8 +104,9 @@ deploy ::
   Agent.ServiceWebSocket ->
   -- | Logging Websocket connection
   Log.LogStream ->
+  Span ->
   IO ()
-deploy withLog Deployment {..} service logStream = do
+deploy withLog Deployment {..} service logStream span = do
   withLog $ K.logLocM K.InfoS $ K.ls $ "Deploying #" <> deploymentIndex <> ": " <> storePath
 
   activationStatus <- handleAsActivationStatus $
@@ -155,6 +159,12 @@ deploy withLog Deployment {..} service logStream = do
       -- NOTE: the activate command uses this message to detect the end of the log
       Log.streamLine logStream "Successfully activated the deployment."
       withLog $ K.logLocM K.InfoS $ K.ls $ "Deployment #" <> deploymentIndex <> " finished."
+      addEvent span $
+        NewEvent
+          { newEventName = "cachix.deploy.deployment.result.success",
+            newEventAttributes = mempty,
+            newEventTimestamp = Nothing
+          }
 
   endDeployment activationStatus
   where
@@ -229,6 +239,13 @@ deploy withLog Deployment {..} service logStream = do
         method = case command of
           WSS.DeploymentStarted {} -> "DeploymentStarted"
           WSS.DeploymentFinished {} -> "DeploymentFinished"
+
+withTracer :: (Tracer -> IO a) -> IO a
+withTracer f =
+  bracket
+    initializeGlobalTracerProvider
+    shutdownTracerProvider
+    (\tracerProvider -> f $ makeTracer tracerProvider "cachix-deployment" tracerOptions)
 
 -- Log
 

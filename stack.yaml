@@ -9,6 +9,15 @@ extra-deps:
 - nix-narinfo-0.1.0.1
 - hnix-store-core-0.6.1.0
 - algebraic-graphs-0.6.1
+# OpenTelemetry dependencies
+- hs-opentelemetry-exporter-otlp-0.0.1.5
+- hs-opentelemetry-sdk-0.0.3.6
+- hs-opentelemetry-api-0.1.0.0
+- hs-opentelemetry-otlp-0.0.1.0
+- hs-opentelemetry-propagator-b3-0.0.1.1
+- hs-opentelemetry-propagator-w3c-0.0.1.3
+- thread-utils-context-0.3.0.4
+- thread-utils-finalizers-0.1.1.0
 nix:
   enable: true
   pure: false

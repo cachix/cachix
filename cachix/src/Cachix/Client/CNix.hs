@@ -79,3 +79,19 @@ logBadStorePath store storePath = do
 logBadPath :: ByteString -> IO ()
 logBadPath path =
   putErrText $ color Yellow $ "Warning: " <> decodeUtf8With lenientDecode path <> " is not valid, skipping"
+
+-- | Pretty-print unhandled C++ exceptions from Nix.
+handleCppExceptions :: CppException -> IO ()
+handleCppExceptions e = do
+  putErrText ""
+
+  case e of
+    CppStdException _eptr msg _t ->
+      putErrText $ color Red $ style Bold $ "Nix " <> decodeUtf8With lenientDecode msg
+    CppNonStdException _eptr mmsg -> do
+      let msg = fromMaybe "unknown exception" mmsg
+      putErrText $ color Red $ style Bold $ "C++ exception: " <> decodeUtf8With lenientDecode msg
+    CppHaskellException he ->
+      putErrText $ color Red $ style Bold $ "Haskell exception: " <> toS (displayException he)
+
+  exitFailure

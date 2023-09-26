@@ -17,7 +17,7 @@ where
 
 import qualified Cachix.API as API
 import Cachix.API.Error
-import Cachix.Client.CNix (filterInvalidStorePath)
+import Cachix.Client.CNix (filterInvalidStorePath, followLinksToStorePath)
 import qualified Cachix.Client.Config as Config
 import Cachix.Client.Env (Env (..))
 import Cachix.Client.Exception (CachixException (..))
@@ -43,6 +43,7 @@ import qualified Cachix.Types.PinCreate as PinCreate
 import qualified Cachix.Types.SigningKeyCreate as SigningKeyCreate
 import qualified Control.Concurrent.Async as Async
 import Control.Exception.Safe (throwM)
+import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
 import Control.Retry (RetryStatus (rsIterNumber))
 import Crypto.Sign.Ed25519 (PublicKey (PublicKey), createKeypair)
 import qualified Data.ByteString as BS
@@ -52,7 +53,7 @@ import Data.String.Here
 import qualified Data.Text as T
 import qualified Data.Text.IO as T.IO
 import GHC.IO.Handle (hDuplicate, hDuplicateTo)
-import Hercules.CNix.Store (Store, StorePath, followLinksToStorePath, storePathToPath, withStore)
+import Hercules.CNix.Store (Store, StorePath, storePathToPath, withStore)
 import Network.HTTP.Types (status401, status404)
 import Protolude hiding (toS)
 import Protolude.Conv
@@ -182,12 +183,11 @@ push env (PushPaths opts name cliPaths) = do
       -- This is somewhat like the behavior of `cat` for example.
       (_, paths) -> return paths
   withPushParams env opts name $ \pushParams -> do
-    normalized <-
-      liftIO $
-        for inputStorePaths $
-          \path -> do
-            storePath <- followLinksToStorePath (pushParamsStore pushParams) (encodeUtf8 path)
-            filterInvalidStorePath (pushParamsStore pushParams) storePath
+    normalized <- liftIO $
+      for inputStorePaths $ \path ->
+        runMaybeT $ do
+          storePath <- MaybeT $ followLinksToStorePath (pushParamsStore pushParams) (encodeUtf8 path)
+          MaybeT $ filterInvalidStorePath (pushParamsStore pushParams) storePath
     pushedPaths <-
       pushClosure
         (mapConcurrentlyBounded (numJobs opts))
@@ -205,8 +205,8 @@ pin :: Env -> PinOptions -> IO ()
 pin env pinOpts = do
   authToken <- Config.getAuthTokenRequired (config env)
   storePath <- withStore $ \store -> do
-    path <- followLinksToStorePath store (encodeUtf8 $ pinStorePath pinOpts)
-    storePathToPath store path
+    mpath <- followLinksToStorePath store (encodeUtf8 $ pinStorePath pinOpts)
+    maybe exitFailure (storePathToPath store) mpath
   traverse_ (validateArtifact (toS storePath)) (pinArtifacts pinOpts)
   let pinCreate =
         PinCreate.PinCreate

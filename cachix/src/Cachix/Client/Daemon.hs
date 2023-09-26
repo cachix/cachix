@@ -8,7 +8,7 @@ module Cachix.Client.Daemon
   )
 where
 
-import Cachix.Client.CNix (filterInvalidStorePath)
+import Cachix.Client.CNix (filterInvalidStorePath, followLinksToStorePath)
 import qualified Cachix.Client.Commands as Commands
 import Cachix.Client.Config.Orphans ()
 import Cachix.Client.Daemon.Client (push, stop)
@@ -20,9 +20,9 @@ import Cachix.Client.Push
 import Control.Concurrent.Extra (once)
 import Control.Concurrent.STM.TBMQueue
 import qualified Control.Immortal as Immortal
+import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
 import Data.String.Here (i)
 import qualified Data.Text as T
-import qualified Hercules.CNix.Store as Store
 import qualified Network.Socket as Socket
 import Protolude
 import System.Posix.Process (getProcessID)
@@ -83,9 +83,9 @@ handleRequest :: Env -> PushOptions -> QueuedPushRequest -> IO ()
 handleRequest env pushOptions (QueuedPushRequest {..}) = do
   Commands.withPushParams env pushOptions (binaryCacheName pushRequest) $ \pushParams -> do
     normalized <-
-      for (storePaths pushRequest) $ \fp -> do
-        storePath <- Store.followLinksToStorePath (pushParamsStore pushParams) (encodeUtf8 $ T.pack fp)
-        filterInvalidStorePath (pushParamsStore pushParams) storePath
+      for (storePaths pushRequest) $ \fp -> runMaybeT $ do
+        storePath <- MaybeT $ followLinksToStorePath (pushParamsStore pushParams) (encodeUtf8 $ T.pack fp)
+        MaybeT $ filterInvalidStorePath (pushParamsStore pushParams) storePath
 
     void $
       pushClosure

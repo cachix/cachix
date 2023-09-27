@@ -1,4 +1,6 @@
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE OverloadedLists #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Main
   ( main,
@@ -51,6 +53,8 @@ main = do
       deployment@Deployment
         { agentName,
           agentToken,
+          agentInformation,
+          profileName,
           host,
           logOptions,
           deploymentDetails
@@ -78,6 +82,17 @@ main = do
                 WebSocket.headers = headers,
                 WebSocket.identifier = Agent.agentIdentifier agentName
               }
+
+      addAttributes
+        span
+        [ ("cachix.deploy.agent.id", toAttribute $ UUID.toText $ AgentInformation.id agentInformation),
+          ("cachix.deploy.agent.name", toAttribute agentName),
+          ("cachix.deploy.deployment.id", toAttribute $ UUID.toText deploymentID),
+          ("cachix.deploy.deployment.index", toAttribute $ DeploymentDetails.index deploymentDetails),
+          ("cachix.deploy.deployment.store_path", toAttribute $ DeploymentDetails.storePath deploymentDetails),
+          ("cachix.deploy.deployment.profile_name", toAttribute profileName),
+          ("cachix.deploy.host", toAttribute $ URI.serialize @Text host)
+        ]
 
       Log.withLog logOptions $ \withLog ->
         void . Lock.withTryLock (lockFilename agentName) $ do

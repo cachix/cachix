@@ -17,7 +17,7 @@ import qualified Cachix.Deploy.Websocket as WebSocket
 import qualified Control.Concurrent.Async as Async
 import Control.Concurrent.Extra (once)
 import qualified Control.Concurrent.MVar as MVar
-import Control.Exception.Safe (onException, throwString)
+import Control.Exception.Safe (onException)
 import qualified Control.Exception.Safe as Safe
 import qualified Control.Retry as Retry
 import qualified Data.Aeson as Aeson
@@ -201,31 +201,39 @@ verifyBootstrapSuccess Agent {name, withLog} = do
   withLog . K.logLocM K.InfoS . K.ls $
     unwords ["Waiting for another agent to take over..."]
 
-  eAgentPid <-
-    Safe.tryIO $
-      Retry.recoverAll
-        (Retry.limitRetries 20 <> Retry.constantDelay 1000)
-        (const waitForAgent)
+  magentPid <- waitForAgent (Retry.limitRetries 60 <> Retry.constantDelay 1000)
 
-  case eAgentPid of
-    Right pid -> do
+  case magentPid of
+    Just pid -> do
       withLog . K.logLocM K.InfoS . K.ls $
         unwords ["Found an active agent for", name, "with PID " <> show pid <> ".", "Exiting."]
       exitSuccess
-    _ -> do
+    Nothing -> do
       withLog . K.logLocM K.InfoS . K.ls $
         unwords ["Cannot find an active agent for", name <> ".", "Waiting for more deployments."]
   where
     lockfile = lockFilename name
 
+    waitForAgent :: Retry.RetryPolicyM IO -> IO (Maybe Posix.CPid)
+    waitForAgent retryPolicy =
+      Retry.retrying
+        retryPolicy
+        (const $ pure . isNothing)
+        (const findActiveAgent)
+
     -- The PID might be stale in rare cases. Only use this for diagnostics.
-    waitForAgent :: IO Posix.CPid
-    waitForAgent = do
-      lock <- Lock.withTryLock lockfile (pure ())
-      mpid <- Lock.readPidFile lockfile
-      case (lock, mpid) of
-        (Nothing, Just pid) -> pure pid
-        _ -> throwString "No active agent found"
+    findActiveAgent :: IO (Maybe Posix.CPid)
+    findActiveAgent = do
+      Safe.handleAny (const $ pure Nothing) $ do
+        lock <- Lock.withTryLock lockfile (pure ())
+        -- The lock must be held by another process
+        guard (isNothing lock)
+
+        -- We should have a PID file
+        mpid <- Lock.readPidFile lockfile
+        guard (isJust mpid)
+
+        return mpid
 
 handleCommand :: Agent -> WSS.BackendCommand -> IO ()
 handleCommand agent command =

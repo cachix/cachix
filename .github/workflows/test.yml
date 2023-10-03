@@ -26,7 +26,7 @@ jobs:
         signingKey: '${{ secrets.CACHIX_SIGNING_KEY }}'
     - run:  nix build -L '.#ci' '.#cachix' --show-trace --impure
     - name: Install dev Cachix 
-      run: nix-env -if .
+      run: nix profile install ./
     # make sure it's all uploaded to cachix
     - run: echo > /tmp/store-path-pre-build
     - name: "watch-exec test"

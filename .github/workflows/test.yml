@@ -6,7 +6,11 @@ jobs:
   tests:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os:
+          - [self-hosted, linux, ARM64]
+          - [self-hosted, linux, X64]
+          - [self-hosted, macOS, ARM64]
+          - macos-latest
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4

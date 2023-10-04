@@ -201,7 +201,7 @@ verifyBootstrapSuccess Agent {name, withLog} = do
   withLog . K.logLocM K.InfoS . K.ls $
     unwords ["Waiting for another agent to take over..."]
 
-  magentPid <- waitForAgent (Retry.limitRetries 60 <> Retry.constantDelay 1000)
+  magentPid <- waitForAgent name (Retry.limitRetries 60 <> Retry.constantDelay 1000)
 
   case magentPid of
     Just pid -> do
@@ -211,29 +211,28 @@ verifyBootstrapSuccess Agent {name, withLog} = do
     Nothing -> do
       withLog . K.logLocM K.InfoS . K.ls $
         unwords ["Cannot find an active agent for", name <> ".", "Waiting for more deployments."]
-  where
-    lockfile = lockFilename name
 
-    waitForAgent :: Retry.RetryPolicyM IO -> IO (Maybe Posix.CPid)
-    waitForAgent retryPolicy =
-      Retry.retrying
-        retryPolicy
-        (const $ pure . isNothing)
-        (const findActiveAgent)
+waitForAgent :: Text -> Retry.RetryPolicyM IO -> IO (Maybe Posix.CPid)
+waitForAgent name retryPolicy = do
+  let lockfile = lockFilename name
+  Retry.retrying
+    retryPolicy
+    (const $ pure . isNothing)
+    (const $ findActiveAgent lockfile)
 
-    -- The PID might be stale in rare cases. Only use this for diagnostics.
-    findActiveAgent :: IO (Maybe Posix.CPid)
-    findActiveAgent = do
-      Safe.handleAny (const $ pure Nothing) $ do
-        lock <- Lock.withTryLock lockfile (pure ())
-        -- The lock must be held by another process
-        guard (isNothing lock)
+-- The PID might be stale in rare cases. Only use this for diagnostics.
+findActiveAgent :: FilePath -> IO (Maybe Posix.CPid)
+findActiveAgent lockfile = do
+  Safe.handleAny (const $ pure Nothing) $ do
+    lock <- Lock.withTryLock lockfile (pure ())
+    -- The lock must be held by another process
+    guard (isNothing lock)
 
-        -- We should have a PID file
-        mpid <- Lock.readPidFile lockfile
-        guard (isJust mpid)
+    -- We should have a PID file
+    mpid <- Lock.readPidFile lockfile
+    guard (isJust mpid)
 
-        return mpid
+    return mpid
 
 handleCommand :: Agent -> WSS.BackendCommand -> IO ()
 handleCommand agent command =

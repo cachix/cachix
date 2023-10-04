@@ -43,8 +43,8 @@ readPidFile pidFilename = do
   pidContents <- readFile (lockDirectory </> pidFilename <.> pidExtension)
   pure (readMaybe pidContents)
 
--- | Run an IO action with an acquired profile lock. Returns immediately if the profile is already locked.
---
+-- | Run an IO action with an acquired profile lock.
+-- Returns immediately if the profile is already locked.
 -- Lock files are not deleted after use.
 --
 -- macOS: if using sudo, make sure to use `-H` to reset the home directory.

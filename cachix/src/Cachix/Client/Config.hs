@@ -7,6 +7,7 @@ module Cachix.Client.Config
     parser,
     Command (..),
     CachixOptions (..),
+    defaultCachixOptions,
     -- Auth token helpers
     getAuthTokenRequired,
     getAuthTokenMaybe,
@@ -58,6 +59,16 @@ data CachixOptions = CachixOptions
     verbose :: Bool
   }
   deriving (Show)
+
+defaultCachixOptions :: IO CachixOptions
+defaultCachixOptions = do
+  configPath <- getDefaultFilename
+  return $
+    CachixOptions
+      { host = URI.defaultCachixURI,
+        configPath = configPath,
+        verbose = False
+      }
 
 data Config = Config
   { authToken :: Token,

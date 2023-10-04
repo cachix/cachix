@@ -4,6 +4,8 @@ module Cachix.Deploy.Lock
     readPidFile,
     withTryLock,
     withTryLockAndPid,
+    lockExtension,
+    pidExtension,
   )
 where
 
@@ -38,10 +40,7 @@ getLockDirectory = do
   pure lockDirectory
 
 readPidFile :: FilePath -> IO (Maybe CPid)
-readPidFile pidFilename = do
-  lockDirectory <- getLockDirectory
-  pidContents <- readFile (lockDirectory </> pidFilename <.> pidExtension)
-  pure (readMaybe pidContents)
+readPidFile pidFile = readMaybe <$> readFile pidFile
 
 -- | Run an IO action with an acquired profile lock.
 -- Returns immediately if the profile is already locked.
@@ -49,11 +48,7 @@ readPidFile pidFilename = do
 --
 -- macOS: if using sudo, make sure to use `-H` to reset the home directory.
 withTryLock :: FilePath -> IO a -> IO (Maybe a)
-withTryLock lockFilename action = do
-  lockDirectory <- getLockDirectory
-
-  let lockFile = lockDirectory </> lockFilename <.> lockExtension
-
+withTryLock lockFile action = do
   bracket
     (Lock.fdOpen lockFile)
     (Lock.fdUnlock *> Lock.fdClose)
@@ -63,13 +58,9 @@ withTryLock lockFilename action = do
         then fmap Just action
         else pure Nothing
 
-withTryLockAndPid :: FilePath -> IO a -> IO (Maybe a)
-withTryLockAndPid lockFilename action = do
-  lockDirectory <- getLockDirectory
-
-  let pidFile = lockDirectory </> lockFilename <.> pidExtension
-
-  withTryLock lockFilename $ do
+withTryLockAndPid :: FilePath -> FilePath -> IO a -> IO (Maybe a)
+withTryLockAndPid lockFile pidFile action = do
+  withTryLock lockFile $ do
     CPid pid <- getProcessID
     writeFile pidFile (show pid)
     action

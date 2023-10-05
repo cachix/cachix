@@ -17,7 +17,7 @@ import qualified Cachix.Deploy.Websocket as WebSocket
 import qualified Control.Concurrent.Async as Async
 import Control.Concurrent.Extra (once)
 import qualified Control.Concurrent.MVar as MVar
-import Control.Exception.Safe (onException, throwString)
+import Control.Exception.Safe (onException)
 import qualified Control.Exception.Safe as Safe
 import qualified Control.Retry as Retry
 import qualified Data.Aeson as Aeson
@@ -25,10 +25,11 @@ import Data.IORef
 import Data.String (String)
 import qualified Katip as K
 import Paths_cachix (getBinDir)
-import Protolude hiding (onException, toS)
+import Protolude hiding (onException, toS, (<.>))
 import Protolude.Conv
 import qualified System.Directory as Directory
 import System.Environment (getEnv, lookupEnv)
+import System.FilePath ((<.>), (</>))
 import qualified System.Posix.Files as Posix.Files
 import qualified System.Posix.Process as Posix
 import qualified System.Posix.Signals as Signals
@@ -42,14 +43,64 @@ data Agent = Agent
   { name :: Text,
     token :: Text,
     profileName :: Text,
-    agentState :: IORef (Maybe WSS.AgentInformation),
-    pid :: Posix.CPid,
     bootstrap :: Bool,
     host :: URI,
+    websocket :: ServiceWebSocket,
+    agentState :: IORef (Maybe WSS.AgentInformation),
     logOptions :: Log.Options,
     withLog :: Log.WithLog,
-    websocket :: ServiceWebSocket
+    lockFile :: FilePath,
+    pid :: Posix.CPid,
+    pidFile :: FilePath
   }
+
+mkAgent :: Log.WithLog -> Log.Options -> Maybe FilePath -> Config.CachixOptions -> CLI.AgentOptions -> Text -> IO Agent
+mkAgent withLog logOptions mlockDirectory cachixOptions agentOptions agentToken = do
+  agentState <- newIORef Nothing
+  pid <- Posix.getProcessID
+  lockDirectory <- maybe Lock.getLockDirectory return mlockDirectory
+
+  let host = Config.host cachixOptions
+      basename = URI.getHostname host
+
+      agentName = CLI.name agentOptions
+      profileName = fromMaybe "system" (CLI.profile agentOptions)
+
+      port =
+        host
+          & URI.getScheme
+          & URI.getPortFor
+          & fromMaybe (URI.Port 80)
+
+      websocketOptions =
+        WebSocket.Options
+          { WebSocket.host = basename,
+            WebSocket.port = port,
+            WebSocket.path = "/ws",
+            WebSocket.useSSL = URI.requiresSSL (URI.getScheme host),
+            WebSocket.headers = WebSocket.createHeaders agentName agentToken,
+            WebSocket.identifier = agentIdentifier agentName
+          }
+
+  websocket <- WebSocket.new withLog websocketOptions
+
+  let lockFilename = "agent-" <> toS agentName
+
+  return $
+    Agent
+      { name = agentName,
+        token = agentToken,
+        profileName = profileName,
+        bootstrap = CLI.bootstrap agentOptions,
+        agentState = agentState,
+        pid = pid,
+        pidFile = lockDirectory </> lockFilename <.> Lock.pidExtension,
+        lockFile = lockDirectory </> lockFilename <.> Lock.lockExtension,
+        host = host,
+        logOptions = logOptions,
+        withLog = withLog,
+        websocket = websocket
+      }
 
 agentIdentifier :: Text -> Text
 agentIdentifier agentName = unwords [agentName, toS versionNumber]
@@ -57,57 +108,27 @@ agentIdentifier agentName = unwords [agentName, toS versionNumber]
 run :: Config.CachixOptions -> CLI.AgentOptions -> IO ()
 run cachixOptions agentOptions =
   Log.withLog logOptions $ \withLog ->
-    logExceptions withLog $
-      withAgentLock agentOptions $ do
-        checkUserOwnsHome
+    logExceptions withLog $ do
+      checkUserOwnsHome
 
-        -- TODO: show a more helpful error if the token is missing
-        -- TODO: show a more helpful error when the token isn't valid
-        -- TODO: wrap the token in a newtype or use servant's Token
-        agentToken <- toS <$> getEnv "CACHIX_AGENT_TOKEN"
-        agentState <- newIORef Nothing
+      -- TODO: show a more helpful error if the token is missing
+      -- TODO: show a more helpful error when the token isn't valid
+      -- TODO: wrap the token in a newtype or use servant's Token
+      agentToken <- toS <$> getEnv "CACHIX_AGENT_TOKEN"
 
-        pid <- Posix.getProcessID
+      agent <- mkAgent withLog logOptions Nothing cachixOptions agentOptions agentToken
 
-        let port = fromMaybe (URI.Port 80) $ (URI.getPortFor . URI.getScheme) host
-        let websocketOptions =
-              WebSocket.Options
-                { WebSocket.host = basename,
-                  WebSocket.port = port,
-                  WebSocket.path = "/ws",
-                  WebSocket.useSSL = URI.requiresSSL (URI.getScheme host),
-                  WebSocket.headers = WebSocket.createHeaders agentName agentToken,
-                  WebSocket.identifier = agentIdentifier agentName
-                }
+      withAgentLock agent $ do
+        -- Connect to the backend
+        channel <- WebSocket.receive (websocket agent)
+        shutdownWebsocket <- connectToService (websocket agent)
 
-        websocket <- WebSocket.new withLog websocketOptions
-        channel <- WebSocket.receive websocket
-        shutdownWebsocket <- connectToService websocket
-
+        -- Shutdown the socket on sigint
         installSignalHandlers shutdownWebsocket
-
-        let agent =
-              Agent
-                { name = agentName,
-                  token = agentToken,
-                  profileName = profileName,
-                  agentState = agentState,
-                  pid = pid,
-                  bootstrap = CLI.bootstrap agentOptions,
-                  host = host,
-                  logOptions = logOptions,
-                  withLog = withLog,
-                  websocket = websocket
-                }
 
         WebSocket.readDataMessages channel $ \message ->
           handleCommand agent (WSS.command message)
   where
-    host = Config.host cachixOptions
-    basename = URI.getHostname host
-    agentName = CLI.name agentOptions
-    profileName = fromMaybe "system" (CLI.profile agentOptions)
-
     verbosity =
       if Config.verbose cachixOptions
         then Log.Verbose
@@ -119,6 +140,12 @@ run cachixOptions agentOptions =
           namespace = "agent",
           environment = "production"
         }
+
+handleCommand :: Agent -> WSS.BackendCommand -> IO ()
+handleCommand agent command =
+  case command of
+    WSS.AgentRegistered agentInformation -> registerAgent agent agentInformation
+    WSS.Deployment deploymentDetails -> launchDeployment agent deploymentDetails
 
 logExceptions :: Log.WithLog -> IO () -> IO ()
 logExceptions withLog action =
@@ -139,20 +166,21 @@ logExceptions withLog action =
           ]
       exitFailure
 
-lockFilename :: Text -> FilePath
-lockFilename agentName = "agent-" <> toS agentName
-
 -- | Acquire a lock for this agent. Skip this step if we're bootstrapping the agent.
-withAgentLock :: CLI.AgentOptions -> IO () -> IO ()
-withAgentLock CLI.AgentOptions {bootstrap = True} action = action
-withAgentLock CLI.AgentOptions {name} action = tryToAcquireLock 0
+withAgentLock :: Agent -> IO () -> IO ()
+withAgentLock agent action =
+  if bootstrap agent
+    then action
+    else tryToAcquireLock 0
   where
+    agentName = name agent
+
     tryToAcquireLock :: Int -> IO ()
     tryToAcquireLock attempts = do
-      lock <- Lock.withTryLockAndPid (lockFilename name) action
+      lock <- Lock.withTryLockAndPid (lockFile agent) (pidFile agent) action
       when (isNothing lock) $
         if attempts >= 5
-          then throwIO (AgentAlreadyRunning name)
+          then throwIO (AgentAlreadyRunning agentName)
           else do
             threadDelay (3 * 1000 * 1000)
             tryToAcquireLock (attempts + 1)
@@ -197,41 +225,41 @@ launchDeployment agent@Agent {..} deploymentDetails = do
         (verifyBootstrapSuccess agent)
 
 verifyBootstrapSuccess :: Agent -> IO ()
-verifyBootstrapSuccess Agent {name, withLog} = do
+verifyBootstrapSuccess agent@(Agent {name, withLog}) = do
   withLog . K.logLocM K.InfoS . K.ls $
     unwords ["Waiting for another agent to take over..."]
 
-  eAgentPid <-
-    Safe.tryIO $
-      Retry.recoverAll
-        (Retry.limitRetries 20 <> Retry.constantDelay 1000)
-        (const waitForAgent)
+  magentPid <- waitForAgent (Retry.limitRetries 60 <> Retry.constantDelay 1000) agent
 
-  case eAgentPid of
-    Right pid -> do
+  case magentPid of
+    Just pid -> do
       withLog . K.logLocM K.InfoS . K.ls $
         unwords ["Found an active agent for", name, "with PID " <> show pid <> ".", "Exiting."]
       exitSuccess
-    _ -> do
+    Nothing -> do
       withLog . K.logLocM K.InfoS . K.ls $
         unwords ["Cannot find an active agent for", name <> ".", "Waiting for more deployments."]
-  where
-    lockfile = lockFilename name
 
-    -- The PID might be stale in rare cases. Only use this for diagnostics.
-    waitForAgent :: IO Posix.CPid
-    waitForAgent = do
-      lock <- Lock.withTryLock lockfile (pure ())
-      mpid <- Lock.readPidFile lockfile
-      case (lock, mpid) of
-        (Nothing, Just pid) -> pure pid
-        _ -> throwString "No active agent found"
+waitForAgent :: Retry.RetryPolicyM IO -> Agent -> IO (Maybe Posix.CPid)
+waitForAgent retryPolicy agent = do
+  Retry.retrying
+    retryPolicy
+    (const $ pure . isNothing)
+    (const $ findActiveAgent agent)
 
-handleCommand :: Agent -> WSS.BackendCommand -> IO ()
-handleCommand agent command =
-  case command of
-    WSS.AgentRegistered agentInformation -> registerAgent agent agentInformation
-    WSS.Deployment deploymentDetails -> launchDeployment agent deploymentDetails
+-- The PID might be stale in rare cases. Only use this for diagnostics.
+findActiveAgent :: Agent -> IO (Maybe Posix.CPid)
+findActiveAgent Agent {pidFile, lockFile} = do
+  Safe.handleAny (const $ pure Nothing) $ do
+    lock <- Lock.withTryLock lockFile (pure ())
+    -- The lock must be held by another process
+    guard (isNothing lock)
+
+    -- We should have a PID file
+    mpid <- Lock.readPidFile pidFile
+    guard (isJust mpid)
+
+    return mpid
 
 -- | Asynchronously open and maintain a websocket connection to the backend for
 -- sending deployment progress updates.

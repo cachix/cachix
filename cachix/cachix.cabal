@@ -212,6 +212,7 @@ test-suite cachix-test
   main-is:            Main.hs
   hs-source-dirs:     test
   other-modules:
+    DeploySpec
     InstallationModeSpec
     NetRcSpec
     NixConfSpec
@@ -230,6 +231,7 @@ test-suite cachix-test
     , here
     , hspec
     , protolude
+    , retry
     , servant-auth-client
     , servant-client-core
     , temporary

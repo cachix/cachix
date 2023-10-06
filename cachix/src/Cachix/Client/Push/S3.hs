@@ -6,7 +6,7 @@ module Cachix.Client.Push.S3 where
 
 import qualified Cachix.API as API
 import Cachix.API.Error
-import Cachix.Client.Retry (retryAll)
+import Cachix.Client.Retry (retryHttp)
 import Cachix.Client.Servant (cachixClient)
 import Cachix.Types.BinaryCache
 import qualified Cachix.Types.MultipartUpload as Multipart
@@ -75,18 +75,18 @@ streamUpload env authToken cacheName compressionMethod = do
     manager = Client.manager env
 
     createMultipartUpload :: ConduitT ByteString Void m Multipart.CreateMultipartUploadResponse
-    createMultipartUpload =
-      liftIO $ withClientM createNarRequest env escalate
-      where
-        createNarRequest = API.createNar cachixClient authToken cacheName (Just compressionMethod)
+    createMultipartUpload = do
+      let createNarRequest = API.createNar cachixClient authToken cacheName (Just compressionMethod)
+      liftIO $ retryHttp $ withClientM createNarRequest env escalate
 
     uploadPart :: UUID -> Text -> (Int, ByteString) -> m (Maybe Multipart.CompletedPart)
     uploadPart narId uploadId (partNumber, !part) = do
       let partHashMD5 :: Digest MD5 = Crypto.hash part
           contentMD5 :: ByteString = convertToBase Base64 partHashMD5
 
-      let uploadNarPartRequest = API.uploadNarPart cachixClient authToken cacheName narId uploadId partNumber (Multipart.SigningData (decodeUtf8 contentMD5))
-      Multipart.UploadPartResponse {uploadUrl} <- liftIO $ withClientM uploadNarPartRequest env escalate
+      let uploadNarPartRequest =
+            API.uploadNarPart cachixClient authToken cacheName narId uploadId partNumber (Multipart.SigningData (decodeUtf8 contentMD5))
+      Multipart.UploadPartResponse {uploadUrl} <- liftIO $ retryHttp $ withClientM uploadNarPartRequest env escalate
 
       initialRequest <- liftIO $ HTTP.parseUrlThrow (toS uploadUrl)
       let request =
@@ -99,7 +99,7 @@ streamUpload env authToken cacheName compressionMethod = do
                   ]
               }
 
-      response <- liftIO $ retryAll $ \_ -> HTTP.httpNoBody request manager
+      response <- liftIO $ retryHttp $ HTTP.httpNoBody request manager
       let eTag = decodeUtf8 <$> lookup HTTP.hETag (HTTP.responseHeaders response)
       -- Strictly evaluate each eTag after uploading each part
       let !_ = rwhnf eTag
@@ -111,5 +111,5 @@ streamUpload env authToken cacheName compressionMethod = do
 
     abortMultipartUpload narId uploadId err = do
       let abortMultipartUploadRequest = API.abortMultipartUpload cachixClient authToken cacheName narId uploadId
-      _ <- liftIO $ withClientM abortMultipartUploadRequest env escalate
+      _ <- liftIO $ retryHttp $ withClientM abortMultipartUploadRequest env escalate
       return $ Left err

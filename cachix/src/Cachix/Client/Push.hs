@@ -208,7 +208,11 @@ uploadStorePath cache storePath retrystatus = do
           .| Push.S3.streamUpload cacheClientEnv authToken cacheName (compressionMethod strategy)
 
     case uploadResult of
-      Left err -> throwIO err
+      Left err
+        | isErr err status401 ->
+            on401 strategy err
+        | otherwise ->
+            void $ onError strategy err
       Right (narId, uploadId, parts) -> liftIO $ do
         narSize <- readIORef narSizeRef
         narHash <- ("sha256:" <>) . System.Nix.Base32.encode <$> readIORef narHashRef
@@ -249,9 +253,18 @@ uploadStorePath cache storePath retrystatus = do
                   { Multipart.parts = parts,
                     Multipart.narInfoCreate = nic
                   }
-        void $ retryHttp $ withClientM completeMultipartUploadRequest cacheClientEnv escalate
+          escalate $ Api.isNarInfoCreateValid nic
 
-  onDone strategy
+          -- Complete the multipart upload and upload the narinfo
+          let completeMultipartUploadRequest =
+                API.completeNarUpload cachixClient authToken cacheName narId uploadId $
+                  Multipart.CompletedMultipartUpload
+                    { Multipart.parts = parts,
+                      Multipart.narInfoCreate = nic
+                    }
+          void $ retryHttp $ withClientM completeMultipartUploadRequest cacheClientEnv escalate
+
+        onDone strategy
 
 -- | Push an entire closure
 --

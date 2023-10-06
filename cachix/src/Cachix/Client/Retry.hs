@@ -9,6 +9,7 @@ module Cachix.Client.Retry
   )
 where
 
+import Cachix.Client.Exception (CachixException (..))
 import qualified Control.Concurrent.Async as Async
 import Control.Exception.Safe
   ( Handler (..),
@@ -50,7 +51,19 @@ retryAll = retryAllWithPolicy defaultRetryPolicy
 
 retryAllWithPolicy :: (MonadIO m, MonadMask m) => RetryPolicyM m -> (RetryStatus -> m a) -> m a
 retryAllWithPolicy policy f =
-  recoverAll policy $ rethrowLinkedThreadExceptions . f
+  recovering policy handlers $
+    rethrowLinkedThreadExceptions . f
+  where
+    handlers = skipAsyncExceptions ++ [exitCodeHandler, cachixExceptionsHandler, allHandler]
+
+    -- Skip over exitSuccess/exitFailure
+    exitCodeHandler _ = Handler $ \(_ :: ExitCode) -> return False
+
+    -- Skip over fatal Cachix exceptions
+    cachixExceptionsHandler _ = Handler $ \(_ :: CachixException) -> return False
+
+    -- Retry everything else
+    allHandler _ = Handler $ \(_ :: SomeException) -> return True
 
 -- Catches all exceptions except async exceptions with logging support
 retryAllWithLogging ::
@@ -59,15 +72,17 @@ retryAllWithLogging ::
   (Bool -> SomeException -> RetryStatus -> m ()) ->
   m a ->
   m a
-retryAllWithLogging policy logger action =
+retryAllWithLogging policy logger f =
   recovering policy handlers $
-    const (rethrowLinkedThreadExceptions action)
+    const (rethrowLinkedThreadExceptions f)
   where
-    handlers = skipAsyncExceptions ++ [exitSuccessHandler, loggingHandler]
-    exitSuccessHandler :: (MonadIO m) => RetryStatus -> Handler m Bool
-    exitSuccessHandler _ = Handler $ \(_ :: ExitCode) -> return False
-    loggingHandler = logRetries shouldRetry logger
-    shouldRetry = return . isSyncException
+    handlers = skipAsyncExceptions ++ [exitCodeHandler, loggingHandler]
+
+    -- Skip over exitSuccess/exitFailure
+    exitCodeHandler _ = Handler $ \(_ :: ExitCode) -> return False
+
+    -- Log and retry everything else
+    loggingHandler = logRetries (return . isSyncException) logger
 
 -- | Unwrap 'Async.ExceptionInLinkedThread' exceptions and rethrow the inner exception.
 rethrowLinkedThreadExceptions :: (MonadCatch m) => m a -> m a

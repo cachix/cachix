@@ -141,12 +141,13 @@ pushSingleStorePath cache storePath = retryAll $ \retrystatus -> do
   -- Check if narinfo already exists
   res <-
     liftIO $
-      (`runClientM` pushParamsClientEnv cache) $
-        API.narinfoHead
-          cachixClient
-          (getCacheAuthToken (pushParamsSecret cache))
-          name
-          (NarInfoHash.NarInfoHash (decodeUtf8With lenientDecode storeHash))
+      retryHttp $
+        (`runClientM` pushParamsClientEnv cache) $
+          API.narinfoHead
+            cachixClient
+            (getCacheAuthToken (pushParamsSecret cache))
+            name
+            (NarInfoHash.NarInfoHash (decodeUtf8With lenientDecode storeHash))
   case res of
     Right NoContent -> onAlreadyPresent strategy -- we're done as store path is already in the cache
     Left err

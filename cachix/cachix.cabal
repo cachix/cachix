@@ -121,6 +121,7 @@ library
     , directory
     , ed25519
     , either
+    , exceptions
     , extra
     , filepath
     , fsnotify                >=0.4.1

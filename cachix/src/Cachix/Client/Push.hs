@@ -30,7 +30,7 @@ import Cachix.API.Signing (fingerprint, passthroughHashSink, passthroughHashSink
 import qualified Cachix.Client.Config as Config
 import Cachix.Client.Exception (CachixException (..))
 import qualified Cachix.Client.Push.S3 as Push.S3
-import Cachix.Client.Retry (retryAll)
+import Cachix.Client.Retry (retryAll, retryHttp)
 import Cachix.Client.Secrets
 import Cachix.Client.Servant
 import qualified Cachix.Types.BinaryCache as BinaryCache
@@ -248,7 +248,7 @@ uploadStorePath cache storePath retrystatus = do
                   { Multipart.parts = parts,
                     Multipart.narInfoCreate = nic
                   }
-        void $ withClientM completeMultipartUploadRequest cacheClientEnv escalate
+        void $ retryHttp $ withClientM completeMultipartUploadRequest cacheClientEnv escalate
 
   onDone strategy
 
@@ -269,7 +269,8 @@ pushClosure ::
 pushClosure traversal pushParams inputStorePaths = do
   (allPaths, missingPaths) <- getMissingPathsForClosure pushParams inputStorePaths
   paths <- pushOnClosureAttempt pushParams allPaths missingPaths
-  traversal (\storePath -> retryAll $ \retrystatus -> uploadStorePath pushParams storePath retrystatus) paths
+  flip traversal paths $ \storePath ->
+    retryAll $ uploadStorePath pushParams storePath
 
 getMissingPathsForClosure :: (MonadIO m, MonadMask m) => PushParams m r -> [StorePath] -> m ([StorePath], [StorePath])
 getMissingPathsForClosure pushParams inputPaths = do
@@ -284,7 +285,7 @@ getMissingPathsForClosure pushParams inputPaths = do
   hashes <- liftIO $ for paths (fmap (decodeUtf8With lenientDecode) . Store.getStorePathHash)
   -- Check what store paths are missing
   missingHashesList <-
-    retryAll $ \_ ->
+    retryHttp $
       liftIO $
         escalate
           =<< API.narinfoBulk

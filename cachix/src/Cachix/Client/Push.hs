@@ -1,7 +1,5 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE Rank2Types #-}
-{-# LANGUAGE TypeOperators #-}
 
 {- This is a standalone module so it shouldn't depend on any CLI state like Env -}
 module Cachix.Client.Push
@@ -15,7 +13,6 @@ module Cachix.Client.Push
     defaultWithXzipCompressorWithLevel,
     defaultWithZstdCompressor,
     defaultWithZstdCompressorWithLevel,
-    findPushSecret,
 
     -- * Pushing a closure of store paths
     pushClosure,
@@ -27,7 +24,6 @@ where
 import qualified Cachix.API as API
 import Cachix.API.Error
 import Cachix.API.Signing (fingerprint, passthroughHashSink, passthroughHashSinkB16, passthroughSizeSink)
-import qualified Cachix.Client.Config as Config
 import Cachix.Client.Exception (CachixException (..))
 import qualified Cachix.Client.Push.S3 as Push.S3
 import Cachix.Client.Retry (retryAll, retryHttp)
@@ -50,7 +46,6 @@ import qualified Data.Conduit.Lzma as Lzma (compress)
 import qualified Data.Conduit.Zstd as Zstd (compress)
 import Data.IORef
 import qualified Data.Set as Set
-import Data.String.Here
 import qualified Data.Text as T
 import Hercules.CNix (StorePath)
 import qualified Hercules.CNix.Std.Set as Std.Set
@@ -64,7 +59,6 @@ import Servant.Auth ()
 import Servant.Auth.Client
 import Servant.Client.Streaming
 import Servant.Conduit ()
-import System.Environment (lookupEnv)
 import qualified System.Nix.Base32
 import System.Nix.Nar
 
@@ -311,40 +305,6 @@ getMissingPathsForClosure pushParams inputPaths = do
       pure (hash_, path)
   let missing = map snd $ filter (\(hash_, _path) -> Set.member hash_ missingHashes) pathsAndHashes
   return (paths, missing)
-
--- TODO: move to a separate module specific to cli
-
--- | Find auth token or signing key in the 'Config' or environment variable
-findPushSecret ::
-  Config.Config ->
-  -- | Cache name
-  Text ->
-  -- | Secret key or exception
-  IO PushSecret
-findPushSecret config name = do
-  maybeSigningKeyEnv <- toS <<$>> lookupEnv "CACHIX_SIGNING_KEY"
-  maybeAuthToken <- Config.getAuthTokenMaybe config
-  let maybeSigningKeyConfig = Config.secretKey <$> head (getBinaryCache config)
-  case maybeSigningKeyEnv <|> maybeSigningKeyConfig of
-    Just signingKey -> escalateAs FatalError $ PushSigningKey (fromMaybe (Token "") maybeAuthToken) <$> parseSigningKeyLenient signingKey
-    Nothing -> case maybeAuthToken of
-      Just authToken -> return $ PushToken authToken
-      Nothing -> throwIO $ NoSigningKey msg
-  where
-    -- we reverse list of caches to prioritize keys added as last
-    getBinaryCache c =
-      reverse $
-        filter (\bc -> Config.name bc == name) (Config.binaryCaches c)
-    msg :: Text
-    msg =
-      [iTrim|
-Neither auth token nor signing key are present.
-
-They are looked up via $CACHIX_AUTH_TOKEN and $CACHIX_SIGNING_KEY,
-and if missing also looked up from ~/.config/cachix/cachix.dhall
-
-Read https://mycache.cachix.org for instructions how to push to your binary cache.
-    |]
 
 mapConcurrentlyBounded :: (Traversable t) => Int -> (a -> IO b) -> t a -> IO (t b)
 mapConcurrentlyBounded bound action items = do

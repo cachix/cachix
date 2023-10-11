@@ -64,6 +64,7 @@ library
     Cachix.Client
     Cachix.Client.CNix
     Cachix.Client.Commands
+    Cachix.Client.Commands.Push
     Cachix.Client.Config
     Cachix.Client.Config.Orphans
     Cachix.Client.Daemon

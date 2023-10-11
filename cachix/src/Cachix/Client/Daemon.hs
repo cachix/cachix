@@ -9,7 +9,7 @@ module Cachix.Client.Daemon
 where
 
 import Cachix.Client.CNix (filterInvalidStorePath, followLinksToStorePath)
-import qualified Cachix.Client.Commands as Commands
+import qualified Cachix.Client.Commands.Push as Commands.Push
 import Cachix.Client.Config.Orphans ()
 import Cachix.Client.Daemon.Client (push, stop)
 import Cachix.Client.Daemon.Listen as Daemon
@@ -81,7 +81,7 @@ runWorker env pushOptions queue = loop
 
 handleRequest :: Env -> PushOptions -> QueuedPushRequest -> IO ()
 handleRequest env pushOptions (QueuedPushRequest {..}) = do
-  Commands.withPushParams env pushOptions (binaryCacheName pushRequest) $ \pushParams -> do
+  Commands.Push.withPushParams env pushOptions (binaryCacheName pushRequest) $ \pushParams -> do
     normalized <-
       for (storePaths pushRequest) $ \fp -> runMaybeT $ do
         storePath <- MaybeT $ followLinksToStorePath (pushParamsStore pushParams) (encodeUtf8 $ T.pack fp)

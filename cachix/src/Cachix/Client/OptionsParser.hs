@@ -132,7 +132,7 @@ commandParser =
       <> command "generate-keypair" (infoH generateKeypair (progDesc "Generate signing key pair for a binary cache"))
       <> command "push" (infoH push (progDesc "Upload Nix store paths to a binary cache"))
       <> command "pin" (infoH pin (progDesc "Pin a store path to prevent it from being garbage collected"))
-      <> command "watch-exec" (infoH watchExec (progDesc "Run a command while it's running watch /nix/store for newly added store paths and upload them to a binary cache"))
+      <> command "watch-exec" (infoH watchExec (progDesc "Run a command and upload any store paths accessed during its execution to a binary cache"))
       <> command "watch-store" (infoH watchStore (progDesc "Indefinitely watch /nix/store for newly added store paths and upload them to a binary cache"))
       <> command "use" (infoH use (progDesc "Configure a binary cache by writing nix.conf and netrc files"))
       <> command "remove" (infoH remove (progDesc "Remove a binary cache from nix.conf"))

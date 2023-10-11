@@ -14,6 +14,11 @@ data ClientMessage
   deriving stock (Generic)
   deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)
 
+data DaemonMessage
+  = DaemonBye
+  deriving stock (Generic)
+  deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)
+
 -- | A request for the daemon to push store paths to a binary cache
 data PushRequest = PushRequest
   { authToken :: Token,

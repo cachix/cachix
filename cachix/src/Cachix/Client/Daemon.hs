@@ -1,21 +1,25 @@
 {-# LANGUAGE QuasiQuotes #-}
 
 module Cachix.Client.Daemon
-  ( run,
-    runWithSocket,
+  ( Daemon,
+    new,
+    start,
+    run,
     push,
     stop,
+    stopAndWait,
   )
 where
 
 import Cachix.Client.CNix (filterInvalidStorePath, followLinksToStorePath)
 import qualified Cachix.Client.Commands.Push as Commands.Push
 import Cachix.Client.Config.Orphans ()
-import Cachix.Client.Daemon.Client (push, stop)
+import Cachix.Client.Daemon.Client (push, stop, stopAndWait)
 import Cachix.Client.Daemon.Listen as Daemon
-import Cachix.Client.Daemon.Types
+import Cachix.Client.Daemon.Types as Types
 import Cachix.Client.Env as Env
-import Cachix.Client.OptionsParser as Options
+import Cachix.Client.OptionsParser (DaemonOptions, PushOptions)
+import qualified Cachix.Client.OptionsParser as Options
 import Cachix.Client.Push
 import Control.Concurrent.Extra (once)
 import Control.Concurrent.STM.TBMQueue
@@ -27,35 +31,56 @@ import qualified Network.Socket as Socket
 import Protolude
 import System.Posix.Process (getProcessID)
 
-run :: Env -> DaemonOptions -> PushOptions -> IO ()
-run env daemonOptions pushOptions = do
-  socketPath <- maybe getSocketPath pure (daemonSocketPath daemonOptions)
-  runWithSocket env pushOptions socketPath
-    `finally` putErrText "Daemon shut down."
+data Daemon = Daemon
+  { -- | Cachix client env
+    daemonEnv :: Env,
+    -- | Push options, like compression settings
+    daemonPushOptions :: PushOptions,
+    -- | Path to the socket that the daemon listens on
+    daemonSocketPath :: FilePath,
+    -- | Queue of push requests to be processed by the worker thread
+    daemonQueue :: TBMQueue QueuedPushRequest
+  }
 
-runWithSocket :: Env -> PushOptions -> FilePath -> IO ()
-runWithSocket env pushOptions socketPath = do
-  -- Create a queue of push requests for the workers to process
-  queue <- newTBMQueueIO 1000
+-- | Configure a new daemon. Use 'run' to start it.
+new :: Env -> DaemonOptions -> PushOptions -> IO Daemon
+new daemonEnv daemonOptions daemonPushOptions = do
+  daemonSocketPath <- maybe getSocketPath pure (Options.daemonSocketPath daemonOptions)
+  daemonQueue <- newTBMQueueIO 1000
+  return $ Daemon {..}
 
-  bracketOnError (startWorker queue) identity $ \shutdownWorker -> do
+-- | Configure and run the daemon
+start :: Env -> DaemonOptions -> PushOptions -> IO ()
+start daemonEnv daemonOptions daemonPushOptions = do
+  daemon <- new daemonEnv daemonOptions daemonPushOptions
+  run daemon `finally` putErrText "Daemon shut down."
+
+-- | Run a daemon from a given configuration
+run :: Daemon -> IO ()
+run daemon@Daemon {..} = do
+  bracketOnError (startWorker daemonQueue) identity $ \shutdownWorker -> do
     -- TODO: retry the connection on socket errors
-    bracketOnError (Daemon.openSocket socketPath) Socket.close $ \sock -> do
+    bracketOnError (Daemon.openSocket daemonSocketPath) Socket.close $ \sock -> do
       Socket.listen sock Socket.maxListenQueue
 
-      putText =<< readyMessage socketPath
-      clientStopConn <- Daemon.listen queue sock
+      putText =<< readyMessage daemonSocketPath
+      clientSock <- Daemon.listen daemonQueue sock
+
+      -- Stop receiving new push requests
+      Socket.shutdown sock Socket.ShutdownReceive
 
       -- Gracefully shutdown the worker before closing the socket
-      -- TODO: consider shutdown from Network.Socket
       shutdownWorker
 
-      Socket.gracefulClose clientStopConn 5000
+      -- Wave goodbye to the client
+      Daemon.serverBye clientSock
+
+      Socket.shutdown clientSock Socket.ShutdownBoth
   where
     startWorker queue = do
       worker <- Immortal.create $ \thread ->
         Immortal.onUnexpectedFinish thread logWorkerException $
-          runWorker env pushOptions queue
+          runWorker daemon
 
       once $ do
         putErrText "Shutting down daemon..."
@@ -63,20 +88,21 @@ runWithSocket env pushOptions socketPath = do
         Immortal.mortalize worker
         putErrText "Waiting for worker to finish..."
         Immortal.wait worker
+        putErrText "Worker finished!"
 
 logWorkerException :: Either SomeException () -> IO ()
 logWorkerException (Left err) =
   putErrText $ "Exception in daemon worker thread: " <> show err
 logWorkerException _ = return ()
 
-runWorker :: Env -> PushOptions -> TBMQueue QueuedPushRequest -> IO ()
-runWorker env pushOptions queue = loop
+runWorker :: Daemon -> IO ()
+runWorker Daemon {..} = loop
   where
     loop =
-      atomically (readTBMQueue queue) >>= \case
+      atomically (readTBMQueue daemonQueue) >>= \case
         Nothing -> return ()
         Just msg -> do
-          handleRequest env pushOptions msg
+          handleRequest daemonEnv daemonPushOptions msg
           loop
 
 handleRequest :: Env -> PushOptions -> QueuedPushRequest -> IO ()
@@ -89,7 +115,7 @@ handleRequest env pushOptions (QueuedPushRequest {..}) = do
 
     void $
       pushClosure
-        (mapConcurrentlyBounded (numJobs pushOptions))
+        (mapConcurrentlyBounded (Options.numJobs pushOptions))
         pushParams
         (catMaybes normalized)
 

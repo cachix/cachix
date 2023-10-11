@@ -19,13 +19,16 @@ import Cachix.API.Error
 import Cachix.Client.CNix (filterInvalidStorePath, followLinksToStorePath)
 import Cachix.Client.Commands.Push
 import qualified Cachix.Client.Config as Config
+import qualified Cachix.Client.Daemon as Daemon
+import qualified Cachix.Client.Daemon.PostBuildHook as Daemon.PostBuildHook
 import Cachix.Client.Env (Env (..))
 import Cachix.Client.Exception (CachixException (..))
 import qualified Cachix.Client.InstallationMode as InstallationMode
 import qualified Cachix.Client.NixConf as NixConf
 import Cachix.Client.NixVersion (assertNixVersion)
 import Cachix.Client.OptionsParser
-  ( PinOptions (..),
+  ( DaemonOptions (..),
+    PinOptions (..),
     PushArguments (..),
     PushOptions (..),
   )
@@ -55,8 +58,8 @@ import Servant.Auth.Client
 import Servant.Client.Streaming
 import Servant.Conduit ()
 import System.Directory (doesFileExist)
+import System.Environment (getEnvironment)
 import System.IO (hIsTerminalDevice)
-import qualified System.Posix.Signals as Signals
 import qualified System.Process
 
 -- TODO: check that token actually authenticates!
@@ -201,35 +204,29 @@ watchStore env opts name = do
     WatchStore.startWorkers (pushParamsStore pushParams) (numJobs opts) pushParams
 
 watchExec :: Env -> PushOptions -> Text -> Text -> [Text] -> IO ()
-watchExec env pushOpts name cmd args = withPushParams env pushOpts name $ \pushParams -> do
-  stdoutOriginal <- hDuplicate stdout
-  let process =
-        (System.Process.proc (toS cmd) (toS <$> args))
-          { System.Process.std_out = System.Process.UseHandle stdoutOriginal
-          }
-      watch = do
-        hDuplicateTo stderr stdout -- redirect all stdout to stderr
-        WatchStore.startWorkers (pushParamsStore pushParams) (numJobs pushOpts) pushParams
+watchExec env pushOpts cacheName cmd args = do
+  exitCode <-
+    Daemon.PostBuildHook.withSetup Nothing cacheName $ \daemonSock userConfEnv -> do
+      let daemonOptions = DaemonOptions {daemonSocketPath = Just daemonSock}
+      daemon <- Daemon.new env daemonOptions pushOpts
 
-  (_, exitCode) <-
-    Async.concurrently watch $ do
-      exitCode <-
-        bracketOnError
-          (getProcessHandle <$> System.Process.createProcess process)
-          ( \processHandle -> do
-              -- Terminate the process
-              uninterruptibleMask_ (System.Process.terminateProcess processHandle)
-              -- Wait for the process to clean up and exit
-              _ <- System.Process.waitForProcess processHandle
-              -- Stop watching the store and wait for all paths to be pushed
-              Signals.raiseSignal Signals.sigINT
-          )
-          System.Process.waitForProcess
+      daemonThread <- Async.async $ Daemon.run daemon
 
-      -- Stop watching the store and wait for all paths to be pushed
-      Signals.raiseSignal Signals.sigINT
+      processEnv <- getEnvironment
+      let process =
+            (System.Process.proc (toS cmd) (toS <$> args))
+              { System.Process.std_out = System.Process.UseHandle stdout,
+                System.Process.env = Just (processEnv ++ [("NIX_USER_CONF_FILES", toS userConfEnv)])
+              }
+      exitCode <- System.Process.withCreateProcess process $ \_ _ _ processHandle ->
+        System.Process.waitForProcess processHandle
+
+      -- Stop the daemon and wait for all paths to be pushed
+      Daemon.stop env daemonOptions
+      putErrText "Daemon stop sent.."
+
+      Async.wait daemonThread
+
       return exitCode
 
   exitWith exitCode
-  where
-    getProcessHandle (_, _, _, processHandle) = processHandle

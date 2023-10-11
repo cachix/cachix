@@ -1,13 +1,17 @@
-module Cachix.Client.Daemon.Client (push, stop) where
+module Cachix.Client.Daemon.Client (push, stop, stopAndWait) where
 
 import Cachix.Client.Config as Config
 import Cachix.Client.Daemon.Listen (getSocketPath)
-import Cachix.Client.Daemon.Types (ClientMessage (..), PushRequest (..))
+import Cachix.Client.Daemon.Types (ClientMessage (..), DaemonMessage (..), PushRequest (..))
 import Cachix.Client.Env as Env
 import Cachix.Client.OptionsParser (DaemonOptions (..))
 import Cachix.Types.BinaryCache (BinaryCacheName)
+import qualified Control.Concurrent.Async as Async
+import Control.Exception.Safe (catchAny, handleIO)
 import qualified Data.Aeson as Aeson
+import qualified Data.ByteString as BS
 import qualified Network.Socket as Socket
+import qualified Network.Socket.ByteString as Socket.BS
 import qualified Network.Socket.ByteString.Lazy as Socket.LBS
 import Protolude
 import qualified System.Posix.IO as Posix
@@ -16,31 +20,49 @@ import qualified System.Posix.IO as Posix
 --
 -- TODO: wait for the daemon to respond that it has received the request
 push :: Env -> DaemonOptions -> BinaryCacheName -> [FilePath] -> IO ()
-push Env {config, cachixoptions} daemonOptions cacheName storePaths = do
-  sock <- connectToDaemon (daemonSocketPath daemonOptions)
-  Socket.LBS.sendAll sock (Aeson.encode pushRequest)
+push Env {config, cachixoptions} daemonOptions cacheName storePaths =
+  withDaemonConn (daemonSocketPath daemonOptions) $ \sock -> do
+    Socket.LBS.sendAll sock (Aeson.encode pushRequest)
+    Socket.gracefulClose sock 5000
   where
     pushRequest =
       ClientPushRequest $
         PushRequest (Config.authToken config) cacheName (Config.host cachixoptions) storePaths
 
--- | Tell the daemon to stop and wait for it gracefully exit
+-- | Tell the daemon to stop and wait for it to gracefully exit
 stop :: Env -> DaemonOptions -> IO ()
-stop _env daemonOptions = do
-  sock <- connectToDaemon (daemonSocketPath daemonOptions)
-  Socket.LBS.sendAll sock (Aeson.encode ClientStop)
+stop _env daemonOptions =
+  withDaemonConn (daemonSocketPath daemonOptions) $ \sock -> do
+    Socket.LBS.sendAll sock (Aeson.encode ClientStop)
 
-  -- Wait for the socket to close
-  void $ Socket.LBS.recv sock 1
+stopAndWait :: Env -> DaemonOptions -> IO ()
+stopAndWait _env daemonOptions =
+  withDaemonConn (daemonSocketPath daemonOptions) $ \sock -> do
+    Async.concurrently_ (waitForResponse sock) $
+      Socket.LBS.sendAll sock (Aeson.encode ClientStop)
+  where
+    waitForResponse sock = do
+      -- Wait for the socket to close
+      bs <- Socket.BS.recv sock 4096 `catchAny` (\_ -> return BS.empty)
 
-connectToDaemon :: Maybe FilePath -> IO Socket.Socket
-connectToDaemon optionalSocketPath = do
+      -- A zero-length response means that the daemon has closed the socket
+      guard $ not $ BS.null bs
+
+      case Aeson.eitherDecodeStrict bs of
+        Left err -> putErrText (toS err)
+        Right DaemonBye -> return ()
+
+withDaemonConn :: Maybe FilePath -> (Socket.Socket -> IO a) -> IO a
+withDaemonConn optionalSocketPath f = do
   socketPath <- maybe getSocketPath pure optionalSocketPath
-  sock <- Socket.socket Socket.AF_UNIX Socket.Stream Socket.defaultProtocol
-  Socket.connect sock (Socket.SockAddrUnix socketPath)
+  bracket (open socketPath) Socket.close f
+  where
+    open socketPath = do
+      sock <- Socket.socket Socket.AF_UNIX Socket.Stream Socket.defaultProtocol
+      Socket.connect sock (Socket.SockAddrUnix socketPath)
 
-  -- Network.Socket.accept sets the socket to non-blocking by default.
-  Socket.withFdSocket sock $ \fd ->
-    Posix.setFdOption (fromIntegral fd) Posix.NonBlockingRead False
+      -- Network.Socket.accept sets the socket to non-blocking by default.
+      Socket.withFdSocket sock $ \fd ->
+        Posix.setFdOption (fromIntegral fd) Posix.NonBlockingRead False
 
-  return sock
+      return sock

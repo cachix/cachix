@@ -38,7 +38,7 @@ postBuildHookScript cachixBin cacheName socketPath =
   [iTrim|
 \#!/bin/sh
 
-set -eu
+\# set -eu
 set -f # disable globbing
 export IFS=''
 

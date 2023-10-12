@@ -205,28 +205,24 @@ watchStore env opts name = do
 
 watchExec :: Env -> PushOptions -> Text -> Text -> [Text] -> IO ()
 watchExec env pushOpts cacheName cmd args = do
-  exitCode <-
-    Daemon.PostBuildHook.withSetup Nothing cacheName $ \daemonSock userConfEnv -> do
-      let daemonOptions = DaemonOptions {daemonSocketPath = Just daemonSock}
-      daemon <- Daemon.new env daemonOptions pushOpts
+  Daemon.PostBuildHook.withSetup Nothing cacheName $ \daemonSock userConfEnv -> do
+    let daemonOptions = DaemonOptions {daemonSocketPath = Just daemonSock}
+    daemon <- Daemon.new env daemonOptions pushOpts
 
-      daemonThread <- Async.async $ Daemon.run daemon
+    daemonThread <- Async.async $ Daemon.run daemon
 
-      processEnv <- getEnvironment
-      let process =
-            (System.Process.proc (toS cmd) (toS <$> args))
-              { System.Process.std_out = System.Process.UseHandle stdout,
-                System.Process.env = Just (processEnv ++ [("NIX_USER_CONF_FILES", toS userConfEnv)])
-              }
-      exitCode <- System.Process.withCreateProcess process $ \_ _ _ processHandle ->
-        System.Process.waitForProcess processHandle
+    processEnv <- getEnvironment
+    let process =
+          (System.Process.proc (toS cmd) (toS <$> args))
+            { -- { System.Process.std_out = System.Process.UseHandle stdout,
+              System.Process.std_out = System.Process.Inherit,
+              System.Process.env = Just (processEnv ++ [("NIX_USER_CONF_FILES", toS userConfEnv)])
+            }
+    exitCode <- System.Process.withCreateProcess process $ \_ _ _ processHandle ->
+      System.Process.waitForProcess processHandle
 
-      -- Stop the daemon and wait for all paths to be pushed
-      Daemon.stop env daemonOptions
-      putErrText "Daemon stop sent.."
+    -- Stop the daemon and wait for all paths to be pushed
+    Daemon.stop env daemonOptions
+    Async.wait daemonThread
 
-      Async.wait daemonThread
-
-      return exitCode
-
-  exitWith exitCode
+    exitWith exitCode

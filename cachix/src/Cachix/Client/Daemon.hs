@@ -13,6 +13,7 @@ where
 
 import Cachix.Client.CNix (filterInvalidStorePath, followLinksToStorePath)
 import qualified Cachix.Client.Commands.Push as Commands.Push
+import qualified Cachix.Client.Config as Config
 import Cachix.Client.Config.Orphans ()
 import Cachix.Client.Daemon.Client (push, stop, stopAndWait)
 import Cachix.Client.Daemon.Listen as Daemon
@@ -30,6 +31,7 @@ import Data.String.Here (i)
 import qualified Data.Text as T
 import qualified Network.Socket as Socket
 import Protolude
+import Servant.Auth.Client (Token (..))
 import System.Posix.Process (getProcessID)
 
 data Daemon = Daemon
@@ -89,7 +91,7 @@ run daemon@Daemon {..} = do
         Immortal.mortalize worker
         putErrText "Waiting for worker to finish..."
         Immortal.wait worker
-        putErrText "Worker finished!"
+        putErrText "Worker finished."
 
 logWorkerException :: Either SomeException () -> IO ()
 logWorkerException (Left err) =
@@ -108,7 +110,9 @@ runWorker Daemon {..} = loop
 
 handleRequest :: Env -> PushOptions -> QueuedPushRequest -> IO ()
 handleRequest env pushOptions (QueuedPushRequest {..}) = do
-  Commands.Push.withPushParams env pushOptions (binaryCacheName pushRequest) $ \pushParams -> do
+  pushSecret <- Commands.Push.findPushSecret (config env) (cacheName pushRequest)
+
+  Commands.Push.withPushParams' env pushSecret (authToken pushRequest) pushOptions (cacheName pushRequest) $ \pushParams -> do
     normalized <-
       for (storePaths pushRequest) $ \fp -> runMaybeT $ do
         storePath <- MaybeT $ followLinksToStorePath (pushParamsStore pushParams) (encodeUtf8 $ T.pack fp)

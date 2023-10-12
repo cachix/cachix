@@ -7,13 +7,14 @@ import Cachix.Client.Env as Env
 import Cachix.Client.OptionsParser (DaemonOptions (..))
 import Cachix.Types.BinaryCache (BinaryCacheName)
 import qualified Control.Concurrent.Async as Async
-import Control.Exception.Safe (catchAny, handleIO)
+import Control.Exception.Safe (catchAny)
 import qualified Data.Aeson as Aeson
 import qualified Data.ByteString as BS
 import qualified Network.Socket as Socket
 import qualified Network.Socket.ByteString as Socket.BS
 import qualified Network.Socket.ByteString.Lazy as Socket.LBS
 import Protolude
+import Servant.Auth.Client (getToken)
 import qualified System.Posix.IO as Posix
 
 -- | Queue up push requests with the daemon
@@ -25,9 +26,20 @@ push Env {config, cachixoptions} daemonOptions cacheName storePaths =
     Socket.LBS.sendAll sock (Aeson.encode pushRequest)
     Socket.gracefulClose sock 5000
   where
+    authToken =
+      if BS.null . getToken $ Config.authToken config
+        then Nothing
+        else Just (Config.authToken config)
+
     pushRequest =
       ClientPushRequest $
-        PushRequest (Config.authToken config) cacheName (Config.host cachixoptions) storePaths
+        PushRequest
+          { authToken = authToken,
+            signingKey = Nothing,
+            cacheName = cacheName,
+            host = Config.host cachixoptions,
+            storePaths = storePaths
+          }
 
 -- | Tell the daemon to stop and wait for it to gracefully exit
 stop :: Env -> DaemonOptions -> IO ()

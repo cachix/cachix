@@ -3,7 +3,9 @@
 module Cachix.Client.Commands.Push
   ( pushStrategy,
     withPushParams,
+    withPushParams',
     handleCacheResponse,
+    findPushSecret,
   )
 where
 
@@ -97,6 +99,9 @@ withPushParams :: Env -> PushOptions -> Text -> (PushParams IO () -> IO ()) -> I
 withPushParams env pushOpts name m = do
   pushSecret <- findPushSecret (config env) name
   authToken <- Config.getAuthTokenMaybe (config env)
+  withPushParams' env pushSecret authToken pushOpts name m
+
+withPushParams' env pushSecret authToken pushOpts name m = do
   compressionMethodBackend <- case pushSecret of
     PushSigningKey {} -> pure Nothing
     PushToken {} -> do
@@ -105,7 +110,9 @@ withPushParams env pushOpts name m = do
       case res of
         Left err -> handleCacheResponse name authToken err
         Right binaryCache -> pure (Just $ BinaryCache.preferredCompressionMethod binaryCache)
-  let compressionMethod = fromMaybe BinaryCache.ZSTD (head $ catMaybes [Cachix.Client.OptionsParser.compressionMethod pushOpts, compressionMethodBackend])
+  let compressionMethod =
+        fromMaybe BinaryCache.ZSTD (head $ catMaybes [Cachix.Client.OptionsParser.compressionMethod pushOpts, compressionMethodBackend])
+
   withStore $ \store ->
     m
       PushParams

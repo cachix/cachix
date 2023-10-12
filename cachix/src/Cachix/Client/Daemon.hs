@@ -23,6 +23,7 @@ import qualified Cachix.Client.OptionsParser as Options
 import Cachix.Client.Push
 import Control.Concurrent.Extra (once)
 import Control.Concurrent.STM.TBMQueue
+import Control.Exception.Safe (catchAny)
 import qualified Control.Immortal as Immortal
 import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
 import Data.String.Here (i)
@@ -67,7 +68,7 @@ run daemon@Daemon {..} = do
       clientSock <- Daemon.listen daemonQueue sock
 
       -- Stop receiving new push requests
-      Socket.shutdown sock Socket.ShutdownReceive
+      Socket.shutdown sock Socket.ShutdownReceive `catchAny` \_ -> return ()
 
       -- Gracefully shutdown the worker before closing the socket
       shutdownWorker
@@ -75,7 +76,7 @@ run daemon@Daemon {..} = do
       -- Wave goodbye to the client
       Daemon.serverBye clientSock
 
-      Socket.shutdown clientSock Socket.ShutdownBoth
+      Socket.shutdown clientSock Socket.ShutdownBoth `catchAny` \_ -> return ()
   where
     startWorker queue = do
       worker <- Immortal.create $ \thread ->

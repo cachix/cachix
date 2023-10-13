@@ -33,6 +33,7 @@ import qualified Network.Socket as Socket
 import Protolude
 import Servant.Auth.Client (Token (..))
 import System.Posix.Process (getProcessID)
+import qualified System.Posix.Signals as Signals
 
 data Daemon = Daemon
   { -- | Cachix client env
@@ -61,6 +62,9 @@ start daemonEnv daemonOptions daemonPushOptions = do
 -- | Run a daemon from a given configuration
 run :: Daemon -> IO ()
 run daemon@Daemon {..} = do
+  -- Ignore SIGPIPE errors
+  _ <- Signals.installHandler Signals.sigPIPE Signals.Ignore Nothing
+
   bracketOnError (startWorker daemonQueue) identity $ \shutdownWorker -> do
     -- TODO: retry the connection on socket errors
     bracketOnError (Daemon.openSocket daemonSocketPath) Socket.close $ \sock -> do

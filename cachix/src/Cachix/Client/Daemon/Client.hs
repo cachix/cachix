@@ -1,11 +1,9 @@
 module Cachix.Client.Daemon.Client (push, stop, stopAndWait) where
 
-import Cachix.Client.Config as Config
 import Cachix.Client.Daemon.Listen (getSocketPath)
 import Cachix.Client.Daemon.Types (ClientMessage (..), DaemonMessage (..), PushRequest (..))
 import Cachix.Client.Env as Env
 import Cachix.Client.OptionsParser (DaemonOptions (..))
-import Cachix.Types.BinaryCache (BinaryCacheName)
 import qualified Control.Concurrent.Async as Async
 import Control.Exception.Safe (catchAny)
 import qualified Data.Aeson as Aeson
@@ -14,32 +12,20 @@ import qualified Network.Socket as Socket
 import qualified Network.Socket.ByteString as Socket.BS
 import qualified Network.Socket.ByteString.Lazy as Socket.LBS
 import Protolude
-import Servant.Auth.Client (getToken)
 import qualified System.Posix.IO as Posix
 
 -- | Queue up push requests with the daemon
 --
 -- TODO: wait for the daemon to respond that it has received the request
-push :: Env -> DaemonOptions -> BinaryCacheName -> [FilePath] -> IO ()
-push Env {config, cachixoptions} daemonOptions cacheName storePaths =
+push :: Env -> DaemonOptions -> [FilePath] -> IO ()
+push _env daemonOptions storePaths =
   withDaemonConn (daemonSocketPath daemonOptions) $ \sock -> do
     Socket.LBS.sendAll sock (Aeson.encode pushRequest)
     Socket.gracefulClose sock 5000
   where
-    authToken =
-      if BS.null . getToken $ Config.authToken config
-        then Nothing
-        else Just (Config.authToken config)
-
     pushRequest =
       ClientPushRequest $
-        PushRequest
-          { authToken = authToken,
-            signingKey = Nothing,
-            cacheName = cacheName,
-            host = Config.host cachixoptions,
-            storePaths = storePaths
-          }
+        PushRequest {storePaths = storePaths}
 
 -- | Tell the daemon to stop and wait for it to gracefully exit
 stop :: Env -> DaemonOptions -> IO ()

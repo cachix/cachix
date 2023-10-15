@@ -10,8 +10,8 @@ import System.FilePath ((</>))
 import System.IO.Temp (withSystemTempDirectory)
 import System.Posix.Files
 
-withSetup :: Maybe FilePath -> Text -> (FilePath -> Text -> IO a) -> IO a
-withSetup mdaemonSock cacheName f =
+withSetup :: Maybe FilePath -> (FilePath -> Text -> IO a) -> IO a
+withSetup mdaemonSock f =
   withSystemTempDirectory "cachix-daemon" $ \tempDir -> do
     let postBuildHookScriptPath = tempDir </> "post-build-hook.sh"
         postBuildHookConfigPath = tempDir </> "nix.conf"
@@ -21,7 +21,7 @@ withSetup mdaemonSock cacheName f =
     nixUserConfFiles <- lookupEnv "NIX_USER_CONF_FILES"
     let newNixUserConfFiles = foldMap identity $ intersperse ":" $ catMaybes [nixUserConfFiles, Just postBuildHookConfigPath]
 
-    writeFile postBuildHookScriptPath (postBuildHookScript cachixBin cacheName daemonSock)
+    writeFile postBuildHookScriptPath (postBuildHookScript cachixBin daemonSock)
     setFileMode postBuildHookScriptPath 0o755
     writeFile postBuildHookConfigPath (postBuildHookConfig postBuildHookScriptPath)
 
@@ -30,11 +30,11 @@ withSetup mdaemonSock cacheName f =
 postBuildHookConfig :: FilePath -> Text
 postBuildHookConfig scriptPath =
   [iTrim|
-post-build-hook = ${toS @FilePath @Text scriptPath}
+post-build-hook = ${toS scriptPath :: Text}
   |]
 
-postBuildHookScript :: FilePath -> Text -> FilePath -> Text
-postBuildHookScript cachixBin cacheName socketPath =
+postBuildHookScript :: FilePath -> FilePath -> Text
+postBuildHookScript cachixBin socketPath =
   [iTrim|
 \#!/bin/sh
 
@@ -42,7 +42,7 @@ postBuildHookScript cachixBin cacheName socketPath =
 set -f # disable globbing
 export IFS=''
 
-exec ${toS @FilePath @Text cachixBin} daemon push \\
-  --socket ${toS @FilePath @Text socketPath} \\
-  ${cacheName} $OUT_PATHS
+exec ${toS cachixBin :: Text} daemon push \\
+  --socket ${toS socketPath :: Text} \\
+  $OUT_PATHS
   |]

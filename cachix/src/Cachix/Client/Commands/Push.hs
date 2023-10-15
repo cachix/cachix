@@ -5,12 +5,12 @@ module Cachix.Client.Commands.Push
     withPushParams,
     withPushParams',
     handleCacheResponse,
-    findPushSecret,
+    getPushSecret,
+    getPushSecretRequired,
   )
 where
 
 import qualified Cachix.API as API
-import Cachix.API.Error
 import qualified Cachix.Client.Config as Config
 import Cachix.Client.Env (Env (..))
 import Cachix.Client.Exception (CachixException (..))
@@ -22,6 +22,7 @@ import Cachix.Client.Push
 import Cachix.Client.Retry (retryHttp)
 import Cachix.Client.Secrets
 import Cachix.Client.Servant
+import Cachix.Types.BinaryCache (BinaryCacheName)
 import qualified Cachix.Types.BinaryCache as BinaryCache
 import Control.Exception.Safe (throwM)
 import Control.Retry (RetryStatus (rsIterNumber))
@@ -95,17 +96,18 @@ pushStrategy store authToken opts name compressionMethod storePath =
         Conduit.yield chunk
         onTick chunk
 
-withPushParams :: Env -> PushOptions -> Text -> (PushParams IO () -> IO ()) -> IO ()
+withPushParams :: Env -> PushOptions -> BinaryCacheName -> (PushParams IO () -> IO ()) -> IO ()
 withPushParams env pushOpts name m = do
-  pushSecret <- findPushSecret (config env) name
-  authToken <- Config.getAuthTokenMaybe (config env)
-  withPushParams' env pushSecret authToken pushOpts name m
+  pushSecret <- getPushSecretRequired (config env) name
+  withPushParams' env pushOpts name pushSecret m
 
-withPushParams' env pushSecret authToken pushOpts name m = do
+withPushParams' :: Env -> PushOptions -> BinaryCacheName -> PushSecret -> (PushParams IO () -> IO ()) -> IO ()
+withPushParams' env pushOpts name pushSecret m = do
+  let authToken = getAuthTokenFromPushSecret pushSecret
+
   compressionMethodBackend <- case pushSecret of
     PushSigningKey {} -> pure Nothing
-    PushToken {} -> do
-      let token = fromMaybe (Token "") authToken
+    PushToken token -> do
       res <- retryHttp $ (`runClientM` clientenv env) $ API.getCache cachixClient token name
       case res of
         Left err -> handleCacheResponse name authToken err
@@ -152,27 +154,30 @@ accessDeniedBinaryCache name maybeBody =
     context Nothing = ""
     context (Just body) = " Error: " <> toS body
 
--- | Find auth token or signing key in the 'Config' or environment variable
-findPushSecret ::
+-- | Fetch the push credentials from the environment or config.
+getPushSecret ::
   Config.Config ->
   -- | Cache name
   Text ->
-  -- | Secret key or exception
-  IO PushSecret
-findPushSecret config name = do
-  maybeSigningKeyEnv <- toS <<$>> lookupEnv "CACHIX_SIGNING_KEY"
+  IO (Either Text PushSecret)
+getPushSecret config name = do
   maybeAuthToken <- Config.getAuthTokenMaybe config
+
+  maybeSigningKeyEnv <- toS <<$>> lookupEnv "CACHIX_SIGNING_KEY"
   let maybeSigningKeyConfig = Config.secretKey <$> head (getBinaryCache config)
+
   case maybeSigningKeyEnv <|> maybeSigningKeyConfig of
-    Just signingKey -> escalateAs FatalError $ PushSigningKey (fromMaybe (Token "") maybeAuthToken) <$> parseSigningKeyLenient signingKey
+    Just signingKey ->
+      return $ PushSigningKey (fromMaybe (Token "") maybeAuthToken) <$> parseSigningKeyLenient signingKey
     Nothing -> case maybeAuthToken of
-      Just authToken -> return $ PushToken authToken
-      Nothing -> throwIO $ NoSigningKey msg
+      Just authToken -> return $ Right $ PushToken authToken
+      Nothing -> return $ Left msg
   where
     -- we reverse list of caches to prioritize keys added as last
     getBinaryCache c =
       reverse $
         filter (\bc -> Config.name bc == name) (Config.binaryCaches c)
+
     msg :: Text
     msg =
       [iTrim|
@@ -183,6 +188,20 @@ and if missing also looked up from ~/.config/cachix/cachix.dhall
 
 Read https://mycache.cachix.org for instructions how to push to your binary cache.
     |]
+
+-- | Like 'getPushSecret', but throws a fatal error if the secret is not found.
+getPushSecretRequired ::
+  Config.Config ->
+  -- | Cache name
+  Text ->
+  -- | Secret key or exception
+  IO PushSecret
+getPushSecretRequired config name = do
+  epushSecret <- getPushSecret config name
+  case epushSecret of
+    -- TODO: technically, we're missing any credentials, not just the signing key
+    Left err -> throwIO $ NoSigningKey err
+    Right pushSecret -> return pushSecret
 
 -- | Put text to stderr without a new line.
 --

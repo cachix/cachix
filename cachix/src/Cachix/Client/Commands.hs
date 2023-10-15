@@ -41,6 +41,7 @@ import Cachix.Client.Secrets
   )
 import Cachix.Client.Servant
 import qualified Cachix.Client.WatchStore as WatchStore
+import Cachix.Types.BinaryCache (BinaryCacheName)
 import qualified Cachix.Types.PinCreate as PinCreate
 import qualified Cachix.Types.SigningKeyCreate as SigningKeyCreate
 import qualified Control.Concurrent.Async as Async
@@ -205,7 +206,7 @@ watchStore env opts name = do
   withPushParams env opts name $ \pushParams ->
     WatchStore.startWorkers (pushParamsStore pushParams) (numJobs opts) pushParams
 
-watchExec :: Env -> PushOptions -> Text -> Text -> [Text] -> IO ()
+watchExec :: Env -> PushOptions -> BinaryCacheName -> Text -> [Text] -> IO ()
 watchExec env pushOpts name cmd args = withPushParams env pushOpts name $ \pushParams -> do
   stdoutOriginal <- hDuplicate stdout
   let process =
@@ -239,11 +240,11 @@ watchExec env pushOpts name cmd args = withPushParams env pushOpts name $ \pushP
   where
     getProcessHandle (_, _, _, processHandle) = processHandle
 
-watchExecDaemon :: Env -> PushOptions -> Text -> Text -> [Text] -> IO ()
+watchExecDaemon :: Env -> PushOptions -> BinaryCacheName -> Text -> [Text] -> IO ()
 watchExecDaemon env pushOpts cacheName cmd args = do
-  Daemon.PostBuildHook.withSetup Nothing cacheName $ \daemonSock userConfEnv -> do
+  Daemon.PostBuildHook.withSetup Nothing $ \daemonSock userConfEnv -> do
     let daemonOptions = DaemonOptions {daemonSocketPath = Just daemonSock}
-    daemon <- Daemon.new env daemonOptions pushOpts
+    daemon <- Daemon.new env daemonOptions pushOpts cacheName
 
     daemonThread <- Async.async $ Daemon.run daemon
 

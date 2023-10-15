@@ -8,6 +8,7 @@ module Cachix.Client.Push
     uploadStorePath,
     PushParams (..),
     PushSecret (..),
+    getAuthTokenFromPushSecret,
     PushStrategy (..),
     defaultWithXzipCompressor,
     defaultWithXzipCompressorWithLevel,
@@ -62,9 +63,20 @@ import Servant.Conduit ()
 import qualified System.Nix.Base32
 import System.Nix.Nar
 
+-- | A secret for authenticating with a cache.
 data PushSecret
-  = PushToken Token
-  | PushSigningKey Token SigningKey
+  = -- | An auth token. Could be a personal, cache, or agent token.
+    PushToken Token
+  | -- | An auth token with a signing key for pushing to self-signed caches.
+    PushSigningKey Token SigningKey
+
+getAuthTokenFromPushSecret :: PushSecret -> Maybe Token
+getAuthTokenFromPushSecret = \case
+  PushToken token -> nullTokenToMaybe token
+  PushSigningKey token _ -> nullTokenToMaybe token
+  where
+    nullTokenToMaybe (Token "") = Nothing
+    nullTokenToMaybe (Token token) = Just $ Token token
 
 -- | Parameters for pushing a closure of store paths, to be passed to 'pushClosure'.
 -- This also contains the parameters for pushing a single path, in 'pushParamStrategy'.

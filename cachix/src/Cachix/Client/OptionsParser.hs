@@ -116,6 +116,7 @@ data DaemonCommand
   = DaemonPushPaths DaemonOptions BinaryCacheName [FilePath]
   | DaemonRun DaemonOptions PushOptions
   | DaemonStop DaemonOptions
+  | DaemonWatchExec PushOptions BinaryCacheName Text [Text]
   deriving (Show)
 
 data DaemonOptions = DaemonOptions
@@ -132,7 +133,7 @@ commandParser =
       <> command "generate-keypair" (infoH generateKeypair (progDesc "Generate signing key pair for a binary cache"))
       <> command "push" (infoH push (progDesc "Upload Nix store paths to a binary cache"))
       <> command "pin" (infoH pin (progDesc "Pin a store path to prevent it from being garbage collected"))
-      <> command "watch-exec" (infoH watchExec (progDesc "Run a command and upload any store paths accessed during its execution to a binary cache"))
+      <> command "watch-exec" (infoH watchExec (progDesc "Run a command and upload any store paths built during its execution to a binary cache"))
       <> command "watch-store" (infoH watchStore (progDesc "Indefinitely watch /nix/store for newly added store paths and upload them to a binary cache"))
       <> command "use" (infoH use (progDesc "Configure a binary cache by writing nix.conf and netrc files"))
       <> command "remove" (infoH remove (progDesc "Remove a binary cache from nix.conf"))
@@ -206,9 +207,11 @@ commandParser =
         command "push" (infoH daemonPush (progDesc "Push store paths to the daemon"))
           <> command "run" (infoH daemonRun (progDesc "Launch the daemon"))
           <> command "stop" (infoH daemonStop (progDesc "Stop the daemon and wait for any queued paths to be pushed"))
+          <> command "watch-exec" (infoH daemonWatchExec (progDesc "Run a command and upload any store paths built during its execution"))
     daemonPush = DaemonPushPaths <$> daemonOptions <*> nameArg <*> many (strArgument (metavar "PATHS..."))
     daemonRun = DaemonRun <$> daemonOptions <*> pushOptions
     daemonStop = DaemonStop <$> daemonOptions
+    daemonWatchExec = DaemonWatchExec <$> pushOptions <*> nameArg <*> strArgument (metavar "CMD") <*> many (strArgument (metavar "-- ARGS"))
     daemonOptions = DaemonOptions <$> optional (strOption (long "socket" <> short 's' <> metavar "SOCKET"))
     watchExec = WatchExec <$> pushOptions <*> nameArg <*> strArgument (metavar "CMD") <*> many (strArgument (metavar "-- ARGS"))
     watchStore = WatchStore <$> pushOptions <*> nameArg

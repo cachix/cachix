@@ -8,6 +8,7 @@ module Cachix.Client.Commands
     push,
     watchStore,
     watchExec,
+    watchExecDaemon,
     use,
     remove,
     pin,
@@ -60,6 +61,7 @@ import Servant.Conduit ()
 import System.Directory (doesFileExist)
 import System.Environment (getEnvironment)
 import System.IO (hIsTerminalDevice)
+import qualified System.Posix.Signals as Signals
 import qualified System.Process
 
 -- TODO: check that token actually authenticates!
@@ -204,7 +206,41 @@ watchStore env opts name = do
     WatchStore.startWorkers (pushParamsStore pushParams) (numJobs opts) pushParams
 
 watchExec :: Env -> PushOptions -> Text -> Text -> [Text] -> IO ()
-watchExec env pushOpts cacheName cmd args = do
+watchExec env pushOpts name cmd args = withPushParams env pushOpts name $ \pushParams -> do
+  stdoutOriginal <- hDuplicate stdout
+  let process =
+        (System.Process.proc (toS cmd) (toS <$> args))
+          { System.Process.std_out = System.Process.UseHandle stdoutOriginal
+          }
+      watch = do
+        hDuplicateTo stderr stdout -- redirect all stdout to stderr
+        WatchStore.startWorkers (pushParamsStore pushParams) (numJobs pushOpts) pushParams
+
+  (_, exitCode) <-
+    Async.concurrently watch $ do
+      exitCode <-
+        bracketOnError
+          (getProcessHandle <$> System.Process.createProcess process)
+          ( \processHandle -> do
+              -- Terminate the process
+              uninterruptibleMask_ (System.Process.terminateProcess processHandle)
+              -- Wait for the process to clean up and exit
+              _ <- System.Process.waitForProcess processHandle
+              -- Stop watching the store and wait for all paths to be pushed
+              Signals.raiseSignal Signals.sigINT
+          )
+          System.Process.waitForProcess
+
+      -- Stop watching the store and wait for all paths to be pushed
+      Signals.raiseSignal Signals.sigINT
+      return exitCode
+
+  exitWith exitCode
+  where
+    getProcessHandle (_, _, _, processHandle) = processHandle
+
+watchExecDaemon :: Env -> PushOptions -> Text -> Text -> [Text] -> IO ()
+watchExecDaemon env pushOpts cacheName cmd args = do
   Daemon.PostBuildHook.withSetup Nothing cacheName $ \daemonSock userConfEnv -> do
     let daemonOptions = DaemonOptions {daemonSocketPath = Just daemonSock}
     daemon <- Daemon.new env daemonOptions pushOpts

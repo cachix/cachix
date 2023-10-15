@@ -53,7 +53,7 @@ stopAndWait _env daemonOptions =
 withDaemonConn :: Maybe FilePath -> (Socket.Socket -> IO a) -> IO a
 withDaemonConn optionalSocketPath f = do
   socketPath <- maybe getSocketPath pure optionalSocketPath
-  bracket (open socketPath) Socket.close f
+  bracket (open socketPath) Socket.close f `onException` failedToConnectTo socketPath
   where
     open socketPath = do
       sock <- Socket.socket Socket.AF_UNIX Socket.Stream Socket.defaultProtocol
@@ -64,3 +64,8 @@ withDaemonConn optionalSocketPath f = do
         Posix.setFdOption (fromIntegral fd) Posix.NonBlockingRead False
 
       return sock
+
+    failedToConnectTo :: FilePath -> IO ()
+    failedToConnectTo socketPath = do
+      putErrText "Failed to connect to Cachix Daemon"
+      putErrText $ "Tried to connect to: " <> toS socketPath <> "\n"

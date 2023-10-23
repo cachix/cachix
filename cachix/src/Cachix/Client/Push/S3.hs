@@ -63,21 +63,22 @@ streamUpload ::
     ByteString
     Void
     m
-    (Either SomeException (UUID, Text, Maybe (NonEmpty Multipart.CompletedPart)))
+    (Either ClientError (UUID, Text, Maybe (NonEmpty Multipart.CompletedPart)))
 streamUpload env authToken cacheName compressionMethod = do
-  Multipart.CreateMultipartUploadResponse {narId, uploadId} <- createMultipartUpload
-
-  handleC (abortMultipartUpload narId uploadId) $
-    chunkStream (Just chunkSize)
-      .| concurrentMapM_ concurrentParts outputBufferSize (uploadPart narId uploadId)
-      .| completeMultipartUpload narId uploadId
+  createMultipartUpload >>= \case
+    Left err -> return $ Left err
+    Right (Multipart.CreateMultipartUploadResponse {narId, uploadId}) -> do
+      handleC (abortMultipartUpload narId uploadId) $
+        chunkStream (Just chunkSize)
+          .| concurrentMapM_ concurrentParts outputBufferSize (uploadPart narId uploadId)
+          .| completeMultipartUpload narId uploadId
   where
     manager = Client.manager env
 
-    createMultipartUpload :: ConduitT ByteString Void m Multipart.CreateMultipartUploadResponse
+    createMultipartUpload :: ConduitT ByteString Void m (Either ClientError Multipart.CreateMultipartUploadResponse)
     createMultipartUpload = do
       let createNarRequest = API.createNar cachixClient authToken cacheName (Just compressionMethod)
-      liftIO $ retryHttp $ withClientM createNarRequest env escalate
+      liftIO $ retryHttp $ runClientM createNarRequest env
 
     uploadPart :: UUID -> Text -> (Int, ByteString) -> m (Maybe Multipart.CompletedPart)
     uploadPart narId uploadId (partNumber, !part) = do

@@ -113,7 +113,7 @@ pollDeploymentStatus clientEnv token deploymentID = loop
   where
     loop = do
       deployment <-
-        Retry.retryAll . const $
+        Retry.retryHttp $
           escalate <=< (`runClientM` clientEnv) $
             API.V1.getDeployment deployClientV1 token deploymentID
 

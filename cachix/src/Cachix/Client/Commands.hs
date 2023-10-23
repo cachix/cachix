@@ -31,7 +31,7 @@ import Cachix.Client.OptionsParser
     PushOptions (..),
   )
 import Cachix.Client.Push
-import Cachix.Client.Retry (retryAll)
+import Cachix.Client.Retry (retryHttp)
 import Cachix.Client.Secrets
   ( SigningKey (SigningKey),
     exportSigningKey,
@@ -85,7 +85,7 @@ generateKeypair env name = do
       bcc = Config.BinaryCacheConfig name signingKey
   -- we first validate if key can be added to the binary cache
   (_ :: NoContent) <-
-    escalate <=< retryAll $ \_ ->
+    escalate <=< retryHttp $
       (`runClientM` clientenv env) $
         API.createKey cachixClient authToken name signingKeyCreate
   -- if key was successfully added, write it to the config
@@ -143,7 +143,7 @@ use env name useOptions = do
   optionalAuthToken <- Config.getAuthTokenMaybe (config env)
   let token = fromMaybe (Token "") optionalAuthToken
   -- 1. get cache public key
-  res <- retryAll $ \_ -> (`runClientM` clientenv env) $ API.getCache cachixClient token name
+  res <- retryHttp $ (`runClientM` clientenv env) $ API.getCache cachixClient token name
   case res of
     Left err -> handleCacheResponse name optionalAuthToken err
     Right binaryCache -> do
@@ -215,8 +215,10 @@ pin env pinOpts = do
             artifacts = pinArtifacts pinOpts,
             keep = pinKeep pinOpts
           }
-  void $ escalate <=< retryAll $ \_ ->
-    (`runClientM` clientenv env) $ API.createPin cachixClient authToken (pinCacheName pinOpts) pinCreate
+  void $
+    escalate <=< retryHttp $
+      (`runClientM` clientenv env) $
+        API.createPin cachixClient authToken (pinCacheName pinOpts) pinCreate
   where
     validateArtifact :: Text -> Text -> IO ()
     validateArtifact storePath artifact = do
@@ -324,7 +326,7 @@ withPushParams env pushOpts name m = do
     PushSigningKey {} -> pure Nothing
     PushToken {} -> do
       let token = fromMaybe (Token "") authToken
-      res <- retryAll $ \_ -> (`runClientM` clientenv env) $ API.getCache cachixClient token name
+      res <- retryHttp $ (`runClientM` clientenv env) $ API.getCache cachixClient token name
       case res of
         Left err -> handleCacheResponse name authToken err
         Right binaryCache -> pure (Just $ BinaryCache.preferredCompressionMethod binaryCache)

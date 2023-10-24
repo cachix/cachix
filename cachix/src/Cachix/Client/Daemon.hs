@@ -101,9 +101,9 @@ run daemon@Daemon {..} = do
         Immortal.wait worker
         putErrText "Worker finished."
 
-logWorkerException :: Either SomeException () -> IO ()
+logWorkerException :: (Exception e) => Either e () -> IO ()
 logWorkerException (Left err) =
-  putErrText $ "Exception in daemon worker thread: " <> show err
+  putErrText $ "Exception in daemon worker thread: " <> toS (displayException err)
 logWorkerException _ = return ()
 
 runWorker :: Daemon -> IO ()

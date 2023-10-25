@@ -251,8 +251,7 @@ watchExecDaemon env pushOpts cacheName cmd args = do
     processEnv <- getEnvironment
     let process =
           (System.Process.proc (toS cmd) (toS <$> args))
-            { -- { System.Process.std_out = System.Process.UseHandle stdout,
-              System.Process.std_out = System.Process.Inherit,
+            { System.Process.std_out = System.Process.Inherit,
               System.Process.env = Just (processEnv ++ [("NIX_USER_CONF_FILES", toS userConfEnv)])
             }
     exitCode <- System.Process.withCreateProcess process $ \_ _ _ processHandle ->

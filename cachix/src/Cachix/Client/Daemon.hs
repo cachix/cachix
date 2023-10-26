@@ -1,5 +1,3 @@
-{-# LANGUAGE QuasiQuotes #-}
-
 module Cachix.Client.Daemon
   ( Daemon,
     new,
@@ -28,7 +26,6 @@ import Control.Exception.Safe (catchAny)
 import qualified Control.Immortal as Immortal
 import Control.Monad.Catch (bracketOnError)
 import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
-import Data.String.Here (iTrim)
 import qualified Data.Text as T
 import qualified Katip
 import qualified Network.Socket as Socket
@@ -42,6 +39,7 @@ new daemonEnv daemonOptions daemonPushOptions daemonCacheName = do
   daemonSocketPath <- maybe getSocketPath pure (Options.daemonSocketPath daemonOptions)
   daemonQueue <- newTBMQueueIO 1000
   daemonShutdownLatch <- newShutdownLatch
+  daemonPid <- getProcessID
   daemonPushSecret <- Commands.Push.getPushSecretRequired (config daemonEnv) daemonCacheName
 
   daemonKLogEnv <- Katip.initLogEnv "Cachix Daemon" ""
@@ -72,7 +70,6 @@ run daemon@DaemonEnv {..} = runDaemon daemon $ do
     bracketOnError (Daemon.openSocket daemonSocketPath) Daemon.closeSocket $ \sock -> do
       liftIO $ Socket.listen sock Socket.maxListenQueue
 
-      putText =<< readyMessage daemonSocketPath daemonCacheName
       clientSock <- liftIO $ Daemon.listen daemonQueue sock
 
       Katip.logFM Katip.InfoS "Received stop request from client"
@@ -138,14 +135,3 @@ handleRequest pushOptions (QueuedPushRequest {..}) = do
           (mapConcurrentlyBounded (Options.numJobs pushOptions))
           pushParams
           (catMaybes normalized)
-
-readyMessage :: FilePath -> BinaryCacheName -> Daemon Text
-readyMessage socketPath cacheName = do
-  -- Get the PID of the process
-  pid <- liftIO getProcessID
-  return
-    [iTrim|
-Cachix Daemon is ready to push store paths to ${cacheName}
-PID: ${show pid :: Text}
-Listening on socket: ${toS socketPath :: Text}
-  |]

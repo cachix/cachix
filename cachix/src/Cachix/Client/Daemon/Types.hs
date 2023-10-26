@@ -15,6 +15,7 @@ import Control.Monad.IO.Unlift (MonadUnliftIO)
 import qualified Katip
 import qualified Network.Socket as Socket
 import Protolude hiding (bracketOnError)
+import System.Posix.Types (ProcessID)
 
 data DaemonEnv = DaemonEnv
   { -- | Cachix client env
@@ -36,7 +37,9 @@ data DaemonEnv = DaemonEnv
     -- | Logger env
     daemonKLogEnv :: Katip.LogEnv,
     -- | Shutdown latch
-    daemonShutdownLatch :: ShutdownLatch
+    daemonShutdownLatch :: ShutdownLatch,
+    -- | The PID of the daemon process
+    daemonPid :: ProcessID
   }
 
 newtype Daemon a = Daemon
@@ -81,7 +84,8 @@ showConfiguration = do
   pure $
     unlines
       [ "Cache: " <> toS daemonCacheName,
-        "Socket: " <> toS daemonSocketPath
+        "Socket: " <> toS daemonSocketPath,
+        "PID: " <> show daemonPid
       ]
 
 -- | A push request that has been queued for processing.

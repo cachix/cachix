@@ -22,118 +22,126 @@ import Cachix.Client.OptionsParser (DaemonOptions, PushOptions)
 import qualified Cachix.Client.OptionsParser as Options
 import Cachix.Client.Push
 import Cachix.Types.BinaryCache (BinaryCacheName)
-import Control.Concurrent.Extra (once)
 import Control.Concurrent.STM.TBMQueue
 import Control.Exception.Safe (catchAny)
 import qualified Control.Immortal as Immortal
+import Control.Monad.Catch (bracketOnError)
 import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
 import Data.String.Here (iTrim)
 import qualified Data.Text as T
+import qualified Katip
 import qualified Network.Socket as Socket
-import Protolude
+import Protolude hiding (bracketOnError)
 import System.Posix.Process (getProcessID)
 import qualified System.Posix.Signals as Signals
 
-data Daemon = Daemon
-  { -- | Cachix client env
-    daemonEnv :: Env,
-    -- | Push options, like compression settings
-    daemonPushOptions :: PushOptions,
-    -- | Path to the socket that the daemon listens on
-    daemonSocketPath :: FilePath,
-    -- | Queue of push requests to be processed by the worker thread
-    daemonQueue :: TBMQueue QueuedPushRequest,
-    -- | The binary cache to push to
-    daemonCacheName :: BinaryCacheName,
-    -- | The push secret for the binary cache
-    daemonPushSecret :: PushSecret
-  }
-
 -- | Configure a new daemon. Use 'run' to start it.
-new :: Env -> DaemonOptions -> PushOptions -> BinaryCacheName -> IO Daemon
+new :: Env -> DaemonOptions -> PushOptions -> BinaryCacheName -> IO DaemonEnv
 new daemonEnv daemonOptions daemonPushOptions daemonCacheName = do
   daemonSocketPath <- maybe getSocketPath pure (Options.daemonSocketPath daemonOptions)
   daemonQueue <- newTBMQueueIO 1000
+  daemonShutdownLatch <- newShutdownLatch
   daemonPushSecret <- Commands.Push.getPushSecretRequired (config daemonEnv) daemonCacheName
-  return $ Daemon {..}
+
+  daemonKLogEnv <- Katip.initLogEnv "Cachix Daemon" ""
+  let daemonKNamespace = mempty
+  let daemonKContext = mempty
+
+  return $ DaemonEnv {..}
 
 -- | Configure and run the daemon
 start :: Env -> DaemonOptions -> PushOptions -> BinaryCacheName -> IO ()
 start daemonEnv daemonOptions daemonPushOptions daemonCacheName = do
   daemon <- new daemonEnv daemonOptions daemonPushOptions daemonCacheName
-  run daemon `finally` putErrText "Daemon shut down."
+  run daemon
 
 -- | Run a daemon from a given configuration
-run :: Daemon -> IO ()
-run daemon@Daemon {..} = do
+run :: DaemonEnv -> IO ()
+run daemon@DaemonEnv {..} = runDaemon daemon $ do
   -- Ignore SIGPIPE errors
-  _ <- Signals.installHandler Signals.sigPIPE Signals.Ignore Nothing
+  _ <- liftIO $ Signals.installHandler Signals.sigPIPE Signals.Ignore Nothing
 
-  bracketOnError startWorker identity $ \shutdownWorker -> do
+  Katip.logFM Katip.InfoS "Starting Cachix Daemon"
+
+  config <- showConfiguration
+  Katip.logFM Katip.InfoS . Katip.ls $ unlines ["Configuration:", config]
+
+  bracketOnError startWorker shutdownWorker $ \worker -> do
     -- TODO: retry the connection on socket errors
-    bracketOnError (Daemon.openSocket daemonSocketPath) Socket.close $ \sock -> do
-      Socket.listen sock Socket.maxListenQueue
+    bracketOnError (Daemon.openSocket daemonSocketPath) Daemon.closeSocket $ \sock -> do
+      liftIO $ Socket.listen sock Socket.maxListenQueue
 
       putText =<< readyMessage daemonSocketPath daemonCacheName
-      clientSock <- Daemon.listen daemonQueue sock
+      clientSock <- liftIO $ Daemon.listen daemonQueue sock
+
+      Katip.logFM Katip.InfoS "Received stop request from client"
 
       -- Stop receiving new push requests
-      Socket.shutdown sock Socket.ShutdownReceive `catchAny` \_ -> return ()
+      liftIO $ Socket.shutdown sock Socket.ShutdownReceive `catchAny` \_ -> return ()
 
       -- Gracefully shutdown the worker before closing the socket
-      shutdownWorker
+      shutdownWorker worker
 
       -- Wave goodbye to the client
-      Daemon.serverBye clientSock
+      liftIO $ Daemon.serverBye clientSock
 
-      Socket.shutdown clientSock Socket.ShutdownBoth `catchAny` \_ -> return ()
+      liftIO $ Socket.shutdown clientSock Socket.ShutdownBoth `catchAny` \_ -> return ()
   where
     startWorker = do
-      worker <- Immortal.create $ \thread ->
-        Immortal.onUnexpectedFinish thread logWorkerException $
-          runWorker daemon
+      Immortal.create $ \thread ->
+        Immortal.onUnexpectedFinish thread logWorkerException runWorker
 
-      once $ do
-        putErrText "Shutting down daemon..."
-        atomically $ closeTBMQueue daemonQueue
-        Immortal.mortalize worker
-        putErrText "Waiting for worker to finish..."
-        Immortal.wait worker
-        putErrText "Worker finished."
+    shutdownWorker :: Immortal.Thread -> Daemon ()
+    shutdownWorker worker = do
+      alreadyShuttingDown <- isShuttingDown daemonShutdownLatch
 
-logWorkerException :: (Exception e) => Either e () -> IO ()
+      unless alreadyShuttingDown $ do
+        initiateShutdown daemonShutdownLatch
+        Katip.logFM Katip.InfoS "Shutting down daemon..."
+        liftIO $ atomically $ closeTBMQueue daemonQueue
+        liftIO $ Immortal.mortalize worker
+        Katip.logFM Katip.InfoS "Waiting for worker to finish..."
+        liftIO $ Immortal.wait worker
+        Katip.logFM Katip.InfoS "Worker finished."
+
+logWorkerException :: (Exception e) => Either e () -> Daemon ()
 logWorkerException (Left err) =
-  putErrText $ "Exception in daemon worker thread: " <> toS (displayException err)
+  Katip.logFM Katip.ErrorS $ Katip.ls $ "Exception in daemon worker thread: " <> (toS $ displayException err :: Text)
 logWorkerException _ = return ()
 
-runWorker :: Daemon -> IO ()
-runWorker daemon@Daemon {..} = loop
+runWorker :: Daemon ()
+runWorker = loop
   where
-    loop =
-      atomically (readTBMQueue daemonQueue) >>= \case
+    loop = do
+      DaemonEnv {..} <- ask
+      mres <- liftIO $ atomically (readTBMQueue daemonQueue)
+      case mres of
         Nothing -> return ()
         Just msg -> do
-          handleRequest daemon daemonPushOptions msg
+          handleRequest daemonPushOptions msg
           loop
 
-handleRequest :: Daemon -> PushOptions -> QueuedPushRequest -> IO ()
-handleRequest Daemon {..} pushOptions (QueuedPushRequest {..}) =
-  Commands.Push.withPushParams' daemonEnv pushOptions daemonCacheName daemonPushSecret $ \pushParams -> do
-    normalized <-
-      for (storePaths pushRequest) $ \fp -> runMaybeT $ do
-        storePath <- MaybeT $ followLinksToStorePath (pushParamsStore pushParams) (encodeUtf8 $ T.pack fp)
-        MaybeT $ filterInvalidStorePath (pushParamsStore pushParams) storePath
+handleRequest :: PushOptions -> QueuedPushRequest -> Daemon ()
+handleRequest pushOptions (QueuedPushRequest {..}) = do
+  DaemonEnv {..} <- ask
 
-    void $
-      pushClosure
-        (mapConcurrentlyBounded (Options.numJobs pushOptions))
-        pushParams
-        (catMaybes normalized)
+  liftIO $
+    Commands.Push.withPushParams' daemonEnv pushOptions daemonCacheName daemonPushSecret $ \pushParams -> do
+      normalized <-
+        for (storePaths pushRequest) $ \fp -> runMaybeT $ do
+          storePath <- MaybeT $ followLinksToStorePath (pushParamsStore pushParams) (encodeUtf8 $ T.pack fp)
+          MaybeT $ filterInvalidStorePath (pushParamsStore pushParams) storePath
 
-readyMessage :: FilePath -> BinaryCacheName -> IO Text
+      void $
+        pushClosure
+          (mapConcurrentlyBounded (Options.numJobs pushOptions))
+          pushParams
+          (catMaybes normalized)
+
+readyMessage :: FilePath -> BinaryCacheName -> Daemon Text
 readyMessage socketPath cacheName = do
   -- Get the PID of the process
-  pid <- getProcessID
+  pid <- liftIO getProcessID
   return
     [iTrim|
 Cachix Daemon is ready to push store paths to ${cacheName}

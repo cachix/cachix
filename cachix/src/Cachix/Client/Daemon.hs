@@ -16,6 +16,7 @@ import qualified Cachix.Client.Commands.Push as Commands.Push
 import Cachix.Client.Config.Orphans ()
 import Cachix.Client.Daemon.Client (push, stop, stopAndWait)
 import Cachix.Client.Daemon.Listen as Daemon
+import Cachix.Client.Daemon.Protocol as Protocol
 import Cachix.Client.Daemon.Types as Types
 import Cachix.Client.Env as Env
 import Cachix.Client.OptionsParser (DaemonOptions, PushOptions)
@@ -128,7 +129,7 @@ handleRequest pushOptions (QueuedPushRequest {..}) = do
   liftIO $
     Commands.Push.withPushParams' daemonEnv pushOptions daemonCacheName daemonPushSecret $ \pushParams -> do
       normalized <-
-        for (storePaths pushRequest) $ \fp -> runMaybeT $ do
+        for (Protocol.storePaths pushRequest) $ \fp -> runMaybeT $ do
           storePath <- MaybeT $ followLinksToStorePath (pushParamsStore pushParams) (encodeUtf8 $ T.pack fp)
           MaybeT $ filterInvalidStorePath (pushParamsStore pushParams) storePath
 

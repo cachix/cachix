@@ -8,6 +8,7 @@ module Cachix.Client.Daemon.Listen
 where
 
 import Cachix.Client.Config.Orphans ()
+import Cachix.Client.Daemon.Protocol
 import Cachix.Client.Daemon.Types
 import Control.Concurrent.STM.TBMQueue
 import Control.Exception.Safe (catchAny)

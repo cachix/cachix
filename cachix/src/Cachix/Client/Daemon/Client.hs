@@ -1,7 +1,7 @@
 module Cachix.Client.Daemon.Client (push, stop, stopAndWait) where
 
 import Cachix.Client.Daemon.Listen (getSocketPath)
-import Cachix.Client.Daemon.Types (ClientMessage (..), DaemonMessage (..), PushRequest (..))
+import Cachix.Client.Daemon.Protocol as Protocol
 import Cachix.Client.Env as Env
 import Cachix.Client.OptionsParser (DaemonOptions (..))
 import qualified Control.Concurrent.Async as Async
@@ -24,20 +24,20 @@ push _env daemonOptions storePaths =
     Socket.gracefulClose sock 5000
   where
     pushRequest =
-      ClientPushRequest $
+      Protocol.ClientPushRequest $
         PushRequest {storePaths = storePaths}
 
 -- | Tell the daemon to stop and wait for it to gracefully exit
 stop :: Env -> DaemonOptions -> IO ()
 stop _env daemonOptions =
   withDaemonConn (daemonSocketPath daemonOptions) $ \sock -> do
-    Socket.LBS.sendAll sock (Aeson.encode ClientStop)
+    Socket.LBS.sendAll sock (Aeson.encode Protocol.ClientStop)
 
 stopAndWait :: Env -> DaemonOptions -> IO ()
 stopAndWait _env daemonOptions =
   withDaemonConn (daemonSocketPath daemonOptions) $ \sock -> do
     Async.concurrently_ (waitForResponse sock) $
-      Socket.LBS.sendAll sock (Aeson.encode ClientStop)
+      Socket.LBS.sendAll sock (Aeson.encode Protocol.ClientStop)
   where
     waitForResponse sock = do
       -- Wait for the socket to close

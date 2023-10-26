@@ -3,6 +3,7 @@
 module Cachix.Client.Daemon.Types where
 
 import Cachix.Client.Config.Orphans ()
+import qualified Cachix.Client.Daemon.Protocol as Protocol
 import Cachix.Client.Env as Env
 import Cachix.Client.OptionsParser (PushOptions)
 import Cachix.Client.Push
@@ -83,28 +84,10 @@ showConfiguration = do
         "Socket: " <> toS daemonSocketPath
       ]
 
--- | JSON messages that the client can send to the daemon
-data ClientMessage
-  = ClientPushRequest PushRequest
-  | ClientStop
-  deriving stock (Generic)
-  deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)
-
-data DaemonMessage
-  = DaemonBye
-  deriving stock (Generic)
-  deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)
-
--- | A request for the daemon to push store paths to a binary cache
-data PushRequest = PushRequest
-  { storePaths :: [FilePath]
-  }
-  deriving stock (Generic)
-  deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)
-
+-- | A push request that has been queued for processing.
 data QueuedPushRequest = QueuedPushRequest
   { -- | The original push request
-    pushRequest :: PushRequest,
+    pushRequest :: Protocol.PushRequest,
     -- | An open socket to the client that sent the push request.
     clientConnection :: Socket.Socket
   }

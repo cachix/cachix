@@ -23,9 +23,10 @@ main = displayConsoleRegions $ do
   case command of
     AuthToken token -> Commands.authtoken env token
     Config configCommand -> Config.run cachixOptions configCommand
-    Daemon (DaemonRun daemonOptions pushOptions) -> Daemon.run env daemonOptions pushOptions
-    Daemon (DaemonStop daemonOptions) -> Daemon.stop env daemonOptions
-    Daemon (DaemonPushPaths daemonOptions cacheName storePaths) -> Daemon.push env daemonOptions cacheName storePaths
+    Daemon (DaemonRun daemonOptions pushOptions mcacheName) -> Daemon.start env daemonOptions pushOptions mcacheName
+    Daemon (DaemonStop daemonOptions) -> Daemon.stopAndWait env daemonOptions
+    Daemon (DaemonPushPaths daemonOptions storePaths) -> Daemon.push env daemonOptions storePaths
+    Daemon (DaemonWatchExec pushOptions cacheName cmd args) -> Commands.watchExecDaemon env pushOptions cacheName cmd args
     GenerateKeypair name -> Commands.generateKeypair env name
     Push pushArgs -> Commands.push env pushArgs
     Pin pingArgs -> Commands.pin env pingArgs

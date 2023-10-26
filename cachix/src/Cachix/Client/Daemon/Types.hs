@@ -1,11 +1,9 @@
 module Cachix.Client.Daemon.Types where
 
 import Cachix.Client.Config.Orphans ()
-import Cachix.Client.URI
 import qualified Data.Aeson as Aeson
 import qualified Network.Socket as Socket
 import Protolude
-import Servant.Auth.Client (Token)
 
 -- | JSON messages that the client can send to the daemon
 data ClientMessage
@@ -14,12 +12,14 @@ data ClientMessage
   deriving stock (Generic)
   deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)
 
+data DaemonMessage
+  = DaemonBye
+  deriving stock (Generic)
+  deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)
+
 -- | A request for the daemon to push store paths to a binary cache
 data PushRequest = PushRequest
-  { authToken :: Token,
-    binaryCacheName :: Text,
-    host :: URI, -- TODO: host is not currently supported
-    storePaths :: [FilePath]
+  { storePaths :: [FilePath]
   }
   deriving stock (Generic)
   deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)

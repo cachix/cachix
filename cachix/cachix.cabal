@@ -64,11 +64,13 @@ library
     Cachix.Client
     Cachix.Client.CNix
     Cachix.Client.Commands
+    Cachix.Client.Commands.Push
     Cachix.Client.Config
     Cachix.Client.Config.Orphans
     Cachix.Client.Daemon
     Cachix.Client.Daemon.Client
     Cachix.Client.Daemon.Listen
+    Cachix.Client.Daemon.PostBuildHook
     Cachix.Client.Daemon.Types
     Cachix.Client.Env
     Cachix.Client.Exception

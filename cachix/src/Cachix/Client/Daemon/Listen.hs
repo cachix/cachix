@@ -1,5 +1,6 @@
 module Cachix.Client.Daemon.Listen
   ( listen,
+    serverBye,
     getSocketPath,
     openSocket,
   )
@@ -8,10 +9,12 @@ where
 import Cachix.Client.Config.Orphans ()
 import Cachix.Client.Daemon.Types
 import Control.Concurrent.STM.TBMQueue
+import Control.Exception.Safe (catchAny)
 import qualified Control.Exception.Safe as Safe
 import qualified Data.Aeson as Aeson
 import qualified Network.Socket as Socket
 import qualified Network.Socket.ByteString as Socket.BS
+import qualified Network.Socket.ByteString.Lazy as Socket.LBS
 import Protolude
 import System.Directory
   ( XdgDirectory (..),
@@ -50,10 +53,14 @@ listen queue sock = loop
           let queuedRequest = QueuedPushRequest pushRequest clientConn
           atomically $ writeTBMQueue queue queuedRequest
           loop
-        Left (DecodingError err) -> do
-          putErrText $ "Failed to decode request: " <> err
+        Left err@(DecodingError _) -> do
+          putErrText $ toS $ displayException err
           loop
         Left err -> throwIO err
+
+serverBye :: Socket.Socket -> IO ()
+serverBye sock =
+  Socket.LBS.sendAll sock (Aeson.encode DaemonBye) `catchAny` (\_ -> return ())
 
 -- | Try to read and decode a push request.
 readPushRequest :: Socket.Socket -> ExceptT ListenError IO (ClientMessage, Socket.Socket)

@@ -50,8 +50,6 @@ new daemonEnv daemonOptions daemonPushOptions daemonCacheName = do
   let daemonKNamespace = mempty
   let daemonKContext = mempty
 
-  let daemonWorkers = mempty
-
   return $ DaemonEnv {..}
 
 -- | Configure and run the daemon
@@ -71,8 +69,10 @@ run daemon@DaemonEnv {..} = runDaemon daemon $ do
   config <- showConfiguration
   Katip.logFM Katip.InfoS . Katip.ls $ unlines ["Configuration:", config]
 
+  let numWorkers = Options.numJobs daemonPushOptions
+
   Push.withPushParams daemonEnv daemonPushOptions daemonBinaryCache daemonPushSecret $ \pushParams ->
-    bracketOnError (Worker.startWorkers 5 (handleRequest pushParams)) Worker.stopWorkers $ \workers -> do
+    bracketOnError (Worker.startWorkers numWorkers (handleRequest pushParams)) Worker.stopWorkers $ \workers -> do
       -- TODO: retry the connection on socket errors
       bracketOnError (Daemon.openSocket daemonSocketPath) Daemon.closeSocket $ \sock -> do
         liftIO $ Socket.listen sock Socket.maxListenQueue
@@ -92,6 +92,7 @@ run daemon@DaemonEnv {..} = runDaemon daemon $ do
 
         liftIO $ Socket.shutdown clientSock Socket.ShutdownBoth `catchAny` \_ -> return ()
 
+-- TODO: split into two jobs: 1. query/normalize/filter 2. push store path
 handleRequest :: PushParams Daemon a -> QueuedPushRequest -> Daemon ()
 handleRequest pushParams (QueuedPushRequest {..}) = do
   let store = pushParamsStore pushParams

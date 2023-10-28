@@ -4,11 +4,11 @@ module Cachix.Client.Daemon.Types where
 
 import Cachix.Client.Config.Orphans ()
 import qualified Cachix.Client.Daemon.Protocol as Protocol
+import Cachix.Client.Daemon.ShutdownLatch (ShutdownLatch)
 import Cachix.Client.Env as Env
 import Cachix.Client.OptionsParser (PushOptions)
 import Cachix.Client.Push
-import Cachix.Types.BinaryCache (BinaryCacheName)
-import Control.Concurrent.MVar
+import Cachix.Types.BinaryCache (BinaryCache, BinaryCacheName)
 import Control.Concurrent.STM.TBMQueue
 import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
 import Control.Monad.IO.Unlift (MonadUnliftIO)
@@ -26,10 +26,12 @@ data DaemonEnv = DaemonEnv
     daemonSocketPath :: FilePath,
     -- | Queue of push requests to be processed by the worker thread
     daemonQueue :: TBMQueue QueuedPushRequest,
-    -- | The binary cache to push to
-    daemonCacheName :: BinaryCacheName,
     -- | The push secret for the binary cache
     daemonPushSecret :: PushSecret,
+    -- | The name of the binary cache to push to
+    daemonCacheName :: BinaryCacheName,
+    -- | The binary cache to push to
+    daemonBinaryCache :: BinaryCache,
     -- | Logger namespace
     daemonKNamespace :: Katip.Namespace,
     -- | Logger context
@@ -78,16 +80,6 @@ runDaemon env f = do
   bracket registerScribe Katip.closeScribes $ \logEnv -> do
     unDaemon f `runReaderT` env {daemonKLogEnv = logEnv}
 
-showConfiguration :: Daemon Text
-showConfiguration = do
-  DaemonEnv {..} <- ask
-  pure $
-    unlines
-      [ "Cache: " <> toS daemonCacheName,
-        "Socket: " <> toS daemonSocketPath,
-        "PID: " <> show daemonPid
-      ]
-
 -- | A push request that has been queued for processing.
 data QueuedPushRequest = QueuedPushRequest
   { -- | The original push request
@@ -95,18 +87,3 @@ data QueuedPushRequest = QueuedPushRequest
     -- | An open socket to the client that sent the push request.
     clientConnection :: Socket.Socket
   }
-
--- | A latch to keep track of the shutdown process.
-newtype ShutdownLatch = ShutdownLatch {unShutdownLatch :: MVar ()}
-
-newShutdownLatch :: (MonadIO m) => m ShutdownLatch
-newShutdownLatch = ShutdownLatch <$> liftIO newEmptyMVar
-
-waitForShutdown :: (MonadIO m) => ShutdownLatch -> m ()
-waitForShutdown = liftIO . readMVar . unShutdownLatch
-
-initiateShutdown :: (MonadIO m) => ShutdownLatch -> m ()
-initiateShutdown = void . liftIO . flip tryPutMVar () . unShutdownLatch
-
-isShuttingDown :: (MonadIO m) => ShutdownLatch -> m Bool
-isShuttingDown = liftIO . fmap not . isEmptyMVar . unShutdownLatch

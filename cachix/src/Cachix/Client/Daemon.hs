@@ -9,24 +9,25 @@ module Cachix.Client.Daemon
   )
 where
 
-import Cachix.Client.CNix (filterInvalidStorePath, followLinksToStorePath)
 import qualified Cachix.Client.Commands.Push as Commands.Push
 import Cachix.Client.Config.Orphans ()
 import Cachix.Client.Daemon.Client (push, stop, stopAndWait)
 import Cachix.Client.Daemon.Listen as Daemon
 import Cachix.Client.Daemon.Protocol as Protocol
+import Cachix.Client.Daemon.Push as Push
+import Cachix.Client.Daemon.ShutdownLatch
 import Cachix.Client.Daemon.Types as Types
 import Cachix.Client.Env as Env
 import Cachix.Client.OptionsParser (DaemonOptions, PushOptions)
 import qualified Cachix.Client.OptionsParser as Options
 import Cachix.Client.Push
+import Cachix.Client.Retry (retryAll)
 import Cachix.Types.BinaryCache (BinaryCacheName)
+import qualified Cachix.Types.BinaryCache as BinaryCache
 import Control.Concurrent.STM.TBMQueue
 import Control.Exception.Safe (catchAny)
 import qualified Control.Immortal as Immortal
 import Control.Monad.Catch (bracketOnError)
-import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
-import qualified Data.Text as T
 import qualified Katip
 import qualified Network.Socket as Socket
 import Protolude hiding (bracketOnError)
@@ -42,7 +43,10 @@ new daemonEnv daemonOptions daemonPushOptions daemonCacheName = do
   daemonPid <- getProcessID
   daemonPushSecret <- Commands.Push.getPushSecretRequired (config daemonEnv) daemonCacheName
 
-  daemonKLogEnv <- Katip.initLogEnv "Cachix Daemon" ""
+  let authToken = getAuthTokenFromPushSecret daemonPushSecret
+  daemonBinaryCache <- Push.getBinaryCache daemonEnv authToken daemonCacheName
+
+  daemonKLogEnv <- Katip.initLogEnv "cachix.daemon" ""
   let daemonKNamespace = mempty
   let daemonKContext = mempty
 
@@ -87,7 +91,9 @@ run daemon@DaemonEnv {..} = runDaemon daemon $ do
   where
     startWorker = do
       Immortal.create $ \thread ->
-        Immortal.onUnexpectedFinish thread logWorkerException runWorker
+        Katip.katipAddNamespace "worker" $
+          Push.withPushParams daemonEnv daemonPushOptions daemonCacheName daemonPushSecret $ \pushParams ->
+            Immortal.onUnexpectedFinish thread logWorkerException (runWorker pushParams)
 
     shutdownWorker :: Immortal.Thread -> Daemon ()
     shutdownWorker worker = do
@@ -104,11 +110,11 @@ run daemon@DaemonEnv {..} = runDaemon daemon $ do
 
 logWorkerException :: (Exception e) => Either e () -> Daemon ()
 logWorkerException (Left err) =
-  Katip.logFM Katip.ErrorS $ Katip.ls $ "Exception in daemon worker thread: " <> (toS $ displayException err :: Text)
+  Katip.logFM Katip.ErrorS $ Katip.ls (toS $ displayException err :: Text)
 logWorkerException _ = return ()
 
-runWorker :: Daemon ()
-runWorker = loop
+runWorker :: PushParams Daemon () -> Daemon ()
+runWorker pushParams = loop
   where
     loop = do
       DaemonEnv {..} <- ask
@@ -116,22 +122,32 @@ runWorker = loop
       case mres of
         Nothing -> return ()
         Just msg -> do
-          handleRequest daemonPushOptions msg
+          handleRequest pushParams msg
           loop
 
-handleRequest :: PushOptions -> QueuedPushRequest -> Daemon ()
-handleRequest pushOptions (QueuedPushRequest {..}) = do
+handleRequest :: PushParams Daemon () -> QueuedPushRequest -> Daemon ()
+handleRequest pushParams (QueuedPushRequest {..}) = do
+  let store = pushParamsStore pushParams
+  normalized <- mapM (Push.normalizeStorePath store) (Protocol.storePaths pushRequest)
+
+  (allPaths, missingPaths) <- getMissingPathsForClosure pushParams (catMaybes normalized)
+
+  paths <- pushOnClosureAttempt pushParams allPaths missingPaths
+
+  for_ paths $ \storePath ->
+    retryAll $ uploadStorePath pushParams storePath
+
+-- | Print debug information about the daemon configuration
+showConfiguration :: Daemon Text
+showConfiguration = do
   DaemonEnv {..} <- ask
-
-  liftIO $
-    Commands.Push.withPushParams' daemonEnv pushOptions daemonCacheName daemonPushSecret $ \pushParams -> do
-      normalized <-
-        for (Protocol.storePaths pushRequest) $ \fp -> runMaybeT $ do
-          storePath <- MaybeT $ followLinksToStorePath (pushParamsStore pushParams) (encodeUtf8 $ T.pack fp)
-          MaybeT $ filterInvalidStorePath (pushParamsStore pushParams) storePath
-
-      void $
-        pushClosure
-          (mapConcurrentlyBounded (Options.numJobs pushOptions))
-          pushParams
-          (catMaybes normalized)
+  pure $
+    unlines
+      [ "PID: " <> show daemonPid,
+        "Socket: " <> toS daemonSocketPath,
+        "Cache name: " <> toS daemonCacheName,
+        "Cache URI: " <> BinaryCache.uri daemonBinaryCache,
+        "Cache public keys: " <> show (BinaryCache.publicSigningKeys daemonBinaryCache),
+        "Cache is public: " <> show (BinaryCache.isPublic daemonBinaryCache),
+        "Compression: " <> show (Push.getCompressionMethod daemonPushOptions daemonBinaryCache)
+      ]

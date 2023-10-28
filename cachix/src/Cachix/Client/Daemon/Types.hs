@@ -9,6 +9,7 @@ import Cachix.Client.Env as Env
 import Cachix.Client.OptionsParser (PushOptions)
 import Cachix.Client.Push
 import Cachix.Types.BinaryCache (BinaryCache, BinaryCacheName)
+import qualified Control.Concurrent.QSem as QSem
 import Control.Concurrent.STM.TBMQueue
 import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
 import Control.Monad.IO.Unlift (MonadUnliftIO)
@@ -40,6 +41,8 @@ data DaemonEnv = DaemonEnv
     daemonKLogEnv :: Katip.LogEnv,
     -- | Shutdown latch
     daemonShutdownLatch :: ShutdownLatch,
+    -- | A semaphore to limit the number of concurrent pushes
+    daemonPushSemaphore :: QSem.QSem,
     -- | The PID of the daemon process
     daemonPid :: ProcessID
   }
@@ -82,7 +85,7 @@ runDaemon env f = do
 
 -- | A push request that has been queued for processing.
 data QueuedPushRequest = QueuedPushRequest
-  { -- | The original push request
+  { -- | The original push request.
     pushRequest :: Protocol.PushRequest,
     -- | An open socket to the client that sent the push request.
     clientConnection :: Socket.Socket

@@ -27,12 +27,14 @@ import Cachix.Types.BinaryCache (BinaryCacheName)
 import qualified Cachix.Types.BinaryCache as BinaryCache
 import Control.Concurrent.STM.TBMQueue
 import Control.Exception.Safe (catchAny)
-import Control.Monad.Catch (bracketOnError)
+import Control.Monad.Catch (bracketOnError, bracket_)
 import qualified Katip
 import qualified Network.Socket as Socket
-import Protolude hiding (bracketOnError)
+import Protolude hiding (bracketOnError, bracket_)
 import System.Posix.Process (getProcessID)
 import qualified System.Posix.Signals as Signals
+import qualified UnliftIO.Async as Async
+import qualified UnliftIO.QSem as QSem
 
 -- | Configure a new daemon. Use 'run' to start it.
 new :: Env -> DaemonOptions -> PushOptions -> BinaryCacheName -> IO DaemonEnv
@@ -40,6 +42,7 @@ new daemonEnv daemonOptions daemonPushOptions daemonCacheName = do
   daemonSocketPath <- maybe getSocketPath pure (Options.daemonSocketPath daemonOptions)
   daemonQueue <- newTBMQueueIO 1000
   daemonShutdownLatch <- newShutdownLatch
+  daemonPushSemaphore <- QSem.newQSem (Options.numJobs daemonPushOptions)
   daemonPid <- getProcessID
   daemonPushSecret <- Commands.Push.getPushSecretRequired (config daemonEnv) daemonCacheName
 
@@ -102,8 +105,13 @@ handleRequest pushParams (QueuedPushRequest {..}) = do
 
   paths <- pushOnClosureAttempt pushParams allPaths missingPaths
 
-  for_ paths $ \storePath ->
-    retryAll $ uploadStorePath pushParams storePath
+  qs <- asks daemonPushSemaphore
+  let upload storePath =
+        bracket_ (QSem.waitQSem qs) (QSem.signalQSem qs) $
+          retryAll $
+            uploadStorePath pushParams storePath
+
+  Async.mapConcurrently_ upload paths
 
 -- | Print debug information about the daemon configuration
 showConfiguration :: Daemon Text

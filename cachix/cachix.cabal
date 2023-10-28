@@ -169,6 +169,7 @@ library
     , time
     , transformers
     , unix
+    , unliftio
     , unliftio-core
     , unordered-containers
     , uri-bytestring

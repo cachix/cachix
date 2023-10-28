@@ -63,9 +63,9 @@ pushStrategy store authToken opts name compressionMethod storePath = do
         sp <- liftIO $ storePathToPath store storePath
         Katip.logFM Katip.InfoS $ Katip.ls $ "Pushing " <> (toS sp :: Text),
       onUncompressedNARStream = \_ _ -> C.awaitForever C.yield,
-      onDone = liftIO $ do
-        sp <- storePathToPath store storePath
-        putLText $ "Pushed " <> toS sp,
+      onDone = do
+        sp <- liftIO $ storePathToPath store storePath
+        Katip.logFM Katip.InfoS $ Katip.ls $ "Pushed " <> (toS sp :: Text),
       Client.Push.compressionMethod = compressionMethod,
       Client.Push.compressionLevel = Client.OptionsParser.compressionLevel opts,
       Client.Push.omitDeriver = Client.OptionsParser.omitDeriver opts

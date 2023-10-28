@@ -9,7 +9,9 @@ import Cachix.Client.Env as Env
 import Cachix.Client.OptionsParser (PushOptions)
 import Cachix.Client.Push
 import Cachix.Types.BinaryCache (BinaryCache, BinaryCacheName)
+import Control.Concurrent (ThreadId)
 import Control.Concurrent.STM.TBMQueue
+import qualified Control.Immortal as Immortal
 import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
 import Control.Monad.IO.Unlift (MonadUnliftIO)
 import qualified Katip
@@ -41,7 +43,9 @@ data DaemonEnv = DaemonEnv
     -- | Shutdown latch
     daemonShutdownLatch :: ShutdownLatch,
     -- | The PID of the daemon process
-    daemonPid :: ProcessID
+    daemonPid :: ProcessID,
+    -- | Worker threads
+    daemonWorkers :: Map ThreadId Immortal.Thread
   }
 
 newtype Daemon a = Daemon

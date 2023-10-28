@@ -17,6 +17,7 @@ import Cachix.Client.Daemon.Protocol as Protocol
 import Cachix.Client.Daemon.Push as Push
 import Cachix.Client.Daemon.ShutdownLatch
 import Cachix.Client.Daemon.Types as Types
+import Cachix.Client.Daemon.Worker as Worker
 import Cachix.Client.Env as Env
 import Cachix.Client.OptionsParser (DaemonOptions, PushOptions)
 import qualified Cachix.Client.OptionsParser as Options
@@ -26,7 +27,6 @@ import Cachix.Types.BinaryCache (BinaryCacheName)
 import qualified Cachix.Types.BinaryCache as BinaryCache
 import Control.Concurrent.STM.TBMQueue
 import Control.Exception.Safe (catchAny)
-import qualified Control.Immortal as Immortal
 import Control.Monad.Catch (bracketOnError)
 import qualified Katip
 import qualified Network.Socket as Socket
@@ -50,6 +50,8 @@ new daemonEnv daemonOptions daemonPushOptions daemonCacheName = do
   let daemonKNamespace = mempty
   let daemonKContext = mempty
 
+  let daemonWorkers = mempty
+
   return $ DaemonEnv {..}
 
 -- | Configure and run the daemon
@@ -69,63 +71,28 @@ run daemon@DaemonEnv {..} = runDaemon daemon $ do
   config <- showConfiguration
   Katip.logFM Katip.InfoS . Katip.ls $ unlines ["Configuration:", config]
 
-  bracketOnError startWorker shutdownWorker $ \worker -> do
-    -- TODO: retry the connection on socket errors
-    bracketOnError (Daemon.openSocket daemonSocketPath) Daemon.closeSocket $ \sock -> do
-      liftIO $ Socket.listen sock Socket.maxListenQueue
+  Push.withPushParams daemonEnv daemonPushOptions daemonBinaryCache daemonPushSecret $ \pushParams ->
+    bracketOnError (Worker.startWorkers 5 (handleRequest pushParams)) Worker.stopWorkers $ \workers -> do
+      -- TODO: retry the connection on socket errors
+      bracketOnError (Daemon.openSocket daemonSocketPath) Daemon.closeSocket $ \sock -> do
+        liftIO $ Socket.listen sock Socket.maxListenQueue
 
-      clientSock <- liftIO $ Daemon.listen daemonQueue sock
+        clientSock <- liftIO $ Daemon.listen daemonQueue sock
 
-      Katip.logFM Katip.InfoS "Received stop request from client"
+        Katip.logFM Katip.InfoS "Received stop request from client"
 
-      -- Stop receiving new push requests
-      liftIO $ Socket.shutdown sock Socket.ShutdownReceive `catchAny` \_ -> return ()
+        -- Stop receiving new push requests
+        liftIO $ Socket.shutdown sock Socket.ShutdownReceive `catchAny` \_ -> return ()
 
-      -- Gracefully shutdown the worker before closing the socket
-      shutdownWorker worker
+        -- Gracefully shutdown the worker before closing the socket
+        Worker.stopWorkers workers
 
-      -- Wave goodbye to the client
-      liftIO $ Daemon.serverBye clientSock
+        -- Wave goodbye to the client
+        liftIO $ Daemon.serverBye clientSock
 
-      liftIO $ Socket.shutdown clientSock Socket.ShutdownBoth `catchAny` \_ -> return ()
-  where
-    startWorker = do
-      Immortal.create $ \thread ->
-        Katip.katipAddNamespace "worker" $
-          Push.withPushParams daemonEnv daemonPushOptions daemonCacheName daemonPushSecret $ \pushParams ->
-            Immortal.onUnexpectedFinish thread logWorkerException (runWorker pushParams)
+        liftIO $ Socket.shutdown clientSock Socket.ShutdownBoth `catchAny` \_ -> return ()
 
-    shutdownWorker :: Immortal.Thread -> Daemon ()
-    shutdownWorker worker = do
-      alreadyShuttingDown <- isShuttingDown daemonShutdownLatch
-
-      unless alreadyShuttingDown $ do
-        initiateShutdown daemonShutdownLatch
-        Katip.logFM Katip.InfoS "Shutting down daemon..."
-        liftIO $ atomically $ closeTBMQueue daemonQueue
-        liftIO $ Immortal.mortalize worker
-        Katip.logFM Katip.InfoS "Waiting for worker to finish..."
-        liftIO $ Immortal.wait worker
-        Katip.logFM Katip.InfoS "Worker finished."
-
-logWorkerException :: (Exception e) => Either e () -> Daemon ()
-logWorkerException (Left err) =
-  Katip.logFM Katip.ErrorS $ Katip.ls (toS $ displayException err :: Text)
-logWorkerException _ = return ()
-
-runWorker :: PushParams Daemon () -> Daemon ()
-runWorker pushParams = loop
-  where
-    loop = do
-      DaemonEnv {..} <- ask
-      mres <- liftIO $ atomically (readTBMQueue daemonQueue)
-      case mres of
-        Nothing -> return ()
-        Just msg -> do
-          handleRequest pushParams msg
-          loop
-
-handleRequest :: PushParams Daemon () -> QueuedPushRequest -> Daemon ()
+handleRequest :: PushParams Daemon a -> QueuedPushRequest -> Daemon ()
 handleRequest pushParams (QueuedPushRequest {..}) = do
   let store = pushParamsStore pushParams
   normalized <- mapM (Push.normalizeStorePath store) (Protocol.storePaths pushRequest)
@@ -145,6 +112,7 @@ showConfiguration = do
     unlines
       [ "PID: " <> show daemonPid,
         "Socket: " <> toS daemonSocketPath,
+        "Workers: " <> show (Options.numJobs daemonPushOptions),
         "Cache name: " <> toS daemonCacheName,
         "Cache URI: " <> BinaryCache.uri daemonBinaryCache,
         "Cache public keys: " <> show (BinaryCache.publicSigningKeys daemonBinaryCache),

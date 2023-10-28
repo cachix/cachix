@@ -75,6 +75,7 @@ library
     Cachix.Client.Daemon.Push
     Cachix.Client.Daemon.ShutdownLatch
     Cachix.Client.Daemon.Types
+    Cachix.Client.Daemon.Worker
     Cachix.Client.Env
     Cachix.Client.Exception
     Cachix.Client.HumanSize

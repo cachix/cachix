@@ -3,7 +3,7 @@ module Cachix.Client.Daemon.Push where
 import qualified Cachix.API as API
 import Cachix.Client.CNix (filterInvalidStorePath, followLinksToStorePath)
 import Cachix.Client.Commands.Push hiding (pushStrategy)
-import Cachix.Client.Daemon.Types (Daemon)
+import Cachix.Client.Daemon.Types (Daemon (..))
 import Cachix.Client.Env (Env (..))
 import Cachix.Client.OptionsParser as Client.OptionsParser
   ( PushOptions (..),
@@ -28,18 +28,16 @@ import Servant.Auth.Client
 import Servant.Client.Streaming
 import Servant.Conduit ()
 
-withPushParams :: Env -> PushOptions -> BinaryCacheName -> PushSecret -> (PushParams Daemon () -> Daemon ()) -> Daemon ()
-withPushParams env pushOpts name pushSecret m = do
+withPushParams :: Env -> PushOptions -> BinaryCache.BinaryCache -> PushSecret -> (PushParams Daemon () -> Daemon ()) -> Daemon ()
+withPushParams env pushOpts binaryCache pushSecret m = do
   let authToken = getAuthTokenFromPushSecret pushSecret
-
-  binaryCache <- liftIO $ getBinaryCache env authToken name
-
   let compressionMethod = getCompressionMethod pushOpts binaryCache
+  let cacheName = BinaryCache.name binaryCache
 
   withStore $ \store ->
     m
       PushParams
-        { pushParamsName = name,
+        { pushParamsName = cacheName,
           pushParamsSecret = pushSecret,
           pushParamsClientEnv = clientenv env,
           pushOnClosureAttempt = \full missing -> do
@@ -49,7 +47,7 @@ withPushParams env pushOpts name pushSecret m = do
               return $ "Skipping " <> toS p
             Katip.logFM Katip.InfoS $ Katip.ls $ unlines b
             return missing,
-          pushParamsStrategy = pushStrategy store authToken pushOpts name compressionMethod,
+          pushParamsStrategy = pushStrategy store authToken pushOpts cacheName compressionMethod,
           pushParamsStore = store
         }
 

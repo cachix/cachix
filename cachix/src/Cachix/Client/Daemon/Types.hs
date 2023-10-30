@@ -33,6 +33,8 @@ data DaemonEnv = DaemonEnv
     daemonCacheName :: BinaryCacheName,
     -- | The binary cache to push to
     daemonBinaryCache :: BinaryCache,
+    -- | The log level to use for logging
+    daemonLogLevel :: LogLevel,
     -- | Logger namespace
     daemonKNamespace :: Katip.Namespace,
     -- | Logger context
@@ -76,12 +78,30 @@ instance Katip.KatipContext Daemon where
 -- | Run a pre-configured daemon.
 runDaemon :: DaemonEnv -> Daemon a -> IO a
 runDaemon env f = do
+  let logLevel = toKatipLogLevel (daemonLogLevel env)
   let registerScribe = do
-        scribeHandle <- Katip.mkHandleScribe Katip.ColorIfTerminal stdout (Katip.permitItem Katip.DebugS) Katip.V2
+        scribeHandle <- Katip.mkHandleScribe Katip.ColorIfTerminal stdout (Katip.permitItem logLevel) Katip.V2
         Katip.registerScribe "stdout" scribeHandle Katip.defaultScribeSettings (daemonKLogEnv env)
 
   bracket registerScribe Katip.closeScribes $ \logEnv -> do
     unDaemon f `runReaderT` env {daemonKLogEnv = logEnv}
+
+-- | The log level to use for logging
+--
+-- TODO: reuse in deploy agent
+data LogLevel
+  = Debug
+  | Info
+  | Warning
+  | Error
+  deriving stock (Eq, Ord, Show)
+
+toKatipLogLevel :: LogLevel -> Katip.Severity
+toKatipLogLevel = \case
+  Debug -> Katip.DebugS
+  Info -> Katip.InfoS
+  Warning -> Katip.WarningS
+  Error -> Katip.ErrorS
 
 -- | A push request that has been queued for processing.
 data QueuedPushRequest = QueuedPushRequest

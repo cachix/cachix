@@ -10,6 +10,7 @@ module Cachix.Client.Daemon
 where
 
 import qualified Cachix.Client.Commands.Push as Commands.Push
+import qualified Cachix.Client.Config as Config
 import Cachix.Client.Config.Orphans ()
 import Cachix.Client.Daemon.Client (push, stop, stopAndWait)
 import Cachix.Client.Daemon.Listen as Daemon
@@ -48,6 +49,11 @@ new daemonEnv daemonOptions daemonPushOptions daemonCacheName = do
 
   let authToken = getAuthTokenFromPushSecret daemonPushSecret
   daemonBinaryCache <- Push.getBinaryCache daemonEnv authToken daemonCacheName
+
+  let daemonLogLevel =
+        if Config.verbose (Env.cachixoptions daemonEnv)
+          then Debug
+          else Info
 
   daemonKLogEnv <- Katip.initLogEnv "cachix.daemon" ""
   let daemonKNamespace = mempty

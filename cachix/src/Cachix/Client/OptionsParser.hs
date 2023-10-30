@@ -255,7 +255,8 @@ commandParser =
 getOpts :: IO (Flags, CachixCommand)
 getOpts = do
   configpath <- Config.getDefaultFilename
-  customExecParser (prefs showHelpOnEmpty) (optsInfo configpath)
+  let preferences = showHelpOnError <> showHelpOnEmpty <> helpShowGlobals <> subparserInline
+  customExecParser (prefs preferences) (optsInfo configpath)
 
 optsInfo :: Config.ConfigPath -> ParserInfo (Flags, CachixCommand)
 optsInfo configpath = infoH parser desc

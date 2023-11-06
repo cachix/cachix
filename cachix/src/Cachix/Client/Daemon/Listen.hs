@@ -3,10 +3,12 @@ module Cachix.Client.Daemon.Listen
     serverBye,
     getSocketPath,
     openSocket,
+    closeSocket,
   )
 where
 
 import Cachix.Client.Config.Orphans ()
+import Cachix.Client.Daemon.Protocol
 import Cachix.Client.Daemon.Types
 import Control.Concurrent.STM.TBMQueue
 import Control.Exception.Safe (catchAny)
@@ -47,7 +49,6 @@ listen queue sock = loop
 
       case result of
         Right (ClientStop, clientConn) -> do
-          putText "Received stop request, shutting down..."
           return clientConn
         Right (ClientPushRequest pushRequest, clientConn) -> do
           let queuedRequest = QueuedPushRequest pushRequest clientConn
@@ -103,8 +104,8 @@ getXdgRuntimeDir = do
   return $ fromMaybe cacheFallback xdgRuntimeDir
 
 -- TODO: lock the socket
-openSocket :: FilePath -> IO Socket.Socket
-openSocket socketFilePath = do
+openSocket :: (MonadIO m) => FilePath -> m Socket.Socket
+openSocket socketFilePath = liftIO $ do
   deleteSocketFileIfExists socketFilePath
   sock <- Socket.socket Socket.AF_UNIX Socket.Stream Socket.defaultProtocol
   Socket.bind sock $ Socket.SockAddrUnix socketFilePath
@@ -117,3 +118,6 @@ openSocket socketFilePath = do
     handleDoesNotExist e
       | isDoesNotExistError e = return ()
       | otherwise = throwIO e
+
+closeSocket :: (MonadIO m) => Socket.Socket -> m ()
+closeSocket = liftIO . Socket.close

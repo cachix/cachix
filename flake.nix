@@ -13,7 +13,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     devenv = {
-      url = "github:cachix/devenv";
+      url = "github:cachix/devenv/python-rewrite";
       inputs.flake-compat.follows = "flake-compat";
       inputs.pre-commit-hooks.follows = "pre-commit-hooks";
     };
@@ -101,12 +101,6 @@
         in
         rec {
           default = devenv;
-
-          # Temporary nixpkgs.mkShell until the LD_LIBRARY issues in devenv are resolved
-          nixDevShell = pkgs.mkShell {
-            inherit packages;
-            inherit (self.checks.${system}.pre-commit-check) shellHook;
-          };
 
           devenv = inputs.devenv.lib.mkShell {
             inherit inputs pkgs;

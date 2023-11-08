@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE TypeOperators #-}
 
@@ -10,11 +11,19 @@ module Cachix.Client.Commands
     watchExec,
     watchExecDaemon,
     use,
+    import',
     remove,
     pin,
   )
 where
 
+import qualified Amazonka
+import Amazonka.Data.Body (ResponseBody (..))
+import qualified Amazonka.Data.Text
+import qualified Amazonka.S3
+import Amazonka.S3.GetObject (getObjectResponse_body)
+import Amazonka.S3.ListObjectsV2 (listObjectsV2Response_contents)
+import Amazonka.S3.Types.Object (object_key)
 import qualified Cachix.API as API
 import Cachix.API.Error
 import Cachix.Client.CNix (filterInvalidStorePath, followLinksToStorePath)
@@ -42,16 +51,22 @@ import Cachix.Client.Secrets
     exportSigningKey,
   )
 import Cachix.Client.Servant
+import Cachix.Client.URI (URI)
+import qualified Cachix.Client.URI
 import qualified Cachix.Client.WatchStore as WatchStore
 import Cachix.Types.BinaryCache (BinaryCacheName)
 import qualified Cachix.Types.PinCreate as PinCreate
 import qualified Cachix.Types.SigningKeyCreate as SigningKeyCreate
+import Conduit
 import qualified Control.Concurrent.Async as Async
 import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
 import Crypto.Sign.Ed25519 (PublicKey (PublicKey), createKeypair)
+import qualified Data.Attoparsec.Text
 import qualified Data.ByteString.Base64 as B64
 import Data.Conduit (runConduit, (.|))
 import qualified Data.Conduit.Combinators as C
+import Data.Conduit.ConcurrentMap (concurrentMapM_)
+import qualified Data.Conduit.List as CL
 import qualified Data.Conduit.TMChan as C
 import Data.HashMap.Strict as HashMap
 import Data.IORef
@@ -61,9 +76,12 @@ import Data.Text.IO (hGetLine)
 import qualified Data.Text.IO as T.IO
 import GHC.IO.Handle (hDuplicate, hDuplicateTo)
 import Hercules.CNix.Store (storePathToPath, withStore)
+import Lens.Micro ((^.))
+import Network.HTTP.Types (status404)
+import qualified Nix.NarInfo as NarInfo
 import Protolude hiding (toS)
 import Protolude.Conv
-import Servant.API (NoContent)
+import Servant.API (NoContent (..))
 import Servant.Auth.Client
 import Servant.Client.Streaming
 import Servant.Conduit ()
@@ -74,6 +92,7 @@ import System.IO.Error (isEOFError)
 import System.IO.Temp (withSystemTempFile)
 import qualified System.Posix.Signals as Signals
 import qualified System.Process
+import qualified URI.ByteString as UBS
 
 -- TODO: check that token actually authenticates!
 authtoken :: Env -> Maybe Text -> IO ()
@@ -184,6 +203,67 @@ push env (PushPaths opts name cliPaths) = do
 push _ _ =
   throwIO $
     DeprecatedCommand "DEPRECATED: cachix watch-store has replaced cachix push --watch-store."
+
+import' :: Env -> PushOptions -> Text -> URI -> IO ()
+import' env pushOptions name s3uri = do
+  awsEnv <- Amazonka.newEnv Amazonka.discover
+  putErrText $ "Importing narinfos/nars using " <> show (numJobs pushOptions) <> " workers from bucket " <> bucketNameText
+  putErrText ""
+  Amazonka.runResourceT $
+    runConduit $
+      Amazonka.paginate awsEnv (Amazonka.S3.newListObjectsV2 bucketName)
+        .| CL.mapMaybe (^. listObjectsV2Response_contents)
+        .| CL.concat
+        .| CL.map (^. object_key)
+        .| CL.filter (T.isSuffixOf ".narinfo" . Amazonka.Data.Text.toText)
+        .| concurrentMapM_ (numJobs pushOptions) (numJobs pushOptions * 2) (uploadNarinfo awsEnv)
+        .| CL.sinkNull
+  putErrText "All done."
+  where
+    bucketName :: Amazonka.S3.BucketName
+    bucketName = Amazonka.S3.BucketName bucketNameText
+    bucketNameText = toS $ UBS.hostBS $ Cachix.Client.URI.getHostname s3uri
+
+    getObject ::
+      (MonadResource m) =>
+      Amazonka.Env ->
+      Amazonka.S3.ObjectKey ->
+      m (ConduitT () ByteString (ResourceT IO) ())
+    getObject awsEnv key = do
+      rs <- Amazonka.send awsEnv (Amazonka.S3.newGetObject bucketName key)
+      return $ body $ rs ^. getObjectResponse_body
+
+    fileHashParse :: Text -> IO Text
+    fileHashParse s
+      | "sha256:" `T.isPrefixOf` s = return $ T.drop 7 s
+      | otherwise = throwM $ ImportUnsupportedHash $ "file hash " <> s <> " is unsupported. Leave us feedback at https://github.com/cachix/cachix/issues/601"
+
+    uploadNarinfo :: Amazonka.Env -> Amazonka.S3.ObjectKey -> ResourceT IO ()
+    uploadNarinfo awsEnv entry = liftIO $ do
+      let storeHash = Amazonka.Data.Text.toText entry
+      -- get narinfo
+      narinfoText <- runConduitRes $ do
+        narinfoStream <- getObject awsEnv entry
+        narinfoStream .| C.decodeUtf8 .| C.fold
+
+      -- parse narinfo
+      case Data.Attoparsec.Text.parseOnly NarInfo.parseNarInfo (toS narinfoText) of
+        Left e -> hPutStr stderr $ "error while parsing " <> storeHash <> ": " <> show e
+        Right narInfoTemp -> do
+          -- we support only sha256: for now
+          fileHash <- fileHashParse $ NarInfo.fileHash narInfoTemp
+          let narInfo = narInfoTemp {NarInfo.fileHash = fileHash}
+          -- stream nar and narinfo
+          liftIO $ withPushParams env pushOptions name $ \pushParams -> do
+            narinfoResponse <- liftIO $ narinfoExists pushParams (toS storeHash)
+            case narinfoResponse of
+              Left err
+                | isErr err status404 -> return ()
+                | otherwise -> putErrText $ show err
+              Right NoContent -> runResourceT $ do
+                liftIO $ putErrText $ "Importing " <> toS (NarInfo.storePath narInfo)
+                narStream <- getObject awsEnv $ Amazonka.S3.ObjectKey $ NarInfo.url narInfo
+                liftIO $ streamStorePath pushParams narStream (return narInfo)
 
 pin :: Env -> PinOptions -> IO ()
 pin env pinOpts = do

@@ -33,11 +33,27 @@
         or pkgs.nixVersions.nix_2_9;
 
     customHaskellPackages = { pkgs, haskellPackages }: rec {
+      hnix-store-core =
+        let
+          src = pkgs.fetchFromGitHub {
+            owner = "sandydoo";
+            repo = "hnix-store";
+            rev = "d705ab961d23cbe3ebb8572e6d49ada43e86cbb2";
+            hash = "sha256-Vc7Jah2jlgLawS4m1WA5FpxW2vODbeMJ5RCgS5lvQoA=";
+          };
+
+          hlib = pkgs.haskell.lib;
+        in
+        pkgs.lib.pipe
+          haskellPackages.hnix-store-core_0_6_1_0
+          [
+            (hlib.compose.overrideSrc { src = "${src}/hnix-store-core"; })
+            (hlib.compose.addBuildDepend haskellPackages.case-insensitive)
+          ];
       cachix-api = haskellPackages.callCabal2nix "cachix-api" ./cachix-api {};
       cachix = haskellPackages.callCabal2nix "cachix" ./cachix {
-        inherit cachix-api;
+        inherit cachix-api hnix-store-core;
         fsnotify = haskellPackages.fsnotify_0_4_1_0 or haskellPackages.fsnotify;
-        hnix-store-core = haskellPackages.hnix-store-core_0_6_1_0 or haskellPackages.hnix-store-core;
         nix = getNix { inherit pkgs haskellPackages; };
       };
     };

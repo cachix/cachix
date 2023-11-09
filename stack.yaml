@@ -7,8 +7,11 @@ extra-deps:
 - hercules-ci-cnix-store-0.3.4.0
 - cabal-pkg-config-version-hook-0.1.0.0
 - nix-narinfo-0.1.0.2
-- hnix-store-core-0.6.1.0
 - algebraic-graphs-0.6.1
+- github: sandydoo/hnix-store
+  commit: d705ab961d23cbe3ebb8572e6d49ada43e86cbb2
+  subdirs:
+  - hnix-store-core
 nix:
   enable: true
   pure: false

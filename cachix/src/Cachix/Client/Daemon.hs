@@ -70,9 +70,6 @@ start daemonEnv daemonOptions daemonPushOptions daemonCacheName = do
 -- | Run a daemon from a given configuration
 run :: DaemonEnv -> IO ()
 run daemon@DaemonEnv {..} = runDaemon daemon $ do
-  -- Ignore SIGPIPE errors
-  _ <- liftIO $ Signals.installHandler Signals.sigPIPE Signals.Ignore Nothing
-
   Katip.logFM Katip.InfoS "Starting Cachix Daemon"
 
   config <- showConfiguration

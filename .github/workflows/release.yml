@@ -1,28 +1,31 @@
 name: "Release"
+
 on:
-  push:
-    tags:
-      - v**
+  workflow_call:
+    secrets:
+      HACKAGE_AUTH_TOKEN:
+        required: true
+
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - uses: cachix/haskell-release-action@v1
-      with:
-        branch: master
-        work-dir: cachix-api
-        hackage-token: ${{ secrets.HACKAGE_AUTH_TOKEN }}
-    - uses: cachix/haskell-release-action@v1
-      with:
-        branch: master
-        work-dir: cachix
-        hackage-token: ${{ secrets.HACKAGE_AUTH_TOKEN }}
     - uses: cachix/install-nix-action@v23
     - uses: cachix/cachix-action@v12
       with:
         name: cachix
-    - run: nix build -L '.#ci' '.#cachix' --show-trace --impure
+
+    - name: Build distributables
+      run: nix build -L --show-trace .#release
+
+    - uses: haskell-actions/hackage-publish@v1
+      with:
+        # http://hackage.haskell.org/users/account-management
+        hackageToken: ${{ secrets.HACKAGE_AUTH_TOKEN }}
+        packagesPath: result/
+        publish: true
+
   pin:
     needs: release
     runs-on: ubuntu-latest

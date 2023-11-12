@@ -12,13 +12,21 @@ import Cachix.Client.Version (cachixVersion)
 import Cachix.Deploy.ActivateCommand as ActivateCommand
 import qualified Cachix.Deploy.Agent as AgentCommand
 import qualified Cachix.Deploy.OptionsParser as DeployOptions
+import qualified Hercules.CNix as CNix
+import qualified Hercules.CNix.Util as CNix.Util
 import Protolude
 import System.Console.AsciiProgress (displayConsoleRegions)
+import qualified System.Posix.Signals as Signal
 
 main :: IO ()
 main = displayConsoleRegions $ do
   (flags, command) <- getOpts
   env <- mkEnv flags
+
+  installSignalHandlers
+
+  initNixStore
+
   let cachixOptions = cachixoptions env
   case command of
     AuthToken token -> Commands.authtoken env token
@@ -37,3 +45,28 @@ main = displayConsoleRegions $ do
     Version -> putText cachixVersion
     DeployCommand (DeployOptions.Agent opts) -> AgentCommand.run cachixOptions opts
     DeployCommand (DeployOptions.Activate opts) -> ActivateCommand.run env opts
+
+-- | Install client-wide signal handlers.
+installSignalHandlers :: IO ()
+installSignalHandlers = do
+  -- Ignore sigPIPE.
+  -- By default, sigPIPE will crash the entire program when the reading end of a pipe is closed.
+  -- By ignoring sigPIPE, an exception is thrown inline instead, which we can handle.
+  _ <- Signal.installHandler Signal.sigPIPE Signal.Ignore Nothing
+
+  return ()
+
+-- | Initialize the Nix library via CNix.
+initNixStore :: IO ()
+initNixStore = do
+  signalset <- Signal.getSignalMask
+
+  -- Initialize the Nix library
+  CNix.init
+
+  -- darwin: restore the signal mask modified by Nix
+  -- https://github.com/cachix/cachix/issues/501
+  Signal.setSignalMask signalset
+
+  -- Interrupt Nix before throwing UserInterrupt
+  CNix.Util.installDefaultSigINTHandler

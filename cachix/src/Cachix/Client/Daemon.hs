@@ -72,13 +72,13 @@ run daemon@DaemonEnv {..} = runDaemon daemon $ do
   Katip.logFM Katip.InfoS "Starting Cachix Daemon"
 
   config <- showConfiguration
-  Katip.logFM Katip.InfoS . Katip.ls $ T.intercalate "\n" ["Configuration:", config]
+  Katip.logFM Katip.InfoS $ Katip.ls $ T.intercalate "\n" ["Configuration:", config]
 
   let numWorkers = Options.numJobs daemonPushOptions
 
   Push.withPushParams daemonEnv daemonPushOptions daemonBinaryCache daemonPushSecret $ \pushParams ->
     E.bracketOnError (Worker.startWorkers numWorkers (handleRequest pushParams)) Worker.stopWorkers $ \workers -> do
-      flip E.onError (liftIO $ atomically $ closeTBMQueue daemonQueue) $
+      flip E.onError shutdownQueue $
         -- TODO: retry the connection on socket errors
         E.bracketOnError (Daemon.openSocket daemonSocketPath) Daemon.closeSocket $ \sock -> do
           liftIO $ Socket.listen sock Socket.maxListenQueue
@@ -94,6 +94,8 @@ run daemon@DaemonEnv {..} = runDaemon daemon $ do
           -- Stop receiving new push requests
           liftIO $ Socket.shutdown sock Socket.ShutdownReceive `catchAny` \_ -> return ()
 
+          shutdownQueue
+
           -- Gracefully shutdown the worker *before* closing the socket
           Worker.stopWorkers workers
 
@@ -105,9 +107,13 @@ run daemon@DaemonEnv {..} = runDaemon daemon $ do
               liftIO $ Socket.shutdown clientSock Socket.ShutdownBoth `catchAny` \_ -> return ()
             _ -> return ()
 
--- | Stop the daemon gracefully.
 stop :: Daemon ()
 stop = asks daemonShutdownLatch >>= initiateShutdown
+
+shutdownQueue :: Daemon ()
+shutdownQueue = do
+  queue <- asks daemonQueue
+  liftIO $ atomically $ closeTBMQueue queue
 
 -- TODO: split into two jobs: 1. query/normalize/filter 2. push store path
 handleRequest :: PushParams Daemon a -> QueuedPushRequest -> Daemon ()

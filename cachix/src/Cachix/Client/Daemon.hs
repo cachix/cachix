@@ -1,18 +1,16 @@
 module Cachix.Client.Daemon
   ( Daemon,
+    runDaemon,
     new,
     start,
     run,
-    push,
     stop,
-    stopAndWait,
   )
 where
 
 import qualified Cachix.Client.Commands.Push as Commands.Push
 import qualified Cachix.Client.Config as Config
 import Cachix.Client.Config.Orphans ()
-import Cachix.Client.Daemon.Client (push, stop, stopAndWait)
 import Cachix.Client.Daemon.Listen as Daemon
 import Cachix.Client.Daemon.Protocol as Protocol
 import Cachix.Client.Daemon.Push as Push
@@ -28,10 +26,11 @@ import Cachix.Types.BinaryCache (BinaryCacheName)
 import qualified Cachix.Types.BinaryCache as BinaryCache
 import Control.Concurrent.STM.TBMQueue
 import Control.Exception.Safe (catchAny)
-import Control.Monad.Catch (bracketOnError, bracket_)
+import qualified Control.Monad.Catch as E
+import qualified Data.Text as T
 import qualified Katip
 import qualified Network.Socket as Socket
-import Protolude hiding (bracketOnError, bracket_)
+import Protolude
 import System.Posix.Process (getProcessID)
 import qualified System.Posix.Signals as Signals
 import qualified UnliftIO.Async as Async
@@ -73,30 +72,42 @@ run daemon@DaemonEnv {..} = runDaemon daemon $ do
   Katip.logFM Katip.InfoS "Starting Cachix Daemon"
 
   config <- showConfiguration
-  Katip.logFM Katip.InfoS . Katip.ls $ unlines ["Configuration:", config]
+  Katip.logFM Katip.InfoS . Katip.ls $ T.intercalate "\n" ["Configuration:", config]
 
   let numWorkers = Options.numJobs daemonPushOptions
 
   Push.withPushParams daemonEnv daemonPushOptions daemonBinaryCache daemonPushSecret $ \pushParams ->
-    bracketOnError (Worker.startWorkers numWorkers (handleRequest pushParams)) Worker.stopWorkers $ \workers -> do
-      -- TODO: retry the connection on socket errors
-      bracketOnError (Daemon.openSocket daemonSocketPath) Daemon.closeSocket $ \sock -> do
-        liftIO $ Socket.listen sock Socket.maxListenQueue
+    E.bracketOnError (Worker.startWorkers numWorkers (handleRequest pushParams)) Worker.stopWorkers $ \workers -> do
+      flip E.onError (liftIO $ atomically $ closeTBMQueue daemonQueue) $
+        -- TODO: retry the connection on socket errors
+        E.bracketOnError (Daemon.openSocket daemonSocketPath) Daemon.closeSocket $ \sock -> do
+          liftIO $ Socket.listen sock Socket.maxListenQueue
 
-        clientSock <- liftIO $ Daemon.listen daemonQueue sock
+          res <-
+            Async.race (waitForShutdown daemonShutdownLatch) $
+              liftIO (Daemon.listen daemonQueue sock) `E.finally` stop
 
-        Katip.logFM Katip.InfoS "Received stop request from client"
+          waitForShutdown daemonShutdownLatch
 
-        -- Stop receiving new push requests
-        liftIO $ Socket.shutdown sock Socket.ShutdownReceive `catchAny` \_ -> return ()
+          Katip.logFM Katip.InfoS "Shutting down daemon..."
 
-        -- Gracefully shutdown the worker before closing the socket
-        Worker.stopWorkers workers
+          -- Stop receiving new push requests
+          liftIO $ Socket.shutdown sock Socket.ShutdownReceive `catchAny` \_ -> return ()
 
-        -- Wave goodbye to the client
-        liftIO $ Daemon.serverBye clientSock
+          -- Gracefully shutdown the worker *before* closing the socket
+          Worker.stopWorkers workers
 
-        liftIO $ Socket.shutdown clientSock Socket.ShutdownBoth `catchAny` \_ -> return ()
+          -- TODO: say goodbye to all clients waiting for their push to go through
+          case res of
+            Right clientSock -> do
+              -- Wave goodbye to the client that requested the shutdown
+              liftIO $ Daemon.serverBye clientSock
+              liftIO $ Socket.shutdown clientSock Socket.ShutdownBoth `catchAny` \_ -> return ()
+            _ -> return ()
+
+-- | Stop the daemon gracefully.
+stop :: Daemon ()
+stop = asks daemonShutdownLatch >>= initiateShutdown
 
 -- TODO: split into two jobs: 1. query/normalize/filter 2. push store path
 handleRequest :: PushParams Daemon a -> QueuedPushRequest -> Daemon ()
@@ -110,7 +121,7 @@ handleRequest pushParams (QueuedPushRequest {..}) = do
 
   qs <- asks daemonPushSemaphore
   let upload storePath =
-        bracket_ (QSem.waitQSem qs) (QSem.signalQSem qs) $
+        E.bracket_ (QSem.waitQSem qs) (QSem.signalQSem qs) $
           retryAll $
             uploadStorePath pushParams storePath
 
@@ -121,7 +132,8 @@ showConfiguration :: Daemon Text
 showConfiguration = do
   DaemonEnv {..} <- ask
   pure $
-    unlines
+    T.intercalate
+      "\n"
       [ "PID: " <> show daemonPid,
         "Socket: " <> toS daemonSocketPath,
         "Workers: " <> show (Options.numJobs daemonPushOptions),

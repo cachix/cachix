@@ -252,13 +252,14 @@ watchExecDaemon env pushOpts cacheName cmd args = do
     let process =
           (System.Process.proc (toS cmd) (toS <$> args))
             { System.Process.std_out = System.Process.Inherit,
-              System.Process.env = Just (processEnv ++ [("NIX_USER_CONF_FILES", toS userConfEnv)])
+              System.Process.env = Just (processEnv ++ [("NIX_USER_CONF_FILES", toS userConfEnv)]),
+              System.Process.delegate_ctlc = True
             }
     exitCode <- System.Process.withCreateProcess process $ \_ _ _ processHandle ->
       System.Process.waitForProcess processHandle
 
     -- Stop the daemon and wait for all paths to be pushed
-    Daemon.stop env daemonOptions
+    Daemon.runDaemon daemon Daemon.stop
     Async.wait daemonThread
 
     exitWith exitCode

@@ -1,4 +1,4 @@
-module Cachix.Client.Daemon.Client (push, stop, stopAndWait) where
+module Cachix.Client.Daemon.Client (push, stop) where
 
 import Cachix.Client.Daemon.Listen (getSocketPath)
 import Cachix.Client.Daemon.Protocol as Protocol
@@ -30,11 +30,6 @@ push _env daemonOptions storePaths =
 -- | Tell the daemon to stop and wait for it to gracefully exit
 stop :: Env -> DaemonOptions -> IO ()
 stop _env daemonOptions =
-  withDaemonConn (daemonSocketPath daemonOptions) $ \sock -> do
-    Socket.LBS.sendAll sock (Aeson.encode Protocol.ClientStop)
-
-stopAndWait :: Env -> DaemonOptions -> IO ()
-stopAndWait _env daemonOptions =
   withDaemonConn (daemonSocketPath daemonOptions) $ \sock -> do
     Async.concurrently_ (waitForResponse sock) $
       Socket.LBS.sendAll sock (Aeson.encode Protocol.ClientStop)

@@ -21,15 +21,9 @@ startWorkers numWorkers f = do
 
 stopWorkers :: [Immortal.Thread] -> Daemon ()
 stopWorkers workers = do
-  DaemonEnv {..} <- ask
-  alreadyShuttingDown <- isShuttingDown daemonShutdownLatch
-  unless alreadyShuttingDown $ do
-    initiateShutdown daemonShutdownLatch
-    Katip.logFM Katip.InfoS "Shutting down daemon..."
-    liftIO $ atomically $ closeTBMQueue daemonQueue
-    Katip.logFM Katip.InfoS "Waiting for workers to finish..."
-    liftIO $ Async.mapConcurrently_ stopWorker workers
-    Katip.logFM Katip.InfoS "Workers finished."
+  Katip.logFM Katip.InfoS "Waiting for workers to finish..."
+  liftIO $ Async.mapConcurrently_ stopWorker workers
+  Katip.logFM Katip.InfoS "Workers finished."
 
 startWorker :: (QueuedPushRequest -> Daemon ()) -> Daemon Immortal.Thread
 startWorker f = do

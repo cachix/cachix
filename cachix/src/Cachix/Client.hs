@@ -6,6 +6,7 @@ where
 import Cachix.Client.Commands as Commands
 import qualified Cachix.Client.Config as Config
 import qualified Cachix.Client.Daemon as Daemon
+import qualified Cachix.Client.Daemon.Client as Daemon.Client
 import Cachix.Client.Env (cachixoptions, mkEnv)
 import Cachix.Client.OptionsParser (CachixCommand (..), DaemonCommand (..), getOpts)
 import Cachix.Client.Version (cachixVersion)
@@ -32,8 +33,8 @@ main = displayConsoleRegions $ do
     AuthToken token -> Commands.authtoken env token
     Config configCommand -> Config.run cachixOptions configCommand
     Daemon (DaemonRun daemonOptions pushOptions mcacheName) -> Daemon.start env daemonOptions pushOptions mcacheName
-    Daemon (DaemonStop daemonOptions) -> Daemon.stopAndWait env daemonOptions
-    Daemon (DaemonPushPaths daemonOptions storePaths) -> Daemon.push env daemonOptions storePaths
+    Daemon (DaemonStop daemonOptions) -> Daemon.Client.stop env daemonOptions
+    Daemon (DaemonPushPaths daemonOptions storePaths) -> Daemon.Client.push env daemonOptions storePaths
     Daemon (DaemonWatchExec pushOptions cacheName cmd args) -> Commands.watchExecDaemon env pushOptions cacheName cmd args
     GenerateKeypair name -> Commands.generateKeypair env name
     Push pushArgs -> Commands.push env pushArgs

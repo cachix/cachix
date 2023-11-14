@@ -119,7 +119,6 @@ run daemon@DaemonEnv {..} = runDaemon daemon $ do
               liftIO $ Socket.shutdown clientSock Socket.ShutdownBoth `catchAny` \_ -> return ()
             _ -> return ()
 
--- | Stop the daemon gracefully.
 stop :: Daemon ()
 stop = asks daemonShutdownLatch >>= initiateShutdown
 

@@ -32,7 +32,6 @@ import qualified Katip
 import qualified Network.Socket as Socket
 import Protolude
 import System.Posix.Process (getProcessID)
-import qualified System.Posix.Signals as Signals
 import qualified UnliftIO.Async as Async
 import qualified UnliftIO.QSem as QSem
 
@@ -76,7 +75,7 @@ run daemon@DaemonEnv {..} = runDaemon daemon $ do
 
   let numWorkers = Options.numJobs daemonPushOptions
 
-  Push.withPushParams daemonEnv daemonPushOptions daemonBinaryCache daemonPushSecret $ \pushParams ->
+  Push.withPushParams $ \pushParams ->
     E.bracketOnError (Worker.startWorkers numWorkers (handleRequest pushParams)) Worker.stopWorkers $ \workers -> do
       flip E.onError (liftIO $ atomically $ closeTBMQueue daemonQueue) $
         -- TODO: retry the connection on socket errors

@@ -25,7 +25,7 @@ data DaemonEnv = DaemonEnv
     daemonPushOptions :: PushOptions,
     -- | Path to the socket that the daemon listens on
     daemonSocketPath :: FilePath,
-    -- | Queue of push requests to be processed by the worker thread
+    -- | Queue of push requests to be processed by the worker threads
     daemonQueue :: TBMQueue QueuedPushRequest,
     -- | The push secret for the binary cache
     daemonPushSecret :: PushSecret,
@@ -108,5 +108,5 @@ data QueuedPushRequest = QueuedPushRequest
   { -- | The original push request.
     pushRequest :: Protocol.PushRequest,
     -- | An open socket to the client that sent the push request.
-    clientConnection :: Socket.Socket
+    clientConnection :: Maybe Socket.Socket
   }

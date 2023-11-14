@@ -51,7 +51,7 @@ listen queue sock = loop
         Right (ClientStop, clientConn) -> do
           return clientConn
         Right (ClientPushRequest pushRequest, clientConn) -> do
-          let queuedRequest = QueuedPushRequest pushRequest clientConn
+          let queuedRequest = QueuedPushRequest pushRequest (Just clientConn)
           atomically $ writeTBMQueue queue queuedRequest
           loop
         Left err@(DecodingError _) -> do

@@ -3,7 +3,7 @@ module Cachix.Client.Daemon.Push where
 import qualified Cachix.API as API
 import Cachix.Client.CNix (filterInvalidStorePath, followLinksToStorePath)
 import Cachix.Client.Commands.Push hiding (pushStrategy)
-import Cachix.Client.Daemon.Types (Daemon (..))
+import Cachix.Client.Daemon.Types (Daemon, DaemonEnv (..))
 import Cachix.Client.Env (Env (..))
 import Cachix.Client.OptionsParser as Client.OptionsParser
   ( PushOptions (..),
@@ -28,18 +28,19 @@ import Servant.Auth.Client
 import Servant.Client.Streaming
 import Servant.Conduit ()
 
-withPushParams :: Env -> PushOptions -> BinaryCache.BinaryCache -> PushSecret -> (PushParams Daemon () -> Daemon ()) -> Daemon ()
-withPushParams env pushOpts binaryCache pushSecret m = do
-  let authToken = getAuthTokenFromPushSecret pushSecret
-  let compressionMethod = getCompressionMethod pushOpts binaryCache
-  let cacheName = BinaryCache.name binaryCache
+withPushParams :: (PushParams Daemon () -> Daemon ()) -> Daemon ()
+withPushParams m = do
+  DaemonEnv {..} <- ask
+  let authToken = getAuthTokenFromPushSecret daemonPushSecret
+  let compressionMethod = getCompressionMethod daemonPushOptions daemonBinaryCache
+  let cacheName = BinaryCache.name daemonBinaryCache
 
   withStore $ \store ->
     m
       PushParams
         { pushParamsName = cacheName,
-          pushParamsSecret = pushSecret,
-          pushParamsClientEnv = clientenv env,
+          pushParamsSecret = daemonPushSecret,
+          pushParamsClientEnv = clientenv daemonEnv,
           pushOnClosureAttempt = \full missing -> do
             let already = Set.toList $ Set.difference (Set.fromList full) (Set.fromList missing)
             b <- forM already $ \sp -> do
@@ -47,7 +48,7 @@ withPushParams env pushOpts binaryCache pushSecret m = do
               return $ "Skipping " <> toS p
             Katip.logFM Katip.InfoS $ Katip.ls $ unlines b
             return missing,
-          pushParamsStrategy = pushStrategy store authToken pushOpts cacheName compressionMethod,
+          pushParamsStrategy = pushStrategy store authToken daemonPushOptions cacheName compressionMethod,
           pushParamsStore = store
         }
 

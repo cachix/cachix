@@ -3,7 +3,8 @@ module Cachix.Client.Daemon.Push where
 import qualified Cachix.API as API
 import Cachix.Client.CNix (filterInvalidStorePath, followLinksToStorePath)
 import Cachix.Client.Commands.Push hiding (pushStrategy)
-import Cachix.Client.Daemon.Types (Daemon, DaemonEnv (..))
+import Cachix.Client.Daemon.Stats
+import Cachix.Client.Daemon.Types (Daemon, DaemonEnv (..), PushStatistics (..))
 import Cachix.Client.Env (Env (..))
 import Cachix.Client.OptionsParser as Client.OptionsParser
   ( PushOptions (..),
@@ -56,15 +57,20 @@ pushStrategy :: Store -> Maybe Token -> PushOptions -> Text -> BinaryCache.Compr
 pushStrategy store authToken opts name compressionMethod storePath = do
   PushStrategy
     { onAlreadyPresent = do
+        incrementSkippedStat
         sp <- liftIO $ storePathToPath store storePath
         Katip.logFM Katip.InfoS $ Katip.ls $ "Skipping " <> (toS sp :: Text),
       on401 = liftIO . handleCacheResponse name authToken,
-      onError = throwM,
+      onError = \err -> do
+        incrementFailedStat
+        sp <- liftIO $ storePathToPath store storePath
+        Katip.logFM Katip.ErrorS $ Katip.ls $ "Failed to push " <> (toS sp :: Text) <> ": " <> show err,
       onAttempt = \_ _ -> do
         sp <- liftIO $ storePathToPath store storePath
         Katip.logFM Katip.InfoS $ Katip.ls $ "Pushing " <> (toS sp :: Text),
       onUncompressedNARStream = \_ _ -> C.awaitForever C.yield,
       onDone = do
+        incrementPushedStat
         sp <- liftIO $ storePathToPath store storePath
         Katip.logFM Katip.InfoS $ Katip.ls $ "Pushed " <> (toS sp :: Text),
       Client.Push.compressionMethod = compressionMethod,

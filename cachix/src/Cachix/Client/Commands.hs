@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 
 module Cachix.Client.Commands
@@ -47,7 +48,9 @@ import qualified Cachix.Types.SigningKeyCreate as SigningKeyCreate
 import qualified Control.Concurrent.Async as Async
 import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
 import Crypto.Sign.Ed25519 (PublicKey (PublicKey), createKeypair)
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base64 as B64
+import Data.String (String)
 import Data.String.Here
 import qualified Data.Text as T
 import qualified Data.Text.IO as T.IO
@@ -59,10 +62,33 @@ import Servant.API (NoContent)
 import Servant.Auth.Client
 import Servant.Client.Streaming
 import Servant.Conduit ()
+import System.Console.Concurrent
+import System.Console.Pretty
+import System.Console.Regions
 import System.Directory (doesFileExist)
 import System.Environment (getEnvironment)
-import System.IO (hIsTerminalDevice)
+import System.IO
+  ( BufferMode (..),
+    hClose,
+    hFlush,
+    hGetChar,
+    hGetContents,
+    hGetLine,
+    hIsEOF,
+    hIsTerminalDevice,
+    hPutChar,
+    hSetBuffering,
+    hSetEncoding,
+    hSetNewlineMode,
+    noNewlineTranslation,
+    universalNewlineMode,
+    utf8,
+  )
+import System.IO.Temp (withSystemTempFile)
+import qualified System.Posix.IO as System.IO
+import System.Posix.Pty
 import qualified System.Posix.Signals as Signals
+import qualified System.Posix.Terminal as System.Terminal
 import qualified System.Process
 
 -- TODO: check that token actually authenticates!
@@ -243,23 +269,127 @@ watchExec env pushOpts name cmd args = withPushParams env pushOpts name $ \pushP
 watchExecDaemon :: Env -> PushOptions -> BinaryCacheName -> Text -> [Text] -> IO ()
 watchExecDaemon env pushOpts cacheName cmd args = do
   Daemon.PostBuildHook.withSetup Nothing $ \daemonSock userConfEnv -> do
-    let daemonOptions = DaemonOptions {daemonSocketPath = Just daemonSock}
-    daemon <- Daemon.new env daemonOptions pushOpts cacheName
+    withSystemTempFile "daemon-log-capture" $ \logFile logHandle -> do
+      let daemonOptions = DaemonOptions {daemonSocketPath = Just daemonSock}
+      daemon <- Daemon.new env daemonOptions (Just logHandle) pushOpts cacheName
+      daemonThread <- Async.async $ Daemon.run daemon
 
-    daemonThread <- Async.async $ Daemon.run daemon
+      let copyHandleToHandle hIn hOut = do
+            eeof <- try $ hIsEOF hIn
+            case eeof of
+              Left (e :: IOException) -> do
+                putStrLn ("IO Exception" :: Text)
+                -- print e
+                return ()
+              Right eof ->
+                unless eof $ do
+                  -- return ()
+                  -- hGetChar hIn >>= outputConcurrent . T.singleton
+                  -- hGetLine hIn >>= hPutStr hOut
+                  buffer <- BS.hGetSome hIn 4096
+                  BS.hPut hOut buffer
+                  -- hGetChar hIn >>= hPutChar hOut
+                  -- update
+                  copyHandleToHandle hIn hOut
 
-    processEnv <- getEnvironment
-    let process =
-          (System.Process.proc (toS cmd) (toS <$> args))
-            { System.Process.std_out = System.Process.Inherit,
-              System.Process.env = Just (processEnv ++ [("NIX_USER_CONF_FILES", toS userConfEnv)]),
-              System.Process.delegate_ctlc = True
-            }
-    exitCode <- System.Process.withCreateProcess process $ \_ _ _ processHandle ->
-      System.Process.waitForProcess processHandle
+      processEnv <- getEnvironment
+      (readFd, writeFd) <- System.Terminal.openPseudoTerminal
+      (read2Fd, write2Fd) <- System.Terminal.openPseudoTerminal
+      anotherHandle <- System.IO.fdToHandle write2Fd
+      -- hSetBuffering writeHandle NoBuffering
+      -- hSetEncoding readHandle utf8
+      -- hSetEncoding writeHandle utf8
+      -- hSetNewlineMode readHandle universalNewlineMode
+      let makeRaw :: TerminalAttributes -> TerminalAttributes
+          makeRaw attrs =
+            foldl
+              withoutMode
+              attrs
+              [ IgnoreBreak, -- IGNBRK
+                InterruptOnBreak, -- BRKINT
+                MarkParityErrors, -- PARMRK
+                StripHighBit, -- ISTRIP
+                MapLFtoCR, -- INLCR
+                IgnoreCR, -- IGNCR
+                MapCRtoLF, -- ICRNL
+                StartStopOutput, -- IXON
+                ProcessOutput, -- OPOST
+                EnableEcho, -- ECHO
+                EchoLF, -- ECHONL
+                ProcessInput, -- ICANON
+                KeyboardInterrupts, -- ISIG
+                ExtendedFunctions, -- IEXTEN
+                EnableParity -- PARENB
+              ]
+      attrs <- System.Terminal.getTerminalAttributes System.IO.stdOutput
+      let newModes = makeRaw attrs
+      System.Terminal.setTerminalAttributes readFd newModes Immediately
+      System.Terminal.setTerminalAttributes writeFd newModes Immediately
+      -- System.Terminal.setTerminalAttributes System.IO.stdOutput newModes Immediately
 
-    -- Stop the daemon and wait for all paths to be pushed
-    Daemon.runDaemon daemon Daemon.stop
-    Async.wait daemonThread
+      readHandle <- System.IO.fdToHandle readFd
+      writeHandle <- System.IO.fdToHandle writeFd
+      hSetBuffering readHandle NoBuffering
+      hSetBuffering stdout LineBuffering
+      hSetNewlineMode readHandle noNewlineTranslation
+      hSetNewlineMode writeHandle noNewlineTranslation
+      hSetEncoding readHandle utf8
+      hSetEncoding writeHandle utf8
 
-    exitWith exitCode
+      -- System.IO.dupTo System.IO.stdOutput writeFd
+      -- System.IO.dupTo System.IO.stdError writeFd
+
+      -- flip System.IO.dupTo readFd =<< (System.IO.handleToFd stdout)
+      -- hSetBuffering ptmxHandle NoBuffering
+      let process =
+            (System.Process.proc (toS cmd) (toS <$> args))
+              { System.Process.std_out = System.Process.UseHandle anotherHandle, -- System.Process.UseHandle writeHandle,
+                System.Process.std_err = System.Process.UseHandle writeHandle,
+                System.Process.std_in = System.Process.Inherit,
+                System.Process.env = Just (processEnv ++ [("NIX_USER_CONF_FILES", toS userConfEnv)]),
+                System.Process.delegate_ctlc = True
+              }
+
+      -- (_, _, h, processHandle) <- System.Process.createProcess process
+      exitCode <- System.Process.withCreateProcess process $ \_ h _ processHandle -> do
+        Async.withAsync (copyHandleToHandle readHandle stdout) $ \logThread -> do
+          exitCode <- System.Process.waitForProcess processHandle
+          hFlush readHandle
+          -- Async.wait logThread
+          threadDelay (100 * 1000)
+          return exitCode
+
+      region <- openConsoleRegion Linear
+
+      let getStats isDone = do
+            stats <- Daemon.renderStats daemon
+            pure $
+              mconcat
+                [ if isDone then "\nPushed store paths to Cachix.\n" else "\nPushing store paths...\n",
+                  stats
+                ]
+
+      let update isDone = do
+            setConsoleRegion region =<< getStats isDone
+
+      let loopUpdate = do
+            update False
+            threadDelay (100 * 1000)
+            loopUpdate
+
+      -- Stop the daemon and wait for all paths to be pushed
+      Async.withAsync loopUpdate $ \_ -> do
+        Daemon.stopIO daemon
+        daemonResult <- Async.wait daemonThread
+        threadDelay (100 * 1000)
+        return ()
+
+      -- when (isLeft daemonResult) $ do
+      --   -- On error, print log?
+      hClose logHandle
+      -- Output the contents of the daemon log to stderr
+      -- withFile logFile ReadMode $ hGetContents >=> putStr
+
+      finishConsoleRegion region =<< getStats True
+
+      exitWith exitCode

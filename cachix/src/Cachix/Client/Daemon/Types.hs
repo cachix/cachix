@@ -11,6 +11,7 @@ import Cachix.Client.Push
 import Cachix.Types.BinaryCache (BinaryCache, BinaryCacheName)
 import qualified Control.Concurrent.QSem as QSem
 import Control.Concurrent.STM.TBMQueue
+import Control.Concurrent.STM.TVar
 import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
 import Control.Monad.IO.Unlift (MonadUnliftIO)
 import qualified Katip
@@ -41,12 +42,15 @@ data DaemonEnv = DaemonEnv
     daemonKContext :: Katip.LogContexts,
     -- | Logger env
     daemonKLogEnv :: Katip.LogEnv,
+    -- | An optional handle to output logs to
+    daemonLogHandle :: Maybe Handle,
     -- | Shutdown latch
     daemonShutdownLatch :: ShutdownLatch,
     -- | A semaphore to limit the number of concurrent pushes
     daemonPushSemaphore :: QSem.QSem,
     -- | The PID of the daemon process
-    daemonPid :: ProcessID
+    daemonPid :: ProcessID,
+    daemonStats :: TVar PushStatistics
   }
 
 newtype Daemon a = Daemon
@@ -79,8 +83,9 @@ instance Katip.KatipContext Daemon where
 runDaemon :: DaemonEnv -> Daemon a -> IO a
 runDaemon env f = do
   let logLevel = toKatipLogLevel (daemonLogLevel env)
+  let logHandle = fromMaybe stdout (daemonLogHandle env)
   let registerScribe = do
-        scribeHandle <- Katip.mkHandleScribe Katip.ColorIfTerminal stdout (Katip.permitItem logLevel) Katip.V2
+        scribeHandle <- Katip.mkHandleScribe Katip.ColorIfTerminal logHandle (Katip.permitItem logLevel) Katip.V2
         Katip.registerScribe "stdout" scribeHandle Katip.defaultScribeSettings (daemonKLogEnv env)
 
   bracket registerScribe Katip.closeScribes $ \logEnv -> do
@@ -110,3 +115,13 @@ data QueuedPushRequest = QueuedPushRequest
     -- | An open socket to the client that sent the push request.
     clientConnection :: Maybe Socket.Socket
   }
+
+data PushStatistics = PushStatistics
+  { pushedCount :: Int,
+    skippedCount :: Int,
+    failedCount :: Int,
+    totalCount :: Int
+  }
+
+emptyPushStatistics :: PushStatistics
+emptyPushStatistics = PushStatistics 0 0 0 0

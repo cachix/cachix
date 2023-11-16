@@ -1,10 +1,12 @@
 module Cachix.Client.Daemon
-  ( Daemon,
-    runDaemon,
+  ( Types.Daemon,
+    Types.runDaemon,
     new,
     start,
     run,
     stop,
+    stopIO,
+    Stats.renderStats,
   )
 where
 
@@ -15,6 +17,7 @@ import Cachix.Client.Daemon.Listen as Daemon
 import Cachix.Client.Daemon.Protocol as Protocol
 import Cachix.Client.Daemon.Push as Push
 import Cachix.Client.Daemon.ShutdownLatch
+import Cachix.Client.Daemon.Stats as Stats
 import Cachix.Client.Daemon.Types as Types
 import Cachix.Client.Daemon.Worker as Worker
 import Cachix.Client.Env as Env
@@ -25,6 +28,7 @@ import Cachix.Client.Retry (retryAll)
 import Cachix.Types.BinaryCache (BinaryCacheName)
 import qualified Cachix.Types.BinaryCache as BinaryCache
 import Control.Concurrent.STM.TBMQueue
+import Control.Concurrent.STM.TVar
 import Control.Exception.Safe (catchAny)
 import qualified Control.Monad.Catch as E
 import qualified Data.Text as T
@@ -36,13 +40,14 @@ import qualified UnliftIO.Async as Async
 import qualified UnliftIO.QSem as QSem
 
 -- | Configure a new daemon. Use 'run' to start it.
-new :: Env -> DaemonOptions -> PushOptions -> BinaryCacheName -> IO DaemonEnv
-new daemonEnv daemonOptions daemonPushOptions daemonCacheName = do
+new :: Env -> DaemonOptions -> Maybe Handle -> PushOptions -> BinaryCacheName -> IO DaemonEnv
+new daemonEnv daemonOptions daemonLogHandle daemonPushOptions daemonCacheName = do
   daemonSocketPath <- maybe getSocketPath pure (Options.daemonSocketPath daemonOptions)
   daemonQueue <- newTBMQueueIO 1000
   daemonShutdownLatch <- newShutdownLatch
   daemonPushSemaphore <- QSem.newQSem (Options.numJobs daemonPushOptions)
   daemonPid <- getProcessID
+  daemonStats <- newTVarIO emptyPushStatistics
   daemonPushSecret <- Commands.Push.getPushSecretRequired (config daemonEnv) daemonCacheName
 
   let authToken = getAuthTokenFromPushSecret daemonPushSecret
@@ -53,7 +58,7 @@ new daemonEnv daemonOptions daemonPushOptions daemonCacheName = do
           then Debug
           else Info
 
-  daemonKLogEnv <- Katip.initLogEnv "cachix.daemon" ""
+  daemonKLogEnv <- Katip.initLogEnv "cachix.daemon.LOL" ""
   let daemonKNamespace = mempty
   let daemonKContext = mempty
 
@@ -62,7 +67,7 @@ new daemonEnv daemonOptions daemonPushOptions daemonCacheName = do
 -- | Configure and run the daemon
 start :: Env -> DaemonOptions -> PushOptions -> BinaryCacheName -> IO ()
 start daemonEnv daemonOptions daemonPushOptions daemonCacheName = do
-  daemon <- new daemonEnv daemonOptions daemonPushOptions daemonCacheName
+  daemon <- new daemonEnv daemonOptions Nothing daemonPushOptions daemonCacheName
   run daemon
 
 -- | Run a daemon from a given configuration
@@ -108,6 +113,10 @@ run daemon@DaemonEnv {..} = runDaemon daemon $ do
 
 stop :: Daemon ()
 stop = asks daemonShutdownLatch >>= initiateShutdown
+
+stopIO :: DaemonEnv -> IO ()
+stopIO DaemonEnv {daemonShutdownLatch} =
+  initiateShutdown daemonShutdownLatch
 
 shutdownQueue :: Daemon ()
 shutdownQueue = do

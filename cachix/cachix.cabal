@@ -74,6 +74,7 @@ library
     Cachix.Client.Daemon.Protocol
     Cachix.Client.Daemon.Push
     Cachix.Client.Daemon.ShutdownLatch
+    Cachix.Client.Daemon.Stats
     Cachix.Client.Daemon.Types
     Cachix.Client.Daemon.Worker
     Cachix.Client.Env
@@ -116,6 +117,7 @@ library
     , bytestring
     , cachix-api
     , concurrent-extra
+    , concurrent-output
     , conduit                 >=1.3.0
     , conduit-concurrent-map
     , conduit-extra
@@ -148,6 +150,7 @@ library
     , netrc
     , network
     , optparse-applicative
+    , posix-pty
     , pretty-terminal
     , prettyprinter
     , process

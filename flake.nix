@@ -53,13 +53,19 @@
       packages = forAllSystems (system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
+          hlib = pkgs.haskell.lib;
           inherit (customHaskellPackages { inherit pkgs; inherit (pkgs) haskellPackages; })
-            cachix;
+            cachix cachix-api;
+          release = {
+            cachix = hlib.sdistTarball cachix;
+            cachix-api = hlib.sdistTarball cachix-api;
+          };
         in
         {
           cachix = pkgs.haskell.lib.justStaticExecutables cachix;
           default = pkgs.haskell.lib.justStaticExecutables cachix;
           ci = self.devShells.${system}.default.ci;
+          release = pkgs.symlinkJoin { name = "release"; paths = builtins.attrValues release; };
         });
 
       checks = forAllSystems (system: {

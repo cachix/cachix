@@ -1,6 +1,7 @@
-- edit CHANGELOG.md
-- README.md `cachix --help` changes
-- git commit -m "vX.X.X"
-- git tag vX.X.X
-- git push --tags
-- bump link to https://cachix.org/api/v1/install
+# Release Checklist
+
+- Edit [CHANGELOG.md](./CHANGELOG.md)
+- Update the [README.md](./README.md) with any `cachix --help` changes
+- Run `./release.sh`
+- Push to GitHub `git push && git push --tags`
+- Update link to `https://cachix.org/api/v1/install`

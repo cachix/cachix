@@ -33,6 +33,9 @@ data DaemonEnv = DaemonEnv
     daemonCacheName :: BinaryCacheName,
     -- | The binary cache to push to
     daemonBinaryCache :: BinaryCache,
+    -- | An optional handle to output logs to.
+    -- Defaults to stdout.
+    daemonLogHandle :: Maybe Handle,
     -- | The log level to use for logging
     daemonLogLevel :: LogLevel,
     -- | Logger namespace
@@ -79,8 +82,9 @@ instance Katip.KatipContext Daemon where
 runDaemon :: DaemonEnv -> Daemon a -> IO a
 runDaemon env f = do
   let logLevel = toKatipLogLevel (daemonLogLevel env)
+  let logHandle = fromMaybe stdout (daemonLogHandle env)
   let registerScribe = do
-        scribeHandle <- Katip.mkHandleScribe Katip.ColorIfTerminal stdout (Katip.permitItem logLevel) Katip.V2
+        scribeHandle <- Katip.mkHandleScribe Katip.ColorIfTerminal logHandle (Katip.permitItem logLevel) Katip.V2
         Katip.registerScribe "stdout" scribeHandle Katip.defaultScribeSettings (daemonKLogEnv env)
 
   bracket registerScribe Katip.closeScribes $ \logEnv -> do

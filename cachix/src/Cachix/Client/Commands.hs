@@ -62,6 +62,7 @@ import Servant.Conduit ()
 import System.Directory (doesFileExist)
 import System.Environment (getEnvironment)
 import System.IO (hIsTerminalDevice)
+import System.IO.Temp (withSystemTempFile)
 import qualified System.Posix.Signals as Signals
 import qualified System.Process
 
@@ -241,25 +242,26 @@ watchExec env pushOpts name cmd args = withPushParams env pushOpts name $ \pushP
     getProcessHandle (_, _, _, processHandle) = processHandle
 
 watchExecDaemon :: Env -> PushOptions -> BinaryCacheName -> Text -> [Text] -> IO ()
-watchExecDaemon env pushOpts cacheName cmd args = do
-  Daemon.PostBuildHook.withSetup Nothing $ \daemonSock userConfEnv -> do
-    let daemonOptions = DaemonOptions {daemonSocketPath = Just daemonSock}
-    daemon <- Daemon.new env daemonOptions pushOpts cacheName
+watchExecDaemon env pushOpts cacheName cmd args =
+  Daemon.PostBuildHook.withSetup Nothing $ \daemonSock userConfEnv ->
+    withSystemTempFile "daemon-log-capture" $ \_ logHandle -> do
+      let daemonOptions = DaemonOptions {daemonSocketPath = Just daemonSock}
+      daemon <- Daemon.new env daemonOptions (Just logHandle) pushOpts cacheName
 
-    daemonThread <- Async.async $ Daemon.run daemon
+      daemonThread <- Async.async $ Daemon.run daemon
 
-    processEnv <- getEnvironment
-    let process =
-          (System.Process.proc (toS cmd) (toS <$> args))
-            { System.Process.std_out = System.Process.Inherit,
-              System.Process.env = Just (processEnv ++ [("NIX_USER_CONF_FILES", toS userConfEnv)]),
-              System.Process.delegate_ctlc = True
-            }
-    exitCode <- System.Process.withCreateProcess process $ \_ _ _ processHandle ->
-      System.Process.waitForProcess processHandle
+      processEnv <- getEnvironment
+      let process =
+            (System.Process.proc (toS cmd) (toS <$> args))
+              { System.Process.std_out = System.Process.Inherit,
+                System.Process.env = Just (processEnv ++ [("NIX_USER_CONF_FILES", toS userConfEnv)]),
+                System.Process.delegate_ctlc = True
+              }
+      exitCode <- System.Process.withCreateProcess process $ \_ _ _ processHandle ->
+        System.Process.waitForProcess processHandle
 
-    -- Stop the daemon and wait for all paths to be pushed
-    Daemon.runDaemon daemon Daemon.stop
-    Async.wait daemonThread
+      -- Stop the daemon and wait for all paths to be pushed
+      Daemon.runDaemon daemon Daemon.stop
+      Async.wait daemonThread
 
-    exitWith exitCode
+      exitWith exitCode

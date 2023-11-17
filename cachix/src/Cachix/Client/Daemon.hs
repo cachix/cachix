@@ -1,10 +1,11 @@
 module Cachix.Client.Daemon
-  ( Daemon,
-    runDaemon,
+  ( Types.Daemon,
+    Types.runDaemon,
     new,
     start,
     run,
     stop,
+    stopIO,
   )
 where
 
@@ -36,8 +37,20 @@ import qualified UnliftIO.Async as Async
 import qualified UnliftIO.QSem as QSem
 
 -- | Configure a new daemon. Use 'run' to start it.
-new :: Env -> DaemonOptions -> PushOptions -> BinaryCacheName -> IO DaemonEnv
-new daemonEnv daemonOptions daemonPushOptions daemonCacheName = do
+new ::
+  -- | The Cachix environment.
+  Env ->
+  -- | Daemon-specific options.
+  DaemonOptions ->
+  -- | An optional handle to output logs to.
+  Maybe Handle ->
+  -- | Push options, like compression settings and number of jobs.
+  PushOptions ->
+  -- | The name of the binary cache to push to.
+  BinaryCacheName ->
+  -- | The configured daemon environment.
+  IO DaemonEnv
+new daemonEnv daemonOptions daemonLogHandle daemonPushOptions daemonCacheName = do
   daemonSocketPath <- maybe getSocketPath pure (Options.daemonSocketPath daemonOptions)
   daemonQueue <- newTBMQueueIO 1000
   daemonShutdownLatch <- newShutdownLatch
@@ -59,10 +72,10 @@ new daemonEnv daemonOptions daemonPushOptions daemonCacheName = do
 
   return $ DaemonEnv {..}
 
--- | Configure and run the daemon
+-- | Configure and run the daemon. Equivalent to running 'new' and 'run'.
 start :: Env -> DaemonOptions -> PushOptions -> BinaryCacheName -> IO ()
 start daemonEnv daemonOptions daemonPushOptions daemonCacheName = do
-  daemon <- new daemonEnv daemonOptions daemonPushOptions daemonCacheName
+  daemon <- new daemonEnv daemonOptions Nothing daemonPushOptions daemonCacheName
   run daemon
 
 -- | Run a daemon from a given configuration
@@ -108,6 +121,10 @@ run daemon@DaemonEnv {..} = runDaemon daemon $ do
 
 stop :: Daemon ()
 stop = asks daemonShutdownLatch >>= initiateShutdown
+
+stopIO :: DaemonEnv -> IO ()
+stopIO DaemonEnv {daemonShutdownLatch} =
+  initiateShutdown daemonShutdownLatch
 
 shutdownQueue :: Daemon ()
 shutdownQueue = do

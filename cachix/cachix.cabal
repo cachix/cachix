@@ -69,11 +69,14 @@ library
     Cachix.Client.Config.Orphans
     Cachix.Client.Daemon
     Cachix.Client.Daemon.Client
+    Cachix.Client.Daemon.Event
     Cachix.Client.Daemon.Listen
     Cachix.Client.Daemon.PostBuildHook
+    Cachix.Client.Daemon.Progress
     Cachix.Client.Daemon.Protocol
     Cachix.Client.Daemon.Push
     Cachix.Client.Daemon.ShutdownLatch
+    Cachix.Client.Daemon.Subscription
     Cachix.Client.Daemon.Types
     Cachix.Client.Daemon.Worker
     Cachix.Client.Env

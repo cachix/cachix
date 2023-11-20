@@ -21,7 +21,6 @@ push :: Env -> DaemonOptions -> [FilePath] -> IO ()
 push _env daemonOptions storePaths =
   withDaemonConn (daemonSocketPath daemonOptions) $ \sock -> do
     Socket.LBS.sendAll sock (Aeson.encode pushRequest)
-    Socket.gracefulClose sock 5000
   where
     pushRequest =
       Protocol.ClientPushRequest $

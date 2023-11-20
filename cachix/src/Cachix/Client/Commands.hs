@@ -22,6 +22,8 @@ import Cachix.Client.Commands.Push
 import qualified Cachix.Client.Config as Config
 import qualified Cachix.Client.Daemon as Daemon
 import qualified Cachix.Client.Daemon.PostBuildHook as Daemon.PostBuildHook
+import qualified Cachix.Client.Daemon.Progress as Daemon.Progress
+import Cachix.Client.Daemon.Types
 import Cachix.Client.Env (Env (..))
 import Cachix.Client.Exception (CachixException (..))
 import qualified Cachix.Client.InstallationMode as InstallationMode
@@ -48,8 +50,14 @@ import qualified Control.Concurrent.Async as Async
 import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
 import Crypto.Sign.Ed25519 (PublicKey (PublicKey), createKeypair)
 import qualified Data.ByteString.Base64 as B64
+import Data.Conduit (runConduit, (.|))
+import qualified Data.Conduit.Combinators as C
+import qualified Data.Conduit.TMChan as C
+import Data.HashMap.Strict as HashMap
+import Data.IORef
 import Data.String.Here
 import qualified Data.Text as T
+import Data.Text.IO (hGetLine)
 import qualified Data.Text.IO as T.IO
 import GHC.IO.Handle (hDuplicate, hDuplicateTo)
 import Hercules.CNix.Store (storePathToPath, withStore)
@@ -62,6 +70,7 @@ import Servant.Conduit ()
 import System.Directory (doesFileExist)
 import System.Environment (getEnvironment)
 import System.IO (hIsTerminalDevice)
+import System.IO.Error (isEOFError)
 import System.IO.Temp (withSystemTempFile)
 import qualified System.Posix.Signals as Signals
 import qualified System.Process
@@ -248,7 +257,11 @@ watchExecDaemon env pushOpts cacheName cmd args =
       let daemonOptions = DaemonOptions {daemonSocketPath = Just daemonSock}
       daemon <- Daemon.new env daemonOptions (Just logHandle) pushOpts cacheName
 
+      -- Launch the daemon in the background
       daemonThread <- Async.async $ Daemon.run daemon
+
+      -- Subscribe to all push events
+      daemonChan <- Daemon.subscribe daemon
 
       processEnv <- getEnvironment
       let process =
@@ -260,8 +273,50 @@ watchExecDaemon env pushOpts cacheName cmd args =
       exitCode <- System.Process.withCreateProcess process $ \_ _ _ processHandle ->
         System.Process.waitForProcess processHandle
 
-      -- Stop the daemon and wait for all paths to be pushed
-      Daemon.runDaemon daemon Daemon.stop
-      Async.wait daemonThread
+      -- TODO: process and fold events into a state during command execution
+      daemonExitCode <- Async.withAsync (postWatchExec daemonChan) $ \_ -> do
+        Daemon.stopIO daemon
+        Async.wait daemonThread
+
+      -- Print the daemon log in case there was an internal error
+      case daemonExitCode of
+        ExitFailure _ -> printLog logHandle
+        ExitSuccess -> return ()
 
       exitWith exitCode
+  where
+    postWatchExec chan = do
+      statsRef <- newIORef HashMap.empty
+      runConduit $
+        C.sourceTMChan chan
+          .| C.mapM_ (displayPushEvent statsRef)
+
+    displayPushEvent statsRef PushEvent {eventMessage} = liftIO $
+      case eventMessage of
+        PushStorePathAttempt path pathSize retryStatus -> do
+          progress <- Daemon.Progress.new stderr (toS path) pathSize retryStatus
+          modifyIORef' statsRef (HashMap.insert path progress)
+        PushStorePathProgress path _ newBytes -> do
+          stats <- readIORef statsRef
+          case HashMap.lookup path stats of
+            Nothing -> return ()
+            Just progress -> Daemon.Progress.tick progress newBytes
+        PushStorePathDone path -> do
+          stats <- readIORef statsRef
+          mapM_ Daemon.Progress.complete (HashMap.lookup path stats)
+        PushStorePathFailed path _ -> do
+          stats <- readIORef statsRef
+          mapM_ Daemon.Progress.fail (HashMap.lookup path stats)
+        _ -> return ()
+
+    printLog h = getLineLoop
+      where
+        getLineLoop = do
+          eline <- try $ hGetLine h
+          case eline of
+            Left e
+              | isEOFError e -> return ()
+              | otherwise -> putErrText $ "Error reading daemon log: " <> show e
+            Right line -> do
+              hPutStr stderr line
+              getLineLoop

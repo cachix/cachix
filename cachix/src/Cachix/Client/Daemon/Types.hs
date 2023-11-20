@@ -1,10 +1,14 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Cachix.Client.Daemon.Types where
 
 import Cachix.Client.Config.Orphans ()
+import Cachix.Client.Daemon.Event as Event
 import qualified Cachix.Client.Daemon.Protocol as Protocol
 import Cachix.Client.Daemon.ShutdownLatch (ShutdownLatch)
+import Cachix.Client.Daemon.Subscription (SubscriptionManager)
+import qualified Cachix.Client.Daemon.Subscription as Subscription
 import Cachix.Client.Env as Env
 import Cachix.Client.OptionsParser (PushOptions)
 import Cachix.Client.Push
@@ -13,8 +17,10 @@ import qualified Control.Concurrent.QSem as QSem
 import Control.Concurrent.STM.TBMQueue
 import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
 import Control.Monad.IO.Unlift (MonadUnliftIO)
+import Control.Retry (RetryStatus (..))
+import Data.Aeson (FromJSON, ToJSON)
+import Data.Time (UTCTime, getCurrentTime)
 import qualified Katip
-import qualified Network.Socket as Socket
 import Protolude hiding (bracketOnError)
 import System.Posix.Types (ProcessID)
 
@@ -25,14 +31,16 @@ data DaemonEnv = DaemonEnv
     daemonPushOptions :: PushOptions,
     -- | Path to the socket that the daemon listens on
     daemonSocketPath :: FilePath,
-    -- | Queue of push requests to be processed by the worker threads
-    daemonQueue :: TBMQueue QueuedPushRequest,
     -- | The push secret for the binary cache
     daemonPushSecret :: PushSecret,
     -- | The name of the binary cache to push to
     daemonCacheName :: BinaryCacheName,
     -- | The binary cache to push to
     daemonBinaryCache :: BinaryCache,
+    -- | Queue of push requests to be processed by the worker threads
+    daemonQueue :: TBMQueue PushJob,
+    -- | A multiplexer for push events.
+    daemonSubscriptionManager :: SubscriptionManager Protocol.PushRequestId PushEvent,
     -- | An optional handle to output logs to.
     -- Defaults to stdout.
     daemonLogHandle :: Maybe Handle,
@@ -78,6 +86,39 @@ instance Katip.KatipContext Daemon where
   getKatipNamespace = asks daemonKNamespace
   localKatipNamespace f (Daemon m) = Daemon (local (\s -> s {daemonKNamespace = f (daemonKNamespace s)}) m)
 
+instance HasEvent Daemon where
+  type Key Daemon = Protocol.PushRequestId
+  type Event Daemon = PushEvent
+
+  pushEvent k v = do
+    daemonSubscriptionManager <- asks daemonSubscriptionManager
+    Subscription.pushEvent daemonSubscriptionManager k v
+
+  pushStarted pushId = do
+    timestamp <- liftIO getCurrentTime
+    pushEvent pushId $ PushEvent timestamp pushId (PushStarted timestamp)
+
+  pushFinished pushId = do
+    timestamp <- liftIO getCurrentTime
+    pushEvent pushId $ PushEvent timestamp pushId (PushFinished timestamp)
+
+  pushStorePathAttempt pushId storePath size retryStatus = do
+    let pushRetryStatus = newPushRetryStatus retryStatus
+    timestamp <- liftIO getCurrentTime
+    pushEvent pushId $ PushEvent timestamp pushId (PushStorePathAttempt storePath size pushRetryStatus)
+
+  pushStorePathProgress pushId storePath currentBytes newBytes = do
+    timestamp <- liftIO getCurrentTime
+    pushEvent pushId $ PushEvent timestamp pushId (PushStorePathProgress storePath currentBytes newBytes)
+
+  pushStorePathDone pushId storePath = do
+    timestamp <- liftIO getCurrentTime
+    pushEvent pushId $ PushEvent timestamp pushId (PushStorePathDone storePath)
+
+  pushStorePathFailed pushId storePath errMsg = do
+    timestamp <- liftIO getCurrentTime
+    pushEvent pushId $ PushEvent timestamp pushId (PushStorePathFailed storePath errMsg)
+
 -- | Run a pre-configured daemon.
 runDaemon :: DaemonEnv -> Daemon a -> IO a
 runDaemon env f = do
@@ -108,9 +149,46 @@ toKatipLogLevel = \case
   Error -> Katip.ErrorS
 
 -- | A push request that has been queued for processing.
-data QueuedPushRequest = QueuedPushRequest
-  { -- | The original push request.
-    pushRequest :: Protocol.PushRequest,
-    -- | An open socket to the client that sent the push request.
-    clientConnection :: Maybe Socket.Socket
+data PushJob = PushJob
+  { -- | A unique identifier for this push request.
+    pushId :: Protocol.PushRequestId,
+    -- | The time when the push request was queued.
+    pushCreatedAt :: UTCTime,
+    -- | The original push request.
+    pushRequest :: Protocol.PushRequest
   }
+  deriving (Show)
+
+data PushEvent = PushEvent
+  { eventTimestamp :: UTCTime,
+    eventPushId :: Protocol.PushRequestId,
+    eventMessage :: PushEventMessage
+  }
+  deriving stock (Eq, Generic, Show)
+  deriving anyclass (FromJSON, ToJSON)
+
+instance Ord PushEvent where
+  compare = compare `on` eventTimestamp
+
+data PushEventMessage
+  = PushStarted UTCTime
+  | PushStorePathAttempt FilePath Int64 PushRetryStatus
+  | PushStorePathProgress FilePath Int64 Int64
+  | PushStorePathDone FilePath
+  | PushStorePathFailed FilePath Text
+  | PushFinished UTCTime
+  deriving stock (Eq, Generic, Show)
+  deriving anyclass (FromJSON, ToJSON)
+
+data PushRetryStatus = PushRetryStatus {retryCount :: Int}
+  deriving stock (Eq, Generic, Show)
+  deriving anyclass (FromJSON, ToJSON)
+
+newPushRetryStatus :: RetryStatus -> PushRetryStatus
+newPushRetryStatus RetryStatus {..} = PushRetryStatus {retryCount = rsIterNumber}
+
+newPushJob :: (MonadIO m) => Protocol.PushRequest -> m PushJob
+newPushJob pushRequest = do
+  pushId <- Protocol.newPushRequestId
+  pushCreatedAt <- liftIO getCurrentTime
+  return $ PushJob {..}

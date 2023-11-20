@@ -7,18 +7,18 @@ module Cachix.Client.Daemon.Worker
 where
 
 import Cachix.Client.Config.Orphans ()
-import Cachix.Client.Daemon.Types (Daemon, DaemonEnv (..), QueuedPushRequest)
+import Cachix.Client.Daemon.Types (Daemon, DaemonEnv (..), PushJob (..))
 import qualified Control.Concurrent.Async as Async
 import Control.Concurrent.STM.TBMQueue
 import qualified Control.Immortal as Immortal
 import qualified Katip
 import Protolude
 
-startWorkers :: Int -> (QueuedPushRequest -> Daemon ()) -> Daemon [Immortal.Thread]
+startWorkers :: Int -> (PushJob -> Daemon ()) -> Daemon [Immortal.Thread]
 startWorkers numWorkers f = do
   replicateM numWorkers (startWorker f)
 
-startWorker :: (QueuedPushRequest -> Daemon ()) -> Daemon Immortal.Thread
+startWorker :: (PushJob -> Daemon ()) -> Daemon Immortal.Thread
 startWorker f = do
   Immortal.createWithLabel "worker" $ \thread -> do
     Katip.katipAddNamespace "worker" $
@@ -40,14 +40,15 @@ logWorkerException (Left err) =
   Katip.logFM Katip.ErrorS $ Katip.ls (toS $ displayException err :: Text)
 logWorkerException _ = return ()
 
-runWorker :: (QueuedPushRequest -> Daemon ()) -> Daemon ()
+runWorker :: (PushJob -> Daemon ()) -> Daemon ()
 runWorker f = loop
   where
     loop = do
       DaemonEnv {..} <- ask
-      mres <- liftIO $ atomically (readTBMQueue daemonQueue)
+      mres <- liftIO $ atomically $ readTBMQueue daemonQueue
+
       case mres of
         Nothing -> return ()
-        Just msg -> do
-          f msg
+        Just job -> do
+          f job
           loop

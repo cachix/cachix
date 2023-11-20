@@ -257,6 +257,8 @@ uploadStorePath cache storePath retrystatus = do
                   }
           escalate $ Api.isNarInfoCreateValid nic
 
+          print nic
+
           -- Complete the multipart upload and upload the narinfo
           let completeMultipartUploadRequest =
                 API.completeNarUpload cachixClient authToken cacheName narId uploadId $

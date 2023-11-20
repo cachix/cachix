@@ -24,6 +24,7 @@ import Control.Retry (RetryStatus (..))
 import qualified Data.ByteString as BS
 import Data.IORef
 import qualified Data.Set as Set
+import Data.String (String)
 import qualified Data.Text as T
 import Hercules.CNix (StorePath)
 import Hercules.CNix.Store (Store, storePathToPath, withStore)
@@ -59,10 +60,7 @@ withPushParams m = do
               pushParamsClientEnv = clientenv daemonEnv,
               pushOnClosureAttempt = \full missing -> do
                 let already = Set.toList $ Set.difference (Set.fromList full) (Set.fromList missing)
-                forM_ already $ \sp -> do
-                  p <- liftIO $ storePathToPath store sp
-                  pushStorePathDone (pushId pushJob) (toS p)
-                  Katip.logFM Katip.InfoS $ Katip.ls $ "Skipping " <> (toS p :: Text)
+                mapM_ (onAlreadyPresent . pushStrategy) already
                 return missing,
               pushParamsStrategy = pushStrategy,
               pushParamsStore = store
@@ -70,9 +68,7 @@ withPushParams m = do
 
 newPushStrategy :: Store -> Maybe Token -> PushOptions -> Text -> BinaryCache.CompressionMethod -> PushJob -> Daemon (StorePath -> PushStrategy Daemon ())
 newPushStrategy store authToken opts cacheName compressionMethod pushJob = do
-  -- liftIO $ print (pushId pushJob)
-  daemonSubscriptionManager <- asks daemonSubscriptionManager
-
+  -- TODO: fetch everything here?
   return $ \storePath -> do
     PushStrategy
       { onAlreadyPresent = do
@@ -96,9 +92,7 @@ newPushStrategy store authToken opts cacheName compressionMethod pushJob = do
             lastCount <- liftIO $ readIORef lastPush
             when (newTotalCount - lastCount > 1024 || newTotalCount == size) $ do
               liftIO $ writeIORef lastPush newTotalCount
-              lift $
-                lift $
-                  pushStorePathProgress (pushId pushJob) (toS sp) newTotalCount,
+              lift $ lift $ pushStorePathProgress (pushId pushJob) (toS sp) newTotalCount,
         onDone = do
           sp <- liftIO $ storePathToPath store storePath
           pushStorePathDone (pushId pushJob) (toS sp)
@@ -155,6 +149,7 @@ retryText retryStatus =
     then ""
     else color Yellow $ "retry #" <> show (rsIterNumber retryStatus) <> " "
 
+showUploadProgress :: String -> Int64 -> IO (Int64 -> IO ())
 showUploadProgress path size = do
   let hSize = toS $ humanSize $ fromIntegral size
   lastUpdateRef <- liftIO $ newIORef (0 :: Int64)
@@ -172,17 +167,21 @@ showUploadProgress path size = do
               { pgTotal = fromIntegral size,
                 -- https://github.com/yamadapc/haskell-ascii-progress/issues/24
                 pgWidth = 20 + barLength,
-                pgOnCompletion = Just $ color Green "✓ " <> toS path <> " (" <> hSize <> ")",
+                pgOnCompletion = Just $ completedUpload path hSize,
                 pgFormat = bar
               }
 
       return $ \progress -> do
         lastUpdate <- readIORef lastUpdateRef
-        let diff = fromIntegral (progress - lastUpdate)
+        let deltaBytes = fromIntegral (progress - lastUpdate)
         writeIORef lastUpdateRef progress
-        liftIO $ tickN progressBar diff
+        liftIO $ tickN progressBar deltaBytes
     else do
       -- we append newline instead of putStrLn due to https://github.com/haskell/text/issues/242
       -- appendErrText $ retryText retryStatus <> "Pushing " <> path <> " (" <> toS hSize <> ")\n"
-      putErrText $ "Pushing " <> path <> " (" <> toS hSize <> ")\n"
+      putErrLn $ "Pushing " <> path <> " (" <> toS hSize <> ")\n"
       return $ const pass
+
+completedUpload :: String -> String -> String
+completedUpload path hSize =
+  color Green "✓ " <> path <> " (" <> hSize <> ")"

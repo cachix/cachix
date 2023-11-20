@@ -105,9 +105,6 @@ run daemon@DaemonEnv {..} = runDaemon daemon $ do
         E.bracketOnError (Daemon.openSocket daemonSocketPath) Daemon.closeSocket $ \sock -> do
           liftIO $ Socket.listen sock Socket.maxListenQueue
 
-          pushId <- Protocol.newPushRequestId
-          pushStarted pushId
-
           res <-
             Async.race (waitForShutdown daemonShutdownLatch) $
               Daemon.listen queueJob sock `E.finally` stop
@@ -146,11 +143,10 @@ shutdownQueue = do
   queue <- asks daemonQueue
   liftIO $ atomically $ closeTBMQueue queue
 
-queueJob :: (Protocol.PushRequest, Socket.Socket) -> Daemon ()
-queueJob (pushRequest, clientConn) = do
+queueJob :: Protocol.PushRequest -> Socket.Socket -> Daemon ()
+queueJob pushRequest clientConn = do
   DaemonEnv {..} <- ask
   pushJob <- newPushJob pushRequest
-  print pushJob
   liftIO $ atomically $ do
     -- Subscribe the socket to updates
     subscribeToSTM daemonSubscriptionManager (pushId pushJob) (SubSocket clientConn)

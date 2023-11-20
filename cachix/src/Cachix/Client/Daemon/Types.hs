@@ -15,16 +15,11 @@ import Cachix.Client.Push
 import Cachix.Types.BinaryCache (BinaryCache, BinaryCacheName)
 import qualified Control.Concurrent.QSem as QSem
 import Control.Concurrent.STM.TBMQueue
-import Control.Concurrent.STM.TMChan
-import Control.Concurrent.STM.TVar
 import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
 import Control.Monad.IO.Unlift (MonadUnliftIO)
 import Data.Aeson (FromJSON, ToJSON)
-import qualified Data.Map.Strict as Map
 import Data.Time (UTCTime, getCurrentTime)
-import Hercules.CNix (StorePath)
 import qualified Katip
-import qualified Network.Socket as Socket
 import Protolude hiding (bracketOnError)
 import System.Posix.Types (ProcessID)
 

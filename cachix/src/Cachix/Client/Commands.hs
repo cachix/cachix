@@ -45,6 +45,7 @@ import Cachix.Types.BinaryCache (BinaryCacheName)
 import qualified Cachix.Types.PinCreate as PinCreate
 import qualified Cachix.Types.SigningKeyCreate as SigningKeyCreate
 import qualified Control.Concurrent.Async as Async
+import Control.Concurrent.STM.TMChan
 import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
 import Crypto.Sign.Ed25519 (PublicKey (PublicKey), createKeypair)
 import qualified Data.ByteString.Base64 as B64
@@ -250,6 +251,21 @@ watchExecDaemon env pushOpts cacheName cmd args =
 
       daemonThread <- Async.async $ Daemon.run daemon
 
+      -- Subscribe to all events
+      chan <- Daemon.subscribe daemon
+
+      -- start processing the events into a push summary
+      let boop = do
+            -- Print everything push and in-flight requests
+            mevent <- atomically $ readTMChan chan
+            case mevent of
+              Nothing -> return ()
+              Just event -> do
+                putText $ show event
+                boop
+
+      boopThread <- Async.async boop
+
       processEnv <- getEnvironment
       let process =
             (System.Process.proc (toS cmd) (toS <$> args))
@@ -260,8 +276,17 @@ watchExecDaemon env pushOpts cacheName cmd args =
       exitCode <- System.Process.withCreateProcess process $ \_ _ _ processHandle ->
         System.Process.waitForProcess processHandle
 
+      print "COMMAND DONE"
+
+      print "STOPPING DAEMON"
       -- Stop the daemon and wait for all paths to be pushed
       Daemon.runDaemon daemon Daemon.stop
       Async.wait daemonThread
+      print "STOPPED DAEMON"
+
+      -- Async.wait boopThread
+
+      -- Race watching the daemon event channel and stopping it.
+      -- Print everything push and in-flight requests
 
       exitWith exitCode

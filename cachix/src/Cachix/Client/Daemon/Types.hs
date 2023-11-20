@@ -1,18 +1,28 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Cachix.Client.Daemon.Types where
 
 import Cachix.Client.Config.Orphans ()
+import Cachix.Client.Daemon.Event as Event
 import qualified Cachix.Client.Daemon.Protocol as Protocol
 import Cachix.Client.Daemon.ShutdownLatch (ShutdownLatch)
+import Cachix.Client.Daemon.Subscription (SubscriptionManager)
+import qualified Cachix.Client.Daemon.Subscription as Subscription
 import Cachix.Client.Env as Env
 import Cachix.Client.OptionsParser (PushOptions)
 import Cachix.Client.Push
 import Cachix.Types.BinaryCache (BinaryCache, BinaryCacheName)
 import qualified Control.Concurrent.QSem as QSem
 import Control.Concurrent.STM.TBMQueue
+import Control.Concurrent.STM.TMChan
+import Control.Concurrent.STM.TVar
 import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
 import Control.Monad.IO.Unlift (MonadUnliftIO)
+import Data.Aeson (FromJSON, ToJSON)
+import qualified Data.Map.Strict as Map
+import Data.Time (UTCTime, getCurrentTime)
+import Hercules.CNix (StorePath)
 import qualified Katip
 import qualified Network.Socket as Socket
 import Protolude hiding (bracketOnError)
@@ -25,14 +35,18 @@ data DaemonEnv = DaemonEnv
     daemonPushOptions :: PushOptions,
     -- | Path to the socket that the daemon listens on
     daemonSocketPath :: FilePath,
-    -- | Queue of push requests to be processed by the worker threads
-    daemonQueue :: TBMQueue QueuedPushRequest,
     -- | The push secret for the binary cache
     daemonPushSecret :: PushSecret,
     -- | The name of the binary cache to push to
     daemonCacheName :: BinaryCacheName,
     -- | The binary cache to push to
     daemonBinaryCache :: BinaryCache,
+    -- | Queue of push requests to be processed by the worker threads
+    daemonQueue :: TBMQueue PushJob,
+    -- | Map of push request IDs to push jobs
+    daemonJobs :: TVar (Map Protocol.PushRequestId PushJob),
+    -- | A multiplexer for push events.
+    daemonSubscriptionManager :: SubscriptionManager Protocol.PushRequestId PushEvent,
     -- | An optional handle to output logs to.
     -- Defaults to stdout.
     daemonLogHandle :: Maybe Handle,
@@ -78,6 +92,34 @@ instance Katip.KatipContext Daemon where
   getKatipNamespace = asks daemonKNamespace
   localKatipNamespace f (Daemon m) = Daemon (local (\s -> s {daemonKNamespace = f (daemonKNamespace s)}) m)
 
+instance HasEvent Daemon where
+  type Key Daemon = Protocol.PushRequestId
+  type Event Daemon = PushEvent
+
+  pushEvent k v = do
+    daemonSubscriptionManager <- asks daemonSubscriptionManager
+    Subscription.pushEvent daemonSubscriptionManager k v
+
+  pushStarted pushId = do
+    timestamp <- liftIO getCurrentTime
+    pushEvent pushId $ PushEvent timestamp pushId (PushStarted timestamp)
+
+  pushFinished pushId = do
+    timestamp <- liftIO getCurrentTime
+    pushEvent pushId $ PushEvent timestamp pushId (PushFinished timestamp)
+
+  pushStorePathAttempt pushId storePath = do
+    timestamp <- liftIO getCurrentTime
+    pushEvent pushId $ PushEvent timestamp pushId (PushStorePathAttempt storePath)
+
+  pushStorePathProgress pushId storePath progress = do
+    timestamp <- liftIO getCurrentTime
+    pushEvent pushId $ PushEvent timestamp pushId (PushStorePathProgress storePath progress)
+
+  pushStorePathDone pushId storePath = do
+    timestamp <- liftIO getCurrentTime
+    pushEvent pushId $ PushEvent timestamp pushId (PushStorePathDone storePath)
+
 -- | Run a pre-configured daemon.
 runDaemon :: DaemonEnv -> Daemon a -> IO a
 runDaemon env f = do
@@ -108,9 +150,72 @@ toKatipLogLevel = \case
   Error -> Katip.ErrorS
 
 -- | A push request that has been queued for processing.
-data QueuedPushRequest = QueuedPushRequest
-  { -- | The original push request.
-    pushRequest :: Protocol.PushRequest,
-    -- | An open socket to the client that sent the push request.
-    clientConnection :: Maybe Socket.Socket
+data PushJob = PushJob
+  { -- | A unique identifier for this push request.
+    pushId :: Protocol.PushRequestId,
+    -- | The time when the push request was queued.
+    pushCreatedAt :: UTCTime,
+    -- | The original push request.
+    pushRequest :: Protocol.PushRequest
   }
+  deriving (Show)
+
+data PushEvent = PushEvent
+  { eventTimestamp :: UTCTime,
+    eventPushId :: Protocol.PushRequestId,
+    eventMessage :: PushEventMessage
+  }
+  deriving stock (Eq, Generic, Show)
+  deriving anyclass (FromJSON, ToJSON)
+
+instance Ord PushEvent where
+  compare = compare `on` eventTimestamp
+
+data PushEventMessage
+  = PushStarted UTCTime
+  | PushStorePathAttempt FilePath
+  | PushStorePathProgress FilePath Int
+  | PushStorePathDone FilePath
+  | PushFinished UTCTime
+  deriving stock (Eq, Generic, Show)
+  deriving anyclass (FromJSON, ToJSON)
+
+newPushJob :: (MonadIO m) => Protocol.PushRequest -> m PushJob
+newPushJob pushRequest = do
+  pushId <- Protocol.newPushRequestId
+  pushCreatedAt <- liftIO getCurrentTime
+  return $ PushJob {..}
+
+-- NOTES
+--
+-- Receive a push request.
+--
+-- Queue the request. Basically, just save it.
+--
+-- Resolve the push request. Normalize + resolve clojure.
+--
+-- Queue invidual store paths, linked to a push request.
+--
+-- Worker picks up a store path and pushes it.
+--   - During the push, the worker sends push events.
+--
+-- A subscription thread processes the push events and sends them to any subscribed clients.
+--
+-- Who keeps track of an active push request?
+--
+-- One queue, workers can process both then.
+-- Job = ResolveClojureJob | Push Job
+--
+-- Split out subscriptions and jobs?
+-- Subscription thread subscribes to push events and sends them to clients.
+-- 1 thread per client, blocked on STM.
+--
+-- Worker thread picks up jobs and processes them.
+-- Job  /= PushJob. Jobs are specific-worker tasks.
+-- PushJob is the overall push request.
+--
+-- The PushStatus can be reconstructed entirely from PushEvents.
+-- Event sourcing
+--
+-- push :: Protocol.PushRequest -> IO (TChan PushEvent)
+--

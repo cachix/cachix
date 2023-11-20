@@ -6,28 +6,33 @@ module Cachix.Client.Daemon
     run,
     stop,
     stopIO,
+    subscribe,
   )
 where
 
 import qualified Cachix.Client.Commands.Push as Commands.Push
 import qualified Cachix.Client.Config as Config
 import Cachix.Client.Config.Orphans ()
+import Cachix.Client.Daemon.Event
 import Cachix.Client.Daemon.Listen as Daemon
 import Cachix.Client.Daemon.Protocol as Protocol
 import Cachix.Client.Daemon.Push as Push
 import Cachix.Client.Daemon.ShutdownLatch
+import Cachix.Client.Daemon.Subscription
 import Cachix.Client.Daemon.Types as Types
-import Cachix.Client.Daemon.Worker as Worker
+import qualified Cachix.Client.Daemon.Worker as Worker
 import Cachix.Client.Env as Env
 import Cachix.Client.OptionsParser (DaemonOptions, PushOptions)
 import qualified Cachix.Client.OptionsParser as Options
 import Cachix.Client.Push
-import Cachix.Client.Retry (retryAll)
 import Cachix.Types.BinaryCache (BinaryCacheName)
 import qualified Cachix.Types.BinaryCache as BinaryCache
 import Control.Concurrent.STM.TBMQueue
+import Control.Concurrent.STM.TMChan
+import Control.Concurrent.STM.TVar
 import Control.Exception.Safe (catchAny)
 import qualified Control.Monad.Catch as E
+import qualified Data.Map.Strict as Map
 import qualified Data.Text as T
 import qualified Katip
 import qualified Network.Socket as Socket
@@ -53,6 +58,8 @@ new ::
 new daemonEnv daemonOptions daemonLogHandle daemonPushOptions daemonCacheName = do
   daemonSocketPath <- maybe getSocketPath pure (Options.daemonSocketPath daemonOptions)
   daemonQueue <- newTBMQueueIO 1000
+  daemonJobs <- newTVarIO Map.empty
+  daemonSubscriptionManager <- newSubscriptionManager
   daemonShutdownLatch <- newShutdownLatch
   daemonPushSemaphore <- QSem.newQSem (Options.numJobs daemonPushOptions)
   daemonPid <- getProcessID
@@ -84,22 +91,31 @@ run daemon@DaemonEnv {..} = runDaemon daemon $ do
   Katip.logFM Katip.InfoS "Starting Cachix Daemon"
 
   config <- showConfiguration
-  Katip.logFM Katip.InfoS $ Katip.ls $ T.intercalate "\n" ["Configuration:", config]
+  Katip.logFM Katip.InfoS $ Katip.ls $ "Configuration:\n" <> config
 
-  let numWorkers = Options.numJobs daemonPushOptions
+  let workerCount = Options.numJobs daemonPushOptions
+      startWorkers pushParams = Worker.startWorkers workerCount (Push.handleRequest pushParams)
+
+  subscriptionManagerThread <-
+    liftIO $ Async.async $ runSubscriptionManager daemonSubscriptionManager
 
   Push.withPushParams $ \pushParams ->
-    E.bracketOnError (Worker.startWorkers numWorkers (handleRequest pushParams)) Worker.stopWorkers $ \workers -> do
+    E.bracketOnError (startWorkers pushParams) Worker.stopWorkers $ \workers -> do
       flip E.onError shutdownQueue $
         -- TODO: retry the connection on socket errors
         E.bracketOnError (Daemon.openSocket daemonSocketPath) Daemon.closeSocket $ \sock -> do
           liftIO $ Socket.listen sock Socket.maxListenQueue
 
+          pushId <- Protocol.newPushRequestId
+          pushStarted pushId
+
           res <-
             Async.race (waitForShutdown daemonShutdownLatch) $
-              liftIO (Daemon.listen daemonQueue sock) `E.finally` stop
+              Daemon.listen queueJob sock `E.finally` stop
 
           waitForShutdown daemonShutdownLatch
+
+          print "POST WAIT SHUTDOWN"
 
           Katip.logFM Katip.InfoS "Shutting down daemon..."
 
@@ -110,6 +126,8 @@ run daemon@DaemonEnv {..} = runDaemon daemon $ do
 
           -- Gracefully shutdown the worker *before* closing the socket
           Worker.stopWorkers workers
+
+          liftIO $ stopSubscriptionManager daemonSubscriptionManager
 
           -- TODO: say goodbye to all clients waiting for their push to go through
           case res of
@@ -131,23 +149,23 @@ shutdownQueue = do
   queue <- asks daemonQueue
   liftIO $ atomically $ closeTBMQueue queue
 
--- TODO: split into two jobs: 1. query/normalize/filter 2. push store path
-handleRequest :: PushParams Daemon a -> QueuedPushRequest -> Daemon ()
-handleRequest pushParams (QueuedPushRequest {..}) = do
-  let store = pushParamsStore pushParams
-  normalized <- mapM (Push.normalizeStorePath store) (Protocol.storePaths pushRequest)
+queueJob :: (Protocol.PushRequest, Socket.Socket) -> Daemon ()
+queueJob (pushRequest, clientConn) = do
+  DaemonEnv {..} <- ask
+  pushJob <- newPushJob pushRequest
+  print pushJob
+  liftIO $ atomically $ do
+    -- Subscribe the socket to updates
+    subscribeToSTM daemonSubscriptionManager (pushId pushJob) (SubSocket clientConn)
 
-  (allPaths, missingPaths) <- getMissingPathsForClosure pushParams (catMaybes normalized)
+    -- TODO: push job to the queue
+    writeTBMQueue daemonQueue pushJob
 
-  paths <- pushOnClosureAttempt pushParams allPaths missingPaths
-
-  qs <- asks daemonPushSemaphore
-  let upload storePath =
-        E.bracket_ (QSem.waitQSem qs) (QSem.signalQSem qs) $
-          retryAll $
-            uploadStorePath pushParams storePath
-
-  Async.mapConcurrently_ upload paths
+subscribe :: DaemonEnv -> IO (TMChan PushEvent)
+subscribe DaemonEnv {..} = do
+  chan <- liftIO newBroadcastTMChanIO
+  liftIO $ atomically $ subscribeToAllSTM daemonSubscriptionManager (SubChannel chan)
+  atomically $ dupTMChan chan
 
 -- | Print debug information about the daemon configuration
 showConfiguration :: Daemon Text

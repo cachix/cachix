@@ -8,7 +8,7 @@ module Cachix.Client.Daemon.Listen
 where
 
 import Cachix.Client.Config.Orphans ()
-import Cachix.Client.Daemon.Protocol
+import Cachix.Client.Daemon.Protocol as Protocol
 import Cachix.Client.Daemon.Types
 import Control.Concurrent.STM.TBMQueue
 import Control.Exception.Safe (catchAny)
@@ -39,20 +39,17 @@ instance Exception ListenError where
     DecodingError err -> "Failed to decode request: " <> toS err
 
 -- | The main daemon server loop.
---
--- The daemon listens for incoming push requests on the provided socket and queues them up for the worker thread.
-listen :: TBMQueue QueuedPushRequest -> Socket.Socket -> IO Socket.Socket
-listen queue sock = loop
+listen :: (MonadIO m) => ((Protocol.PushRequest, Socket.Socket) -> m ()) -> Socket.Socket -> m Socket.Socket
+listen pushToQueue sock = loop
   where
     loop = do
-      result <- runExceptT $ readPushRequest sock
+      result <- liftIO $ runExceptT $ readPushRequest sock
 
       case result of
         Right (ClientStop, clientConn) -> do
           return clientConn
         Right (ClientPushRequest pushRequest, clientConn) -> do
-          let queuedRequest = QueuedPushRequest pushRequest (Just clientConn)
-          atomically $ writeTBMQueue queue queuedRequest
+          pushToQueue (pushRequest, clientConn)
           loop
         Left err@(DecodingError _) -> do
           putErrText $ toS $ displayException err

@@ -115,8 +115,6 @@ run daemon@DaemonEnv {..} = runDaemon daemon $ do
 
           waitForShutdown daemonShutdownLatch
 
-          print "POST WAIT SHUTDOWN"
-
           Katip.logFM Katip.InfoS "Shutting down daemon..."
 
           -- Stop receiving new push requests

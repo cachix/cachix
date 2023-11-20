@@ -11,6 +11,6 @@ class HasEvent m where
   pushEvent :: Key m -> Event m -> m ()
   pushStarted :: Key m -> m ()
   pushFinished :: Key m -> m ()
-  pushStorePathAttempt :: Key m -> FilePath -> m ()
-  pushStorePathProgress :: Key m -> FilePath -> Int -> m ()
+  pushStorePathAttempt :: Key m -> FilePath -> Int64 -> m ()
+  pushStorePathProgress :: Key m -> FilePath -> Int64 -> m ()
   pushStorePathDone :: Key m -> FilePath -> m ()

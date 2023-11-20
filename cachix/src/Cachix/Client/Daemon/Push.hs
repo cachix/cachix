@@ -7,6 +7,7 @@ import Cachix.Client.Daemon.Event
 import Cachix.Client.Daemon.Protocol as Protocol
 import Cachix.Client.Daemon.Types (Daemon, DaemonEnv (..), PushJob (..))
 import Cachix.Client.Env (Env (..))
+import Cachix.Client.HumanSize (humanSize)
 import Cachix.Client.OptionsParser as Client.OptionsParser
   ( PushOptions (..),
   )
@@ -19,6 +20,7 @@ import qualified Conduit as C
 import Control.Exception.Safe (throwM)
 import qualified Control.Monad.Catch as E
 import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
+import Control.Retry (RetryStatus (..))
 import qualified Data.ByteString as BS
 import Data.IORef
 import qualified Data.Set as Set
@@ -32,6 +34,9 @@ import Servant.Auth ()
 import Servant.Auth.Client
 import Servant.Client.Streaming
 import Servant.Conduit ()
+import System.Console.AsciiProgress
+import System.Console.Pretty
+import System.IO (hIsTerminalDevice)
 import qualified UnliftIO.Async as Async
 import qualified UnliftIO.QSem as QSem
 
@@ -76,21 +81,24 @@ newPushStrategy store authToken opts cacheName compressionMethod pushJob = do
           Katip.logFM Katip.InfoS $ Katip.ls $ "Skipping " <> (toS sp :: Text),
         on401 = liftIO . handleCacheResponse cacheName authToken,
         onError = throwM,
-        onAttempt = \_ _ -> do
+        onAttempt = \_retryStatus size -> do
           sp <- liftIO $ storePathToPath store storePath
+          pushStorePathAttempt (pushId pushJob) (toS sp) size
           Katip.logFM Katip.InfoS $ Katip.ls $ "Pushing " <> (toS sp :: Text),
-        onUncompressedNARStream = \_ _ -> do
+        onUncompressedNARStream = \_ size -> do
           sp <- liftIO $ storePathToPath store storePath
-          sinceLastPush <- liftIO $ newIORef (0 :: Int)
+          lastPush <- liftIO $ newIORef (0 :: Int64)
+          totalCount <- liftIO $ newIORef (0 :: Int64)
           C.awaitForever $ \chunk -> do
             C.yield chunk
-            let byteCount = BS.length chunk
-            sinceByteCount <- liftIO $ atomicModifyIORef' sinceLastPush (\b -> (b + byteCount, b + byteCount))
-            when (sinceByteCount >= 1024) $ do
-              liftIO $ writeIORef sinceLastPush 0
+            let byteCount = fromIntegral $ BS.length chunk
+            newTotalCount <- liftIO $ atomicModifyIORef' totalCount (\b -> (b + byteCount, b + byteCount))
+            lastCount <- liftIO $ readIORef lastPush
+            when (newTotalCount - lastCount > 1024 || newTotalCount == size) $ do
+              liftIO $ writeIORef lastPush newTotalCount
               lift $
                 lift $
-                  pushStorePathProgress (pushId pushJob) (toS sp) sinceByteCount,
+                  pushStorePathProgress (pushId pushJob) (toS sp) newTotalCount,
         onDone = do
           sp <- liftIO $ storePathToPath store storePath
           pushStorePathDone (pushId pushJob) (toS sp)
@@ -140,3 +148,41 @@ normalizeStorePath store fp =
   liftIO $ runMaybeT $ do
     storePath <- MaybeT $ followLinksToStorePath store (encodeUtf8 $ T.pack fp)
     MaybeT $ filterInvalidStorePath store storePath
+
+retryText :: RetryStatus -> Text
+retryText retryStatus =
+  if rsIterNumber retryStatus == 0
+    then ""
+    else color Yellow $ "retry #" <> show (rsIterNumber retryStatus) <> " "
+
+showUploadProgress path size = do
+  let hSize = toS $ humanSize $ fromIntegral size
+  lastUpdateRef <- liftIO $ newIORef (0 :: Int64)
+
+  isTerminal <- liftIO $ hIsTerminalDevice stdout
+  if isTerminal
+    then do
+      let bar = color Blue "[:bar] " <> toS path <> " (:percent of " <> hSize <> ")"
+          barLength = T.length $ T.replace ":percent" "  0%" (T.replace "[:bar]" "" (toS bar))
+
+      progressBar <-
+        liftIO $
+          newProgressBar
+            def
+              { pgTotal = fromIntegral size,
+                -- https://github.com/yamadapc/haskell-ascii-progress/issues/24
+                pgWidth = 20 + barLength,
+                pgOnCompletion = Just $ color Green "✓ " <> toS path <> " (" <> hSize <> ")",
+                pgFormat = bar
+              }
+
+      return $ \progress -> do
+        lastUpdate <- readIORef lastUpdateRef
+        let diff = fromIntegral (progress - lastUpdate)
+        writeIORef lastUpdateRef progress
+        liftIO $ tickN progressBar diff
+    else do
+      -- we append newline instead of putStrLn due to https://github.com/haskell/text/issues/242
+      -- appendErrText $ retryText retryStatus <> "Pushing " <> path <> " (" <> toS hSize <> ")\n"
+      putErrText $ "Pushing " <> path <> " (" <> toS hSize <> ")\n"
+      return $ const pass

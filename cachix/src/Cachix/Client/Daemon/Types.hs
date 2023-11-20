@@ -108,9 +108,9 @@ instance HasEvent Daemon where
     timestamp <- liftIO getCurrentTime
     pushEvent pushId $ PushEvent timestamp pushId (PushFinished timestamp)
 
-  pushStorePathAttempt pushId storePath = do
+  pushStorePathAttempt pushId storePath size = do
     timestamp <- liftIO getCurrentTime
-    pushEvent pushId $ PushEvent timestamp pushId (PushStorePathAttempt storePath)
+    pushEvent pushId $ PushEvent timestamp pushId (PushStorePathAttempt storePath size)
 
   pushStorePathProgress pushId storePath progress = do
     timestamp <- liftIO getCurrentTime
@@ -173,8 +173,8 @@ instance Ord PushEvent where
 
 data PushEventMessage
   = PushStarted UTCTime
-  | PushStorePathAttempt FilePath
-  | PushStorePathProgress FilePath Int
+  | PushStorePathAttempt FilePath Int64
+  | PushStorePathProgress FilePath Int64
   | PushStorePathDone FilePath
   | PushFinished UTCTime
   deriving stock (Eq, Generic, Show)

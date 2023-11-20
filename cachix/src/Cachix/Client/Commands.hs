@@ -22,6 +22,8 @@ import Cachix.Client.Commands.Push
 import qualified Cachix.Client.Config as Config
 import qualified Cachix.Client.Daemon as Daemon
 import qualified Cachix.Client.Daemon.PostBuildHook as Daemon.PostBuildHook
+import qualified Cachix.Client.Daemon.Push as Daemon.Push
+import Cachix.Client.Daemon.Types
 import Cachix.Client.Env (Env (..))
 import Cachix.Client.Exception (CachixException (..))
 import qualified Cachix.Client.InstallationMode as InstallationMode
@@ -49,6 +51,7 @@ import Control.Concurrent.STM.TMChan
 import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
 import Crypto.Sign.Ed25519 (PublicKey (PublicKey), createKeypair)
 import qualified Data.ByteString.Base64 as B64
+import Data.HashMap.Strict as HashMap
 import Data.String.Here
 import qualified Data.Text as T
 import qualified Data.Text.IO as T.IO
@@ -249,22 +252,11 @@ watchExecDaemon env pushOpts cacheName cmd args =
       let daemonOptions = DaemonOptions {daemonSocketPath = Just daemonSock}
       daemon <- Daemon.new env daemonOptions (Just logHandle) pushOpts cacheName
 
+      -- Lanuch the daemon in the background
       daemonThread <- Async.async $ Daemon.run daemon
 
-      -- Subscribe to all events
+      -- Subscribe to all push events
       chan <- Daemon.subscribe daemon
-
-      -- start processing the events into a push summary
-      let boop = do
-            -- Print everything push and in-flight requests
-            mevent <- atomically $ readTMChan chan
-            case mevent of
-              Nothing -> return ()
-              Just event -> do
-                putText $ show event
-                boop
-
-      boopThread <- Async.async boop
 
       processEnv <- getEnvironment
       let process =
@@ -276,17 +268,34 @@ watchExecDaemon env pushOpts cacheName cmd args =
       exitCode <- System.Process.withCreateProcess process $ \_ _ _ processHandle ->
         System.Process.waitForProcess processHandle
 
-      print "COMMAND DONE"
+      -- start processing the events into a push summary
+      let postWatchExec map = do
+            -- Print everything push and in-flight requests
+            mevent <- atomically $ readTMChan chan
+            case mevent of
+              Nothing -> return ()
+              Just (PushEvent {eventMessage}) -> do
+                newMap <-
+                  case eventMessage of
+                    PushStorePathAttempt path size -> do
+                      onTick <- Daemon.Push.showUploadProgress (toS path) size
+                      return $ HashMap.insert path onTick map
+                    PushStorePathProgress path bytes -> do
+                      case HashMap.lookup path map of
+                        Nothing -> pure map
+                        Just onTick -> do
+                          onTick bytes
+                          pure map
+                    PushStorePathDone path -> pure map
+                    _ -> pure map
 
-      print "STOPPING DAEMON"
-      -- Stop the daemon and wait for all paths to be pushed
-      Daemon.runDaemon daemon Daemon.stop
-      Async.wait daemonThread
-      print "STOPPED DAEMON"
-
-      -- Async.wait boopThread
+                postWatchExec newMap
 
       -- Race watching the daemon event channel and stopping it.
       -- Print everything push and in-flight requests
+      Async.withAsync (postWatchExec HashMap.empty) $ \_ -> do
+        -- Stop the daemon and wait for all paths to be pushed
+        Daemon.runDaemon daemon Daemon.stop
+        void $ Async.wait daemonThread
 
       exitWith exitCode

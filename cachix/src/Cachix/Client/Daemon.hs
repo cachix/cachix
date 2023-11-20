@@ -58,7 +58,6 @@ new ::
 new daemonEnv daemonOptions daemonLogHandle daemonPushOptions daemonCacheName = do
   daemonSocketPath <- maybe getSocketPath pure (Options.daemonSocketPath daemonOptions)
   daemonQueue <- newTBMQueueIO 1000
-  daemonJobs <- newTVarIO Map.empty
   daemonSubscriptionManager <- newSubscriptionManager
   daemonShutdownLatch <- newShutdownLatch
   daemonPushSemaphore <- QSem.newQSem (Options.numJobs daemonPushOptions)

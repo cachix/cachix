@@ -71,9 +71,9 @@ pushEventSTM manager key event =
   writeTBMQueue (managerEvents manager) (key, event)
 
 sendEvent :: (ToJSON v, MonadIO m) => v -> Subscription v -> m ()
-sendEvent event (SubSocket sock) = return ()
--- TODO: should drop the socket if it's closed
--- liftIO $ Socket.sendAll sock (Aeson.encode event)
+sendEvent event (SubSocket sock) =
+  -- TODO: should drop the socket if it's closed
+  liftIO $ Socket.sendAll sock (Aeson.encode event)
 sendEvent event (SubChannel chan) =
   liftIO $ atomically $ writeTMChan chan event
 

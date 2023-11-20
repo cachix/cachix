@@ -43,8 +43,6 @@ data DaemonEnv = DaemonEnv
     daemonBinaryCache :: BinaryCache,
     -- | Queue of push requests to be processed by the worker threads
     daemonQueue :: TBMQueue PushJob,
-    -- | Map of push request IDs to push jobs
-    daemonJobs :: TVar (Map Protocol.PushRequestId PushJob),
     -- | A multiplexer for push events.
     daemonSubscriptionManager :: SubscriptionManager Protocol.PushRequestId PushEvent,
     -- | An optional handle to output logs to.

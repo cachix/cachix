@@ -281,7 +281,7 @@ watchExecDaemon env pushOpts cacheName cmd args =
       -- Print the daemon log in case there was an internal error
       case daemonExitCode of
         ExitFailure _ -> printLog logHandle
-        ExitSuccess -> printLog logHandle
+        ExitSuccess -> return ()
 
       exitWith exitCode
   where

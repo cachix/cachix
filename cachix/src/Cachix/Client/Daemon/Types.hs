@@ -183,37 +183,3 @@ newPushJob pushRequest = do
   pushId <- Protocol.newPushRequestId
   pushCreatedAt <- liftIO getCurrentTime
   return $ PushJob {..}
-
--- NOTES
---
--- Receive a push request.
---
--- Queue the request. Basically, just save it.
---
--- Resolve the push request. Normalize + resolve clojure.
---
--- Queue invidual store paths, linked to a push request.
---
--- Worker picks up a store path and pushes it.
---   - During the push, the worker sends push events.
---
--- A subscription thread processes the push events and sends them to any subscribed clients.
---
--- Who keeps track of an active push request?
---
--- One queue, workers can process both then.
--- Job = ResolveClojureJob | Push Job
---
--- Split out subscriptions and jobs?
--- Subscription thread subscribes to push events and sends them to clients.
--- 1 thread per client, blocked on STM.
---
--- Worker thread picks up jobs and processes them.
--- Job  /= PushJob. Jobs are specific-worker tasks.
--- PushJob is the overall push request.
---
--- The PushStatus can be reconstructed entirely from PushEvents.
--- Event sourcing
---
--- push :: Protocol.PushRequest -> IO (TChan PushEvent)
---

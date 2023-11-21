@@ -143,45 +143,52 @@ normalizeStorePath store fp =
     storePath <- MaybeT $ followLinksToStorePath store (encodeUtf8 $ T.pack fp)
     MaybeT $ filterInvalidStorePath store storePath
 
+showUploadProgress :: String -> Int64 -> IO (Int64 -> IO ())
+showUploadProgress path size = do
+  isTerminal <- liftIO $ hIsTerminalDevice stdout
+  if isTerminal
+    then uploadProgress path size
+    else fallbackUploadProgress path size
+
+completedUpload :: String -> String -> String
+completedUpload path hSize =
+  color Green "✓ " <> path <> " (" <> hSize <> ")"
+
+uploadProgress :: String -> Int64 -> IO (Int64 -> IO ())
+uploadProgress path size = do
+  let hSize = toS $ humanSize $ fromIntegral size
+  let bar = color Blue "[:bar] " <> toS path <> " (:percent of " <> hSize <> ")"
+      barLength = T.length $ T.replace ":percent" "  0%" (T.replace "[:bar]" "" (toS bar))
+
+  progressBar <-
+    liftIO $
+      newProgressBar
+        def
+          { pgTotal = fromIntegral size,
+            -- https://github.com/yamadapc/haskell-ascii-progress/issues/24
+            pgWidth = 20 + barLength,
+            pgOnCompletion = Just $ completedUpload path hSize,
+            pgFormat = bar
+          }
+
+  lastUpdateRef <- liftIO $ newIORef (0 :: Int64)
+
+  return $ \progress -> do
+    lastUpdate <- readIORef lastUpdateRef
+    writeIORef lastUpdateRef progress
+    let deltaBytes = fromIntegral (progress - lastUpdate)
+    liftIO $ tickN progressBar deltaBytes
+
 retryText :: RetryStatus -> Text
 retryText retryStatus =
   if rsIterNumber retryStatus == 0
     then ""
     else color Yellow $ "retry #" <> show (rsIterNumber retryStatus) <> " "
 
-showUploadProgress :: String -> Int64 -> IO (Int64 -> IO ())
-showUploadProgress path size = do
+fallbackUploadProgress :: String -> Int64 -> IO (Int64 -> IO ())
+fallbackUploadProgress path size = do
   let hSize = toS $ humanSize $ fromIntegral size
-  lastUpdateRef <- liftIO $ newIORef (0 :: Int64)
-
-  isTerminal <- liftIO $ hIsTerminalDevice stdout
-  if isTerminal
-    then do
-      let bar = color Blue "[:bar] " <> toS path <> " (:percent of " <> hSize <> ")"
-          barLength = T.length $ T.replace ":percent" "  0%" (T.replace "[:bar]" "" (toS bar))
-
-      progressBar <-
-        liftIO $
-          newProgressBar
-            def
-              { pgTotal = fromIntegral size,
-                -- https://github.com/yamadapc/haskell-ascii-progress/issues/24
-                pgWidth = 20 + barLength,
-                pgOnCompletion = Just $ completedUpload path hSize,
-                pgFormat = bar
-              }
-
-      return $ \progress -> do
-        lastUpdate <- readIORef lastUpdateRef
-        let deltaBytes = fromIntegral (progress - lastUpdate)
-        writeIORef lastUpdateRef progress
-        liftIO $ tickN progressBar deltaBytes
-    else do
-      -- we append newline instead of putStrLn due to https://github.com/haskell/text/issues/242
-      -- appendErrText $ retryText retryStatus <> "Pushing " <> path <> " (" <> toS hSize <> ")\n"
-      hPutStr stderr $ "Pushing " <> path <> " (" <> toS hSize <> ")\n"
-      return $ const pass
-
-completedUpload :: String -> String -> String
-completedUpload path hSize =
-  color Green "✓ " <> path <> " (" <> hSize <> ")"
+  -- we append newline instead of putStrLn due to https://github.com/haskell/text/issues/242
+  -- appendErrText $ retryText retryStatus <> "Pushing " <> path <> " (" <> toS hSize <> ")\n"
+  hPutStr stderr $ "Pushing " <> path <> " (" <> hSize <> ")\n"
+  return $ const pass

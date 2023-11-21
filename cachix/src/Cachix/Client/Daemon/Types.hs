@@ -113,6 +113,10 @@ instance HasEvent Daemon where
     timestamp <- liftIO getCurrentTime
     pushEvent pushId $ PushEvent timestamp pushId (PushStorePathDone storePath)
 
+  pushStorePathFailed pushId storePath errMsg = do
+    timestamp <- liftIO getCurrentTime
+    pushEvent pushId $ PushEvent timestamp pushId (PushStorePathFailed storePath errMsg)
+
 -- | Run a pre-configured daemon.
 runDaemon :: DaemonEnv -> Daemon a -> IO a
 runDaemon env f = do
@@ -169,6 +173,7 @@ data PushEventMessage
   | PushStorePathAttempt FilePath Int64
   | PushStorePathProgress FilePath Int64
   | PushStorePathDone FilePath
+  | PushStorePathFailed FilePath Text
   | PushFinished UTCTime
   deriving stock (Eq, Generic, Show)
   deriving anyclass (FromJSON, ToJSON)

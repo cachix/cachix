@@ -67,40 +67,56 @@ withPushParams m = do
             }
 
 newPushStrategy :: Store -> Maybe Token -> PushOptions -> Text -> BinaryCache.CompressionMethod -> PushJob -> Daemon (StorePath -> PushStrategy Daemon ())
-newPushStrategy store authToken opts cacheName compressionMethod pushJob = do
+newPushStrategy store authToken opts cacheName compressionMethod pushJob =
   -- TODO: fetch everything here?
-  return $ \storePath -> do
-    PushStrategy
-      { onAlreadyPresent = do
+  return $ \storePath ->
+    let onAlreadyPresent = do
           sp <- liftIO $ storePathToPath store storePath
+          Katip.logFM Katip.InfoS $ Katip.ls $ "Skipping " <> (toS sp :: Text)
           pushStorePathDone (pushId pushJob) (toS sp)
-          Katip.logFM Katip.InfoS $ Katip.ls $ "Skipping " <> (toS sp :: Text),
-        on401 = liftIO . handleCacheResponse cacheName authToken,
-        onError = throwM,
-        onAttempt = \_retryStatus size -> do
+
+        onError err = do
+          let errText = toS (displayException err)
           sp <- liftIO $ storePathToPath store storePath
+          Katip.katipAddContext (Katip.sl "error" errText) $
+            Katip.logFM Katip.InfoS $
+              Katip.ls $
+                "Failed " <> (toS sp :: Text)
+          pushStorePathFailed (pushId pushJob) (toS sp) errText
+
+        onAttempt _retryStatus size = do
+          sp <- liftIO $ storePathToPath store storePath
+          Katip.logFM Katip.InfoS $ Katip.ls $ "Pushing " <> (toS sp :: Text)
           pushStorePathAttempt (pushId pushJob) (toS sp) size
-          Katip.logFM Katip.InfoS $ Katip.ls $ "Pushing " <> (toS sp :: Text),
-        onUncompressedNARStream = \_ size -> do
+
+        onUncompressedNARStream _ size = do
           sp <- liftIO $ storePathToPath store storePath
           lastPush <- liftIO $ newIORef (0 :: Int64)
           totalCount <- liftIO $ newIORef (0 :: Int64)
           C.awaitForever $ \chunk -> do
             C.yield chunk
-            let byteCount = fromIntegral $ BS.length chunk
+            let byteCount = fromIntegral (BS.length chunk)
             newTotalCount <- liftIO $ atomicModifyIORef' totalCount (\b -> (b + byteCount, b + byteCount))
             lastCount <- liftIO $ readIORef lastPush
             when (newTotalCount - lastCount > 1024 || newTotalCount == size) $ do
               liftIO $ writeIORef lastPush newTotalCount
-              lift $ lift $ pushStorePathProgress (pushId pushJob) (toS sp) newTotalCount,
+              lift $ lift $ pushStorePathProgress (pushId pushJob) (toS sp) newTotalCount
+
         onDone = do
           sp <- liftIO $ storePathToPath store storePath
+          Katip.logFM Katip.InfoS $ Katip.ls $ "Pushed " <> (toS sp :: Text)
           pushStorePathDone (pushId pushJob) (toS sp)
-          Katip.logFM Katip.InfoS $ Katip.ls $ "Pushed " <> (toS sp :: Text),
-        Client.Push.compressionMethod = compressionMethod,
-        Client.Push.compressionLevel = Client.OptionsParser.compressionLevel opts,
-        Client.Push.omitDeriver = Client.OptionsParser.omitDeriver opts
-      }
+     in PushStrategy
+          { onAlreadyPresent = onAlreadyPresent,
+            on401 = liftIO . handleCacheResponse cacheName authToken,
+            onError = onError,
+            onAttempt = onAttempt,
+            onUncompressedNARStream = onUncompressedNARStream,
+            onDone = onDone,
+            Client.Push.compressionMethod = compressionMethod,
+            Client.Push.compressionLevel = Client.OptionsParser.compressionLevel opts,
+            Client.Push.omitDeriver = Client.OptionsParser.omitDeriver opts
+          }
 
 -- TODO: split into two jobs: 1. query/normalize/filter 2. push store path
 handleRequest :: (PushJob -> Daemon (PushParams Daemon a)) -> PushJob -> Daemon ()

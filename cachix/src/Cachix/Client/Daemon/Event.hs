@@ -14,3 +14,4 @@ class HasEvent m where
   pushStorePathAttempt :: Key m -> FilePath -> Int64 -> m ()
   pushStorePathProgress :: Key m -> FilePath -> Int64 -> m ()
   pushStorePathDone :: Key m -> FilePath -> m ()
+  pushStorePathFailed :: Key m -> FilePath -> Text -> m ()

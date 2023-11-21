@@ -54,7 +54,7 @@ import qualified Data.ByteString.Base64 as B64
 import Data.HashMap.Strict as HashMap
 import Data.String.Here
 import qualified Data.Text as T
-import Data.Text.IO (hGetContents)
+import Data.Text.IO (hGetLine)
 import qualified Data.Text.IO as T.IO
 import GHC.IO.Handle (hDuplicate, hDuplicateTo)
 import Hercules.CNix.Store (storePathToPath, withStore)
@@ -67,6 +67,7 @@ import Servant.Conduit ()
 import System.Directory (doesFileExist)
 import System.Environment (getEnvironment)
 import System.IO (hIsTerminalDevice)
+import System.IO.Error (isEOFError)
 import System.IO.Temp (withSystemTempFile)
 import qualified System.Posix.Signals as Signals
 import qualified System.Process
@@ -292,16 +293,26 @@ watchExecDaemon env pushOpts cacheName cmd args =
 
                 postWatchExec newMap
 
-      -- Race watching the daemon event channel and stopping it.
       daemonExitCode <- Async.withAsync (postWatchExec HashMap.empty) $ \_ -> do
-        -- Stop the daemon and wait for all paths to be pushed
         Daemon.stopIO daemon
         Async.wait daemonThread
 
-      -- Print the daemon's log if there's an internal failure.
+      -- Print the daemon log in case there was an internal error
       case daemonExitCode of
-        ExitFailure _ ->
-          hGetContents logHandle >>= putErrText
+        ExitFailure _ -> printLog logHandle
         ExitSuccess -> return ()
 
       exitWith exitCode
+  where
+    -- Read the log line-by-line and print it to stderr
+    printLog h = getLineLoop
+      where
+        getLineLoop = do
+          eline <- try $ hGetLine h
+          case eline of
+            Left e
+              | isEOFError e -> return ()
+              | otherwise -> putErrText $ "Error reading daemon log: " <> show e <> "\n"
+            Right line -> do
+              hPutStr stderr line
+              getLineLoop

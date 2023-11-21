@@ -22,7 +22,7 @@ import Cachix.Client.Commands.Push
 import qualified Cachix.Client.Config as Config
 import qualified Cachix.Client.Daemon as Daemon
 import qualified Cachix.Client.Daemon.PostBuildHook as Daemon.PostBuildHook
-import qualified Cachix.Client.Daemon.Push as Daemon.Push
+import qualified Cachix.Client.Daemon.Progress as Daemon.Progress
 import Cachix.Client.Daemon.Types
 import Cachix.Client.Env (Env (..))
 import Cachix.Client.Exception (CachixException (..))
@@ -294,13 +294,19 @@ watchExecDaemon env pushOpts cacheName cmd args =
     displayPushEvent statsRef PushEvent {eventMessage} = liftIO $
       case eventMessage of
         PushStorePathAttempt path pathSize -> do
-          onTick <- Daemon.Push.showUploadProgress (toS path) pathSize
-          modifyIORef' statsRef (HashMap.insert path onTick)
+          progress <- Daemon.Progress.new stderr (toS path) pathSize
+          modifyIORef' statsRef (HashMap.insert path progress)
         PushStorePathProgress path bytes -> do
           stats <- readIORef statsRef
           case HashMap.lookup path stats of
             Nothing -> return ()
-            Just onTick -> onTick bytes
+            Just progress -> Daemon.Progress.tick progress bytes
+        PushStorePathDone path -> do
+          stats <- readIORef statsRef
+          mapM_ Daemon.Progress.complete (HashMap.lookup path stats)
+        PushStorePathFailed path _ -> do
+          stats <- readIORef statsRef
+          mapM_ Daemon.Progress.fail (HashMap.lookup path stats)
         _ -> return ()
 
     printLog h = getLineLoop
@@ -310,7 +316,7 @@ watchExecDaemon env pushOpts cacheName cmd args =
           case eline of
             Left e
               | isEOFError e -> return ()
-              | otherwise -> putErrText $ "Error reading daemon log: " <> show e <> "\n"
+              | otherwise -> putErrText $ "Error reading daemon log: " <> show e
             Right line -> do
               hPutStr stderr line
               getLineLoop

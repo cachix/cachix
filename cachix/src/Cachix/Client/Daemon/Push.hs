@@ -7,7 +7,6 @@ import Cachix.Client.Daemon.Event
 import Cachix.Client.Daemon.Protocol as Protocol
 import Cachix.Client.Daemon.Types (Daemon, DaemonEnv (..), PushJob (..))
 import Cachix.Client.Env (Env (..))
-import Cachix.Client.HumanSize (humanSize)
 import Cachix.Client.OptionsParser as Client.OptionsParser
   ( PushOptions (..),
   )
@@ -17,14 +16,11 @@ import Cachix.Client.Servant
 import Cachix.Types.BinaryCache (BinaryCacheName)
 import qualified Cachix.Types.BinaryCache as BinaryCache
 import qualified Conduit as C
-import Control.Exception.Safe (throwM)
 import qualified Control.Monad.Catch as E
 import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
-import Control.Retry (RetryStatus (..))
 import qualified Data.ByteString as BS
 import Data.IORef
 import qualified Data.Set as Set
-import Data.String (String)
 import qualified Data.Text as T
 import Hercules.CNix (StorePath)
 import Hercules.CNix.Store (Store, storePathToPath, withStore)
@@ -35,9 +31,6 @@ import Servant.Auth ()
 import Servant.Auth.Client
 import Servant.Client.Streaming
 import Servant.Conduit ()
-import System.Console.AsciiProgress
-import System.Console.Pretty
-import System.IO (hIsTerminalDevice)
 import qualified UnliftIO.Async as Async
 import qualified UnliftIO.QSem as QSem
 
@@ -158,53 +151,3 @@ normalizeStorePath store fp =
   liftIO $ runMaybeT $ do
     storePath <- MaybeT $ followLinksToStorePath store (encodeUtf8 $ T.pack fp)
     MaybeT $ filterInvalidStorePath store storePath
-
-showUploadProgress :: String -> Int64 -> IO (Int64 -> IO ())
-showUploadProgress path size = do
-  isTerminal <- liftIO $ hIsTerminalDevice stdout
-  if isTerminal
-    then uploadProgress path size
-    else fallbackUploadProgress path size
-
-completedUpload :: String -> String -> String
-completedUpload path hSize =
-  color Green "✓ " <> path <> " (" <> hSize <> ")"
-
-uploadProgress :: String -> Int64 -> IO (Int64 -> IO ())
-uploadProgress path size = do
-  let hSize = toS $ humanSize $ fromIntegral size
-  let bar = color Blue "[:bar] " <> toS path <> " (:percent of " <> hSize <> ")"
-      barLength = T.length $ T.replace ":percent" "  0%" (T.replace "[:bar]" "" (toS bar))
-
-  progressBar <-
-    liftIO $
-      newProgressBar
-        def
-          { pgTotal = fromIntegral size,
-            -- https://github.com/yamadapc/haskell-ascii-progress/issues/24
-            pgWidth = 20 + barLength,
-            pgOnCompletion = Just $ completedUpload path hSize,
-            pgFormat = bar
-          }
-
-  lastUpdateRef <- liftIO $ newIORef (0 :: Int64)
-
-  return $ \progress -> do
-    lastUpdate <- readIORef lastUpdateRef
-    writeIORef lastUpdateRef progress
-    let deltaBytes = fromIntegral (progress - lastUpdate)
-    liftIO $ tickN progressBar deltaBytes
-
-retryText :: RetryStatus -> Text
-retryText retryStatus =
-  if rsIterNumber retryStatus == 0
-    then ""
-    else color Yellow $ "retry #" <> show (rsIterNumber retryStatus) <> " "
-
-fallbackUploadProgress :: String -> Int64 -> IO (Int64 -> IO ())
-fallbackUploadProgress path size = do
-  let hSize = toS $ humanSize $ fromIntegral size
-  -- we append newline instead of putStrLn due to https://github.com/haskell/text/issues/242
-  -- appendErrText $ retryText retryStatus <> "Pushing " <> path <> " (" <> toS hSize <> ")\n"
-  hPutStr stderr $ "Pushing " <> path <> " (" <> hSize <> ")\n"
-  return $ const pass

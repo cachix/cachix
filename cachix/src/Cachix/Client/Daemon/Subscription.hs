@@ -3,12 +3,10 @@ module Cachix.Client.Daemon.Subscription where
 import Control.Concurrent.STM.TBMQueue
 import Control.Concurrent.STM.TMChan
 import Control.Concurrent.STM.TVar
-import Control.Monad.Catch (catchAll)
-import Data.Aeson as Aeson (ToJSON, encode)
+import Data.Aeson as Aeson (ToJSON)
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
 import qualified Network.Socket as Socket
-import qualified Network.Socket.ByteString.Lazy as Socket
 import Protolude
 
 data SubscriptionManager k v = SubscriptionManager
@@ -19,7 +17,7 @@ data SubscriptionManager k v = SubscriptionManager
 
 data Subscription v
   = -- | A subscriber that listens on a socket.
-    SubSocket Socket.Socket
+    SubSocket (TBMQueue v) Socket.Socket
   | -- | A subscriber that listens on a channel.
     SubChannel (TMChan v)
 
@@ -64,30 +62,32 @@ getSubscriptionsForSTM manager key = do
 -- Events
 
 pushEvent :: (MonadIO m) => SubscriptionManager k v -> k -> v -> m ()
-pushEvent manager key event = do
+pushEvent manager key event =
   liftIO $ atomically $ pushEventSTM manager key event
 
 pushEventSTM :: SubscriptionManager k v -> k -> v -> STM ()
 pushEventSTM manager key event =
   writeTBMQueue (managerEvents manager) (key, event)
 
-sendEvent :: (ToJSON v, MonadIO m) => v -> Subscription v -> m ()
-sendEvent event (SubSocket sock) =
-  -- TODO: should drop the socket if it's closed
-  liftIO $ Socket.sendAll sock (Aeson.encode event) `catchAll` \_ -> return ()
-sendEvent event (SubChannel chan) =
-  liftIO $ atomically $ writeTMChan chan event
+sendEventToSub :: Subscription v -> v -> STM ()
+sendEventToSub (SubSocket _queue _) _ = pure () -- writeTBMQueue queue
+sendEventToSub (SubChannel chan) event = writeTMChan chan event
 
 runSubscriptionManager :: (Show k, Show v, Hashable k, ToJSON v, MonadIO m) => SubscriptionManager k v -> m ()
 runSubscriptionManager manager = do
-  mevent <- liftIO $ atomically $ readTBMQueue (managerEvents manager)
-  case mevent of
-    Nothing -> return ()
-    Just (key, event) -> do
-      subscriptions <- getSubscriptionsFor manager key
-      globalSubscriptions <- liftIO $ readTVarIO $ managerGlobalSubscriptions manager
-      mapM_ (sendEvent event) (subscriptions <> globalSubscriptions)
-      runSubscriptionManager manager
+  isDone <- liftIO $ atomically $ do
+    mevent <- readTBMQueue (managerEvents manager)
+    case mevent of
+      Nothing -> return True
+      Just (key, event) -> do
+        subscriptions <- getSubscriptionsForSTM manager key
+        globalSubscriptions <- readTVar $ managerGlobalSubscriptions manager
+        mapM_ (`sendEventToSub` event) (subscriptions <> globalSubscriptions)
+        return False
+
+  if isDone
+    then return ()
+    else runSubscriptionManager manager
 
 stopSubscriptionManager :: SubscriptionManager k v -> IO ()
 stopSubscriptionManager manager = do
@@ -96,5 +96,7 @@ stopSubscriptionManager manager = do
   subscriptions <- liftIO $ readTVarIO $ managerSubscriptions manager
 
   forM_ (concat subscriptions <> globalSubscriptions) $ \case
-    SubSocket sock -> Socket.close sock
+    SubSocket queue sock -> do
+      atomically $ closeTBMQueue queue
+      Socket.close sock
     SubChannel channel -> atomically $ closeTMChan channel

@@ -149,7 +149,8 @@ queueJob pushRequest clientConn = do
   pushJob <- newPushJob pushRequest
   liftIO $ atomically $ do
     -- Subscribe the socket to updates
-    subscribeToSTM daemonSubscriptionManager (pushId pushJob) (SubSocket clientConn)
+    socketBuffer <- newTBMQueue 1000
+    subscribeToSTM daemonSubscriptionManager (pushId pushJob) (SubSocket socketBuffer clientConn)
 
     -- TODO: push job to the queue
     writeTBMQueue daemonQueue pushJob

@@ -38,6 +38,12 @@ jobs:
       if: ${{ env.signingKey != '' }}
       run: cachix watch-exec cachix -- nix-build genpaths.nix --substituters 'https://cache.nixos.org'
 
+    - name: "daemon watch-exec test"
+      env:
+        signingKey: ${{ secrets.CACHIX_SIGNING_KEY }}
+      if: ${{ env.signingKey != '' }}
+      run: cachix daemon watch-exec cachix -- nix-build genpaths.nix --substituters 'https://cache.nixos.org'
+
   release:
     needs: tests
     if: github.repository_owner == 'cachix' && startsWith(github.ref, 'refs/tags/v')

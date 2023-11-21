@@ -252,7 +252,7 @@ watchExecDaemon env pushOpts cacheName cmd args =
       let daemonOptions = DaemonOptions {daemonSocketPath = Just daemonSock}
       daemon <- Daemon.new env daemonOptions (Just logHandle) pushOpts cacheName
 
-      -- Lanuch the daemon in the background
+      -- Launch the daemon in the background
       daemonThread <- Async.async $ Daemon.run daemon
 
       -- Subscribe to all push events
@@ -293,9 +293,9 @@ watchExecDaemon env pushOpts cacheName cmd args =
 
       -- Race watching the daemon event channel and stopping it.
       -- Print everything push and in-flight requests
-      Async.withAsync (postWatchExec HashMap.empty) $ \_ -> do
+      daemonExitCode <- Async.withAsync (postWatchExec HashMap.empty) $ \_ -> do
         -- Stop the daemon and wait for all paths to be pushed
-        Daemon.runDaemon daemon Daemon.stop
-        void $ Async.wait daemonThread
+        Daemon.stopIO daemon
+        Async.wait daemonThread
 
       exitWith exitCode

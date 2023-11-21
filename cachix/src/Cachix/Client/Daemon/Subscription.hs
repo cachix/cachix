@@ -3,6 +3,7 @@ module Cachix.Client.Daemon.Subscription where
 import Control.Concurrent.STM.TBMQueue
 import Control.Concurrent.STM.TMChan
 import Control.Concurrent.STM.TVar
+import Control.Monad.Catch (catchAll)
 import Data.Aeson as Aeson (ToJSON, encode)
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
@@ -26,7 +27,7 @@ newSubscriptionManager :: IO (SubscriptionManager k v)
 newSubscriptionManager = do
   subscriptions <- newTVarIO HashMap.empty
   globalSubscriptions <- newTVarIO []
-  events <- newTBMQueueIO 1000
+  events <- newTBMQueueIO 10000
   pure $ SubscriptionManager subscriptions globalSubscriptions events
 
 -- Subscriptions
@@ -73,7 +74,7 @@ pushEventSTM manager key event =
 sendEvent :: (ToJSON v, MonadIO m) => v -> Subscription v -> m ()
 sendEvent event (SubSocket sock) =
   -- TODO: should drop the socket if it's closed
-  liftIO $ Socket.sendAll sock (Aeson.encode event)
+  liftIO $ Socket.sendAll sock (Aeson.encode event) `catchAll` \_ -> return ()
 sendEvent event (SubChannel chan) =
   liftIO $ atomically $ writeTMChan chan event
 
@@ -94,7 +95,6 @@ stopSubscriptionManager manager = do
   globalSubscriptions <- liftIO $ readTVarIO $ managerGlobalSubscriptions manager
   subscriptions <- liftIO $ readTVarIO $ managerSubscriptions manager
 
-  forM_ (concat subscriptions <> globalSubscriptions) $ \subscription -> do
-    case subscription of
-      SubSocket sock -> Socket.close sock
-      SubChannel channel -> atomically $ closeTMChan channel
+  forM_ (concat subscriptions <> globalSubscriptions) $ \case
+    SubSocket sock -> Socket.close sock
+    SubChannel channel -> atomically $ closeTMChan channel

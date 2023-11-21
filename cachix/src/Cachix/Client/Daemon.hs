@@ -157,8 +157,9 @@ queueJob pushRequest clientConn = do
 subscribe :: DaemonEnv -> IO (TMChan PushEvent)
 subscribe DaemonEnv {..} = do
   chan <- liftIO newBroadcastTMChanIO
-  liftIO $ atomically $ subscribeToAllSTM daemonSubscriptionManager (SubChannel chan)
-  atomically $ dupTMChan chan
+  liftIO $ atomically $ do
+    subscribeToAllSTM daemonSubscriptionManager (SubChannel chan)
+    dupTMChan chan
 
 -- | Print debug information about the daemon configuration
 showConfiguration :: Daemon Text

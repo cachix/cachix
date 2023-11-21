@@ -10,9 +10,7 @@ import Cachix.Client.Config.Orphans ()
 import Cachix.Client.Daemon.Types (Daemon, DaemonEnv (..), PushJob (..))
 import qualified Control.Concurrent.Async as Async
 import Control.Concurrent.STM.TBMQueue
-import Control.Concurrent.STM.TVar
 import qualified Control.Immortal as Immortal
-import qualified Data.Map.Strict as Map
 import qualified Katip
 import Protolude
 

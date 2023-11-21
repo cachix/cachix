@@ -77,23 +77,23 @@ newPushStrategy store authToken opts cacheName compressionMethod pushJob =
                 "Failed " <> (toS sp :: Text)
           pushStorePathFailed (pushId pushJob) (toS sp) errText
 
-        onAttempt _retryStatus size = do
+        onAttempt retryStatus size = do
           sp <- liftIO $ storePathToPath store storePath
           Katip.logFM Katip.InfoS $ Katip.ls $ "Pushing " <> (toS sp :: Text)
-          pushStorePathAttempt (pushId pushJob) (toS sp) size
+          pushStorePathAttempt (pushId pushJob) (toS sp) size retryStatus
 
         onUncompressedNARStream _ size = do
           sp <- liftIO $ storePathToPath store storePath
-          lastPush <- liftIO $ newIORef (0 :: Int64)
-          totalCount <- liftIO $ newIORef (0 :: Int64)
+          lastEmitRef <- liftIO $ newIORef (0 :: Int64)
+          currentBytesRef <- liftIO $ newIORef (0 :: Int64)
           C.awaitForever $ \chunk -> do
             C.yield chunk
-            let byteCount = fromIntegral (BS.length chunk)
-            newTotalCount <- liftIO $ atomicModifyIORef' totalCount (\b -> (b + byteCount, b + byteCount))
-            lastCount <- liftIO $ readIORef lastPush
-            when (newTotalCount - lastCount > 1024 || newTotalCount == size) $ do
-              liftIO $ writeIORef lastPush newTotalCount
-              lift $ lift $ pushStorePathProgress (pushId pushJob) (toS sp) newTotalCount
+            let newBytes = fromIntegral (BS.length chunk)
+            currentBytes <- liftIO $ atomicModifyIORef' currentBytesRef (\b -> (b + newBytes, b + newBytes))
+            lastEmit <- liftIO $ readIORef lastEmitRef
+            when (currentBytes - lastEmit > 1024 || currentBytes == size) $ do
+              liftIO $ writeIORef lastEmitRef currentBytes
+              lift $ lift $ pushStorePathProgress (pushId pushJob) (toS sp) currentBytes newBytes
 
         onDone = do
           sp <- liftIO $ storePathToPath store storePath

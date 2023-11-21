@@ -17,6 +17,7 @@ import qualified Control.Concurrent.QSem as QSem
 import Control.Concurrent.STM.TBMQueue
 import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
 import Control.Monad.IO.Unlift (MonadUnliftIO)
+import Control.Retry (RetryStatus (..))
 import Data.Aeson (FromJSON, ToJSON)
 import Data.Time (UTCTime, getCurrentTime)
 import qualified Katip
@@ -101,13 +102,14 @@ instance HasEvent Daemon where
     timestamp <- liftIO getCurrentTime
     pushEvent pushId $ PushEvent timestamp pushId (PushFinished timestamp)
 
-  pushStorePathAttempt pushId storePath size = do
+  pushStorePathAttempt pushId storePath size retryStatus = do
+    let pushRetryStatus = newPushRetryStatus retryStatus
     timestamp <- liftIO getCurrentTime
-    pushEvent pushId $ PushEvent timestamp pushId (PushStorePathAttempt storePath size)
+    pushEvent pushId $ PushEvent timestamp pushId (PushStorePathAttempt storePath size pushRetryStatus)
 
-  pushStorePathProgress pushId storePath progress = do
+  pushStorePathProgress pushId storePath currentBytes newBytes = do
     timestamp <- liftIO getCurrentTime
-    pushEvent pushId $ PushEvent timestamp pushId (PushStorePathProgress storePath progress)
+    pushEvent pushId $ PushEvent timestamp pushId (PushStorePathProgress storePath currentBytes newBytes)
 
   pushStorePathDone pushId storePath = do
     timestamp <- liftIO getCurrentTime
@@ -170,13 +172,20 @@ instance Ord PushEvent where
 
 data PushEventMessage
   = PushStarted UTCTime
-  | PushStorePathAttempt FilePath Int64
-  | PushStorePathProgress FilePath Int64
+  | PushStorePathAttempt FilePath Int64 PushRetryStatus
+  | PushStorePathProgress FilePath Int64 Int64
   | PushStorePathDone FilePath
   | PushStorePathFailed FilePath Text
   | PushFinished UTCTime
   deriving stock (Eq, Generic, Show)
   deriving anyclass (FromJSON, ToJSON)
+
+data PushRetryStatus = PushRetryStatus {retryCount :: Int}
+  deriving stock (Eq, Generic, Show)
+  deriving anyclass (FromJSON, ToJSON)
+
+newPushRetryStatus :: RetryStatus -> PushRetryStatus
+newPushRetryStatus RetryStatus {..} = PushRetryStatus {retryCount = rsIterNumber}
 
 newPushJob :: (MonadIO m) => Protocol.PushRequest -> m PushJob
 newPushJob pushRequest = do

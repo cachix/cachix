@@ -47,11 +47,14 @@ import Cachix.Types.BinaryCache (BinaryCacheName)
 import qualified Cachix.Types.PinCreate as PinCreate
 import qualified Cachix.Types.SigningKeyCreate as SigningKeyCreate
 import qualified Control.Concurrent.Async as Async
-import Control.Concurrent.STM.TMChan
 import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
 import Crypto.Sign.Ed25519 (PublicKey (PublicKey), createKeypair)
 import qualified Data.ByteString.Base64 as B64
+import Data.Conduit (runConduit, (.|))
+import qualified Data.Conduit.Combinators as C
+import qualified Data.Conduit.TMChan as C
 import Data.HashMap.Strict as HashMap
+import Data.IORef
 import Data.String.Here
 import qualified Data.Text as T
 import Data.Text.IO (hGetLine)
@@ -258,7 +261,7 @@ watchExecDaemon env pushOpts cacheName cmd args =
       daemonThread <- Async.async $ Daemon.run daemon
 
       -- Subscribe to all push events
-      chan <- Daemon.subscribe daemon
+      daemonChan <- Daemon.subscribe daemon
 
       processEnv <- getEnvironment
       let process =
@@ -270,30 +273,8 @@ watchExecDaemon env pushOpts cacheName cmd args =
       exitCode <- System.Process.withCreateProcess process $ \_ _ _ processHandle ->
         System.Process.waitForProcess processHandle
 
-      -- start processing the events into a push summary
-      let postWatchExec map = do
-            -- Print everything push and in-flight requests
-            mevent <- atomically $ readTMChan chan
-            case mevent of
-              Nothing -> return ()
-              Just (PushEvent {eventMessage}) -> do
-                newMap <-
-                  case eventMessage of
-                    PushStorePathAttempt path size -> do
-                      onTick <- Daemon.Push.showUploadProgress (toS path) size
-                      return $ HashMap.insert path onTick map
-                    PushStorePathProgress path bytes -> do
-                      case HashMap.lookup path map of
-                        Nothing -> pure map
-                        Just onTick -> do
-                          onTick bytes
-                          pure map
-                    PushStorePathDone path -> pure map
-                    _ -> pure map
-
-                postWatchExec newMap
-
-      daemonExitCode <- Async.withAsync (postWatchExec HashMap.empty) $ \_ -> do
+      -- TODO: process and fold events into a state during command execution
+      daemonExitCode <- Async.withAsync (postWatchExec daemonChan) $ \_ -> do
         Daemon.stopIO daemon
         Async.wait daemonThread
 
@@ -304,6 +285,24 @@ watchExecDaemon env pushOpts cacheName cmd args =
 
       exitWith exitCode
   where
+    postWatchExec chan = do
+      statsRef <- newIORef HashMap.empty
+      runConduit $
+        C.sourceTMChan chan
+          .| C.mapM_ (displayPushEvent statsRef)
+
+    displayPushEvent statsRef PushEvent {eventMessage} = liftIO $
+      case eventMessage of
+        PushStorePathAttempt path pathSize -> do
+          onTick <- Daemon.Push.showUploadProgress (toS path) pathSize
+          modifyIORef' statsRef (HashMap.insert path onTick)
+        PushStorePathProgress path bytes -> do
+          stats <- readIORef statsRef
+          case HashMap.lookup path stats of
+            Nothing -> return ()
+            Just onTick -> onTick bytes
+        _ -> return ()
+
     printLog h = getLineLoop
       where
         getLineLoop = do

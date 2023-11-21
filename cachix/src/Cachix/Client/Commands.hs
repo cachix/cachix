@@ -54,6 +54,7 @@ import qualified Data.ByteString.Base64 as B64
 import Data.HashMap.Strict as HashMap
 import Data.String.Here
 import qualified Data.Text as T
+import Data.Text.IO (hGetContents)
 import qualified Data.Text.IO as T.IO
 import GHC.IO.Handle (hDuplicate, hDuplicateTo)
 import Hercules.CNix.Store (storePathToPath, withStore)
@@ -292,10 +293,15 @@ watchExecDaemon env pushOpts cacheName cmd args =
                 postWatchExec newMap
 
       -- Race watching the daemon event channel and stopping it.
-      -- Print everything push and in-flight requests
       daemonExitCode <- Async.withAsync (postWatchExec HashMap.empty) $ \_ -> do
         -- Stop the daemon and wait for all paths to be pushed
         Daemon.stopIO daemon
         Async.wait daemonThread
+
+      -- Print the daemon's log if there's an internal failure.
+      case daemonExitCode of
+        ExitFailure _ ->
+          hGetContents logHandle >>= putErrText
+        ExitSuccess -> return ()
 
       exitWith exitCode

@@ -79,14 +79,14 @@ new daemonEnv daemonOptions daemonLogHandle daemonPushOptions daemonCacheName = 
   return $ DaemonEnv {..}
 
 -- | Configure and run the daemon. Equivalent to running 'new' and 'run'.
-start :: Env -> DaemonOptions -> PushOptions -> BinaryCacheName -> IO ()
+start :: Env -> DaemonOptions -> PushOptions -> BinaryCacheName -> IO ExitCode
 start daemonEnv daemonOptions daemonPushOptions daemonCacheName = do
   daemon <- new daemonEnv daemonOptions Nothing daemonPushOptions daemonCacheName
   run daemon
 
 -- | Run a daemon from a given configuration
-run :: DaemonEnv -> IO ()
-run daemon@DaemonEnv {..} = runDaemon daemon $ do
+run :: DaemonEnv -> IO ExitCode
+run daemon@DaemonEnv {..} = runDaemon daemon $ flip E.onError (return $ ExitFailure 1) $ do
   Katip.logFM Katip.InfoS "Starting Cachix Daemon"
 
   config <- showConfiguration
@@ -130,6 +130,8 @@ run daemon@DaemonEnv {..} = runDaemon daemon $ do
               liftIO $ Daemon.serverBye clientSock
               liftIO $ Socket.shutdown clientSock Socket.ShutdownBoth `catchAny` \_ -> return ()
             _ -> return ()
+
+          return ExitSuccess
 
 stop :: Daemon ()
 stop = asks daemonShutdownLatch >>= initiateShutdown

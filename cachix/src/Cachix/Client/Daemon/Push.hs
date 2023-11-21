@@ -41,7 +41,7 @@ import System.IO (hIsTerminalDevice)
 import qualified UnliftIO.Async as Async
 import qualified UnliftIO.QSem as QSem
 
-withPushParams :: ((PushJob -> Daemon (PushParams Daemon ())) -> Daemon ()) -> Daemon ()
+withPushParams :: ((PushJob -> Daemon (PushParams Daemon ())) -> Daemon b) -> Daemon b
 withPushParams m = do
   DaemonEnv {..} <- ask
   let authToken = getAuthTokenFromPushSecret daemonPushSecret

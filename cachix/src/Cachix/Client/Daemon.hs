@@ -13,7 +13,6 @@ where
 import qualified Cachix.Client.Commands.Push as Commands.Push
 import qualified Cachix.Client.Config as Config
 import Cachix.Client.Config.Orphans ()
-import Cachix.Client.Daemon.Event
 import Cachix.Client.Daemon.Listen as Daemon
 import Cachix.Client.Daemon.Protocol as Protocol
 import Cachix.Client.Daemon.Push as Push
@@ -29,10 +28,8 @@ import Cachix.Types.BinaryCache (BinaryCacheName)
 import qualified Cachix.Types.BinaryCache as BinaryCache
 import Control.Concurrent.STM.TBMQueue
 import Control.Concurrent.STM.TMChan
-import Control.Concurrent.STM.TVar
 import Control.Exception.Safe (catchAny)
 import qualified Control.Monad.Catch as E
-import qualified Data.Map.Strict as Map
 import qualified Data.Text as T
 import qualified Katip
 import qualified Network.Socket as Socket
@@ -79,10 +76,10 @@ new daemonEnv daemonOptions daemonLogHandle daemonPushOptions daemonCacheName = 
   return $ DaemonEnv {..}
 
 -- | Configure and run the daemon. Equivalent to running 'new' and 'run'.
-start :: Env -> DaemonOptions -> PushOptions -> BinaryCacheName -> IO ExitCode
+start :: Env -> DaemonOptions -> PushOptions -> BinaryCacheName -> IO ()
 start daemonEnv daemonOptions daemonPushOptions daemonCacheName = do
   daemon <- new daemonEnv daemonOptions Nothing daemonPushOptions daemonCacheName
-  run daemon
+  void $ run daemon
 
 -- | Run a daemon from a given configuration
 run :: DaemonEnv -> IO ExitCode
@@ -95,7 +92,7 @@ run daemon@DaemonEnv {..} = runDaemon daemon $ flip E.onError (return $ ExitFail
   let workerCount = Options.numJobs daemonPushOptions
       startWorkers pushParams = Worker.startWorkers workerCount (Push.handleRequest pushParams)
 
-  subscriptionManagerThread <-
+  _subscriptionManagerThread <-
     liftIO $ Async.async $ runSubscriptionManager daemonSubscriptionManager
 
   Push.withPushParams $ \pushParams ->

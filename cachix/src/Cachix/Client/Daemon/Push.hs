@@ -179,7 +179,7 @@ showUploadProgress path size = do
     else do
       -- we append newline instead of putStrLn due to https://github.com/haskell/text/issues/242
       -- appendErrText $ retryText retryStatus <> "Pushing " <> path <> " (" <> toS hSize <> ")\n"
-      putErrLn $ "Pushing " <> path <> " (" <> toS hSize <> ")\n"
+      hPutStr stderr $ "Pushing " <> path <> " (" <> toS hSize <> ")\n"
       return $ const pass
 
 completedUpload :: String -> String -> String

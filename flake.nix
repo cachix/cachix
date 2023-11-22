@@ -37,7 +37,10 @@
       cachix = haskellPackages.callCabal2nix "cachix" ./cachix {
         inherit cachix-api;
         fsnotify = haskellPackages.fsnotify_0_4_1_0 or haskellPackages.fsnotify;
-        hnix-store-core = haskellPackages.hnix-store-core_0_6_1_0 or haskellPackages.hnix-store-core;
+        hnix-store-core =
+          haskellPackages.hnix-store-core_0_7_0_0
+          or haskellPackages.hnix-store-core_0_6_1_0
+          or haskellPackages.hnix-store-core;
         nix = getNix { inherit pkgs haskellPackages; };
       };
     };

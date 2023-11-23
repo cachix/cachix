@@ -113,9 +113,9 @@ library
   autogen-modules:   Paths_cachix
   build-depends:
     , aeson
-    , amazonka
-    , amazonka-core
-    , amazonka-s3
+    , amazonka                >=2.0
+    , amazonka-core           >=2.0
+    , amazonka-s3             >=2.0
     , ascii-progress
     , async
     , attoparsec

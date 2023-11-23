@@ -60,6 +60,7 @@ import qualified Cachix.Types.SigningKeyCreate as SigningKeyCreate
 import Conduit
 import qualified Control.Concurrent.Async as Async
 import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
+import Control.Retry (defaultRetryStatus)
 import Crypto.Sign.Ed25519 (PublicKey (PublicKey), createKeypair)
 import qualified Data.Attoparsec.Text
 import qualified Data.ByteString.Base64 as B64
@@ -75,7 +76,7 @@ import qualified Data.Text as T
 import Data.Text.IO (hGetLine)
 import qualified Data.Text.IO as T.IO
 import GHC.IO.Handle (hDuplicate, hDuplicateTo)
-import Hercules.CNix.Store (storePathToPath, withStore)
+import Hercules.CNix.Store (parseStorePath, storePathToPath, withStore)
 import Lens.Micro ((^.))
 import Network.HTTP.Types (status404)
 import qualified Nix.NarInfo as NarInfo
@@ -249,21 +250,39 @@ import' env pushOptions name s3uri = do
       -- parse narinfo
       case Data.Attoparsec.Text.parseOnly NarInfo.parseNarInfo (toS narinfoText) of
         Left e -> hPutStr stderr $ "error while parsing " <> storeHash <> ": " <> show e
-        Right narInfoTemp -> do
+        Right parsedNarInfo -> do
           -- we support only sha256: for now
-          fileHash <- fileHashParse $ NarInfo.fileHash narInfoTemp
-          let narInfo = narInfoTemp {NarInfo.fileHash = fileHash}
+          narInfo <- do
+            fileHash <- fileHashParse $ NarInfo.fileHash parsedNarInfo
+            return $ parsedNarInfo {NarInfo.fileHash = fileHash}
           -- stream nar and narinfo
           liftIO $ withPushParams env pushOptions name $ \pushParams -> do
             narinfoResponse <- liftIO $ narinfoExists pushParams (toS storeHash)
             case narinfoResponse of
+              Right NoContent -> return ()
               Left err
-                | isErr err status404 -> return ()
+                | isErr err status404 -> runResourceT $ do
+                    liftIO $ putErrText $ "Importing " <> toS (NarInfo.storePath narInfo)
+                    narStream <- getObject awsEnv $ Amazonka.S3.ObjectKey $ NarInfo.url narInfo
+                    pathInfo <- newPathInfoFromNarInfo narInfo
+                    let storePathText = NarInfo.storePath narInfo
+                        store = pushParamsStore pushParams
+                        narSize = fromInteger $ NarInfo.narSize narInfo
+                    storePath <- liftIO $ parseStorePath store (toS storePathText)
+                    case readMaybe (NarInfo.compression narInfo) of
+                      Nothing -> putErrText $ "Unsupported compression method: " <> NarInfo.compression narInfo
+                      Just compressionMethod -> do
+                        res <-
+                          runConduit $
+                            narStream
+                              .| streamCopy pushParams storePath narSize defaultRetryStatus compressionMethod
+
+                        case res of
+                          Left err -> putErrText $ show err
+                          Right uploadResult@MultipartUploadResult {..} -> do
+                            nic <- makeNarInfo pushParams pathInfo storePath (NarInfo.narSize narInfo) (NarInfo.narHash narInfo) uploadResultFileSize uploadResultFileHash
+                            completeNarUpload pushParams uploadResult nic
                 | otherwise -> putErrText $ show err
-              Right NoContent -> runResourceT $ do
-                liftIO $ putErrText $ "Importing " <> toS (NarInfo.storePath narInfo)
-                narStream <- getObject awsEnv $ Amazonka.S3.ObjectKey $ NarInfo.url narInfo
-                liftIO $ streamStorePath pushParams narStream (return narInfo)
 
 pin :: Env -> PinOptions -> IO ()
 pin env pinOpts = do

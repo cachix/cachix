@@ -280,7 +280,6 @@ import' env pushOptions name s3uri = do
                         case res of
                           Left err -> putErrText $ show err
                           Right uploadResult@MultipartUploadResult {..} -> do
-                            print uploadResult
                             nic <- makeNarInfo pushParams pathInfo storePath (NarInfo.narSize narInfo) (NarInfo.narHash narInfo) uploadResultFileSize uploadResultFileHash
                             completeNarUpload pushParams uploadResult nic
                 | otherwise -> putErrText $ show err

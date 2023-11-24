@@ -388,12 +388,6 @@ makeNarInfo pushParams pathInfo storePath narSize narHash fileSize fileHash = do
   storeDir <- Store.storeDir store
   storePathText <- liftIO $ toS <$> Store.storePathToPath store storePath
 
-  print pathInfo
-  print narHash
-  print narSize
-  print fileHash
-  print fileSize
-
   when (narHash /= pathInfoNarHash pathInfo) $
     throwM $
       NarHashMismatch $
@@ -404,8 +398,8 @@ makeNarInfo pushParams pathInfo storePath narSize narHash fileSize fileHash = do
           then Nothing
           else pathInfoDeriver pathInfo
 
-  let references = sort $ fmap toS $ Set.toList $ pathInfoReferences pathInfo
-  let fpReferences = sort $ fmap (\fp -> toS storeDir <> "/" <> fp) references
+  let references = fmap toS $ Set.toList $ pathInfoReferences pathInfo
+  let fpReferences = fmap (\fp -> toS storeDir <> "/" <> fp) references
 
   let (storeHash, storeSuffix) = splitStorePath storePathText
   let fp = fingerprint storePathText narHash narSize fpReferences
@@ -430,71 +424,6 @@ makeNarInfo pushParams pathInfo storePath narSize narHash fileSize fileHash = do
   escalate $ Api.isNarInfoCreateValid nic
 
   return nic
-
--- streamStorePath ::
---   (MonadUnliftIO m) =>
---   PushParams m r ->
---   ConduitT () ByteString (ResourceT m) () ->
---   m NarInfo.SimpleNarInfo ->
---   m r
--- streamStorePath pushParams narStream narInfoM = do
---   let cacheName = pushParamsName pushParams
---       store = pushParamsStore pushParams
---       authToken = getCacheAuthToken (pushParamsSecret pushParams)
---       clientEnv = pushParamsClientEnv pushParams
---       cacheClientEnv =
---         clientEnv
---           { baseUrl = (baseUrl clientEnv) {baseUrlHost = toS cacheName <> "." <> baseUrlHost (baseUrl clientEnv)}
---           }
---   storeDir <- Store.storeDir store
---   dummyStorePath <- liftIO $ Store.parseStorePathBaseName "j4fwy5gi1rdlrlbk2c0vnbs7fmlm60a7-coreutils-9.1"
---   uploadNarResult <-
---     runConduitRes $
---       narStream
---         .| Push.S3.streamUpload cacheClientEnv authToken cacheName (compressionMethod (pushParamsStrategy pushParams dummyStorePath))
---   narInfo <- narInfoM
---   let storePath :: Text
---       storePath = toS $ NarInfo.storePath narInfo
---   storeStorePath <- liftIO $ Store.parseStorePath store $ toS storePath
---   let strategy = pushParamsStrategy pushParams storeStorePath
---   case uploadNarResult of
---     Left err
---       | isErr err status401 ->
---           on401 strategy err
---       | otherwise ->
---           onError strategy err
---     Right (narId, uploadId, parts) -> do
---       let (storeHash, storeSuffix) = splitStorePath storePath
---       let references = sort $ (fmap . fmap) toS Set.toList $ NarInfo.references narInfo
---       let fpReferences = fmap (\x -> toS storeDir <> "/" <> x) references
---       let fp = fingerprint storePath (NarInfo.narHash narInfo) (NarInfo.narSize narInfo) fpReferences
---           sig = case pushParamsSecret pushParams of
---             PushToken _ -> Nothing
---             PushSigningKey _ signKey -> Just $ toS $ B64.encode $ unSignature $ dsign (signingSecretKey signKey) fp
---           nic =
---             Api.NarInfoCreate
---               { Api.cStoreHash = storeHash,
---                 Api.cStoreSuffix = storeSuffix,
---                 Api.cNarHash = NarInfo.narHash narInfo,
---                 Api.cNarSize = NarInfo.narSize narInfo,
---                 Api.cFileSize = NarInfo.fileSize narInfo,
---                 Api.cFileHash = NarInfo.fileHash narInfo,
---                 Api.cReferences = references,
---                 Api.cDeriver = maybe "unknown-deriver" identity $ NarInfo.deriver narInfo,
---                 Api.cSig = sig
---               }
---       liftIO $ escalate $ Api.isNarInfoCreateValid nic
---
---       -- Complete the multipart upload and upload the narinfo
---       let completeMultipartUploadRequest =
---             API.completeNarUpload cachixClient authToken cacheName narId uploadId $
---               Multipart.CompletedMultipartUpload
---                 { Multipart.parts = parts,
---                   Multipart.narInfoCreate = nic
---                 }
---       liftIO $ void $ retryHttp $ withClientM completeMultipartUploadRequest cacheClientEnv escalate
---
---       onDone strategy
 
 -- | Push an entire closure
 --

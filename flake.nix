@@ -91,8 +91,8 @@
             pkgs.libsodium
             (getNix { inherit pkgs; })
             # sync with stack.yaml LTS
-            pkgs.haskell.compiler.ghc946
-            (pkgs.haskell-language-server.override { supportedGhcVersions = [ "946" ]; })
+            pkgs.haskell.compiler.ghc948
+            (pkgs.haskell-language-server.override { supportedGhcVersions = [ "948" ]; })
           ]
           ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
             pkgs.darwin.apple_sdk.frameworks.Cocoa

@@ -259,27 +259,31 @@ import' env pushOptions name s3uri = do
           liftIO $ withPushParams env pushOptions name $ \pushParams -> do
             narinfoResponse <- liftIO $ narinfoExists pushParams (toS storeHash)
             case narinfoResponse of
+              Right NoContent -> return ()
               Left err
-                | isErr err status404 -> return ()
-                | otherwise -> putErrText $ show err
-              Right NoContent -> runResourceT $ do
-                liftIO $ putErrText $ "Importing " <> toS (NarInfo.storePath narInfo)
-                narStream <- getObject awsEnv $ Amazonka.S3.ObjectKey $ NarInfo.url narInfo
-                pathInfo <- newPathInfoFromNarInfo narInfo
-                let storePathText = NarInfo.storePath narInfo
-                    store = pushParamsStore pushParams
-                    narSize = fromInteger $ NarInfo.narSize narInfo
-                storePath <- liftIO $ parseStorePath store (toS storePathText)
-                res <-
-                  runConduit $
-                    narStream
-                      .| streamUploadNar pushParams storePath narSize defaultRetryStatus
+                | isErr err status404 -> runResourceT $ do
+                    liftIO $ putErrText $ "Importing " <> toS (NarInfo.storePath narInfo)
+                    narStream <- getObject awsEnv $ Amazonka.S3.ObjectKey $ NarInfo.url narInfo
+                    pathInfo <- newPathInfoFromNarInfo narInfo
+                    let storePathText = NarInfo.storePath narInfo
+                        store = pushParamsStore pushParams
+                        narSize = fromInteger $ NarInfo.narSize narInfo
+                    storePath <- liftIO $ parseStorePath store (toS storePathText)
+                    case readMaybe (NarInfo.compression narInfo) of
+                      Nothing -> putErrText $ "Unsupported compression method: " <> NarInfo.compression narInfo
+                      Just compressionMethod -> do
+                        res <-
+                          runConduit $
+                            narStream
+                              .| streamCopy pushParams storePath narSize defaultRetryStatus compressionMethod
 
-                case res of
-                  Left err -> putErrText $ show err
-                  Right uploadResult@MultipartUploadResult {..} -> do
-                    nic <- makeNarInfo pushParams pathInfo storePath uploadResultNarSize uploadResultNarHash uploadResultFileSize uploadResultFileHash
-                    completeNarUpload pushParams uploadResult nic
+                        case res of
+                          Left err -> putErrText $ show err
+                          Right uploadResult@MultipartUploadResult {..} -> do
+                            print uploadResult
+                            nic <- makeNarInfo pushParams pathInfo storePath (NarInfo.narSize narInfo) (NarInfo.narHash narInfo) uploadResultFileSize uploadResultFileHash
+                            completeNarUpload pushParams uploadResult nic
+                | otherwise -> putErrText $ show err
 
 pin :: Env -> PinOptions -> IO ()
 pin env pinOpts = do

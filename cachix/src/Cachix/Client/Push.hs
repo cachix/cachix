@@ -7,6 +7,7 @@ module Cachix.Client.Push
     pushSingleStorePath,
     uploadStorePath,
     streamUploadNar,
+    streamCopy,
     makeNarInfo,
     newPathInfoFromStorePath,
     newPathInfoFromNarInfo,
@@ -240,6 +241,7 @@ data MultipartUploadResult = MultipartUploadResult
     uploadResultFileSize :: Integer,
     uploadResultFileHash :: Text
   }
+  deriving stock (Show)
 
 data PathInfo = PathInfo
   { pathInfoPath :: FilePath,
@@ -257,8 +259,12 @@ newPathInfoFromStorePath store storePath = liftIO $ do
   path <- Store.storePathToPath store storePath
   narHash <- Store.validPathInfoNarHash32 pathInfo
   let narSize = fromIntegral $ Store.validPathInfoNarSize pathInfo
-  deriver <- mapM (Store.storePathToPath store) =<< Store.validPathInfoDeriver store pathInfo
-  references <- mapM (Store.storePathToPath store) =<< Store.validPathInfoReferences store pathInfo
+  deriver <-
+    Store.validPathInfoDeriver store pathInfo
+      >>= mapM Store.getStorePathBaseName
+  references <-
+    Store.validPathInfoReferences store pathInfo
+      >>= mapM Store.getStorePathBaseName
 
   return $
     PathInfo
@@ -332,11 +338,61 @@ streamUploadNar pushParams storePath storePathSize retrystatus = do
           uploadResultFileHash = toS fileHash
         }
 
+streamCopy ::
+  (MonadUnliftIO m) =>
+  PushParams m r ->
+  StorePath ->
+  Int64 ->
+  RetryStatus ->
+  BinaryCache.CompressionMethod ->
+  ConduitT ByteString Void (ResourceT m) (Either ClientError MultipartUploadResult)
+streamCopy pushParams storePath storePathSize retrystatus compressionMethod = do
+  let cacheName = pushParamsName pushParams
+  let authToken = getCacheAuthToken (pushParamsSecret pushParams)
+      clientEnv = pushParamsClientEnv pushParams
+      cacheClientEnv =
+        clientEnv
+          { baseUrl = (baseUrl clientEnv) {baseUrlHost = toS cacheName <> "." <> baseUrlHost (baseUrl clientEnv)}
+          }
+  let strategy = pushParamsStrategy pushParams storePath
+
+  fileSizeRef <- liftIO $ newIORef 0
+  fileHashRef <- liftIO $ newIORef ("" :: ByteString)
+
+  result <-
+    awaitForever Data.Conduit.yield
+      .| onUncompressedNARStream strategy retrystatus storePathSize
+      .| passthroughSizeSink fileSizeRef
+      .| passthroughHashSinkB16 fileHashRef
+      .| Push.S3.streamUpload cacheClientEnv authToken cacheName compressionMethod
+
+  for result $ \(narId, uploadId, mparts) -> liftIO $ do
+    fileSize <- readIORef fileSizeRef
+    fileHash <- readIORef fileHashRef
+
+    return $
+      MultipartUploadResult
+        { uploadResultNarId = narId,
+          uploadResultUploadId = uploadId,
+          uploadResultParts = mparts,
+          uploadResultNarSize = 0,
+          uploadResultNarHash = "",
+          uploadResultFileSize = fileSize,
+          uploadResultFileHash = toS fileHash
+        }
+
 -- | Create a NarInfo from a pathinfo
 makeNarInfo pushParams pathInfo storePath narSize narHash fileSize fileHash = do
   let store = pushParamsStore pushParams
   let strategy = pushParamsStrategy pushParams storePath
+  storeDir <- Store.storeDir store
   storePathText <- liftIO $ toS <$> Store.storePathToPath store storePath
+
+  print pathInfo
+  print narHash
+  print narSize
+  print fileHash
+  print fileSize
 
   when (narHash /= pathInfoNarHash pathInfo) $
     throwM $
@@ -347,12 +403,12 @@ makeNarInfo pushParams pathInfo storePath narSize narHash fileSize fileHash = do
         if omitDeriver strategy
           then Nothing
           else pathInfoDeriver pathInfo
-  -- deriver <- for deriverPath Store.getStorePathBaseName
 
-  let references = fmap toS $ Set.toList $ pathInfoReferences pathInfo
+  let references = sort $ fmap toS $ Set.toList $ pathInfoReferences pathInfo
+  let fpReferences = sort $ fmap (\fp -> toS storeDir <> "/" <> fp) references
 
   let (storeHash, storeSuffix) = splitStorePath storePathText
-  let fp = fingerprint storePathText narHash narSize references
+  let fp = fingerprint storePathText narHash narSize fpReferences
       sig = case pushParamsSecret pushParams of
         PushToken _ -> Nothing
         PushSigningKey _ signKey -> Just $ toS $ B64.encode $ unSignature $ dsign (signingSecretKey signKey) fp

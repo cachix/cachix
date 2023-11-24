@@ -241,7 +241,8 @@ import' env pushOptions name s3uri = do
 
     uploadNarinfo :: Amazonka.Env -> Amazonka.S3.ObjectKey -> ResourceT IO ()
     uploadNarinfo awsEnv entry = liftIO $ do
-      let storeHash = Amazonka.Data.Text.toText entry
+      let storeHash = T.dropEnd 8 $ Amazonka.Data.Text.toText entry
+
       -- get narinfo
       narinfoText <- runConduitRes $ do
         narinfoStream <- getObject awsEnv entry

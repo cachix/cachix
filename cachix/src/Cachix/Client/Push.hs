@@ -309,7 +309,7 @@ getMissingPathsForClosure pushParams inputPaths = do
             (getCacheAuthToken (pushParamsSecret pushParams))
             (pushParamsName pushParams)
             hashes
-            `runClientM` clientEnv
+          `runClientM` clientEnv
   let missingHashes = Set.fromList (encodeUtf8 <$> missingHashesList)
   pathsAndHashes <- liftIO $
     for paths $ \path -> do

@@ -29,13 +29,13 @@ source-repository head
 common defaults
   build-depends:      base >=4.7 && <5
   default-extensions:
-    NoImplicitPrelude
-    NoImportQualifiedPost
     DeriveAnyClass
     DeriveGeneric
     DerivingVia
     LambdaCase
     NamedFieldPuns
+    NoImplicitPrelude
+    NoImportQualifiedPost
     OverloadedStrings
     RecordWildCards
     ScopedTypeVariables

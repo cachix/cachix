@@ -397,6 +397,7 @@ streamCopy pushParams storePath storePathSize retrystatus compressionMethod = do
     awaitForever Data.Conduit.yield
       .| passthroughSizeSink fileSizeRef
       .| passthroughHashSinkB16 fileHashRef
+      .| onUncompressedNARStream strategy retrystatus storePathSize
       .| Push.S3.streamUpload clientEnv authToken cacheName compressionMethod
 
   for result $ \(narId, uploadId, mparts) -> liftIO $ do

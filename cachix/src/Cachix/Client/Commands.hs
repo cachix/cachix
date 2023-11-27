@@ -64,7 +64,6 @@ import Control.Retry (defaultRetryStatus)
 import Crypto.Sign.Ed25519 (PublicKey (PublicKey), createKeypair)
 import qualified Data.Attoparsec.Text
 import qualified Data.ByteString.Base64 as B64
-import Data.Conduit (runConduit, (.|))
 import qualified Data.Conduit.Combinators as C
 import Data.Conduit.ConcurrentMap (concurrentMapM_)
 import qualified Data.Conduit.List as CL
@@ -279,10 +278,13 @@ import' env pushOptions name s3uri = do
                               .| streamCopy pushParams storePath narSize defaultRetryStatus compressionMethod
 
                         case res of
-                          Left err -> putErrText $ show err
-                          Right uploadResult@MultipartUploadResult {..} -> do
-                            nic <- makeNarInfo pushParams pathInfo storePath (NarInfo.narSize narInfo) (NarInfo.narHash narInfo) uploadResultFileSize uploadResultFileHash
-                            completeNarUpload pushParams uploadResult nic
+                          Left uploadErr -> putErrText $ show uploadErr
+                          Right uploadResult -> do
+                            let newNarDetails = (murNarDetails uploadResult) {undNarSize = NarInfo.narSize narInfo, undNarHash = NarInfo.narHash narInfo}
+                            -- TODO: Check that the file size matches?
+                            let newUploadResult = uploadResult {murNarDetails = newNarDetails}
+                            nic <- newNarInfoCreate pushParams storePath pathInfo newNarDetails
+                            completeNarUpload pushParams newUploadResult nic
                 | otherwise -> putErrText $ show err
 
 pin :: Env -> PinOptions -> IO ()

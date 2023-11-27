@@ -10,14 +10,14 @@ data CreateMultipartUploadResponse = CreateMultipartUploadResponse
   { narId :: UUID,
     uploadId :: Text
   }
-  deriving stock (Generic, Show)
+  deriving stock (Generic, Eq, Show)
   deriving anyclass (ToJSON, FromJSON, ToSchema, NFData)
 
 -- | Any hashes or headers required to create the presigned URL.
 data SigningData = SigningData
   { contentMD5 :: Text
   }
-  deriving stock (Generic, Show)
+  deriving stock (Generic, Eq, Show)
   deriving anyclass (ToJSON, FromJSON, ToSchema, NFData)
 
 newtype UploadPartResponse = UploadPartResponse {uploadUrl :: Text}
@@ -29,8 +29,11 @@ data CompletedPart = CompletedPart
     -- | An opaque identifier for the uploaded part.
     eTag :: Text
   }
-  deriving stock (Generic, Show)
+  deriving stock (Generic, Eq, Show)
   deriving anyclass (ToJSON, FromJSON, ToSchema, NFData)
+
+instance Ord CompletedPart where
+  p1 `compare` p2 = partNumber p1 `compare` partNumber p2
 
 type CompletedParts = Maybe (NonEmpty CompletedPart)
 

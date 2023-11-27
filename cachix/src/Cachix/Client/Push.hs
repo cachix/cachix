@@ -23,7 +23,7 @@ module Cachix.Client.Push
     newPathInfoFromNarInfo,
 
     -- * Streaming upload
-    UploadResult (..),
+    Push.S3.UploadResult (..),
     UploadNarDetails (..),
     streamUploadNar,
     streamCopy,
@@ -61,13 +61,11 @@ import Control.Retry (RetryStatus)
 import Crypto.Sign.Ed25519
 import qualified Data.ByteString.Base64 as B64
 import Data.Conduit
-import qualified Data.Conduit.Combinators as CC
 import qualified Data.Conduit.Lzma as Lzma (compress)
 import qualified Data.Conduit.Zstd as Zstd (compress)
 import Data.IORef
 import qualified Data.Set as Set
 import qualified Data.Text as T
-import Data.UUID (UUID)
 import Hercules.CNix (StorePath)
 import qualified Hercules.CNix.Std.Set as Std.Set
 import Hercules.CNix.Store (Store)
@@ -217,8 +215,8 @@ uploadStorePath pushParams storePath retrystatus = do
 
   case eresult of
     Left e -> onError strategy e
-    Right uploadResult -> do
-      nic <- newNarInfoCreate pushParams storePath pathInfo (murNarDetails uploadResult)
+    Right (uploadResult, uploadNarDetails) -> do
+      nic <- newNarInfoCreate pushParams storePath pathInfo uploadNarDetails
       completeNarUpload pushParams uploadResult nic
       onDone strategy
 
@@ -245,31 +243,23 @@ pushClosure traversal pushParams inputStorePaths = do
 completeNarUpload ::
   (MonadUnliftIO m) =>
   PushParams n r ->
-  UploadResult ->
+  Push.S3.UploadResult ->
   Api.NarInfoCreate ->
   m ()
-completeNarUpload pushParams UploadResult {..} nic = do
+completeNarUpload pushParams Push.S3.UploadResult {..} nic = do
   let cacheName = pushParamsName pushParams
       authToken = getCacheAuthToken (pushParamsSecret pushParams)
       clientEnv = pushParamsClientEnv pushParams
 
   -- Complete the multipart upload and upload the narinfo
   let completeMultipartUploadRequest =
-        API.completeNarUpload cachixClient authToken cacheName murNarId murUploadId $
+        API.completeNarUpload cachixClient authToken cacheName urNarId urUploadId $
           Multipart.CompletedMultipartUpload
-            { Multipart.parts = murParts,
+            { Multipart.parts = urParts,
               Multipart.narInfoCreate = nic
             }
 
   liftIO $ void $ retryHttp $ withClientM completeMultipartUploadRequest clientEnv escalate
-
-data UploadResult = UploadResult
-  { murNarId :: UUID,
-    murUploadId :: Text,
-    murParts :: Maybe (NonEmpty Multipart.CompletedPart),
-    murNarDetails :: UploadNarDetails
-  }
-  deriving stock (Eq, Show)
 
 data UploadNarDetails = UploadNarDetails
   { undNarSize :: Integer,
@@ -328,7 +318,7 @@ streamUploadNar ::
   StorePath ->
   Int64 ->
   RetryStatus ->
-  ConduitT ByteString Void (ResourceT m) (Either ClientError UploadResult)
+  ConduitT ByteString Void (ResourceT m) (Either ClientError (Push.S3.UploadResult, UploadNarDetails))
 streamUploadNar pushParams storePath storePathSize retrystatus = do
   let cacheName = pushParamsName pushParams
       authToken = getCacheAuthToken (pushParamsSecret pushParams)
@@ -354,7 +344,7 @@ streamUploadNar pushParams storePath storePathSize retrystatus = do
       .| passthroughHashSinkB16 fileHashRef
       .| Push.S3.streamUpload clientEnv authToken cacheName (compressionMethod strategy)
 
-  for result $ \(narId, uploadId, mparts) -> liftIO $ do
+  for result $ \uploadResult -> liftIO $ do
     narSize <- readIORef narSizeRef
     narHash <- ("sha256:" <>) . System.Nix.Base32.encode <$> readIORef narHashRef
     fileSize <- readIORef fileSizeRef
@@ -368,13 +358,7 @@ streamUploadNar pushParams storePath storePathSize retrystatus = do
               undFileHash = toS fileHash
             }
 
-    return $
-      UploadResult
-        { murNarId = narId,
-          murUploadId = uploadId,
-          murParts = mparts,
-          murNarDetails = uploadNarDetails
-        }
+    return (uploadResult, uploadNarDetails)
 
 streamCopy ::
   (MonadUnliftIO m) =>
@@ -383,7 +367,7 @@ streamCopy ::
   Int64 ->
   RetryStatus ->
   BinaryCache.CompressionMethod ->
-  ConduitT ByteString Void (ResourceT m) (Either ClientError UploadResult)
+  ConduitT ByteString Void (ResourceT m) (Either ClientError (Push.S3.UploadResult, UploadNarDetails))
 streamCopy pushParams storePath storePathSize retrystatus compressionMethod = do
   let cacheName = pushParamsName pushParams
       authToken = getCacheAuthToken (pushParamsSecret pushParams)
@@ -400,7 +384,7 @@ streamCopy pushParams storePath storePathSize retrystatus compressionMethod = do
       .| onUncompressedNARStream strategy retrystatus storePathSize
       .| Push.S3.streamUpload clientEnv authToken cacheName compressionMethod
 
-  for result $ \(narId, uploadId, mparts) -> liftIO $ do
+  for result $ \uploadResult -> liftIO $ do
     fileSize <- readIORef fileSizeRef
     fileHash <- readIORef fileHashRef
 
@@ -412,13 +396,7 @@ streamCopy pushParams storePath storePathSize retrystatus compressionMethod = do
               undFileHash = toS fileHash
             }
 
-    return $
-      UploadResult
-        { murNarId = narId,
-          murUploadId = uploadId,
-          murParts = mparts,
-          murNarDetails = uploadNarDetails
-        }
+    return (uploadResult, uploadNarDetails)
 
 newNarInfoCreate ::
   (MonadIO m, MonadCatch m) =>
@@ -440,9 +418,10 @@ newNarInfoCreate pushParams storePath pathInfo UploadNarDetails {..} = do
         toS storePathText <> ": Nar hash mismatch between nix-store --dump and nix db. You can repair db metadata by running as root: $ nix-store --verify --repair --check-contents"
 
   let deriver =
-        if omitDeriver strategy
-          then Nothing
-          else piDeriver pathInfo
+        fromMaybe "unknown-deriver" $
+          if omitDeriver strategy
+            then Nothing
+            else piDeriver pathInfo
 
   let references = fmap toS $ Set.toList $ piReferences pathInfo
   let fpReferences = fmap (\fp -> toS storeDir <> "/" <> fp) references
@@ -462,7 +441,7 @@ newNarInfoCreate pushParams storePath pathInfo UploadNarDetails {..} = do
             Api.cFileSize = undFileSize,
             Api.cFileHash = undFileHash,
             Api.cReferences = references,
-            Api.cDeriver = fromMaybe "unknown-deriver" deriver,
+            Api.cDeriver = deriver,
             Api.cSig = sig
           }
 

@@ -6,15 +6,8 @@ module Cachix.Client.Push
   ( -- * Pushing a single path
     pushSingleStorePath,
     uploadStorePath,
-    streamUploadNar,
-    streamCopy,
-    makeNarInfo,
-    newPathInfoFromStorePath,
-    newPathInfoFromNarInfo,
-    PathInfo (..),
-    MultipartUploadResult (..),
-    completeNarUpload,
-    narinfoExists,
+
+    -- * Push strategy and parameters
     PushParams (..),
     PushSecret (..),
     getAuthTokenFromPushSecret,
@@ -23,6 +16,22 @@ module Cachix.Client.Push
     defaultWithXzipCompressorWithLevel,
     defaultWithZstdCompressor,
     defaultWithZstdCompressorWithLevel,
+
+    -- * Path info
+    PathInfo (..),
+    newPathInfoFromStorePath,
+    newPathInfoFromNarInfo,
+
+    -- * Streaming upload
+    UploadResult (..),
+    UploadNarDetails (..),
+    streamUploadNar,
+    streamCopy,
+    completeNarUpload,
+
+    -- * Narinfo
+    narinfoExists,
+    newNarInfoCreate,
 
     -- * Pushing a closure of store paths
     pushClosure,
@@ -197,7 +206,7 @@ uploadStorePath pushParams storePath retrystatus = do
   -- This should be a noop because storePathText came from a StorePath
   normalized <- liftIO $ Store.followLinksToStorePath store storePathText
   pathInfo <- newPathInfoFromStorePath store normalized
-  let narSize = fromIntegral (pathInfoNarSize pathInfo)
+  let narSize = fromIntegral (piNarSize pathInfo)
 
   onAttempt strategy retrystatus narSize
 
@@ -208,44 +217,74 @@ uploadStorePath pushParams storePath retrystatus = do
 
   case eresult of
     Left e -> onError strategy e
-    Right uploadResult@MultipartUploadResult {..} -> do
-      nic <- makeNarInfo pushParams pathInfo storePath uploadResultNarSize uploadResultNarHash uploadResultFileSize uploadResultFileHash
-
+    Right uploadResult -> do
+      nic <- newNarInfoCreate pushParams storePath pathInfo (murNarDetails uploadResult)
       completeNarUpload pushParams uploadResult nic
-
       onDone strategy
 
-completeNarUpload pushParams MultipartUploadResult {..} nic = do
+-- | Push an entire closure
+--
+-- Note: 'onAlreadyPresent' will be called less often in the future.
+pushClosure ::
+  (MonadMask m, MonadUnliftIO m) =>
+  -- | Traverse paths, responsible for bounding parallel processing of paths
+  --
+  -- For example: @'mapConcurrentlyBounded' 4@
+  (forall a b. (a -> m b) -> [a] -> m [b]) ->
+  PushParams m r ->
+  -- | Initial store paths
+  [StorePath] ->
+  -- | Every @r@ per store path of the entire closure of store paths
+  m [r]
+pushClosure traversal pushParams inputStorePaths = do
+  (allPaths, missingPaths) <- getMissingPathsForClosure pushParams inputStorePaths
+  paths <- pushOnClosureAttempt pushParams allPaths missingPaths
+  flip traversal paths $ \storePath ->
+    retryAll $ uploadStorePath pushParams storePath
+
+completeNarUpload ::
+  (MonadUnliftIO m) =>
+  PushParams n r ->
+  UploadResult ->
+  Api.NarInfoCreate ->
+  m ()
+completeNarUpload pushParams UploadResult {..} nic = do
   let cacheName = pushParamsName pushParams
       authToken = getCacheAuthToken (pushParamsSecret pushParams)
       clientEnv = pushParamsClientEnv pushParams
 
   -- Complete the multipart upload and upload the narinfo
   let completeMultipartUploadRequest =
-        API.completeNarUpload cachixClient authToken cacheName uploadResultNarId uploadResultUploadId $
+        API.completeNarUpload cachixClient authToken cacheName murNarId murUploadId $
           Multipart.CompletedMultipartUpload
-            { Multipart.parts = uploadResultParts,
+            { Multipart.parts = murParts,
               Multipart.narInfoCreate = nic
             }
+
   liftIO $ void $ retryHttp $ withClientM completeMultipartUploadRequest clientEnv escalate
 
-data MultipartUploadResult = MultipartUploadResult
-  { uploadResultNarId :: UUID,
-    uploadResultUploadId :: Text,
-    uploadResultParts :: Maybe (NonEmpty Multipart.CompletedPart),
-    uploadResultNarSize :: Integer,
-    uploadResultNarHash :: Text,
-    uploadResultFileSize :: Integer,
-    uploadResultFileHash :: Text
+data UploadResult = UploadResult
+  { murNarId :: UUID,
+    murUploadId :: Text,
+    murParts :: Maybe (NonEmpty Multipart.CompletedPart),
+    murNarDetails :: UploadNarDetails
   }
-  deriving stock (Show)
+  deriving stock (Eq, Show)
+
+data UploadNarDetails = UploadNarDetails
+  { undNarSize :: Integer,
+    undNarHash :: Text,
+    undFileSize :: Integer,
+    undFileHash :: Text
+  }
+  deriving stock (Eq, Show)
 
 data PathInfo = PathInfo
-  { pathInfoPath :: FilePath,
-    pathInfoNarHash :: Text,
-    pathInfoNarSize :: Integer,
-    pathInfoDeriver :: Maybe Text,
-    pathInfoReferences :: Set FilePath
+  { piPath :: FilePath,
+    piNarHash :: Text,
+    piNarSize :: Integer,
+    piDeriver :: Maybe Text,
+    piReferences :: Set FilePath
   }
   deriving stock (Eq, Show)
 
@@ -265,22 +304,22 @@ newPathInfoFromStorePath store storePath = liftIO $ do
 
   return $
     PathInfo
-      { pathInfoPath = toS path,
-        pathInfoNarHash = decodeUtf8 narHash,
-        pathInfoNarSize = narSize,
-        pathInfoDeriver = fmap toS deriver,
-        pathInfoReferences = Set.fromList (fmap toS references)
+      { piPath = toS path,
+        piNarHash = decodeUtf8 narHash,
+        piNarSize = narSize,
+        piDeriver = fmap toS deriver,
+        piReferences = Set.fromList (fmap toS references)
       }
 
 newPathInfoFromNarInfo :: (Applicative m) => NarInfo.SimpleNarInfo -> m PathInfo
-newPathInfoFromNarInfo narInfo = do
+newPathInfoFromNarInfo narInfo =
   pure $
     PathInfo
-      { pathInfoPath = NarInfo.storePath narInfo,
-        pathInfoNarHash = NarInfo.narHash narInfo,
-        pathInfoNarSize = NarInfo.narSize narInfo,
-        pathInfoDeriver = NarInfo.deriver narInfo,
-        pathInfoReferences = NarInfo.references narInfo
+      { piPath = NarInfo.storePath narInfo,
+        piNarHash = NarInfo.narHash narInfo,
+        piNarSize = NarInfo.narSize narInfo,
+        piDeriver = NarInfo.deriver narInfo,
+        piReferences = NarInfo.references narInfo
       }
 
 streamUploadNar ::
@@ -289,7 +328,7 @@ streamUploadNar ::
   StorePath ->
   Int64 ->
   RetryStatus ->
-  ConduitT ByteString Void (ResourceT m) (Either ClientError MultipartUploadResult)
+  ConduitT ByteString Void (ResourceT m) (Either ClientError UploadResult)
 streamUploadNar pushParams storePath storePathSize retrystatus = do
   let cacheName = pushParamsName pushParams
       authToken = getCacheAuthToken (pushParamsSecret pushParams)
@@ -321,15 +360,20 @@ streamUploadNar pushParams storePath storePathSize retrystatus = do
     fileSize <- readIORef fileSizeRef
     fileHash <- readIORef fileHashRef
 
+    let uploadNarDetails =
+          UploadNarDetails
+            { undNarSize = narSize,
+              undNarHash = narHash,
+              undFileSize = fileSize,
+              undFileHash = toS fileHash
+            }
+
     return $
-      MultipartUploadResult
-        { uploadResultNarId = narId,
-          uploadResultUploadId = uploadId,
-          uploadResultParts = mparts,
-          uploadResultNarSize = narSize,
-          uploadResultNarHash = narHash,
-          uploadResultFileSize = fileSize,
-          uploadResultFileHash = toS fileHash
+      UploadResult
+        { murNarId = narId,
+          murUploadId = uploadId,
+          murParts = mparts,
+          murNarDetails = uploadNarDetails
         }
 
 streamCopy ::
@@ -339,7 +383,7 @@ streamCopy ::
   Int64 ->
   RetryStatus ->
   BinaryCache.CompressionMethod ->
-  ConduitT ByteString Void (ResourceT m) (Either ClientError MultipartUploadResult)
+  ConduitT ByteString Void (ResourceT m) (Either ClientError UploadResult)
 streamCopy pushParams storePath storePathSize retrystatus compressionMethod = do
   let cacheName = pushParamsName pushParams
       authToken = getCacheAuthToken (pushParamsSecret pushParams)
@@ -359,25 +403,37 @@ streamCopy pushParams storePath storePathSize retrystatus compressionMethod = do
     fileSize <- readIORef fileSizeRef
     fileHash <- readIORef fileHashRef
 
+    let uploadNarDetails =
+          UploadNarDetails
+            { undNarSize = 0,
+              undNarHash = "",
+              undFileSize = fileSize,
+              undFileHash = toS fileHash
+            }
+
     return $
-      MultipartUploadResult
-        { uploadResultNarId = narId,
-          uploadResultUploadId = uploadId,
-          uploadResultParts = mparts,
-          uploadResultNarSize = 0,
-          uploadResultNarHash = "",
-          uploadResultFileSize = fileSize,
-          uploadResultFileHash = toS fileHash
+      UploadResult
+        { murNarId = narId,
+          murUploadId = uploadId,
+          murParts = mparts,
+          murNarDetails = uploadNarDetails
         }
 
--- | Create a NarInfo from a pathinfo
-makeNarInfo pushParams pathInfo storePath narSize narHash fileSize fileHash = do
+newNarInfoCreate ::
+  (MonadIO m, MonadCatch m) =>
+  PushParams n r ->
+  StorePath ->
+  PathInfo ->
+  UploadNarDetails ->
+  m Api.NarInfoCreate
+newNarInfoCreate pushParams storePath pathInfo UploadNarDetails {..} = do
   let store = pushParamsStore pushParams
   let strategy = pushParamsStrategy pushParams storePath
   storeDir <- Store.storeDir store
   storePathText <- liftIO $ toS <$> Store.storePathToPath store storePath
 
-  when (narHash /= pathInfoNarHash pathInfo) $
+  -- TODO: show expected vs actual NAR hash
+  when (undNarHash /= piNarHash pathInfo) $
     throwM $
       NarHashMismatch $
         toS storePathText <> ": Nar hash mismatch between nix-store --dump and nix db. You can repair db metadata by running as root: $ nix-store --verify --repair --check-contents"
@@ -385,13 +441,13 @@ makeNarInfo pushParams pathInfo storePath narSize narHash fileSize fileHash = do
   let deriver =
         if omitDeriver strategy
           then Nothing
-          else pathInfoDeriver pathInfo
+          else piDeriver pathInfo
 
-  let references = fmap toS $ Set.toList $ pathInfoReferences pathInfo
+  let references = fmap toS $ Set.toList $ piReferences pathInfo
   let fpReferences = fmap (\fp -> toS storeDir <> "/" <> fp) references
 
   let (storeHash, storeSuffix) = splitStorePath storePathText
-  let fp = fingerprint storePathText narHash narSize fpReferences
+  let fp = fingerprint storePathText undNarHash undNarSize fpReferences
       sig = case pushParamsSecret pushParams of
         PushToken _ -> Nothing
         PushSigningKey _ signKey -> Just $ toS $ B64.encode $ unSignature $ dsign (signingSecretKey signKey) fp
@@ -400,10 +456,10 @@ makeNarInfo pushParams pathInfo storePath narSize narHash fileSize fileHash = do
         Api.NarInfoCreate
           { Api.cStoreHash = storeHash,
             Api.cStoreSuffix = storeSuffix,
-            Api.cNarHash = narHash,
-            Api.cNarSize = narSize,
-            Api.cFileSize = fileSize,
-            Api.cFileHash = fileHash,
+            Api.cNarHash = undNarHash,
+            Api.cNarSize = undNarSize,
+            Api.cFileSize = undFileSize,
+            Api.cFileHash = undFileHash,
             Api.cReferences = references,
             Api.cDeriver = fromMaybe "unknown-deriver" deriver,
             Api.cSig = sig
@@ -413,26 +469,6 @@ makeNarInfo pushParams pathInfo storePath narSize narHash fileSize fileHash = do
   escalate $ Api.isNarInfoCreateValid nic
 
   return nic
-
--- | Push an entire closure
---
--- Note: 'onAlreadyPresent' will be called less often in the future.
-pushClosure ::
-  (MonadMask m, MonadUnliftIO m) =>
-  -- | Traverse paths, responsible for bounding parallel processing of paths
-  --
-  -- For example: @'mapConcurrentlyBounded' 4@
-  (forall a b. (a -> m b) -> [a] -> m [b]) ->
-  PushParams m r ->
-  -- | Initial store paths
-  [StorePath] ->
-  -- | Every @r@ per store path of the entire closure of store paths
-  m [r]
-pushClosure traversal pushParams inputStorePaths = do
-  (allPaths, missingPaths) <- getMissingPathsForClosure pushParams inputStorePaths
-  paths <- pushOnClosureAttempt pushParams allPaths missingPaths
-  flip traversal paths $ \storePath ->
-    retryAll $ uploadStorePath pushParams storePath
 
 getMissingPathsForClosure :: (MonadIO m, MonadMask m) => PushParams m r -> [StorePath] -> m ([StorePath], [StorePath])
 getMissingPathsForClosure pushParams inputPaths = do

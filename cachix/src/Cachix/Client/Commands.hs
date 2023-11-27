@@ -255,36 +255,46 @@ import' env pushOptions name s3uri = do
           narInfo <- do
             fileHash <- fileHashParse $ NarInfo.fileHash parsedNarInfo
             return $ parsedNarInfo {NarInfo.fileHash = fileHash}
+
           -- stream nar and narinfo
           liftIO $ withPushParams env pushOptions name $ \pushParams -> do
             narinfoResponse <- liftIO $ narinfoExists pushParams (toS storeHash)
+            let storePathText = NarInfo.storePath narInfo
+                store = pushParamsStore pushParams
+            storePath <- liftIO $ parseStorePath store (toS storePathText)
+            let strategy = pushParamsStrategy pushParams storePath
+
             case narinfoResponse of
-              Right NoContent -> return ()
+              Right NoContent -> onAlreadyPresent strategy
               Left err
                 | isErr err status404 -> runResourceT $ do
-                    liftIO $ putErrText $ "Importing " <> toS (NarInfo.storePath narInfo)
-                    narStream <- getObject awsEnv $ Amazonka.S3.ObjectKey $ NarInfo.url narInfo
                     pathInfo <- newPathInfoFromNarInfo narInfo
-                    let storePathText = NarInfo.storePath narInfo
-                        store = pushParamsStore pushParams
-                        narSize = fromInteger $ NarInfo.narSize narInfo
-                    storePath <- liftIO $ parseStorePath store (toS storePathText)
+                    let fileSize = fromInteger $ NarInfo.fileSize narInfo
+
                     case readMaybe (NarInfo.compression narInfo) of
                       Nothing -> putErrText $ "Unsupported compression method: " <> NarInfo.compression narInfo
                       Just compressionMethod -> do
+                        liftIO $ onAttempt strategy defaultRetryStatus fileSize
+
+                        narStream <- getObject awsEnv $ Amazonka.S3.ObjectKey $ NarInfo.url narInfo
+
                         res <-
                           runConduit $
                             narStream
-                              .| streamCopy pushParams storePath narSize defaultRetryStatus compressionMethod
+                              .| streamCopy pushParams storePath fileSize defaultRetryStatus compressionMethod
 
                         case res of
-                          Left uploadErr -> putErrText $ show uploadErr
+                          Left uploadErr ->
+                            liftIO $ onError strategy uploadErr
                           Right uploadResult -> do
-                            let newNarDetails = (murNarDetails uploadResult) {undNarSize = NarInfo.narSize narInfo, undNarHash = NarInfo.narHash narInfo}
                             -- TODO: Check that the file size matches?
+                            let newNarDetails = (murNarDetails uploadResult) {undNarSize = NarInfo.narSize narInfo, undNarHash = NarInfo.narHash narInfo}
                             let newUploadResult = uploadResult {murNarDetails = newNarDetails}
+
                             nic <- newNarInfoCreate pushParams storePath pathInfo newNarDetails
                             completeNarUpload pushParams newUploadResult nic
+
+                            liftIO $ onDone strategy
                 | otherwise -> putErrText $ show err
 
 pin :: Env -> PinOptions -> IO ()

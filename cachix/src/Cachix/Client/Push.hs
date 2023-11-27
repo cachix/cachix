@@ -269,6 +269,9 @@ data UploadNarDetails = UploadNarDetails
   }
   deriving stock (Eq, Show)
 
+-- | A simplified type for ValidPathInfo.
+-- Can be constructed either from an existing NarInfo, or by querying the Nix store.
+-- Only includes the common fields between remote and local path infos.
 data PathInfo = PathInfo
   { piPath :: FilePath,
     piNarHash :: Text,
@@ -278,6 +281,7 @@ data PathInfo = PathInfo
   }
   deriving stock (Eq, Show)
 
+-- | Create a 'PathInfo' for a store path by querying the Nix store.
 newPathInfoFromStorePath :: (MonadIO m) => Store -> StorePath -> m PathInfo
 newPathInfoFromStorePath store storePath = liftIO $ do
   pathInfo <- Store.queryPathInfo store storePath
@@ -301,6 +305,7 @@ newPathInfoFromStorePath store storePath = liftIO $ do
         piReferences = Set.fromList (fmap toS references)
       }
 
+-- | Create a 'PathInfo' for a store path from an existing NarInfo.
 newPathInfoFromNarInfo :: (Applicative m) => NarInfo.SimpleNarInfo -> m PathInfo
 newPathInfoFromNarInfo narInfo =
   pure $
@@ -312,6 +317,7 @@ newPathInfoFromNarInfo narInfo =
         piReferences = NarInfo.references narInfo
       }
 
+-- | A conduit that compresses and streams a NAR to a cache.
 streamUploadNar ::
   (MonadUnliftIO m) =>
   PushParams m r ->
@@ -360,6 +366,8 @@ streamUploadNar pushParams storePath storePathSize retrystatus = do
 
     return (uploadResult, uploadNarDetails)
 
+-- | A conduit that streams an existing NAR to a cache.
+-- Used to copy NARs between caches, e.g. S3 -> Cachix.
 streamCopy ::
   (MonadUnliftIO m) =>
   PushParams m r ->
@@ -368,7 +376,7 @@ streamCopy ::
   RetryStatus ->
   BinaryCache.CompressionMethod ->
   ConduitT ByteString Void (ResourceT m) (Either ClientError (Push.S3.UploadResult, UploadNarDetails))
-streamCopy pushParams storePath storePathSize retrystatus compressionMethod = do
+streamCopy pushParams storePath claimedFileSize retrystatus compressionMethod = do
   let cacheName = pushParamsName pushParams
       authToken = getCacheAuthToken (pushParamsSecret pushParams)
       clientEnv = pushParamsClientEnv pushParams
@@ -379,9 +387,9 @@ streamCopy pushParams storePath storePathSize retrystatus compressionMethod = do
 
   result <-
     awaitForever Data.Conduit.yield
+      .| onUncompressedNARStream strategy retrystatus claimedFileSize
       .| passthroughSizeSink fileSizeRef
       .| passthroughHashSinkB16 fileHashRef
-      .| onUncompressedNARStream strategy retrystatus storePathSize
       .| Push.S3.streamUpload clientEnv authToken cacheName compressionMethod
 
   for result $ \uploadResult -> liftIO $ do
@@ -445,7 +453,6 @@ newNarInfoCreate pushParams storePath pathInfo UploadNarDetails {..} = do
             Api.cSig = sig
           }
 
-  -- TODO: turn into newNarInfoCreate
   escalate $ Api.isNarInfoCreateValid nic
 
   return nic

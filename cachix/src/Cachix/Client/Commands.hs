@@ -288,6 +288,7 @@ import' env pushOptions name s3uri = do
                             liftIO $ onError strategy uploadErr
                           Right (uploadResult, uploadNarDetails) -> do
                             -- TODO: Check that the file size matches?
+                            -- Copy over details about the NAR from the narinfo.
                             let newNarDetails = uploadNarDetails {undNarSize = NarInfo.narSize narInfo, undNarHash = NarInfo.narHash narInfo}
 
                             nic <- newNarInfoCreate pushParams storePath pathInfo newNarDetails

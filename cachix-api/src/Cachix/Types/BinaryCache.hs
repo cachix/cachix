@@ -28,6 +28,7 @@ instance Read CompressionMethod where
     case map toUpper value of
       "XZ" -> [(XZ, "")]
       "ZST" -> [(ZSTD, "")]
+      "ZSTD" -> [(ZSTD, "")]
       _ -> []
 
 instance FromHttpApiData CompressionMethod where

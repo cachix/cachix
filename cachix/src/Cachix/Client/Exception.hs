@@ -18,6 +18,7 @@ data CachixException
   | ArtifactNotFound Text
   | AccessDeniedBinaryCache Text
   | BinaryCacheNotFound Text
+  | ImportUnsupportedHash Text
   deriving (Show, Typeable)
 
 instance Exception CachixException where
@@ -36,3 +37,4 @@ instance Exception CachixException where
   displayException (DeprecatedCommand s) = toS s
   displayException (AccessDeniedBinaryCache s) = toS s
   displayException (BinaryCacheNotFound s) = toS s
+  displayException (ImportUnsupportedHash s) = toS s

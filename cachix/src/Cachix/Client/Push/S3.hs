@@ -52,6 +52,13 @@ concurrentParts = 8
 outputBufferSize :: Int
 outputBufferSize = 100
 
+data UploadResult = UploadResult
+  { urNarId :: UUID,
+    urUploadId :: Text,
+    urParts :: Maybe (NonEmpty Multipart.CompletedPart)
+  }
+  deriving stock (Eq, Show)
+
 streamUpload ::
   forall m.
   (MonadUnliftIO m, MonadResource m) =>
@@ -63,7 +70,7 @@ streamUpload ::
     ByteString
     Void
     m
-    (Either ClientError (UUID, Text, Maybe (NonEmpty Multipart.CompletedPart)))
+    (Either ClientError UploadResult)
 streamUpload env authToken cacheName compressionMethod = do
   createMultipartUpload >>= \case
     Left err -> return $ Left err
@@ -108,7 +115,13 @@ streamUpload env authToken cacheName compressionMethod = do
 
     completeMultipartUpload narId uploadId = do
       parts <- CC.sinkList
-      return $ Right (narId, uploadId, sequenceA $ NonEmpty.fromList parts)
+      return $
+        Right $
+          UploadResult
+            { urNarId = narId,
+              urUploadId = uploadId,
+              urParts = sequenceA (NonEmpty.fromList parts)
+            }
 
     abortMultipartUpload narId uploadId err = do
       let abortMultipartUploadRequest = API.abortMultipartUpload cachixClient authToken cacheName narId uploadId

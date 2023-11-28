@@ -113,8 +113,12 @@ library
   autogen-modules:   Paths_cachix
   build-depends:
     , aeson
+    , amazonka                >=2.0
+    , amazonka-core           >=2.0
+    , amazonka-s3             >=2.0
     , ascii-progress
     , async
+    , attoparsec
     , base64-bytestring
     , bytestring
     , cachix-api
@@ -148,8 +152,10 @@ library
     , lzma-conduit
     , megaparsec              >=7.0.0
     , memory
+    , microlens
     , netrc
     , network
+    , nix-narinfo
     , optparse-applicative
     , pretty-terminal
     , prettyprinter

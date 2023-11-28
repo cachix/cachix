@@ -24,9 +24,11 @@ data CompressionMethod = XZ | ZSTD
   deriving (Show, Generic, FromJSON, ToJSON, ToSchema, NFData)
 
 instance Read CompressionMethod where
-  readsPrec _ "xz" = [(XZ, "")]
-  readsPrec _ "zst" = [(ZSTD, "")]
-  readsPrec _ _ = []
+  readsPrec _ value =
+    case map toUpper value of
+      "XZ" -> [(XZ, "")]
+      "ZST" -> [(ZSTD, "")]
+      _ -> []
 
 instance FromHttpApiData CompressionMethod where
   parseUrlPiece "xz" = Right XZ

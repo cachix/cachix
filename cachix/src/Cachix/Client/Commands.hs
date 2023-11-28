@@ -52,7 +52,7 @@ import Cachix.Client.Secrets
   )
 import Cachix.Client.Servant
 import Cachix.Client.URI (URI)
-import qualified Cachix.Client.URI
+import qualified Cachix.Client.URI as URI
 import qualified Cachix.Client.WatchStore as WatchStore
 import Cachix.Types.BinaryCache (BinaryCacheName)
 import qualified Cachix.Types.PinCreate as PinCreate
@@ -207,7 +207,7 @@ push _ _ =
 import' :: Env -> PushOptions -> Text -> URI -> IO ()
 import' env pushOptions name s3uri = do
   awsEnv <- Amazonka.newEnv Amazonka.discover
-  putErrText $ "Importing narinfos/nars using " <> show (numJobs pushOptions) <> " workers from bucket " <> bucketNameText
+  putErrText $ "Importing narinfos/nars using " <> show (numJobs pushOptions) <> " workers from " <> URI.serialize s3uri <> " to " <> name
   putErrText ""
   Amazonka.runResourceT $
     runConduit $
@@ -222,7 +222,7 @@ import' env pushOptions name s3uri = do
   where
     bucketName :: Amazonka.S3.BucketName
     bucketName = Amazonka.S3.BucketName bucketNameText
-    bucketNameText = toS $ UBS.hostBS $ Cachix.Client.URI.getHostname s3uri
+    bucketNameText = toS $ UBS.hostBS $ URI.getHostname s3uri
 
     getObject ::
       (MonadResource m) =>

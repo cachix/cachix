@@ -133,7 +133,7 @@ commandParser =
       <> (hidden <> command "daemon" (infoH (Daemon <$> daemon) (progDesc "Run a daemon that listens push requests over a unix socket")))
       <> command "generate-keypair" (infoH generateKeypair (progDesc "Generate signing key pair for a binary cache"))
       <> command "push" (infoH push (progDesc "Upload Nix store paths to a binary cache"))
-      <> command "import" (infoH import' (progDesc "Import binary cache narinfos/nars from S3 by streaming"))
+      <> command "import" (infoH import' (progDesc "Import binary cache narinfos/nars from S3 by streaming. E.g. s3://localhost:9000/mybucket"))
       <> command "pin" (infoH pin (progDesc "Pin a store path to prevent it from being garbage collected"))
       <> command "watch-exec" (infoH watchExec (progDesc "Run a command while it's running watch /nix/store for newly added store paths and upload them to a binary cache"))
       <> command "watch-store" (infoH watchStore (progDesc "Indefinitely watch /nix/store for newly added store paths and upload them to a binary cache"))

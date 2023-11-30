@@ -403,22 +403,23 @@ watchExecDaemon env pushOpts cacheName cmd args =
         C.sourceTMChan chan
           .| C.mapM_ (displayPushEvent statsRef)
 
-    displayPushEvent statsRef PushEvent {eventMessage} = liftIO $
+    displayPushEvent statsRef PushEvent {eventPushId, eventMessage} = liftIO $ do
+      let toKey path = (eventPushId, path)
       case eventMessage of
         PushStorePathAttempt path pathSize retryStatus -> do
           progress <- Daemon.Progress.new stderr (toS path) pathSize retryStatus
-          modifyIORef' statsRef (HashMap.insert path progress)
+          modifyIORef' statsRef (HashMap.insert (toKey path) progress)
         PushStorePathProgress path _ newBytes -> do
           stats <- readIORef statsRef
-          case HashMap.lookup path stats of
+          case HashMap.lookup (toKey path) stats of
             Nothing -> return ()
             Just progress -> Daemon.Progress.tick progress newBytes
         PushStorePathDone path -> do
           stats <- readIORef statsRef
-          mapM_ Daemon.Progress.complete (HashMap.lookup path stats)
+          mapM_ Daemon.Progress.complete (HashMap.lookup (toKey path) stats)
         PushStorePathFailed path _ -> do
           stats <- readIORef statsRef
-          mapM_ Daemon.Progress.fail (HashMap.lookup path stats)
+          mapM_ Daemon.Progress.fail (HashMap.lookup (toKey path) stats)
         _ -> return ()
 
     printLog h = getLineLoop

@@ -128,7 +128,7 @@ library
     , conduit-extra
     , conduit-zstd
     , containers
-    , cryptonite
+    , crypton
     , deepseq
     , dhall                   >=1.28.0
     , directory

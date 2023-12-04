@@ -128,23 +128,23 @@ data DaemonOptions = DaemonOptions
 commandParser :: Parser CachixCommand
 commandParser =
   subparser $
-    command "authtoken" (infoH authtoken (progDesc "Configure authentication token for communication to HTTP API"))
+    command "authtoken" (infoH authtoken (progDesc "Configure an authentication token for Cachix"))
       <> command "config" (Config <$> Config.parser)
-      <> (hidden <> command "daemon" (infoH (Daemon <$> daemon) (progDesc "Run a daemon that listens push requests over a unix socket")))
-      <> command "generate-keypair" (infoH generateKeypair (progDesc "Generate signing key pair for a binary cache"))
+      <> (hidden <> command "daemon" (infoH (Daemon <$> daemon) (progDesc "Run a daemon that listens to push requests over a unix socket")))
+      <> command "generate-keypair" (infoH generateKeypair (progDesc "Generate a signing key pair for a binary cache"))
       <> command "push" (infoH push (progDesc "Upload Nix store paths to a binary cache"))
-      <> command "import" (infoH import' (progDesc "Import binary cache narinfos/nars from S3 by streaming. E.g. s3://localhost:9000/mybucket"))
+      <> command "import" (infoH import' (progDesc "Import the contents of a binary cache from an S3-compatible object storage service into Cachix, e.g. s3://localhost:9000/mybucket"))
       <> command "pin" (infoH pin (progDesc "Pin a store path to prevent it from being garbage collected"))
-      <> command "watch-exec" (infoH watchExec (progDesc "Run a command while it's running watch /nix/store for newly added store paths and upload them to a binary cache"))
-      <> command "watch-store" (infoH watchStore (progDesc "Indefinitely watch /nix/store for newly added store paths and upload them to a binary cache"))
-      <> command "use" (infoH use (progDesc "Configure a binary cache by writing nix.conf and netrc files"))
+      <> command "watch-exec" (infoH watchExec (progDesc "Run a command while watching /nix/store for newly added store paths and upload them to a binary cache"))
+      <> command "watch-store" (infoH watchStore (progDesc "Watch /nix/store for newly added store paths and upload them to a binary cache"))
+      <> command "use" (infoH use (progDesc "Configure a binary cache in nix.conf"))
       <> command "remove" (infoH remove (progDesc "Remove a binary cache from nix.conf"))
-      <> command "deploy" (infoH (DeployCommand <$> DeployOptions.parser) (progDesc "Cachix Deploy commands"))
+      <> command "deploy" (infoH (DeployCommand <$> DeployOptions.parser) (progDesc "Manage remote Nix-based systems with Cachix Deploy"))
   where
     nameArg = strArgument (metavar "CACHE-NAME")
     authtoken = AuthToken <$> (stdinFlag <|> (Just <$> authTokenArg))
       where
-        stdinFlag = flag' Nothing (long "stdin" <> help "Read the token from stdin rather than accepting it as an argument.")
+        stdinFlag = flag' Nothing (long "stdin" <> help "Read the auth token from stdin")
         authTokenArg = strArgument (metavar "AUTH-TOKEN")
     generateKeypair = GenerateKeypair <$> nameArg
     validatedLevel l =
@@ -165,7 +165,7 @@ commandParser =
               <> short 'c'
               <> metavar "[0..16]"
               <> help
-                "The compression level for XZ compression between 0-9 and ZSTD 0-16."
+                "The compression level to use. Supported range: [0-9] for xz and [0-16] for zstd."
               <> showDefault
               <> value 2
           )
@@ -175,14 +175,14 @@ commandParser =
               <> short 'm'
               <> metavar "xz | zstd"
               <> help
-                "The compression method, either xz or zstd. Defaults to zstd."
+                "The compression method to use. Supported methods: xz | zstd. Defaults to zstd."
               <> value Nothing
           )
         <*> option
           auto
           ( long "jobs"
               <> short 'j'
-              <> help "Number of threads used for pushing store paths."
+              <> help "The number of threads to use when pushing store paths."
               <> showDefault
               <> value 8
           )
@@ -236,7 +236,8 @@ commandParser =
                       (maybeReader InstallationMode.fromString)
                       ( long "mode"
                           <> short 'm'
-                          <> help "Mode in which to configure binary caches for Nix. Supported values: nixos, root-nixconf, user-nixconf"
+                          <> metavar "nixos | root-nixconf | user-nixconf"
+                          <> help "Mode in which to configure binary caches for Nix. Supported values: nixos | root-nixconf | user-nixconf"
                       )
                   )
                 <*> strOption

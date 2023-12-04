@@ -10,7 +10,7 @@ $ cachix --help
 https://cachix.org command line interface
 
 Usage: cachix [--hostname URI] [-c|--config CONFIGPATH] [-v|--verbose]
-              (COMMAND | (-V|--version))
+              (-V|--version)
 
   To get started log in to https://app.cachix.org
 
@@ -23,22 +23,24 @@ Available options:
   -V,--version             Show cachix version
 
 Available commands:
-  authtoken                Configure authentication token for communication to
-                           HTTP API
+  authtoken                Configure an authentication token for Cachix
   config                   Manage configuration settings for cachix
-  generate-keypair         Generate signing key pair for a binary cache
+  daemon                   Run a daemon that listens to push requests over a
+                           unix socket
+  generate-keypair         Generate a signing key pair for a binary cache
   push                     Upload Nix store paths to a binary cache
+  import                   Import the contents of a binary cache from an
+                           S3-compatible object storage service into Cachix,
+                           e.g. s3://localhost:9000/mybucket
   pin                      Pin a store path to prevent it from being garbage
                            collected
-  watch-exec               Run a command while it's running watch /nix/store for
-                           newly added store paths and upload them to a binary
-                           cache
-  watch-store              Indefinitely watch /nix/store for newly added store
-                           paths and upload them to a binary cache
-  use                      Configure a binary cache by writing nix.conf and
-                           netrc files
+  watch-exec               Run a command while watching /nix/store for newly
+                           added store paths and upload them to a binary cache
+  watch-store              Watch /nix/store for newly added store paths and
+                           upload them to a binary cache
+  use                      Configure a binary cache in nix.conf
   remove                   Remove a binary cache from nix.conf
-  deploy                   Cachix Deploy commands
+  deploy                   Manage remote Nix-based systems with Cachix Deploy
 ```
 
 

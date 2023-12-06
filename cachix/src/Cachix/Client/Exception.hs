@@ -19,6 +19,7 @@ data CachixException
   | AccessDeniedBinaryCache Text
   | BinaryCacheNotFound Text
   | ImportUnsupportedHash Text
+  | RemoveCacheUnsupported Text
   deriving (Show, Typeable)
 
 instance Exception CachixException where
@@ -38,3 +39,4 @@ instance Exception CachixException where
   displayException (AccessDeniedBinaryCache s) = toS s
   displayException (BinaryCacheNotFound s) = toS s
   displayException (ImportUnsupportedHash s) = toS s
+  displayException (RemoveCacheUnsupported s) = toS s

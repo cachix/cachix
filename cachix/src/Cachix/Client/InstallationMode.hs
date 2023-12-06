@@ -163,7 +163,7 @@ removeBinaryCache uri name (Install ncl) = do
   where
     host = URI.toByteString (URI.appendSubdomain name uri)
 removeBinaryCache _ _ _ = do
-  putText "Removing binary caches is only supported for nix.conf"
+  throwIO $ RemoveCacheUnsupported "Removing binary caches is only supported for nix.conf"
 
 nixosBinaryCache :: Config -> BinaryCache.BinaryCache -> UseOptions -> IO ()
 nixosBinaryCache config bc UseOptions {useNixOSFolder = baseDirectory} = do

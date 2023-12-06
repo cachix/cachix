@@ -38,5 +38,5 @@ newPushRequestId = liftIO $ PushRequestId <$> UUID.nextRandom
 data PushRequest = PushRequest
   { storePaths :: [FilePath]
   }
-  deriving stock (Show, Generic)
+  deriving stock (Eq, Generic, Show)
   deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)

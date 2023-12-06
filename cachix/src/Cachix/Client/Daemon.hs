@@ -14,10 +14,11 @@ import qualified Cachix.Client.Commands.Push as Commands.Push
 import qualified Cachix.Client.Config as Config
 import Cachix.Client.Config.Orphans ()
 import Cachix.Client.Daemon.Listen as Daemon
+import qualified Cachix.Client.Daemon.Log as Log
 import Cachix.Client.Daemon.Protocol as Protocol
 import Cachix.Client.Daemon.Push as Push
 import Cachix.Client.Daemon.ShutdownLatch
-import Cachix.Client.Daemon.Subscription
+import Cachix.Client.Daemon.Subscription as Subscription
 import Cachix.Client.Daemon.Types as Types
 import qualified Cachix.Client.Daemon.Worker as Worker
 import Cachix.Client.Env as Env
@@ -54,8 +55,8 @@ new ::
   IO DaemonEnv
 new daemonEnv daemonOptions daemonLogHandle daemonPushOptions daemonCacheName = do
   daemonSocketPath <- maybe getSocketPath pure (Options.daemonSocketPath daemonOptions)
-  daemonQueue <- newTBMQueueIO 1000
-  daemonSubscriptionManager <- newSubscriptionManager
+  daemonWorkerQueue <- newTBMQueueIO 1000
+  daemonSubscriptionManager <- Subscription.newSubscriptionManager
   daemonShutdownLatch <- newShutdownLatch
   daemonPushSemaphore <- QSem.newQSem (Options.numJobs daemonPushOptions)
   daemonPid <- getProcessID
@@ -63,15 +64,11 @@ new daemonEnv daemonOptions daemonLogHandle daemonPushOptions daemonCacheName = 
 
   let authToken = getAuthTokenFromPushSecret daemonPushSecret
   daemonBinaryCache <- Push.getBinaryCache daemonEnv authToken daemonCacheName
-
   let daemonLogLevel =
         if Config.verbose (Env.cachixoptions daemonEnv)
           then Debug
           else Info
-
-  daemonKLogEnv <- Katip.initLogEnv "cachix.daemon" ""
-  let daemonKNamespace = mempty
-  let daemonKContext = mempty
+  daemonLogger <- Log.new "cachix.daemon" daemonLogHandle daemonLogLevel
 
   return $ DaemonEnv {..}
 
@@ -139,7 +136,7 @@ stopIO DaemonEnv {daemonShutdownLatch} =
 
 shutdownQueue :: Daemon ()
 shutdownQueue = do
-  queue <- asks daemonQueue
+  queue <- asks daemonWorkerQueue
   liftIO $ atomically $ closeTBMQueue queue
 
 queueJob :: Protocol.PushRequest -> Socket.Socket -> Daemon ()
@@ -152,7 +149,7 @@ queueJob pushRequest clientConn = do
     subscribeToSTM daemonSubscriptionManager (pushId pushJob) (SubSocket socketBuffer clientConn)
 
     -- Queue the job
-    writeTBMQueue daemonQueue pushJob
+    writeTBMQueue daemonWorkerQueue pushJob
 
 subscribe :: DaemonEnv -> IO (TMChan PushEvent)
 subscribe DaemonEnv {..} = do

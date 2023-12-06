@@ -45,7 +45,8 @@ runWorker f = loop
   where
     loop = do
       DaemonEnv {..} <- ask
-      mres <- liftIO $ atomically $ readTBMQueue daemonQueue
+
+      mres <- liftIO $ atomically $ readTBMQueue daemonWorkerQueue
 
       case mres of
         Nothing -> return ()

@@ -71,6 +71,7 @@ library
     Cachix.Client.Daemon.Client
     Cachix.Client.Daemon.Event
     Cachix.Client.Daemon.Listen
+    Cachix.Client.Daemon.Log
     Cachix.Client.Daemon.PostBuildHook
     Cachix.Client.Daemon.Progress
     Cachix.Client.Daemon.Protocol
@@ -78,6 +79,9 @@ library
     Cachix.Client.Daemon.ShutdownLatch
     Cachix.Client.Daemon.Subscription
     Cachix.Client.Daemon.Types
+    Cachix.Client.Daemon.Types.Daemon
+    Cachix.Client.Daemon.Types.Log
+    Cachix.Client.Daemon.Types.PushEvent
     Cachix.Client.Daemon.Worker
     Cachix.Client.Env
     Cachix.Client.Exception

@@ -21,7 +21,7 @@ data BinaryCache = BinaryCache
   deriving (Show, Generic, FromJSON, ToJSON, ToSchema, NFData)
 
 data CompressionMethod = XZ | ZSTD
-  deriving (Show, Generic, FromJSON, ToJSON, ToSchema, NFData)
+  deriving (Show, Eq, Generic, FromJSON, ToJSON, ToSchema, NFData)
 
 instance Read CompressionMethod where
   readsPrec _ value =

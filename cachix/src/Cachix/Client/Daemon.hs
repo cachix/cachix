@@ -17,6 +17,7 @@ import Cachix.Client.Daemon.Listen as Daemon
 import qualified Cachix.Client.Daemon.Log as Log
 import Cachix.Client.Daemon.Protocol as Protocol
 import Cachix.Client.Daemon.Push as Push
+import qualified Cachix.Client.Daemon.PushManager as PushManager
 import Cachix.Client.Daemon.ShutdownLatch
 import Cachix.Client.Daemon.Subscription as Subscription
 import Cachix.Client.Daemon.Types as Types
@@ -54,21 +55,24 @@ new ::
   -- | The configured daemon environment.
   IO DaemonEnv
 new daemonEnv daemonOptions daemonLogHandle daemonPushOptions daemonCacheName = do
-  daemonSocketPath <- maybe getSocketPath pure (Options.daemonSocketPath daemonOptions)
-  daemonWorkerQueue <- newTBMQueueIO 1000
-  daemonSubscriptionManager <- Subscription.newSubscriptionManager
-  daemonShutdownLatch <- newShutdownLatch
-  daemonPushSemaphore <- QSem.newQSem (Options.numJobs daemonPushOptions)
-  daemonPid <- getProcessID
-  daemonPushSecret <- Commands.Push.getPushSecretRequired (config daemonEnv) daemonCacheName
-
-  let authToken = getAuthTokenFromPushSecret daemonPushSecret
-  daemonBinaryCache <- Push.getBinaryCache daemonEnv authToken daemonCacheName
   let daemonLogLevel =
         if Config.verbose (Env.cachixoptions daemonEnv)
           then Debug
           else Info
   daemonLogger <- Log.new "cachix.daemon" daemonLogHandle daemonLogLevel
+
+  daemonSocketPath <- maybe getSocketPath pure (Options.daemonSocketPath daemonOptions)
+  daemonShutdownLatch <- newShutdownLatch
+  daemonPushSemaphore <- QSem.newQSem (Options.numJobs daemonPushOptions)
+  daemonPid <- getProcessID
+
+  daemonPushSecret <- Commands.Push.getPushSecretRequired (config daemonEnv) daemonCacheName
+  let authToken = getAuthTokenFromPushSecret daemonPushSecret
+  daemonBinaryCache <- Push.getBinaryCache daemonEnv authToken daemonCacheName
+
+  daemonWorkerQueue <- newTBMQueueIO 1000
+  daemonPushManager <- PushManager.newPushManagerEnv daemonLogger
+  daemonSubscriptionManager <- Subscription.newSubscriptionManager
 
   return $ DaemonEnv {..}
 
@@ -142,7 +146,7 @@ shutdownQueue = do
 queueJob :: Protocol.PushRequest -> Socket.Socket -> Daemon ()
 queueJob pushRequest clientConn = do
   DaemonEnv {..} <- ask
-  pushJob <- newPushJob pushRequest
+  pushJob <- PushManager.newPushJob pushRequest
   liftIO $ atomically $ do
     -- Subscribe the socket to updates
     socketBuffer <- newTBMQueue 1000

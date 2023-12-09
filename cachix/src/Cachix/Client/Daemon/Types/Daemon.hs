@@ -9,13 +9,13 @@ module Cachix.Client.Daemon.Types.Daemon
 where
 
 import Cachix.Client.Config.Orphans ()
-import Cachix.Client.Daemon.Event (HasEvent (..))
 import qualified Cachix.Client.Daemon.Log as Log
 import qualified Cachix.Client.Daemon.Protocol as Protocol
 import Cachix.Client.Daemon.ShutdownLatch (ShutdownLatch)
 import Cachix.Client.Daemon.Subscription (SubscriptionManager)
 import Cachix.Client.Daemon.Types.Log (LogLevel, Logger)
 import Cachix.Client.Daemon.Types.PushEvent (PushEvent)
+import Cachix.Client.Daemon.Types.PushManager (PushJob, PushManagerEnv)
 import Cachix.Client.Env as Env
 import Cachix.Client.OptionsParser (PushOptions)
 import Cachix.Client.Push
@@ -45,6 +45,8 @@ data DaemonEnv = DaemonEnv
     daemonBinaryCache :: BinaryCache,
     -- | Queue of worker tasks
     daemonWorkerQueue :: TBMQueue PushJob,
+    -- | The state of active push requests
+    daemonPushManager :: PushManagerEnv,
     -- | A multiplexer for push events.
     daemonSubscriptionManager :: SubscriptionManager Protocol.PushRequestId PushEvent,
     -- | Logging env

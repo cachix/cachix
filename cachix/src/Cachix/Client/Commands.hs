@@ -68,6 +68,7 @@ import qualified Data.Conduit.Combinators as C
 import Data.Conduit.ConcurrentMap (concurrentMapM_)
 import qualified Data.Conduit.List as CL
 import qualified Data.Conduit.TMChan as C
+import Data.Generics.Labels ()
 import Data.HashMap.Strict as HashMap
 import Data.IORef
 import Data.String.Here
@@ -76,7 +77,8 @@ import Data.Text.IO (hGetLine)
 import qualified Data.Text.IO as T.IO
 import GHC.IO.Handle (hDuplicate, hDuplicateTo)
 import Hercules.CNix.Store (parseStorePath, storePathToPath, withStore)
-import Lens.Micro ((^.))
+import Lens.Micro
+import qualified Network.HTTP.Client as HTTP
 import Network.HTTP.Types (status404)
 import qualified Nix.NarInfo as NarInfo
 import Protolude hiding (toS)
@@ -204,9 +206,31 @@ push _ _ =
   throwIO $
     DeprecatedCommand "DEPRECATED: cachix watch-store has replaced cachix push --watch-store."
 
+discoverAwsEnv :: Maybe ByteString -> Maybe ByteString -> IO Amazonka.Env
+discoverAwsEnv maybeEndpoint maybeRegion = do
+  s3Endpoint <-
+    case maybeEndpoint of
+      Nothing -> pure Amazonka.S3.defaultService
+      Just url -> do
+        req <- HTTP.parseRequest (toS url)
+        pure $
+          Amazonka.S3.defaultService
+            & Amazonka.setEndpoint (HTTP.secure req) (HTTP.host req) (HTTP.port req)
+            -- Don't overwrite requests into the virtual-hosted style i.e. <bucket>.<host>.
+            -- This would break IP-based endpoints, like our test endpoint.
+            & #s3AddressingStyle .~ Amazonka.S3AddressingStylePath
+
+  region <-
+    traverse (escalateAs (FatalError . toS) . Amazonka.Data.Text.fromText . toS) maybeRegion
+
+  -- Create a service client with the custom endpoint
+  Amazonka.newEnv Amazonka.discover
+    <&> Amazonka.configureService s3Endpoint
+      . maybe identity (#region .~) region
+
 import' :: Env -> PushOptions -> Text -> URI -> IO ()
 import' env pushOptions name s3uri = do
-  awsEnv <- Amazonka.newEnv Amazonka.discover
+  awsEnv <- discoverAwsEnv (URI.getQueryParam s3uri "endpoint") (URI.getQueryParam s3uri "region")
   putErrText $ "Importing narinfos/nars using " <> show (numJobs pushOptions) <> " workers from " <> URI.serialize s3uri <> " to " <> name
   putErrText ""
   Amazonka.runResourceT $

@@ -10,6 +10,7 @@ module Cachix.Client.URI
     appendSubdomain,
     getPortFor,
     getPath,
+    getQueryParam,
     requiresSSL,
     parseURI,
     serialize,
@@ -81,6 +82,11 @@ getPortFor scheme = Map.lookup scheme UBS.httpDefaultPorts
 
 getPath :: URI -> ByteString
 getPath = UBS.uriPath . getUri
+
+getQueryParam :: URI -> ByteString -> Maybe ByteString
+getQueryParam uri param =
+  let query = UBS.uriQuery $ getUri uri
+   in map snd $ head $ filter (\(key, _) -> key == param) $ UBS.queryPairs query
 
 requiresSSL :: UBS.Scheme -> Bool
 requiresSSL (UBS.Scheme "https") = True

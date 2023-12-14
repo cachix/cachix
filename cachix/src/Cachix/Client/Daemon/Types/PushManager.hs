@@ -7,29 +7,44 @@ module Cachix.Client.Daemon.Types.PushManager
     PushManager (..),
     PushJob (..),
     PushDetails (..),
+    OnPushEvent,
+    Task (..),
   )
 where
 
 import qualified Cachix.Client.Daemon.Log as Log
 import qualified Cachix.Client.Daemon.Protocol as Protocol
-import Cachix.Client.Daemon.Subscription (SubscriptionManager)
-import qualified Cachix.Client.Daemon.Subscription as Subscription
 import Cachix.Client.Daemon.Types.Log (Logger)
 import Cachix.Client.Daemon.Types.PushEvent (PushEvent (..))
+import Control.Concurrent.STM.TBMQueue
 import Control.Concurrent.STM.TVar
 import Control.Monad.Catch
 import Control.Monad.IO.Unlift (MonadUnliftIO)
-import Control.Retry (RetryStatus (..))
-import Data.Aeson (FromJSON, ToJSON)
-import Data.Time (UTCTime, getCurrentTime)
+import Data.Time (UTCTime)
 import qualified Katip
 import Protolude
 
+data UniqueSeq a = UniqueSeq {usQueue :: TVar (Seq a), usSet :: TVar (Set a)}
+
+data Task
+  = ResolveClosure Protocol.PushRequestId
+  | PushStorePath FilePath
+
+-- pmStorePaths :: TVar (Map Text (Set Protocol.PushRequestId)),
 data PushManagerEnv = PushManagerEnv
-  { pmPushRequests :: TVar (Map Protocol.PushRequestId PushJob),
-    pmStorePaths :: TVar (Map Text (Set Protocol.PushRequestId)),
+  { -- | Active push jobs.
+    pmPushJobs :: TVar (Map Protocol.PushRequestId PushJob),
+    pmStorePathToPushIds :: TVar (Map FilePath [Protocol.PushRequestId]),
+    -- | The set of store paths that are are queued or being pushed.
+    -- Used to prevent duplicate pushes.
+    pmActiveStorePaths :: TVar (Set FilePath),
+    -- | FIFO queue of store paths to push.
+    pmTaskQueue :: TBMQueue Task,
+    pmOnPushEvent :: OnPushEvent,
     pmLogger :: Logger
   }
+
+type OnPushEvent = Protocol.PushRequestId -> PushEvent -> IO ()
 
 newtype PushManager a = PushManager {unPushManager :: ReaderT PushManagerEnv IO a}
   deriving newtype
@@ -69,10 +84,10 @@ data PushJob = PushJob
   deriving (Eq)
 
 data PushDetails = PushDetails
-  { pdAllPaths :: Set Text,
-    pdQueuedPaths :: Set Text,
-    pdPushedPaths :: Set Text,
-    pdSkippedPaths :: Set Text,
-    pdFailedPaths :: Set Text
+  { pdAllPaths :: Set FilePath,
+    pdQueuedPaths :: Set FilePath,
+    pdPushedPaths :: Set FilePath,
+    pdSkippedPaths :: Set FilePath,
+    pdFailedPaths :: Set FilePath
   }
   deriving stock (Eq, Ord)

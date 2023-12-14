@@ -85,9 +85,8 @@ runSubscriptionManager manager = do
         mapM_ (`sendEventToSub` event) (subscriptions <> globalSubscriptions)
         return False
 
-  if isDone
-    then return ()
-    else runSubscriptionManager manager
+  unless isDone $
+    runSubscriptionManager manager
 
 stopSubscriptionManager :: SubscriptionManager k v -> IO ()
 stopSubscriptionManager manager = do

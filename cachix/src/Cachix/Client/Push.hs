@@ -457,7 +457,7 @@ newNarInfoCreate pushParams storePath pathInfo UploadNarDetails {..} = do
 
   return nic
 
-getMissingPathsForClosure :: (MonadIO m, MonadMask m) => PushParams m r -> [StorePath] -> m ([StorePath], [StorePath])
+getMissingPathsForClosure :: (MonadIO m, MonadMask m) => PushParams n r -> [StorePath] -> m ([StorePath], [StorePath])
 getMissingPathsForClosure pushParams inputPaths = do
   let store = pushParamsStore pushParams
       clientEnv = pushParamsClientEnv pushParams

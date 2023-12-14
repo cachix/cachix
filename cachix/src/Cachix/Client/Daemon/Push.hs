@@ -4,8 +4,8 @@ import qualified Cachix.API as API
 import Cachix.Client.CNix (filterInvalidStorePath, followLinksToStorePath)
 import Cachix.Client.Commands.Push hiding (pushStrategy)
 import Cachix.Client.Daemon.Protocol as Protocol
-import Cachix.Client.Daemon.PushManager
-import Cachix.Client.Daemon.Types (Daemon, DaemonEnv (..), PushJob (..), PushManager)
+import Cachix.Client.Daemon.PushManager as PushManager
+import Cachix.Client.Daemon.Types (Daemon, DaemonEnv (..), PushJob (..), PushManager, Task (..))
 import Cachix.Client.Env (Env (..))
 import Cachix.Client.OptionsParser as Client.OptionsParser
   ( PushOptions (..),
@@ -23,7 +23,7 @@ import Data.IORef
 import qualified Data.Set as Set
 import qualified Data.Text as T
 import Hercules.CNix (StorePath)
-import Hercules.CNix.Store (Store, storePathToPath, withStore)
+import Hercules.CNix.Store (Store, parseStorePath, storePathToPath, withStore)
 import qualified Katip
 import Protolude hiding (toS)
 import Protolude.Conv
@@ -31,7 +31,6 @@ import Servant.Auth ()
 import Servant.Auth.Client
 import Servant.Client.Streaming
 import Servant.Conduit ()
-import qualified UnliftIO.Async as Async
 import qualified UnliftIO.QSem as QSem
 
 withPushParams :: (PushParams PushManager () -> Daemon b) -> Daemon b
@@ -116,28 +115,38 @@ newPushStrategy store authToken opts cacheName compressionMethod storePath =
           Client.Push.omitDeriver = Client.OptionsParser.omitDeriver opts
         }
 
--- TODO: split into two jobs: 1. query/normalize/filter 2. push store path
-handleRequest :: PushParams PushManager a -> PushJob -> Daemon ()
-handleRequest pushParams pushJob@(PushJob {..}) = do
+handleTask :: PushParams PushManager () -> Task -> Daemon ()
+handleTask pushParams (ResolveClosure pushId) = do
+  let store = pushParamsStore pushParams
+  pushManager <- asks daemonPushManager
+  mpushJob <- PushManager.lookupPushJob pushManager pushId
+
+  print pushId
+
+  case mpushJob of
+    Nothing -> return ()
+    Just pushJob -> do
+      print (pushRequest pushJob)
+      let sps = Protocol.storePaths (pushRequest pushJob)
+      normalized <- mapM (normalizeStorePath store) sps
+      (allPaths, missingPaths) <- getMissingPathsForClosure pushParams (catMaybes normalized)
+      print (allPaths, missingPaths)
+      storePaths <- liftIO $ PushManager.runPushManager pushManager $ pushOnClosureAttempt pushParams allPaths missingPaths
+      forM_ storePaths $ \storePath -> do
+        fp <- liftIO $ storePathToPath store storePath
+        PushManager.queueStorePath pushManager (toS fp)
+handleTask pushParams (PushStorePath filePath) = do
   qs <- asks daemonPushSemaphore
   pushManager <- asks daemonPushManager
+  let store = pushParamsStore pushParams
 
-  liftIO $ runPushManager pushManager $ do
-    E.bracket_ (pushStarted pushId) (pushFinished pushId) $ do
-      let store = pushParamsStore pushParams
-      normalized <- mapM (normalizeStorePath store) (Protocol.storePaths pushRequest)
-      print normalized
+  storePath <- liftIO $ parseStorePath store (toS filePath)
 
-      (allPaths, missingPaths) <- getMissingPathsForClosure pushParams (catMaybes normalized)
-
-      paths <- pushOnClosureAttempt pushParams allPaths missingPaths
-
-      let upload storePath =
-            E.bracket_ (QSem.waitQSem qs) (QSem.signalQSem qs) $
-              retryAll $
-                uploadStorePath pushParams storePath
-
-      Async.mapConcurrently_ upload paths
+  E.bracket_ (QSem.waitQSem qs) (QSem.signalQSem qs) $
+    liftIO $
+      PushManager.runPushManager pushManager $
+        retryAll $
+          uploadStorePath pushParams storePath
 
 getBinaryCache :: Env -> Maybe Token -> BinaryCacheName -> IO BinaryCache.BinaryCache
 getBinaryCache env authToken name = do

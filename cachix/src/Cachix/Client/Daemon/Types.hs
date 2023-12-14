@@ -11,6 +11,7 @@ module Cachix.Client.Daemon.Types
     PushManager.PushManagerEnv (..),
     PushManager.PushManager,
     PushManager.PushJob (..),
+    Task (..),
 
     -- * Push Event
     PushEvent.PushEvent (..),

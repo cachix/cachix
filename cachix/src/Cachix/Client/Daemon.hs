@@ -21,6 +21,7 @@ import qualified Cachix.Client.Daemon.PushManager as PushManager
 import Cachix.Client.Daemon.ShutdownLatch
 import Cachix.Client.Daemon.Subscription as Subscription
 import Cachix.Client.Daemon.Types as Types
+import qualified Cachix.Client.Daemon.Types.PushManager as PushManager
 import qualified Cachix.Client.Daemon.Worker as Worker
 import Cachix.Client.Env as Env
 import Cachix.Client.OptionsParser (DaemonOptions, PushOptions)
@@ -70,9 +71,9 @@ new daemonEnv daemonOptions daemonLogHandle daemonPushOptions daemonCacheName = 
   let authToken = getAuthTokenFromPushSecret daemonPushSecret
   daemonBinaryCache <- Push.getBinaryCache daemonEnv authToken daemonCacheName
 
-  daemonWorkerQueue <- newTBMQueueIO 1000
-  daemonPushManager <- PushManager.newPushManagerEnv daemonLogger
   daemonSubscriptionManager <- Subscription.newSubscriptionManager
+  let onPushEvent = Subscription.pushEvent daemonSubscriptionManager
+  daemonPushManager <- PushManager.newPushManagerEnv daemonLogger onPushEvent
 
   return $ DaemonEnv {..}
 
@@ -91,10 +92,14 @@ run daemon@DaemonEnv {..} = runDaemon daemon $ flip E.onError (return $ ExitFail
   Katip.logFM Katip.InfoS $ Katip.ls $ "Configuration:\n" <> config
 
   let workerCount = Options.numJobs daemonPushOptions
-      startWorkers pushParams = Worker.startWorkers workerCount daemonWorkerQueue (Push.handleTask pushParams)
+      startWorkers pushParams =
+        Worker.startWorkers workerCount (PushManager.pmTaskQueue daemonPushManager) (Push.handleTask pushParams)
 
   _subscriptionManagerThread <-
     liftIO $ Async.async $ runSubscriptionManager daemonSubscriptionManager
+
+  let shutdownQueue =
+        liftIO $ PushManager.stopPushManager daemonPushManager
 
   Push.withPushParams $ \pushParams ->
     E.bracketOnError (startWorkers pushParams) Worker.stopWorkers $ \workers -> do
@@ -138,22 +143,16 @@ stopIO :: DaemonEnv -> IO ()
 stopIO DaemonEnv {daemonShutdownLatch} =
   initiateShutdown daemonShutdownLatch
 
-shutdownQueue :: Daemon ()
-shutdownQueue = do
-  queue <- asks daemonWorkerQueue
-  liftIO $ atomically $ closeTBMQueue queue
-
 queueJob :: Protocol.PushRequest -> Socket.Socket -> Daemon ()
 queueJob pushRequest clientConn = do
   DaemonEnv {..} <- ask
   pushJob <- PushManager.newPushJob pushRequest
-  liftIO $ atomically $ do
-    -- Subscribe the socket to updates
-    socketBuffer <- newTBMQueue 1000
-    subscribeToSTM daemonSubscriptionManager (pushId pushJob) (SubSocket socketBuffer clientConn)
+  -- TODO: subscribe the socket to updates
+  -- socketBuffer <- newTBMQueue 1000
+  -- subscribeToSTM daemonSubscriptionManager (pushId pushJob) (SubSocket socketBuffer clientConn)
 
-    -- Queue the job
-    writeTBMQueue daemonWorkerQueue pushJob
+  -- Queue the job
+  PushManager.addPushJob daemonPushManager pushRequest
 
 subscribe :: DaemonEnv -> IO (TMChan PushEvent)
 subscribe DaemonEnv {..} = do

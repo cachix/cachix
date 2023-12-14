@@ -15,7 +15,7 @@ import Cachix.Client.Daemon.ShutdownLatch (ShutdownLatch)
 import Cachix.Client.Daemon.Subscription (SubscriptionManager)
 import Cachix.Client.Daemon.Types.Log (LogLevel, Logger)
 import Cachix.Client.Daemon.Types.PushEvent (PushEvent)
-import Cachix.Client.Daemon.Types.PushManager (PushJob, PushManagerEnv)
+import Cachix.Client.Daemon.Types.PushManager (PushJob, PushManagerEnv, Task)
 import Cachix.Client.Env as Env
 import Cachix.Client.OptionsParser (PushOptions)
 import Cachix.Client.Push
@@ -43,8 +43,6 @@ data DaemonEnv = DaemonEnv
     daemonCacheName :: BinaryCacheName,
     -- | The binary cache to push to
     daemonBinaryCache :: BinaryCache,
-    -- | Queue of worker tasks
-    daemonWorkerQueue :: TBMQueue PushJob,
     -- | The state of active push requests
     daemonPushManager :: PushManagerEnv,
     -- | A multiplexer for push events.

@@ -138,6 +138,7 @@ library
     , extra
     , filepath
     , fsnotify                >=0.4.1
+    , generic-lens
     , hercules-ci-cnix-store
     , here
     , hnix-store-core         >=0.6.1.0

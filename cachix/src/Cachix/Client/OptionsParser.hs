@@ -133,7 +133,7 @@ commandParser =
       <> (hidden <> command "daemon" (infoH (Daemon <$> daemon) (progDesc "Run a daemon that listens to push requests over a unix socket")))
       <> command "generate-keypair" (infoH generateKeypair (progDesc "Generate a signing key pair for a binary cache"))
       <> command "push" (infoH push (progDesc "Upload Nix store paths to a binary cache"))
-      <> command "import" (infoH import' (progDesc "Import the contents of a binary cache from an S3-compatible object storage service into Cachix, e.g. s3://localhost:9000/mybucket"))
+      <> command "import" (infoH import' (progDesc "Import the contents of a binary cache from an S3-compatible object storage service into Cachix"))
       <> command "pin" (infoH pin (progDesc "Pin a store path to prevent it from being garbage collected"))
       <> command "watch-exec" (infoH watchExec (progDesc "Run a command while watching /nix/store for newly added store paths and upload them to a binary cache"))
       <> command "watch-store" (infoH watchStore (progDesc "Watch /nix/store for newly added store paths and upload them to a binary cache"))
@@ -191,7 +191,7 @@ commandParser =
     pushPaths =
       (\paths opts cache -> PushPaths opts cache paths)
         <$> many (strArgument (metavar "PATHS..."))
-    import' = Import <$> pushOptions <*> nameArg <*> strArgument (metavar "S3-URI")
+    import' = Import <$> pushOptions <*> nameArg <*> strArgument (metavar "S3-URI" <> help "e.g. s3://mybucket?endpoint=https://myexample.com&region=eu-central-1")
     keepParser = daysParser <|> revisionsParser <|> foreverParser <|> pure Nothing
     -- these three flag are mutually exclusive
     daysParser = Just . Days <$> option auto (long "keep-days" <> metavar "INT")

@@ -91,7 +91,7 @@ run daemon@DaemonEnv {..} = runDaemon daemon $ flip E.onError (return $ ExitFail
   Katip.logFM Katip.InfoS $ Katip.ls $ "Configuration:\n" <> config
 
   let workerCount = Options.numJobs daemonPushOptions
-      startWorkers pushParams = Worker.startWorkers workerCount (Push.handleRequest pushParams)
+      startWorkers pushParams = Worker.startWorkers workerCount daemonWorkerQueue (Push.handleTask pushParams)
 
   _subscriptionManagerThread <-
     liftIO $ Async.async $ runSubscriptionManager daemonSubscriptionManager

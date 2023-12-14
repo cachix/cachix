@@ -7,22 +7,22 @@ module Cachix.Client.Daemon.Worker
 where
 
 import Cachix.Client.Config.Orphans ()
-import Cachix.Client.Daemon.Types (Daemon, DaemonEnv (..), PushJob (..))
+import Cachix.Client.Daemon.Types (Daemon)
 import qualified Control.Concurrent.Async as Async
 import Control.Concurrent.STM.TBMQueue
 import qualified Control.Immortal as Immortal
 import qualified Katip
 import Protolude
 
-startWorkers :: Int -> (PushJob -> Daemon ()) -> Daemon [Immortal.Thread]
-startWorkers numWorkers f = do
-  replicateM numWorkers (startWorker f)
+startWorkers :: Int -> TBMQueue a -> (a -> Daemon ()) -> Daemon [Immortal.Thread]
+startWorkers numWorkers queue f = do
+  replicateM numWorkers (startWorker queue f)
 
-startWorker :: (PushJob -> Daemon ()) -> Daemon Immortal.Thread
-startWorker f = do
+startWorker :: TBMQueue a -> (a -> Daemon ()) -> Daemon Immortal.Thread
+startWorker queue f = do
   Immortal.createWithLabel "worker" $ \thread -> do
     Katip.katipAddNamespace "worker" $
-      Immortal.onUnexpectedFinish thread logWorkerException (runWorker f)
+      Immortal.onUnexpectedFinish thread logWorkerException (runWorker queue f)
 
 stopWorkers :: [Immortal.Thread] -> Daemon ()
 stopWorkers workers = do
@@ -40,13 +40,11 @@ logWorkerException (Left err) =
   Katip.logFM Katip.ErrorS $ Katip.ls (toS $ displayException err :: Text)
 logWorkerException _ = return ()
 
-runWorker :: (PushJob -> Daemon ()) -> Daemon ()
-runWorker f = loop
+runWorker :: TBMQueue a -> (a -> Daemon ()) -> Daemon ()
+runWorker queue f = loop
   where
     loop = do
-      DaemonEnv {..} <- ask
-
-      mres <- liftIO $ atomically $ readTBMQueue daemonWorkerQueue
+      mres <- liftIO $ atomically $ readTBMQueue queue
 
       case mres of
         Nothing -> return ()

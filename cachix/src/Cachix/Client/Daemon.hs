@@ -85,15 +85,19 @@ start daemonEnv daemonOptions daemonPushOptions daemonCacheName = do
 
 -- | Run a daemon from a given configuration
 run :: DaemonEnv -> IO ExitCode
-run daemon@DaemonEnv {..} = runDaemon daemon $ flip E.onError (return $ ExitFailure 1) $ do
+run daemon = runDaemon daemon $ flip E.onError (return $ ExitFailure 1) $ do
   Katip.logFM Katip.InfoS "Starting Cachix Daemon"
+  DaemonEnv {..} <- ask
 
   config <- showConfiguration
   Katip.logFM Katip.InfoS $ Katip.ls $ "Configuration:\n" <> config
 
   let workerCount = Options.numJobs daemonPushOptions
       startWorkers pushParams =
-        Worker.startWorkers workerCount (PushManager.pmTaskQueue daemonPushManager) (Push.handleTask pushParams)
+        Worker.startWorkers
+          workerCount
+          (PushManager.pmTaskQueue daemonPushManager)
+          (liftIO . PushManager.handleTask daemonPushManager pushParams)
 
   _subscriptionManagerThread <-
     liftIO $ Async.async $ runSubscriptionManager daemonSubscriptionManager

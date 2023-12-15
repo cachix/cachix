@@ -15,7 +15,7 @@ import Cachix.Client.Daemon.ShutdownLatch (ShutdownLatch)
 import Cachix.Client.Daemon.Subscription (SubscriptionManager)
 import Cachix.Client.Daemon.Types.Log (LogLevel, Logger)
 import Cachix.Client.Daemon.Types.PushEvent (PushEvent)
-import Cachix.Client.Daemon.Types.PushManager (PushJob, PushManagerEnv, Task)
+import Cachix.Client.Daemon.Types.PushManager (PushJob, PushManagerEnv (..), Task)
 import Cachix.Client.Env as Env
 import Cachix.Client.OptionsParser (PushOptions)
 import Cachix.Client.Push
@@ -86,5 +86,6 @@ instance Katip.KatipContext Daemon where
 -- | Run a pre-configured daemon.
 runDaemon :: DaemonEnv -> Daemon a -> IO a
 runDaemon env f = do
-  Log.withLogger (daemonLogger env) $ \logger ->
-    unDaemon f `runReaderT` env {daemonLogger = logger}
+  Log.withLogger (daemonLogger env) $ \logger -> do
+    let pushManagerEnv = (daemonPushManager env) {pmLogger = logger}
+    unDaemon f `runReaderT` env {daemonLogger = logger, daemonPushManager = pushManagerEnv}

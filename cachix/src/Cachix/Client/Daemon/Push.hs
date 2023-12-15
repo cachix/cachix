@@ -1,37 +1,25 @@
 module Cachix.Client.Daemon.Push where
 
 import qualified Cachix.API as API
-import Cachix.Client.CNix (filterInvalidStorePath, followLinksToStorePath)
 import Cachix.Client.Commands.Push hiding (pushStrategy)
-import Cachix.Client.Daemon.Protocol as Protocol
-import Cachix.Client.Daemon.PushManager as PushManager
-import Cachix.Client.Daemon.Types (Daemon, DaemonEnv (..), PushJob (..), PushManager, Task (..))
+import qualified Cachix.Client.Daemon.PushManager as PushManager
+import Cachix.Client.Daemon.Types (Daemon, DaemonEnv (..), PushManager)
 import Cachix.Client.Env (Env (..))
 import Cachix.Client.OptionsParser as Client.OptionsParser
   ( PushOptions (..),
   )
 import Cachix.Client.Push as Client.Push
-import Cachix.Client.Retry (retryAll, retryHttp)
+import Cachix.Client.Retry (retryHttp)
 import Cachix.Client.Servant
 import Cachix.Types.BinaryCache (BinaryCacheName)
 import qualified Cachix.Types.BinaryCache as BinaryCache
-import qualified Conduit as C
-import qualified Control.Monad.Catch as E
-import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
-import qualified Data.ByteString as BS
-import Data.IORef
 import qualified Data.Set as Set
-import qualified Data.Text as T
-import Hercules.CNix (StorePath)
-import Hercules.CNix.Store (Store, parseStorePath, storePathToPath, withStore)
-import qualified Katip
+import Hercules.CNix.Store (withStore)
 import Protolude hiding (toS)
-import Protolude.Conv
 import Servant.Auth ()
 import Servant.Auth.Client
 import Servant.Client.Streaming
 import Servant.Conduit ()
-import qualified UnliftIO.QSem as QSem
 
 withPushParams :: (PushParams PushManager () -> Daemon b) -> Daemon b
 withPushParams m = do
@@ -42,7 +30,7 @@ withPushParams m = do
 
   withStore $ \store ->
     m $ do
-      let pushStrategy = newPushStrategy store authToken daemonPushOptions cacheName compressionMethod
+      let pushStrategy = PushManager.newPushStrategy store authToken daemonPushOptions cacheName compressionMethod
 
       PushParams
         { pushParamsName = cacheName,
@@ -55,98 +43,6 @@ withPushParams m = do
           pushParamsStrategy = pushStrategy,
           pushParamsStore = store
         }
-
-newPushStrategy ::
-  Store ->
-  Maybe Token ->
-  PushOptions ->
-  Text ->
-  BinaryCache.CompressionMethod ->
-  (StorePath -> PushStrategy PushManager ())
-newPushStrategy store authToken opts cacheName compressionMethod storePath =
-  let onAlreadyPresent = do
-        sp <- liftIO $ storePathToPath store storePath
-        Katip.logFM Katip.InfoS $ Katip.ls $ "Skipping " <> (toS sp :: Text)
-        -- TODO: needs another event type here
-        pushStorePathDone (toS sp)
-
-      onError err = do
-        let errText = toS (displayException err)
-        sp <- liftIO $ storePathToPath store storePath
-        Katip.katipAddContext (Katip.sl "error" errText) $
-          Katip.logFM Katip.InfoS $
-            Katip.ls $
-              "Failed " <> (toS sp :: Text)
-        pushStorePathFailed (toS sp) errText
-
-      onAttempt retryStatus size = do
-        sp <- liftIO $ storePathToPath store storePath
-        Katip.logFM Katip.InfoS $ Katip.ls $ "Pushing " <> (toS sp :: Text)
-        pushStorePathAttempt (toS sp) size retryStatus
-
-      onUncompressedNARStream _ size = do
-        sp <- liftIO $ storePathToPath store storePath
-        lastEmitRef <- liftIO $ newIORef (0 :: Int64)
-        currentBytesRef <- liftIO $ newIORef (0 :: Int64)
-        C.awaitForever $ \chunk -> do
-          let newBytes = fromIntegral (BS.length chunk)
-          currentBytes <- liftIO $ atomicModifyIORef' currentBytesRef (\b -> (b + newBytes, b + newBytes))
-          lastEmit <- liftIO $ readIORef lastEmitRef
-
-          when (currentBytes - lastEmit >= 1024 || currentBytes == size) $ do
-            liftIO $ writeIORef lastEmitRef currentBytes
-            lift $ lift $ pushStorePathProgress (toS sp) currentBytes newBytes
-
-          C.yield chunk
-
-      onDone = do
-        sp <- liftIO $ storePathToPath store storePath
-        Katip.logFM Katip.InfoS $ Katip.ls $ "Pushed " <> (toS sp :: Text)
-        pushStorePathDone (toS sp)
-   in PushStrategy
-        { onAlreadyPresent = onAlreadyPresent,
-          on401 = liftIO . handleCacheResponse cacheName authToken,
-          onError = onError,
-          onAttempt = onAttempt,
-          onUncompressedNARStream = onUncompressedNARStream,
-          onDone = onDone,
-          Client.Push.compressionMethod = compressionMethod,
-          Client.Push.compressionLevel = Client.OptionsParser.compressionLevel opts,
-          Client.Push.omitDeriver = Client.OptionsParser.omitDeriver opts
-        }
-
-handleTask :: PushParams PushManager () -> Task -> Daemon ()
-handleTask pushParams (ResolveClosure pushId) = do
-  let store = pushParamsStore pushParams
-  pushManager <- asks daemonPushManager
-  mpushJob <- PushManager.lookupPushJob pushManager pushId
-
-  print pushId
-
-  case mpushJob of
-    Nothing -> return ()
-    Just pushJob -> do
-      print (pushRequest pushJob)
-      let sps = Protocol.storePaths (pushRequest pushJob)
-      normalized <- mapM (normalizeStorePath store) sps
-      (allPaths, missingPaths) <- getMissingPathsForClosure pushParams (catMaybes normalized)
-      print (allPaths, missingPaths)
-      storePaths <- liftIO $ PushManager.runPushManager pushManager $ pushOnClosureAttempt pushParams allPaths missingPaths
-      forM_ storePaths $ \storePath -> do
-        fp <- liftIO $ storePathToPath store storePath
-        PushManager.queueStorePath pushManager (toS fp)
-handleTask pushParams (PushStorePath filePath) = do
-  qs <- asks daemonPushSemaphore
-  pushManager <- asks daemonPushManager
-  let store = pushParamsStore pushParams
-
-  storePath <- liftIO $ parseStorePath store (toS filePath)
-
-  E.bracket_ (QSem.waitQSem qs) (QSem.signalQSem qs) $
-    liftIO $
-      PushManager.runPushManager pushManager $
-        retryAll $
-          uploadStorePath pushParams storePath
 
 getBinaryCache :: Env -> Maybe Token -> BinaryCacheName -> IO BinaryCache.BinaryCache
 getBinaryCache env authToken name = do
@@ -163,9 +59,3 @@ getCompressionMethod opts binaryCache =
   fromMaybe BinaryCache.ZSTD $
     Client.OptionsParser.compressionMethod opts
       <|> Just (BinaryCache.preferredCompressionMethod binaryCache)
-
-normalizeStorePath :: (MonadIO m) => Store -> FilePath -> m (Maybe StorePath)
-normalizeStorePath store fp =
-  liftIO $ runMaybeT $ do
-    storePath <- MaybeT $ followLinksToStorePath store (encodeUtf8 $ T.pack fp)
-    MaybeT $ filterInvalidStorePath store storePath

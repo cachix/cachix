@@ -51,7 +51,7 @@ withPushParams m = do
           pushOnClosureAttempt = \full missing -> do
             let already = Set.toList $ Set.difference (Set.fromList full) (Set.fromList missing)
             mapM_ (onAlreadyPresent . pushStrategy) already
-            return full,
+            return missing,
           pushParamsStrategy = pushStrategy,
           pushParamsStore = store
         }

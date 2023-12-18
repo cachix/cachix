@@ -50,7 +50,7 @@ stopPushManager PushManagerEnv {pmTaskQueue} =
 
 -- Manage push jobs
 
-addPushJob :: (MonadIO m, Katip.KatipContext m) => PushManagerEnv -> Protocol.PushRequest -> m ()
+addPushJob :: (Katip.KatipContext m) => PushManagerEnv -> Protocol.PushRequest -> m ()
 addPushJob PushManagerEnv {..} pushRequest = do
   pushJob <- newPushJob pushRequest
 
@@ -67,7 +67,7 @@ lookupPushJob PushManagerEnv {..} pushId = do
 
 -- Manage store paths
 
-queueStorePath :: (MonadIO m, Katip.KatipContext m) => PushManagerEnv -> FilePath -> m ()
+queueStorePath :: (Katip.KatipContext m) => PushManagerEnv -> FilePath -> m ()
 queueStorePath PushManagerEnv {..} storePath = do
   mpath <- liftIO $ atomically $ do
     isDuplicate <- Set.member storePath <$> readTVar pmActiveStorePaths
@@ -90,8 +90,10 @@ removeStorePath storePath = do
     modifyTVar' pmActiveStorePaths $ Set.delete storePath
     modifyTVar' pmStorePathToPushIds $ Map.delete storePath
 
--- lookupPushIdsForStorePath :: FilePath -> STM [Protocol.PushRequestId]
-lookupPushIdsForStorePath storePath pushIdStore =
+lookupPushIdsForStorePath :: FilePath -> PushManager [Protocol.PushRequestId]
+lookupPushIdsForStorePath storePath = do
+  pmStorePathToPushIds <- asks pmStorePathToPushIds
+  pushIdStore <- liftIO $ readTVarIO pmStorePathToPushIds
   pure $ fromMaybe [] $ Map.lookup storePath pushIdStore
 
 handleTask :: PushManagerEnv -> PushParams PushManager () -> Task -> IO ()
@@ -210,66 +212,64 @@ newPushStrategy store authToken opts cacheName compressionMethod storePath =
           Client.Push.omitDeriver = Client.OptionsParser.omitDeriver opts
         }
 
--- Events
+-- Push events
 
 pushStarted :: Protocol.PushRequestId -> PushManager ()
-pushStarted pushId = return ()
-
--- pmEventChan <- asks pmOnPushEvent
-
--- liftIO $ do
---   timestamp <- getCurrentTime
---   pmEventChan pushId (PushStarted timestamp)
+pushStarted pushId = do
+  sendPushEvent <- asks pmOnPushEvent
+  liftIO $ do
+    timestamp <- getCurrentTime
+    sendPushEvent pushId $
+      PushEvent timestamp pushId (PushStarted timestamp)
 
 pushFinished :: Protocol.PushRequestId -> PushManager ()
-pushFinished pushId = return ()
-
--- pmEventChan <- asks pmEventChan
--- liftIO $ do
---   timestamp <- getCurrentTime
---   atomically $ writeTMChan pmEventChan $ PushEvent timestamp pushId (PushFinished timestamp)
+pushFinished pushId = do
+  sendPushEvent <- asks pmOnPushEvent
+  liftIO $ do
+    timestamp <- getCurrentTime
+    sendPushEvent pushId $
+      PushEvent timestamp pushId (PushFinished timestamp)
 
 pushStorePathAttempt :: FilePath -> Int64 -> RetryStatus -> PushManager ()
 pushStorePathAttempt storePath size retryStatus = do
   let pushRetryStatus = newPushRetryStatus retryStatus
   timestamp <- liftIO getCurrentTime
-  pmStorePathToPushIds <- asks pmStorePathToPushIds
   sendPushEvent <- asks pmOnPushEvent
-  pushIds <- liftIO $ do
-    pushIdStore <- readTVarIO pmStorePathToPushIds
-    lookupPushIdsForStorePath (toS storePath) pushIdStore
+  pushIds <- lookupPushIdsForStorePath (toS storePath)
   liftIO $ for_ pushIds $ \pushId ->
-    sendPushEvent pushId $ PushEvent timestamp pushId (PushStorePathAttempt storePath size pushRetryStatus)
+    sendPushEvent pushId $
+      PushEvent timestamp pushId (PushStorePathAttempt storePath size pushRetryStatus)
 
 pushStorePathProgress :: FilePath -> Int64 -> Int64 -> PushManager ()
-pushStorePathProgress storePath currentBytes newBytes = return ()
-
--- timestamp <- liftIO getCurrentTime
--- pmEventChan <- asks pmEventChan
--- pmStorePathToPushIds <- asks pmStorePathToPushIds
--- liftIO $
---   atomically $ do
---     pushIdStore <- readTVar pmStorePathToPushIds
---     pushIds <- lookupPushIdsForStorePath (toS storePath) pushIdStore
---     for_ pushIds $ \pushId ->
---       writeTMChan pmEventChan $ PushEvent timestamp pushId (PushStorePathProgress storePath currentBytes newBytes)
+pushStorePathProgress storePath currentBytes newBytes = do
+  timestamp <- liftIO getCurrentTime
+  sendPushEvent <- asks pmOnPushEvent
+  pushIds <- lookupPushIdsForStorePath (toS storePath)
+  liftIO $ for_ pushIds $ \pushId ->
+    sendPushEvent pushId $
+      PushEvent timestamp pushId (PushStorePathProgress storePath currentBytes newBytes)
 
 pushStorePathDone :: FilePath -> PushManager ()
 pushStorePathDone storePath = do
   timestamp <- liftIO getCurrentTime
-  pmStorePathToPushIds <- asks pmStorePathToPushIds
   sendPushEvent <- asks pmOnPushEvent
-
-  pushIds <- liftIO $ do
-    pushIdStore <- readTVarIO pmStorePathToPushIds
-    lookupPushIdsForStorePath (toS storePath) pushIdStore
+  pushIds <- lookupPushIdsForStorePath (toS storePath)
   for_ pushIds $ \pushId ->
-    liftIO $ sendPushEvent pushId $ PushEvent timestamp pushId (PushStorePathDone storePath)
+    liftIO $
+      sendPushEvent pushId $
+        PushEvent timestamp pushId (PushStorePathDone storePath)
 
   removeStorePath storePath
 
 pushStorePathFailed :: FilePath -> Text -> PushManager ()
-pushStorePathFailed storePath errMsg = return ()
+pushStorePathFailed storePath errMsg = do
+  timestamp <- liftIO getCurrentTime
+  sendPushEvent <- asks pmOnPushEvent
+  pushIds <- lookupPushIdsForStorePath (toS storePath)
+  for_ pushIds $ \pushId ->
+    liftIO $
+      sendPushEvent pushId $
+        PushEvent timestamp pushId (PushStorePathFailed storePath errMsg)
 
 normalizeStorePath :: (MonadIO m) => Store -> FilePath -> m (Maybe StorePath)
 normalizeStorePath store fp =

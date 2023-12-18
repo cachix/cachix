@@ -24,8 +24,6 @@ import Data.Time (UTCTime)
 import qualified Katip
 import Protolude
 
-data UniqueSeq a = UniqueSeq {usQueue :: TVar (Seq a), usSet :: TVar (Set a)}
-
 data Task
   = ResolveClosure Protocol.PushRequestId
   | PushStorePath FilePath

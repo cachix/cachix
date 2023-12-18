@@ -29,7 +29,6 @@ import qualified Cachix.Client.OptionsParser as Options
 import Cachix.Client.Push
 import Cachix.Types.BinaryCache (BinaryCacheName)
 import qualified Cachix.Types.BinaryCache as BinaryCache
-import Control.Concurrent.STM.TBMQueue
 import Control.Concurrent.STM.TMChan
 import Control.Exception.Safe (catchAny)
 import qualified Control.Monad.Catch as E
@@ -150,7 +149,6 @@ stopIO DaemonEnv {daemonShutdownLatch} =
 queueJob :: Protocol.PushRequest -> Socket.Socket -> Daemon ()
 queueJob pushRequest clientConn = do
   DaemonEnv {..} <- ask
-  pushJob <- PushManager.newPushJob pushRequest
   -- TODO: subscribe the socket to updates
   -- socketBuffer <- newTBMQueue 1000
   -- subscribeToSTM daemonSubscriptionManager (pushId pushJob) (SubSocket socketBuffer clientConn)

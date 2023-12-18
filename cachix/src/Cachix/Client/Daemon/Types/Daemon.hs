@@ -13,19 +13,16 @@ import qualified Cachix.Client.Daemon.Log as Log
 import qualified Cachix.Client.Daemon.Protocol as Protocol
 import Cachix.Client.Daemon.ShutdownLatch (ShutdownLatch)
 import Cachix.Client.Daemon.Subscription (SubscriptionManager)
-import Cachix.Client.Daemon.Types.Log (LogLevel, Logger)
+import Cachix.Client.Daemon.Types.Log (Logger)
 import Cachix.Client.Daemon.Types.PushEvent (PushEvent)
-import Cachix.Client.Daemon.Types.PushManager (PushJob, PushManagerEnv (..), Task)
+import Cachix.Client.Daemon.Types.PushManager (PushManagerEnv (..))
 import Cachix.Client.Env as Env
 import Cachix.Client.OptionsParser (PushOptions)
 import Cachix.Client.Push
 import Cachix.Types.BinaryCache (BinaryCache, BinaryCacheName)
 import qualified Control.Concurrent.QSem as QSem
-import Control.Concurrent.STM.TBMQueue
-import Control.Concurrent.STM.TVar
 import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
 import Control.Monad.IO.Unlift (MonadUnliftIO)
-import Control.Retry (RetryStatus (..))
 import qualified Katip
 import Protolude hiding (bracketOnError)
 import System.Posix.Types (ProcessID)

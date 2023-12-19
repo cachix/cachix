@@ -38,6 +38,7 @@ data PushManagerEnv = PushManagerEnv
     pmActiveStorePaths :: TVar (Set FilePath),
     -- | FIFO queue of store paths to push.
     pmTaskQueue :: TBMQueue Task,
+    pmTaskSemaphore :: QSem,
     pmOnPushEvent :: OnPushEvent,
     pmLogger :: Logger
   }
@@ -74,6 +75,10 @@ data PushJob = PushJob
     pushId :: Protocol.PushRequestId,
     -- | The time when the push request was queued.
     pushCreatedAt :: UTCTime,
+    -- | The time when the push request was started.
+    pushStartedAt :: Maybe UTCTime,
+    -- | The time when the push request was finished.
+    pushFinishedAt :: Maybe UTCTime,
     -- | The original push request.
     pushRequest :: Protocol.PushRequest,
     -- | The state of the push request.

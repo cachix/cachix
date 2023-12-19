@@ -15,6 +15,7 @@ import qualified Cachix.Types.BinaryCache as BinaryCache
 import qualified Conduit as C
 import Control.Concurrent.STM.TBMQueue
 import Control.Concurrent.STM.TVar
+import qualified Control.Exception.Safe as Safe
 import qualified Control.Monad.Catch as E
 import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
 import Control.Retry (RetryStatus)
@@ -152,9 +153,9 @@ handleTask pushManager pushParams task =
             normalized <- mapM (normalizeStorePath store) sps
             (allStorePaths, missingStorePaths) <- getMissingPathsForClosure pushParams (catMaybes normalized)
             allPaths <- liftIO $ mapM (storeToFilePath store) allStorePaths
-
             storePaths <- pushOnClosureAttempt pushParams allStorePaths missingStorePaths
             paths <- liftIO $ mapM (storeToFilePath store) storePaths
+
             modifyPushJob pushId $ \pushJob' -> do
               let allPathsSet = Set.fromList allPaths
                   queuedPathsSet = Set.fromList paths
@@ -167,6 +168,8 @@ handleTask pushManager pushParams task =
                         pdSkippedPaths = skippedPathsSet
                       }
                 }
+
+            pushStarted pushId
 
             forM_ paths $ \path -> do
               queueStorePath pushManager path
@@ -182,13 +185,12 @@ handleTask pushManager pushParams task =
         Katip.logLocM Katip.DebugS $ Katip.ls $ "Pushing store path " <> filePath
 
         let store = pushParamsStore pushParams
-
         storePath <- liftIO $ parseStorePath store (toS filePath)
 
         qs <- asks pmTaskSemaphore
         E.bracket_ (QSem.waitQSem qs) (QSem.signalQSem qs) $
-          retryAll $
-            uploadStorePath pushParams storePath
+          retryAll (uploadStorePath pushParams storePath)
+            `Safe.catchAny` (pushStorePathFailed filePath . toS . displayException)
   where
     showResolveStats :: Protocol.PushRequestId -> PushDetails -> Text
     showResolveStats pushId PushDetails {..} =
@@ -314,12 +316,6 @@ pushStorePathAttempt storePath size retryStatus = do
     liftIO $
       sendPushEvent pushId $
         PushEvent timestamp pushId (PushStorePathAttempt storePath size pushRetryStatus)
-
-    modifyPushJob pushId $ \pushJob@PushJob {pushStartedAt} ->
-      case pushStartedAt of
-        Just _ -> pushJob
-        Nothing ->
-          pushJob {pushStartedAt = Just timestamp}
 
 pushStorePathProgress :: FilePath -> Int64 -> Int64 -> PushManager ()
 pushStorePathProgress storePath currentBytes newBytes = do

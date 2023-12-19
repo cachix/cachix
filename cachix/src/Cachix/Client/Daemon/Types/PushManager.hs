@@ -84,7 +84,7 @@ data PushJob = PushJob
     -- | The state of the push request.
     pushDetails :: PushDetails
   }
-  deriving (Eq)
+  deriving stock (Eq, Show)
 
 data PushDetails = PushDetails
   { pdAllPaths :: Set FilePath,
@@ -93,4 +93,4 @@ data PushDetails = PushDetails
     pdSkippedPaths :: Set FilePath,
     pdFailedPaths :: Set FilePath
   }
-  deriving stock (Eq, Ord)
+  deriving stock (Eq, Ord, Show)

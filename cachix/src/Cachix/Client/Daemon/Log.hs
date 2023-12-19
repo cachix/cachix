@@ -1,6 +1,19 @@
-module Cachix.Client.Daemon.Log where
+module Cachix.Client.Daemon.Log
+  ( new,
+    withLogger,
+    getKatipNamespace,
+    getKatipContext,
+    getKatipLogEnv,
+    localLogEnv,
+    localKatipContext,
+    localKatipNamespace,
+    toKatipLogLevel,
+    Log.Logger (..),
+    Log.LogLevel (..),
+  )
+where
 
-import Cachix.Client.Daemon.Types.Log
+import Cachix.Client.Daemon.Types.Log as Log
 import qualified Control.Monad.Catch as E
 import qualified Katip
 import Protolude
@@ -32,10 +45,13 @@ getKatipContext = logKContext
 getKatipLogEnv :: Logger -> Katip.LogEnv
 getKatipLogEnv = logKLogEnv
 
+localLogEnv :: (Katip.LogEnv -> Katip.LogEnv) -> Logger -> Logger
 localLogEnv f logger = logger {logKLogEnv = f (logKLogEnv logger)}
 
+localKatipContext :: (Katip.LogContexts -> Katip.LogContexts) -> Logger -> Logger
 localKatipContext f logger = logger {logKContext = f (logKContext logger)}
 
+localKatipNamespace :: (Katip.Namespace -> Katip.Namespace) -> Logger -> Logger
 localKatipNamespace f logger = logger {logKNamespace = f (logKNamespace logger)}
 
 toKatipLogLevel :: LogLevel -> Katip.Severity

@@ -236,6 +236,7 @@ test-suite cachix-test
   main-is:            Main.hs
   hs-source-dirs:     test
   other-modules:
+    Daemon.PushManagerSpec
     DeploySpec
     InstallationModeSpec
     NetRcSpec
@@ -249,6 +250,7 @@ test-suite cachix-test
     , bytestring
     , cachix
     , cachix-api
+    , containers
     , dhall
     , directory
     , extra

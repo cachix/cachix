@@ -433,8 +433,12 @@ watchExecDaemon env pushOpts cacheName cmd args =
       case eventMessage of
         PushStorePathAttempt path pathSize retryStatus -> do
           case HashMap.lookup path stats of
-            Just (_, prevRetryStatus) | prevRetryStatus == retryStatus -> return ()
-            _ -> do
+            Just (progress, prevRetryStatus)
+              | prevRetryStatus == retryStatus -> return ()
+              | otherwise -> do
+                  newProgress <- Daemon.Progress.update progress retryStatus
+                  writeIORef statsRef $ HashMap.insert path (newProgress, retryStatus) stats
+            Nothing -> do
               progress <- Daemon.Progress.new stderr (toS path) pathSize retryStatus
               writeIORef statsRef $ HashMap.insert path (progress, retryStatus) stats
         PushStorePathProgress path _ newBytes -> do

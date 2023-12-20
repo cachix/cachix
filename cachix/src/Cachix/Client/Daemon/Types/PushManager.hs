@@ -28,17 +28,18 @@ data Task
   = ResolveClosure Protocol.PushRequestId
   | PushStorePath FilePath
 
--- pmStorePaths :: TVar (Map Text (Set Protocol.PushRequestId)),
 data PushManagerEnv = PushManagerEnv
   { -- | Active push jobs.
     pmPushJobs :: TVar (Map Protocol.PushRequestId PushJob),
-    pmStorePathToPushIds :: TVar (Map FilePath [Protocol.PushRequestId]),
+    -- | A mapping of store paths to to push requests.
+    pmStorePathReferences :: TVar (Map FilePath [Protocol.PushRequestId]),
     -- | The set of store paths that are are queued or being pushed.
     -- Used to prevent duplicate pushes.
     pmActiveStorePaths :: TVar (Set FilePath),
-    -- | FIFO queue of store paths to push.
+    -- | FIFO queue of push tasks.
     pmTaskQueue :: TBMQueue Task,
     pmTaskSemaphore :: QSem,
+    -- | Callback for push events.
     pmOnPushEvent :: OnPushEvent,
     pmLogger :: Logger
   }

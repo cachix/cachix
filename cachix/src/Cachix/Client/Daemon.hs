@@ -96,9 +96,9 @@ run daemon = runDaemon daemon $ flip E.onError (return $ ExitFailure 1) $ do
         Worker.startWorkers
           workerCount
           (PushManager.pmTaskQueue daemonPushManager)
-          (liftIO . PushManager.handleTask daemonPushManager pushParams)
+          (liftIO . PushManager.runPushManager daemonPushManager . PushManager.handleTask pushParams)
 
-  _subscriptionManagerThread <-
+  subscriptionManagerThread <-
     liftIO $ Async.async $ runSubscriptionManager daemonSubscriptionManager
 
   let shutdownQueue =
@@ -128,7 +128,7 @@ run daemon = runDaemon daemon $ flip E.onError (return $ ExitFailure 1) $ do
           Worker.stopWorkers workers
 
           liftIO $ stopSubscriptionManager daemonSubscriptionManager
-          Async.wait _subscriptionManagerThread
+          Async.wait subscriptionManagerThread
 
           -- TODO: say goodbye to all clients waiting for their push to go through
           case res of

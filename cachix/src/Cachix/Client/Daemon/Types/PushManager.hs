@@ -20,6 +20,7 @@ import Control.Concurrent.STM.TBMQueue
 import Control.Concurrent.STM.TVar
 import Control.Monad.Catch
 import Control.Monad.IO.Unlift (MonadUnliftIO)
+import Data.HashMap.Strict (HashMap)
 import Data.Time (UTCTime)
 import qualified Katip
 import Protolude
@@ -30,12 +31,10 @@ data Task
 
 data PushManagerEnv = PushManagerEnv
   { -- | Active push jobs.
-    pmPushJobs :: TVar (Map Protocol.PushRequestId PushJob),
+    pmPushJobs :: TVar (HashMap Protocol.PushRequestId PushJob),
     -- | A mapping of store paths to to push requests.
-    pmStorePathReferences :: TVar (Map FilePath [Protocol.PushRequestId]),
-    -- | The set of store paths that are are queued or being pushed.
-    -- Used to prevent duplicate pushes.
-    pmActiveStorePaths :: TVar (Set FilePath),
+    -- Use to prevent duplicate pushes and track with store paths are referenced by push requests.
+    pmStorePathReferences :: TVar (HashMap FilePath [Protocol.PushRequestId]),
     -- | FIFO queue of push tasks.
     pmTaskQueue :: TBMQueue Task,
     pmTaskSemaphore :: QSem,

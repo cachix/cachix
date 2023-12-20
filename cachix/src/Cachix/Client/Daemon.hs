@@ -128,6 +128,7 @@ run daemon = runDaemon daemon $ flip E.onError (return $ ExitFailure 1) $ do
           Worker.stopWorkers workers
 
           liftIO $ stopSubscriptionManager daemonSubscriptionManager
+          Async.wait _subscriptionManagerThread
 
           -- TODO: say goodbye to all clients waiting for their push to go through
           case res of

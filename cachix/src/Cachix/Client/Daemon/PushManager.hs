@@ -76,8 +76,13 @@ runPushManager :: (MonadIO m) => PushManagerEnv -> PushManager a -> m a
 runPushManager env f = liftIO $ unPushManager f `runReaderT` env
 
 stopPushManager :: PushManagerEnv -> IO ()
-stopPushManager PushManagerEnv {pmTaskQueue} =
-  atomically $ closeTBMQueue pmTaskQueue
+stopPushManager PushManagerEnv {pmTaskQueue, pmPushJobs} =
+  atomically $ do
+    pushJobs <- readTVar pmPushJobs
+    let allFinished = all (isJust . pushFinishedAt) $ Map.elems pushJobs
+    if allFinished
+      then closeTBMQueue pmTaskQueue
+      else retry
 
 -- Manage push jobs
 
@@ -143,11 +148,14 @@ queueStorePath storePath = do
       then pure Nothing
       else do
         writeTBMQueue pmTaskQueue (PushStorePath storePath)
-        modifyTVar' pmActiveStorePaths $ Set.insert storePath
+        modifyTVar' pmActiveStorePaths (Set.insert storePath)
         pure $ Just storePath
 
-  for_ mpath $ \fp ->
-    Katip.logLocM Katip.DebugS $ Katip.ls $ "Queued store path " <> fp
+  case mpath of
+    Just _ ->
+      Katip.logLocM Katip.DebugS $ Katip.ls $ "Queued store path " <> storePath
+    Nothing ->
+      Katip.logLocM Katip.DebugS $ Katip.ls $ "Deduped store path " <> storePath
 
 removeStorePath :: FilePath -> PushManager ()
 removeStorePath storePath = do
@@ -173,6 +181,7 @@ resolvePushJob pushId allPaths missingPaths = do
   let allPathsSet = Set.fromList allPaths
       queuedPathsSet = Set.fromList missingPaths
       skippedPathsSet = Set.difference allPathsSet queuedPathsSet
+
   modifyPushJob pushId $ \pushJob' -> do
     pushJob'
       { pushDetails =
@@ -186,14 +195,15 @@ resolvePushJob pushId allPaths missingPaths = do
   pushStarted pushId
 
   forM_ missingPaths $ \path -> do
-    queueStorePath path
     trackPushIdsForStorePath path [pushId]
+    queueStorePath path
 
   lookupPushJob pushId >>= \case
     Nothing -> return ()
     Just (PushJob {pushDetails}) ->
       Katip.logLocM Katip.DebugS $ Katip.ls $ showResolveStats pushDetails
 
+  -- Check if the job is already completed, i.e. all paths have been skipped.
   finishPushJob pushId
   where
     showResolveStats :: PushDetails -> Text
@@ -349,17 +359,16 @@ pushStorePathAttempt storePath size retryStatus = do
   timestamp <- liftIO getCurrentTime
   sendPushEvent <- asks pmOnPushEvent
   pushIds <- lookupPushIdsForStorePath storePath
-  for_ pushIds $ \pushId -> do
-    liftIO $
-      sendPushEvent pushId $
-        PushEvent timestamp pushId (PushStorePathAttempt storePath size pushRetryStatus)
+  liftIO $ forM_ pushIds $ \pushId ->
+    sendPushEvent pushId $
+      PushEvent timestamp pushId (PushStorePathAttempt storePath size pushRetryStatus)
 
 pushStorePathProgress :: FilePath -> Int64 -> Int64 -> PushManager ()
 pushStorePathProgress storePath currentBytes newBytes = do
   timestamp <- liftIO getCurrentTime
   sendPushEvent <- asks pmOnPushEvent
   pushIds <- lookupPushIdsForStorePath storePath
-  liftIO $ for_ pushIds $ \pushId ->
+  liftIO $ forM_ pushIds $ \pushId ->
     sendPushEvent pushId $
       PushEvent timestamp pushId (PushStorePathProgress storePath currentBytes newBytes)
 
@@ -368,10 +377,9 @@ pushStorePathDone storePath = do
   timestamp <- liftIO getCurrentTime
   sendPushEvent <- asks pmOnPushEvent
   pushIds <- lookupPushIdsForStorePath storePath
-  for_ pushIds $ \pushId ->
-    liftIO $
-      sendPushEvent pushId $
-        PushEvent timestamp pushId (PushStorePathDone storePath)
+  liftIO $ forM_ pushIds $ \pushId ->
+    sendPushEvent pushId $
+      PushEvent timestamp pushId (PushStorePathDone storePath)
 
   modifyPushJobs pushIds $ \pushJob -> do
     let pd = pushDetails pushJob
@@ -389,12 +397,9 @@ pushStorePathFailed storePath errMsg = do
   timestamp <- liftIO getCurrentTime
   sendPushEvent <- asks pmOnPushEvent
   pushIds <- lookupPushIdsForStorePath storePath
-  for_ pushIds $ \pushId ->
-    liftIO $
-      sendPushEvent pushId $
-        PushEvent timestamp pushId (PushStorePathFailed storePath errMsg)
-
-  removeStorePath storePath
+  liftIO $ forM_ pushIds $ \pushId ->
+    sendPushEvent pushId $
+      PushEvent timestamp pushId (PushStorePathFailed storePath errMsg)
 
   modifyPushJobs pushIds $ \pushJob -> do
     let pd = pushDetails pushJob
@@ -404,6 +409,8 @@ pushStorePathFailed storePath errMsg = do
     pushJob {pushDetails = pd'}
 
   forM_ pushIds finishPushJob
+
+  removeStorePath storePath
 
 finishPushJob :: Protocol.PushRequestId -> PushManager ()
 finishPushJob pushId = do

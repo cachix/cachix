@@ -24,12 +24,12 @@ instance Ord PushEvent where
   compare = compare `on` eventTimestamp
 
 data PushEventMessage
-  = PushStarted UTCTime
+  = PushStarted
   | PushStorePathAttempt FilePath Int64 PushRetryStatus
   | PushStorePathProgress FilePath Int64 Int64
   | PushStorePathDone FilePath
   | PushStorePathFailed FilePath Text
-  | PushFinished UTCTime
+  | PushFinished
   deriving stock (Eq, Generic, Show)
   deriving anyclass (FromJSON, ToJSON)
 

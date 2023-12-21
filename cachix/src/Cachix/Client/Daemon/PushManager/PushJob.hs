@@ -1,0 +1,89 @@
+module Cachix.Client.Daemon.PushManager.PushJob where
+
+import qualified Cachix.Client.Daemon.Protocol as Protocol
+import Cachix.Client.Daemon.Types.PushManager
+import qualified Data.Set as Set
+import Data.Time (NominalDiffTime, UTCTime, diffUTCTime, getCurrentTime)
+import Protolude
+
+new :: (MonadIO m) => Protocol.PushRequest -> m PushJob
+new pushRequest = do
+  pushId <- Protocol.newPushRequestId
+  timestamp <- liftIO getCurrentTime
+  return $
+    PushJob
+      { pushId,
+        pushRequest,
+        pushStatus = Queued,
+        pushQueue = mempty,
+        pushResult = mempty,
+        pushStats = newStats timestamp
+      }
+
+newStats :: UTCTime -> JobStats
+newStats createdAt =
+  JobStats
+    { jsCreatedAt = createdAt,
+      jsStartedAt = Nothing,
+      jsCompletedAt = Nothing
+    }
+
+data ResolvedClosure p = ResolvedClosure
+  { rcAllPaths :: Set p,
+    rcMissingPaths :: Set p
+  }
+
+run :: ResolvedClosure FilePath -> UTCTime -> PushJob -> PushJob
+run ResolvedClosure {..} timestamp pushJob@PushJob {..} = do
+  let skippedPaths = Set.difference rcAllPaths rcMissingPaths
+  pushJob
+    { pushStats = pushStats {jsStartedAt = Just timestamp},
+      pushQueue = rcMissingPaths,
+      pushResult = pushResult {prSkippedPaths = skippedPaths}
+    }
+
+addPushedPath :: FilePath -> PushResult -> PushResult
+addPushedPath storePath pushResult =
+  pushResult {prPushedPaths = Set.insert storePath (prPushedPaths pushResult)}
+
+addFailedPath :: FilePath -> PushResult -> PushResult
+addFailedPath storePath pushResult =
+  pushResult {prFailedPaths = Set.insert storePath (prFailedPaths pushResult)}
+
+markStorePathPushed :: FilePath -> PushJob -> PushJob
+markStorePathPushed storePath pushJob@(PushJob {pushQueue, pushResult}) =
+  pushJob
+    { pushStatus = Running,
+      pushQueue = Set.delete storePath pushQueue,
+      pushResult = addPushedPath storePath pushResult
+    }
+
+markStorePathFailed :: FilePath -> PushJob -> PushJob
+markStorePathFailed storePath pushJob@(PushJob {pushQueue, pushResult}) =
+  pushJob
+    { pushStatus = Running,
+      pushQueue = Set.delete storePath pushQueue,
+      pushResult = addFailedPath storePath pushResult
+    }
+
+complete :: UTCTime -> PushJob -> PushJob
+complete timestamp pushJob@PushJob {..} = do
+  pushJob
+    { pushStatus = Completed,
+      pushStats = pushStats {jsCompletedAt = Just timestamp}
+    }
+
+isCompleted :: PushJob -> Bool
+isCompleted PushJob {pushStatus} = pushStatus == Completed
+
+startedAt :: PushJob -> Maybe UTCTime
+startedAt PushJob {pushStats = JobStats {jsStartedAt}} = jsStartedAt
+
+completedAt :: PushJob -> Maybe UTCTime
+completedAt PushJob {pushStats = JobStats {jsCompletedAt}} = jsCompletedAt
+
+duration :: PushJob -> Maybe NominalDiffTime
+duration PushJob {pushStats} = do
+  t1 <- jsStartedAt pushStats
+  t2 <- jsCompletedAt pushStats
+  pure $ diffUTCTime t2 t1

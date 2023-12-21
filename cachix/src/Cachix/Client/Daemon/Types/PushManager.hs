@@ -6,7 +6,9 @@ module Cachix.Client.Daemon.Types.PushManager
   ( PushManagerEnv (..),
     PushManager (..),
     PushJob (..),
-    PushDetails (..),
+    JobStatus (..),
+    JobStats (..),
+    PushResult (..),
     OnPushEvent,
     Task (..),
   )
@@ -29,9 +31,10 @@ data Task
   = ResolveClosure Protocol.PushRequestId
   | PushStorePath FilePath
 
+type PushJobStore = TVar (HashMap Protocol.PushRequestId PushJob)
+
 data PushManagerEnv = PushManagerEnv
-  { -- | Active push jobs.
-    pmPushJobs :: TVar (HashMap Protocol.PushRequestId PushJob),
+  { pmPushJobs :: PushJobStore,
     -- | A mapping of store paths to to push requests.
     -- Use to prevent duplicate pushes and track with store paths are referenced by push requests.
     pmStorePathReferences :: TVar (HashMap FilePath [Protocol.PushRequestId]),
@@ -69,28 +72,43 @@ instance Katip.KatipContext PushManager where
   getKatipNamespace = Log.getKatipNamespace <$> asks pmLogger
   localKatipNamespace f (PushManager m) = PushManager (local (\s -> s {pmLogger = Log.localKatipNamespace f (pmLogger s)}) m)
 
+data JobStatus = Queued | Running | Completed | Failed
+  deriving stock (Eq, Show)
+
 -- | A push request that has been queued for processing.
 data PushJob = PushJob
   { -- | A unique identifier for this push request.
     pushId :: Protocol.PushRequestId,
-    -- | The time when the push request was queued.
-    pushCreatedAt :: UTCTime,
-    -- | The time when the push request was started.
-    pushStartedAt :: Maybe UTCTime,
-    -- | The time when the push request was finished.
-    pushFinishedAt :: Maybe UTCTime,
     -- | The original push request.
     pushRequest :: Protocol.PushRequest,
-    -- | The state of the push request.
-    pushDetails :: PushDetails
+    -- | The current status of the push job.
+    pushStatus :: JobStatus,
+    -- | Paths that need to be pushed.
+    pushQueue :: Set FilePath,
+    -- | Track whether paths were pushed, skipped, or failed to push.
+    pushResult :: PushResult,
+    -- | Timing stats for the push job.
+    pushStats :: JobStats
   }
   deriving stock (Eq, Show)
 
-data PushDetails = PushDetails
-  { pdAllPaths :: Set FilePath,
-    pdQueuedPaths :: Set FilePath,
-    pdPushedPaths :: Set FilePath,
-    pdSkippedPaths :: Set FilePath,
-    pdFailedPaths :: Set FilePath
+data PushResult = PushResult
+  { prPushedPaths :: Set FilePath,
+    prFailedPaths :: Set FilePath,
+    prSkippedPaths :: Set FilePath
   }
-  deriving stock (Eq, Ord, Show)
+  deriving stock (Eq, Show)
+
+instance Semigroup PushResult where
+  PushResult a1 b1 c1 <> PushResult a2 b2 c2 =
+    PushResult (a1 <> a2) (b1 <> b2) (c1 <> c2)
+
+instance Monoid PushResult where
+  mempty = PushResult mempty mempty mempty
+
+data JobStats = JobStats
+  { jsCreatedAt :: UTCTime,
+    jsStartedAt :: Maybe UTCTime,
+    jsCompletedAt :: Maybe UTCTime
+  }
+  deriving stock (Eq, Show)

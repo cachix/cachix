@@ -13,7 +13,7 @@ module Cachix.Client.Daemon.PushManager
     resolvePushJob,
 
     -- * Store paths
-    queueStorePath,
+    queueStorePaths,
     removeStorePath,
 
     -- * Tasks
@@ -31,6 +31,7 @@ where
 import Cachix.Client.CNix (filterInvalidStorePath, followLinksToStorePath)
 import Cachix.Client.Commands.Push hiding (pushStrategy)
 import qualified Cachix.Client.Daemon.Protocol as Protocol
+import qualified Cachix.Client.Daemon.PushManager.PushJob as PushJob
 import Cachix.Client.Daemon.Types.Log (Logger)
 import Cachix.Client.Daemon.Types.PushEvent
 import Cachix.Client.Daemon.Types.PushManager
@@ -52,7 +53,7 @@ import qualified Data.HashMap.Strict as HashMap
 import Data.IORef
 import qualified Data.Set as Set
 import qualified Data.Text as T
-import Data.Time (diffUTCTime, getCurrentTime)
+import Data.Time (getCurrentTime)
 import Hercules.CNix (StorePath)
 import Hercules.CNix.Store (Store, parseStorePath, storePathToPath)
 import qualified Katip
@@ -78,8 +79,7 @@ stopPushManager :: PushManagerEnv -> IO ()
 stopPushManager PushManagerEnv {pmTaskQueue, pmPushJobs} =
   atomically $ do
     pushJobs <- readTVar pmPushJobs
-    let allFinished = all (isJust . pushFinishedAt) $ HashMap.elems pushJobs
-    if allFinished
+    if all PushJob.isCompleted (HashMap.elems pushJobs)
       then closeTBMQueue pmTaskQueue
       else retry
 
@@ -88,7 +88,7 @@ stopPushManager PushManagerEnv {pmTaskQueue, pmPushJobs} =
 addPushJob :: Protocol.PushRequest -> PushManager Protocol.PushRequestId
 addPushJob pushRequest = do
   PushManagerEnv {..} <- ask
-  pushJob <- newPushJob pushRequest
+  pushJob <- PushJob.new pushRequest
 
   Katip.logLocM Katip.DebugS $ Katip.ls $ "Queued push job " <> (show (pushId pushJob) :: Text)
 
@@ -124,51 +124,20 @@ modifyPushJobs pushIds f = do
   liftIO $ atomically $ modifyTVar' pushJobs $ \pushJobs' ->
     foldl' (flip (HashMap.adjust f)) pushJobs' pushIds
 
-newPushJob :: (MonadIO m) => Protocol.PushRequest -> m PushJob
-newPushJob pushRequest = do
-  pushId <- Protocol.newPushRequestId
-  pushCreatedAt <- liftIO getCurrentTime
-  let pushStartedAt = Nothing
-      pushFinishedAt = Nothing
-      pushDetails = newPushDetails
-  return $ PushJob {..}
-
-newPushDetails :: PushDetails
-newPushDetails =
-  PushDetails
-    { pdAllPaths = mempty,
-      pdQueuedPaths = mempty,
-      pdPushedPaths = mempty,
-      pdFailedPaths = mempty,
-      pdSkippedPaths = mempty
-    }
-
-isPushJobFinished :: PushJob -> Bool
-isPushJobFinished PushJob {pushDetails} = Set.null (pdQueuedPaths pushDetails)
-
-finishPushJob :: Protocol.PushRequestId -> PushManager ()
-finishPushJob pushId = do
-  withPushJob pushId $ \pushJob -> do
-    when (isPushJobFinished pushJob) $ do
-      timestamp <- liftIO getCurrentTime
-
-      modifyPushJob pushId $ \pushJob ->
-        pushJob {pushFinishedAt = Just timestamp}
-
-      pushFinished pushJob
-
 -- Manage store paths
 
-queueStorePath :: Protocol.PushRequestId -> FilePath -> PushManager (STM ())
-queueStorePath pushId storePath = do
+queueStorePaths :: Protocol.PushRequestId -> [FilePath] -> PushManager ()
+queueStorePaths pushId storePaths = do
   PushManagerEnv {..} <- ask
 
-  return $ do
-    isDuplicate <- HashMap.member storePath <$> readTVar pmStorePathReferences
-    unless isDuplicate $
-      writeTBMQueue pmTaskQueue (PushStorePath storePath)
+  let addToQueue storePath = do
+        isDuplicate <- HashMap.member storePath <$> readTVar pmStorePathReferences
+        unless isDuplicate $
+          writeTBMQueue pmTaskQueue (PushStorePath storePath)
 
-    modifyTVar' pmStorePathReferences $ HashMap.insertWith (<>) storePath [pushId]
+        modifyTVar' pmStorePathReferences $ HashMap.insertWith (<>) storePath [pushId]
+
+  transactionally $ map addToQueue storePaths
 
 removeStorePath :: FilePath -> PushManager ()
 removeStorePath storePath = do
@@ -182,44 +151,43 @@ lookupStorePathReferences storePath = do
   references <- liftIO $ readTVarIO pmStorePathReferences
   return $ fromMaybe [] (HashMap.lookup storePath references)
 
-resolvePushJob :: Protocol.PushRequestId -> [FilePath] -> [FilePath] -> PushManager ()
-resolvePushJob pushId allPaths missingPaths = do
-  let allPathsSet = Set.fromList allPaths
-      queuedPathsSet = Set.fromList missingPaths
-      skippedPathsSet = Set.difference allPathsSet queuedPathsSet
+checkPushJobCompleted :: Protocol.PushRequestId -> PushManager ()
+checkPushJobCompleted pushId = do
+  mpushJob <- lookupPushJob pushId
+  for_ mpushJob $ \pushJob ->
+    when (Set.null $ pushQueue pushJob) $ do
+      timestamp <- liftIO getCurrentTime
+      _ <- modifyPushJob pushId $ PushJob.complete timestamp
+      pushFinished pushJob
 
+resolvePushJob :: Protocol.PushRequestId -> PushJob.ResolvedClosure FilePath -> PushManager ()
+resolvePushJob pushId closure = do
   timestamp <- liftIO getCurrentTime
-  _ <- modifyPushJob pushId $ \pushJob' -> do
-    pushJob'
-      { pushStartedAt = Just timestamp,
-        pushDetails =
-          (pushDetails pushJob')
-            { pdAllPaths = allPathsSet,
-              pdQueuedPaths = queuedPathsSet,
-              pdSkippedPaths = skippedPathsSet
-            }
-      }
+
+  _ <- modifyPushJob pushId $ PushJob.run closure timestamp
 
   withPushJob pushId $ \pushJob -> do
-    Katip.logLocM Katip.DebugS $ Katip.ls $ showResolveStats (pushDetails pushJob)
+    Katip.logLocM Katip.DebugS $ Katip.ls $ showClosureStats closure
 
     pushStarted pushJob
-
     -- Create STM action for each path and then run everything atomically
-    transactionally =<< mapM (queueStorePath pushId) missingPaths
-
+    queueStorePaths pushId $ Set.toList (PushJob.rcMissingPaths closure)
     -- Check if the job is already completed, i.e. all paths have been skipped.
-    finishPushJob pushId
+    checkPushJobCompleted pushId
   where
-    showResolveStats :: PushDetails -> Text
-    showResolveStats PushDetails {..} =
-      T.intercalate
-        "\n"
-        [ "Resolved push job " <> show pushId,
-          "Total paths: " <> show (length pdAllPaths),
-          "Skipped paths: " <> show (length pdSkippedPaths),
-          "Queued paths: " <> show (length pdQueuedPaths)
-        ]
+    showClosureStats :: PushJob.ResolvedClosure FilePath -> Text
+    showClosureStats PushJob.ResolvedClosure {..} =
+      let skippedPaths = Set.difference rcAllPaths rcMissingPaths
+          queuedCount = length rcMissingPaths
+          skippedCount = length skippedPaths
+          totalCount = queuedCount + skippedCount
+       in T.intercalate
+            "\n"
+            [ "Resolved push job " <> show pushId,
+              "Total paths: " <> show totalCount,
+              "Queued paths: " <> show queuedCount,
+              "Skipped paths: " <> show skippedCount
+            ]
 
 handleTask :: PushParams PushManager () -> Task -> PushManager ()
 handleTask pushParams task = do
@@ -234,9 +202,16 @@ handleTask pushParams task = do
         (allStorePaths, missingStorePaths) <- getMissingPathsForClosure pushParams (catMaybes normalized)
         storePathsToPush <- pushOnClosureAttempt pushParams allStorePaths missingStorePaths
 
-        allPaths <- liftIO $ mapM (storeToFilePath store) allStorePaths
-        pathsToPush <- liftIO $ mapM (storeToFilePath store) storePathsToPush
-        resolvePushJob pushId allPaths pathsToPush
+        resolvedClosure <- do
+          allPaths <- liftIO $ mapM (storeToFilePath store) allStorePaths
+          pathsToPush <- liftIO $ mapM (storeToFilePath store) storePathsToPush
+          return $
+            PushJob.ResolvedClosure
+              { rcAllPaths = Set.fromList allPaths,
+                rcMissingPaths = Set.fromList pathsToPush
+              }
+
+        resolvePushJob pushId resolvedClosure
     PushStorePath filePath -> do
       qs <- asks pmTaskSemaphore
       E.bracket_ (QSem.waitQSem qs) (QSem.signalQSem qs) $ do
@@ -308,91 +283,72 @@ newPushStrategy store authToken opts cacheName compressionMethod storePath =
 -- Push events
 
 pushStarted :: PushJob -> PushManager ()
-pushStarted PushJob {pushId, pushStartedAt} = do
-  case pushStartedAt of
+pushStarted pushJob@PushJob {pushId} = do
+  case PushJob.startedAt pushJob of
     Nothing -> return ()
     Just timestamp -> do
       sendPushEvent <- asks pmOnPushEvent
       liftIO $ do
         sendPushEvent pushId $
-          PushEvent timestamp pushId (PushStarted timestamp)
+          PushEvent timestamp pushId PushStarted
 
 pushFinished :: PushJob -> PushManager ()
-pushFinished PushJob {pushId, pushStartedAt, pushFinishedAt} = do
-  let mpushDuration = do
-        startedAt <- pushStartedAt
-        finishedAt <- pushFinishedAt
-        pure $ diffUTCTime finishedAt startedAt
+pushFinished pushJob@PushJob {pushId} = void $ runMaybeT $ do
+  pushDuration <- MaybeT $ pure $ PushJob.duration pushJob
+  completedAt <- MaybeT $ pure $ PushJob.completedAt pushJob
 
-  for_ mpushDuration $ \pushDuration ->
-    Katip.logLocM Katip.InfoS $
-      Katip.ls $
-        T.intercalate
-          " "
-          [ "Push job",
-            show pushId :: Text,
-            "finished in",
-            show pushDuration
-          ]
+  Katip.logLocM Katip.InfoS $
+    Katip.ls $
+      T.intercalate
+        " "
+        [ "Push job",
+          show pushId :: Text,
+          "finished in",
+          show pushDuration
+        ]
 
-  case pushFinishedAt of
-    Nothing -> return ()
-    Just timestamp -> do
-      sendPushEvent <- asks pmOnPushEvent
-      liftIO $ do
-        sendPushEvent pushId $
-          PushEvent timestamp pushId (PushFinished timestamp)
+  sendPushEvent <- asks pmOnPushEvent
+  liftIO $ do
+    sendPushEvent pushId $
+      PushEvent completedAt pushId PushFinished
 
-sendStorePathEvent :: FilePath -> PushEventMessage -> PushManager ()
-sendStorePathEvent storePath msg = do
+sendStorePathEvent :: [Protocol.PushRequestId] -> FilePath -> PushEventMessage -> PushManager ()
+sendStorePathEvent pushIds storePath msg = do
   timestamp <- liftIO getCurrentTime
   sendPushEvent <- asks pmOnPushEvent
-  pushIds <- lookupStorePathReferences storePath
   liftIO $ forM_ pushIds $ \pushId ->
     sendPushEvent pushId (PushEvent timestamp pushId msg)
 
 pushStorePathAttempt :: FilePath -> Int64 -> RetryStatus -> PushManager ()
 pushStorePathAttempt storePath size retryStatus = do
   let pushRetryStatus = newPushRetryStatus retryStatus
-  sendStorePathEvent storePath (PushStorePathAttempt storePath size pushRetryStatus)
+  pushIds <- lookupStorePathReferences storePath
+  sendStorePathEvent pushIds storePath (PushStorePathAttempt storePath size pushRetryStatus)
 
 pushStorePathProgress :: FilePath -> Int64 -> Int64 -> PushManager ()
 pushStorePathProgress storePath currentBytes newBytes = do
-  sendStorePathEvent storePath (PushStorePathProgress storePath currentBytes newBytes)
+  pushIds <- lookupStorePathReferences storePath
+  sendStorePathEvent pushIds storePath (PushStorePathProgress storePath currentBytes newBytes)
 
 pushStorePathDone :: FilePath -> PushManager ()
 pushStorePathDone storePath = do
   pushIds <- lookupStorePathReferences storePath
-  modifyPushJobs pushIds $ \pushJob -> do
-    let pd = pushDetails pushJob
-        newPushedPaths = Set.insert storePath (pdPushedPaths pd)
-        newQueuedPaths = Set.delete storePath (pdQueuedPaths pd)
-        pd' = pd {pdPushedPaths = newPushedPaths, pdQueuedPaths = newQueuedPaths}
-    pushJob {pushDetails = pd'}
+  modifyPushJobs pushIds (PushJob.markStorePathPushed storePath)
 
-  sendStorePathEvent storePath (PushStorePathDone storePath)
+  sendStorePathEvent pushIds storePath (PushStorePathDone storePath)
 
-  forM_ pushIds finishPushJob
+  forM_ pushIds checkPushJobCompleted
 
   removeStorePath storePath
 
 pushStorePathFailed :: FilePath -> Text -> PushManager ()
 pushStorePathFailed storePath errMsg = do
-  timestamp <- liftIO getCurrentTime
-  sendPushEvent <- asks pmOnPushEvent
   pushIds <- lookupStorePathReferences storePath
-  liftIO $ forM_ pushIds $ \pushId ->
-    sendPushEvent pushId $
-      PushEvent timestamp pushId (PushStorePathFailed storePath errMsg)
+  modifyPushJobs pushIds (PushJob.markStorePathFailed storePath)
 
-  modifyPushJobs pushIds $ \pushJob -> do
-    let pd = pushDetails pushJob
-        newFailedPaths = Set.insert storePath (pdFailedPaths pd)
-        newQueuedPaths = Set.delete storePath (pdQueuedPaths pd)
-        pd' = pd {pdFailedPaths = newFailedPaths, pdQueuedPaths = newQueuedPaths}
-    pushJob {pushDetails = pd'}
+  sendStorePathEvent pushIds storePath (PushStorePathFailed storePath errMsg)
 
-  forM_ pushIds finishPushJob
+  forM_ pushIds checkPushJobCompleted
 
   removeStorePath storePath
 

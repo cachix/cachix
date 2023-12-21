@@ -76,6 +76,7 @@ library
     Cachix.Client.Daemon.Protocol
     Cachix.Client.Daemon.Push
     Cachix.Client.Daemon.PushManager
+    Cachix.Client.Daemon.PushManager.PushJob
     Cachix.Client.Daemon.ShutdownLatch
     Cachix.Client.Daemon.Subscription
     Cachix.Client.Daemon.Types

@@ -1,7 +1,11 @@
-module Cachix.Client.Daemon.PushManager.PushJob where
+module Cachix.Client.Daemon.PushManager.PushJob
+  ( module Cachix.Client.Daemon.PushManager.PushJob,
+    module Types,
+  )
+where
 
 import qualified Cachix.Client.Daemon.Protocol as Protocol
-import Cachix.Client.Daemon.Types.PushManager
+import Cachix.Client.Daemon.Types.PushManager as Types
 import qualified Data.Set as Set
 import Data.Time (NominalDiffTime, UTCTime, diffUTCTime, getCurrentTime)
 import Protolude
@@ -37,7 +41,8 @@ run :: ResolvedClosure FilePath -> UTCTime -> PushJob -> PushJob
 run ResolvedClosure {..} timestamp pushJob@PushJob {..} = do
   let skippedPaths = Set.difference rcAllPaths rcMissingPaths
   pushJob
-    { pushStats = pushStats {jsStartedAt = Just timestamp},
+    { pushStatus = Running,
+      pushStats = pushStats {jsStartedAt = Just timestamp},
       pushQueue = rcMissingPaths,
       pushResult = pushResult {prSkippedPaths = skippedPaths}
     }
@@ -65,6 +70,18 @@ markStorePathFailed storePath pushJob@(PushJob {pushQueue, pushResult}) =
       pushQueue = Set.delete storePath pushQueue,
       pushResult = addFailedPath storePath pushResult
     }
+
+status :: PushJob -> JobStatus
+status PushJob {pushStatus} = pushStatus
+
+queue :: PushJob -> Set FilePath
+queue PushJob {pushQueue} = pushQueue
+
+result :: PushJob -> PushResult
+result PushJob {pushResult} = pushResult
+
+hasQueuedPaths :: PushJob -> Bool
+hasQueuedPaths = not . Set.null . queue
 
 complete :: UTCTime -> PushJob -> PushJob
 complete timestamp pushJob@PushJob {..} = do

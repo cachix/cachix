@@ -262,5 +262,6 @@ test-suite cachix-test
     , servant-auth-client
     , servant-client-core
     , temporary
+    , time
 
   build-tool-depends: hspec-discover:hspec-discover

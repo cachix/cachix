@@ -10,6 +10,7 @@ module Cachix.Client.Daemon.PushManager
     PushJob (..),
     addPushJob,
     lookupPushJob,
+    withPushJob,
     resolvePushJob,
 
     -- * Store paths
@@ -312,8 +313,8 @@ pushFinished pushJob@PushJob {pushId} = void $ runMaybeT $ do
     sendPushEvent pushId $
       PushEvent completedAt pushId PushFinished
 
-sendStorePathEvent :: [Protocol.PushRequestId] -> FilePath -> PushEventMessage -> PushManager ()
-sendStorePathEvent pushIds storePath msg = do
+sendStorePathEvent :: [Protocol.PushRequestId] -> PushEventMessage -> PushManager ()
+sendStorePathEvent pushIds msg = do
   timestamp <- liftIO getCurrentTime
   sendPushEvent <- asks pmOnPushEvent
   liftIO $ forM_ pushIds $ \pushId ->
@@ -323,19 +324,19 @@ pushStorePathAttempt :: FilePath -> Int64 -> RetryStatus -> PushManager ()
 pushStorePathAttempt storePath size retryStatus = do
   let pushRetryStatus = newPushRetryStatus retryStatus
   pushIds <- lookupStorePathReferences storePath
-  sendStorePathEvent pushIds storePath (PushStorePathAttempt storePath size pushRetryStatus)
+  sendStorePathEvent pushIds (PushStorePathAttempt storePath size pushRetryStatus)
 
 pushStorePathProgress :: FilePath -> Int64 -> Int64 -> PushManager ()
 pushStorePathProgress storePath currentBytes newBytes = do
   pushIds <- lookupStorePathReferences storePath
-  sendStorePathEvent pushIds storePath (PushStorePathProgress storePath currentBytes newBytes)
+  sendStorePathEvent pushIds (PushStorePathProgress storePath currentBytes newBytes)
 
 pushStorePathDone :: FilePath -> PushManager ()
 pushStorePathDone storePath = do
   pushIds <- lookupStorePathReferences storePath
   modifyPushJobs pushIds (PushJob.markStorePathPushed storePath)
 
-  sendStorePathEvent pushIds storePath (PushStorePathDone storePath)
+  sendStorePathEvent pushIds (PushStorePathDone storePath)
 
   forM_ pushIds checkPushJobCompleted
 
@@ -346,7 +347,7 @@ pushStorePathFailed storePath errMsg = do
   pushIds <- lookupStorePathReferences storePath
   modifyPushJobs pushIds (PushJob.markStorePathFailed storePath)
 
-  sendStorePathEvent pushIds storePath (PushStorePathFailed storePath errMsg)
+  sendStorePathEvent pushIds (PushStorePathFailed storePath errMsg)
 
   forM_ pushIds checkPushJobCompleted
 

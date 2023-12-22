@@ -100,6 +100,11 @@ addPushJob pushRequest = do
 
   return (pushId pushJob)
 
+removePushJob :: Protocol.PushRequestId -> PushManager ()
+removePushJob pushId = do
+  PushManagerEnv {..} <- ask
+  liftIO $ atomically $ modifyTVar' pmPushJobs $ HashMap.delete pushId
+
 lookupPushJob :: Protocol.PushRequestId -> PushManager (Maybe PushJob)
 lookupPushJob pushId = do
   pushJobs <- asks pmPushJobs
@@ -312,6 +317,8 @@ pushFinished pushJob@PushJob {pushId} = void $ runMaybeT $ do
   liftIO $ do
     sendPushEvent pushId $
       PushEvent completedAt pushId PushFinished
+
+  lift $ removePushJob pushId
 
 sendStorePathEvent :: [Protocol.PushRequestId] -> PushEventMessage -> PushManager ()
 sendStorePathEvent pushIds msg = do

@@ -20,7 +20,6 @@ import Cachix.Client.Env as Env
 import Cachix.Client.OptionsParser (PushOptions)
 import Cachix.Client.Push
 import Cachix.Types.BinaryCache (BinaryCache, BinaryCacheName)
-import qualified Control.Concurrent.QSem as QSem
 import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
 import Control.Monad.IO.Unlift (MonadUnliftIO)
 import qualified Katip
@@ -48,8 +47,6 @@ data DaemonEnv = DaemonEnv
     daemonLogger :: Logger,
     -- | Shutdown latch
     daemonShutdownLatch :: ShutdownLatch,
-    -- | A semaphore to limit the number of concurrent pushes
-    daemonPushSemaphore :: QSem.QSem,
     -- | The PID of the daemon process
     daemonPid :: ProcessID
   }

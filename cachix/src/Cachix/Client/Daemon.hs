@@ -38,7 +38,6 @@ import qualified Network.Socket as Socket
 import Protolude
 import System.Posix.Process (getProcessID)
 import qualified UnliftIO.Async as Async
-import qualified UnliftIO.QSem as QSem
 
 -- | Configure a new daemon. Use 'run' to start it.
 new ::
@@ -63,7 +62,6 @@ new daemonEnv daemonOptions daemonLogHandle daemonPushOptions daemonCacheName = 
 
   daemonSocketPath <- maybe getSocketPath pure (Options.daemonSocketPath daemonOptions)
   daemonShutdownLatch <- newShutdownLatch
-  daemonPushSemaphore <- QSem.newQSem (Options.numJobs daemonPushOptions)
   daemonPid <- getProcessID
 
   daemonPushSecret <- Commands.Push.getPushSecretRequired (config daemonEnv) daemonCacheName

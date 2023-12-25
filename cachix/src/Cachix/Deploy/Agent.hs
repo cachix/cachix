@@ -299,12 +299,12 @@ data AgentError
   | -- | Safeguard against creating root-owned files in user directories.
     -- This is an issue on macOS, where, by default, sudo does not reset $HOME.
     UserDoesNotOwnHome
+      -- | The current user name
       String
-      -- ^ The current user name
+      -- | The sudo user name, if any
       (Maybe String)
-      -- ^ The sudo user name, if any
+      -- | The home directory
       FilePath
-      -- ^ The home directory
   deriving (Show)
 
 instance Exception AgentError where

@@ -29,13 +29,13 @@ source-repository head
 common defaults
   build-depends:      base >=4.7 && <5
   default-extensions:
-    NoImplicitPrelude
-    NoImportQualifiedPost
     DeriveAnyClass
     DeriveGeneric
     DerivingVia
     LambdaCase
     NamedFieldPuns
+    NoImplicitPrelude
+    NoImportQualifiedPost
     OverloadedStrings
     RecordWildCards
     ScopedTypeVariables
@@ -69,15 +69,21 @@ library
     Cachix.Client.Config.Orphans
     Cachix.Client.Daemon
     Cachix.Client.Daemon.Client
-    Cachix.Client.Daemon.Event
     Cachix.Client.Daemon.Listen
+    Cachix.Client.Daemon.Log
     Cachix.Client.Daemon.PostBuildHook
     Cachix.Client.Daemon.Progress
     Cachix.Client.Daemon.Protocol
     Cachix.Client.Daemon.Push
+    Cachix.Client.Daemon.PushManager
+    Cachix.Client.Daemon.PushManager.PushJob
     Cachix.Client.Daemon.ShutdownLatch
     Cachix.Client.Daemon.Subscription
     Cachix.Client.Daemon.Types
+    Cachix.Client.Daemon.Types.Daemon
+    Cachix.Client.Daemon.Types.Log
+    Cachix.Client.Daemon.Types.PushEvent
+    Cachix.Client.Daemon.Types.PushManager
     Cachix.Client.Daemon.Worker
     Cachix.Client.Env
     Cachix.Client.Exception
@@ -113,8 +119,12 @@ library
   autogen-modules:   Paths_cachix
   build-depends:
     , aeson
+    , amazonka                >=2.0
+    , amazonka-core           >=2.0
+    , amazonka-s3             >=2.0
     , ascii-progress
     , async
+    , attoparsec
     , base64-bytestring
     , bytestring
     , cachix-api
@@ -124,7 +134,7 @@ library
     , conduit-extra
     , conduit-zstd
     , containers
-    , cryptonite
+    , crypton
     , deepseq
     , dhall                   >=1.28.0
     , directory
@@ -134,6 +144,7 @@ library
     , extra
     , filepath
     , fsnotify                >=0.4.1
+    , generic-lens
     , hercules-ci-cnix-store
     , here
     , hnix-store-core         >=0.6.1.0
@@ -148,8 +159,10 @@ library
     , lzma-conduit
     , megaparsec              >=7.0.0
     , memory
+    , microlens
     , netrc
     , network
+    , nix-narinfo
     , optparse-applicative
     , pretty-terminal
     , prettyprinter
@@ -224,6 +237,7 @@ test-suite cachix-test
   main-is:            Main.hs
   hs-source-dirs:     test
   other-modules:
+    Daemon.PushManagerSpec
     DeploySpec
     InstallationModeSpec
     NetRcSpec
@@ -237,6 +251,7 @@ test-suite cachix-test
     , bytestring
     , cachix
     , cachix-api
+    , containers
     , dhall
     , directory
     , extra
@@ -247,5 +262,6 @@ test-suite cachix-test
     , servant-auth-client
     , servant-client-core
     , temporary
+    , time
 
   build-tool-depends: hspec-discover:hspec-discover

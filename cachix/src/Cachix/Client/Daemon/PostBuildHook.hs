@@ -84,7 +84,6 @@ postBuildHookScript cachixBin socketPath =
 
 \# set -eu
 set -f # disable globbing
-export IFS=''
 
 exec ${toS cachixBin :: Text} daemon push \\
   --socket ${toS socketPath :: Text} \\

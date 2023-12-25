@@ -1,5 +1,5 @@
 # Match resolver with nixos-unstable haskellPackages
-resolver: lts-21.11
+resolver: lts-21.22
 packages:
 - cachix
 - cachix-api
@@ -9,6 +9,11 @@ extra-deps:
 - nix-narinfo-0.1.0.2
 - hnix-store-core-0.6.1.0
 - algebraic-graphs-0.6.1
+- amazonka-2.0@sha256:3481da2fda6b210d15d41c1db7a588adf68123cfb7ea3882797a6230003259db,3505
+- amazonka-s3-2.0@sha256:e3143e11ab9e57ee0dfd9d1dd95a44c5b4a7d34af78c8f5b2e6c00afad118a02,13853
+- amazonka-core-2.0@sha256:d9f0533c272ac92bd7b18699077038b6b51b3552e91b65743af4ce646286b4f8,4383
+- amazonka-sso-2.0@sha256:902be13b604e4a3b51a9b8e1adc6a32f42322ae11f738a72a8c737b2d0a91a5e,2995
+- amazonka-sts-2.0@sha256:5c721083e8d80883a893176de6105c27bbbd8176f467c27ac5f8d548a5e726d8,3209
 nix:
   enable: true
   pure: false

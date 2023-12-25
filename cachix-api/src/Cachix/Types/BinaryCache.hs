@@ -5,6 +5,7 @@ import Data.Aeson (FromJSON, ToJSON)
 import Data.Swagger (ToParamSchema (..), ToSchema)
 import Protolude
 import Servant.API
+import Text.Read
 
 type BinaryCacheName = Text
 
@@ -20,7 +21,15 @@ data BinaryCache = BinaryCache
   deriving (Show, Generic, FromJSON, ToJSON, ToSchema, NFData)
 
 data CompressionMethod = XZ | ZSTD
-  deriving (Show, Read, Generic, FromJSON, ToJSON, ToSchema, NFData)
+  deriving (Show, Eq, Generic, FromJSON, ToJSON, ToSchema, NFData)
+
+instance Read CompressionMethod where
+  readsPrec _ value =
+    case map toUpper value of
+      "XZ" -> [(XZ, "")]
+      "ZST" -> [(ZSTD, "")]
+      "ZSTD" -> [(ZSTD, "")]
+      _ -> []
 
 instance FromHttpApiData CompressionMethod where
   parseUrlPiece "xz" = Right XZ

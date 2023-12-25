@@ -4,15 +4,19 @@ module Cachix.Client.Daemon.Progress
     complete,
     fail,
     tick,
+    update,
   )
 where
 
 import Cachix.Client.Daemon.Types (PushRetryStatus (..))
 import Cachix.Client.HumanSize (humanSize)
+import qualified Control.Concurrent.Async as Async
+import Control.Concurrent.MVar
 import Data.String (String)
 import qualified Data.Text as T
 import Protolude
 import qualified System.Console.AsciiProgress as Ascii
+import qualified System.Console.AsciiProgress.Internal as Ascii.Internal
 import System.Console.Pretty
 import System.IO (hIsTerminalDevice)
 
@@ -48,12 +52,24 @@ tick _ _ = pure ()
 
 fail :: UploadProgress -> IO ()
 fail ProgressBar {..} =
-  Ascii.setConsoleRegion (Ascii.pgRegion progressBar) $
-    uploadFailed path
-fail FallbackText {path} = hPutStr stderr $ uploadFailed path
+  clearAsciiWith progressBar (uploadFailed path)
+fail FallbackText {path} =
+  hPutStr stderr $ uploadFailed path
+
+update :: UploadProgress -> PushRetryStatus -> IO UploadProgress
+update pg@ProgressBar {..} retryStatus = do
+  let opts = newProgressBarOptions path size retryStatus
+  pg' <- newAsciiProgressBarInPlace progressBar opts
+
+  return $ pg {progressBar = pg'}
+update fbt _ = return fbt
 
 newProgressBar :: String -> Int64 -> PushRetryStatus -> IO Ascii.ProgressBar
-newProgressBar path size retryStatus = do
+newProgressBar path size retryStatus =
+  newAsciiProgressBar $ newProgressBarOptions path size retryStatus
+
+newProgressBarOptions :: String -> Int64 -> PushRetryStatus -> Ascii.Options
+newProgressBarOptions path size retryStatus = do
   let hSize = toS $ humanSize $ fromIntegral size
   let barLength =
         uploadTickBar path hSize retryStatus
@@ -61,16 +77,13 @@ newProgressBar path size retryStatus = do
           & T.replace "[:bar]" ""
           & T.replace ":percent" "  0%"
           & T.length
-
-  liftIO $
-    Ascii.newProgressBar
-      Ascii.def
-        { Ascii.pgTotal = fromIntegral size,
-          -- https://github.com/yamadapc/haskell-ascii-progress/issues/24
-          Ascii.pgWidth = 20 + barLength,
-          Ascii.pgOnCompletion = Just $ uploadComplete path size,
-          Ascii.pgFormat = uploadTickBar path hSize retryStatus
-        }
+  Ascii.def
+    { Ascii.pgTotal = fromIntegral size,
+      -- https://github.com/yamadapc/haskell-ascii-progress/issues/24
+      Ascii.pgWidth = 20 + barLength,
+      Ascii.pgOnCompletion = Just $ uploadComplete path size,
+      Ascii.pgFormat = uploadTickBar path hSize retryStatus
+    }
 
 retryText :: PushRetryStatus -> String
 retryText PushRetryStatus {retryCount} =
@@ -95,3 +108,59 @@ uploadStartFallback :: String -> Int64 -> PushRetryStatus -> String
 uploadStartFallback path size retryStatus =
   let hSize = toS $ humanSize $ fromIntegral size
    in retryText retryStatus <> "Pushing " <> path <> " (" <> hSize <> ")\n"
+
+-- Internal
+
+newAsciiProgressBar :: Ascii.Options -> IO Ascii.ProgressBar
+newAsciiProgressBar opts = do
+  region <- Ascii.openConsoleRegion Ascii.Linear
+  newAsciiProgressBarWithRegion opts region
+
+-- | Create a new progress bar in place of an existing one, reusing the console region.
+newAsciiProgressBarInPlace :: Ascii.ProgressBar -> Ascii.Options -> IO Ascii.ProgressBar
+newAsciiProgressBarInPlace pg opts = do
+  cancelUpdates pg
+  newAsciiProgressBarWithRegion opts (Ascii.pgRegion pg)
+
+-- | Create a new progress bar using the provided console region.
+newAsciiProgressBarWithRegion :: Ascii.Options -> Ascii.ConsoleRegion -> IO Ascii.ProgressBar
+newAsciiProgressBarWithRegion opts region = do
+  info <- Ascii.Internal.newProgressBarInfo opts
+
+  -- Display initial progress-bar
+  pgStr <- Ascii.pgGetProgressStr opts opts <$> Ascii.Internal.getInfoStats info
+  Ascii.setConsoleRegion region pgStr
+
+  future <- Async.async $ start info
+  return $ Ascii.ProgressBar info future region
+  where
+    start info@Ascii.Internal.ProgressBarInfo {..} = do
+      c <- readMVar pgCompleted
+      unlessDone c $ do
+        n <- readChan pgChannel
+        _ <- handleMessage info n
+        unlessDone (c + n) $ start info
+      where
+        unlessDone c action | c < Ascii.pgTotal opts = action
+        unlessDone _ _ = do
+          let fmt = fromMaybe (Ascii.pgFormat opts) (Ascii.pgOnCompletion opts)
+          onCompletion <- Ascii.pgGetProgressStr opts opts {Ascii.pgFormat = fmt} <$> Ascii.Internal.getInfoStats info
+          Ascii.setConsoleRegion region onCompletion
+
+    handleMessage info n = do
+      -- Update the completed tick count
+      modifyMVar_ (Ascii.Internal.pgCompleted info) (\c -> return (c + n))
+      -- Find and update the current and first tick times:
+      stats <- Ascii.Internal.getInfoStats info
+      let progressStr = Ascii.Internal.pgGetProgressStr opts opts stats
+      Ascii.setConsoleRegion region progressStr
+
+-- | Cancel async updates.
+cancelUpdates :: Ascii.ProgressBar -> IO ()
+cancelUpdates (Ascii.ProgressBar _ future _) = Async.cancel future
+
+-- | Cancel async updates and clear the console region with the given string.
+clearAsciiWith :: Ascii.ProgressBar -> String -> IO ()
+clearAsciiWith pg@(Ascii.ProgressBar _ _ region) str = do
+  cancelUpdates pg
+  Ascii.setConsoleRegion region str

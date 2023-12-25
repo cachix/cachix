@@ -5,6 +5,7 @@ import qualified Cachix.Client.Daemon.Protocol as Protocol
 import Cachix.Client.Daemon.PushManager
 import qualified Cachix.Client.Daemon.PushManager.PushJob as PushJob
 import Cachix.Client.Daemon.Types.PushManager
+import Cachix.Client.OptionsParser (defaultPushOptions)
 import Control.Retry (defaultRetryStatus)
 import qualified Data.Set as Set
 import Data.Time (getCurrentTime)
@@ -115,7 +116,7 @@ spec = do
 withPushManager :: (PushManagerEnv -> IO a) -> IO a
 withPushManager f = do
   logger <- liftIO $ Log.new "daemon" Nothing Log.Debug
-  newPushManagerEnv logger mempty >>= f
+  newPushManagerEnv defaultPushOptions logger mempty >>= f
 
 inPushManager :: PushManager a -> IO a
 inPushManager f = withPushManager (`runPushManager` f)

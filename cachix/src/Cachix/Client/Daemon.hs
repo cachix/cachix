@@ -70,7 +70,7 @@ new daemonEnv daemonOptions daemonLogHandle daemonPushOptions daemonCacheName = 
 
   daemonSubscriptionManager <- Subscription.newSubscriptionManager
   let onPushEvent = Subscription.pushEvent daemonSubscriptionManager
-  daemonPushManager <- PushManager.newPushManagerEnv daemonLogger onPushEvent
+  daemonPushManager <- PushManager.newPushManagerEnv daemonPushOptions daemonLogger onPushEvent
 
   return $ DaemonEnv {..}
 

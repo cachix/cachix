@@ -65,12 +65,12 @@ import Servant.Auth.Client
 import Servant.Conduit ()
 import qualified UnliftIO.QSem as QSem
 
-newPushManagerEnv :: (MonadIO m) => Logger -> OnPushEvent -> m PushManagerEnv
-newPushManagerEnv pmLogger pmOnPushEvent = liftIO $ do
+newPushManagerEnv :: (MonadIO m) => PushOptions -> Logger -> OnPushEvent -> m PushManagerEnv
+newPushManagerEnv pushOptions pmLogger pmOnPushEvent = liftIO $ do
   pmPushJobs <- newTVarIO mempty
   pmStorePathReferences <- newTVarIO mempty
   pmTaskQueue <- newTBMQueueIO 1000
-  pmTaskSemaphore <- QSem.newQSem 8
+  pmTaskSemaphore <- QSem.newQSem (numJobs pushOptions)
   return $ PushManagerEnv {..}
 
 runPushManager :: (MonadIO m) => PushManagerEnv -> PushManager a -> m a

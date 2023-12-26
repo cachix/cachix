@@ -237,6 +237,7 @@ test-suite cachix-test
   main-is:            Main.hs
   hs-source-dirs:     test
   other-modules:
+    Daemon.PostBuildHookSpec
     Daemon.PushManagerSpec
     DeploySpec
     InstallationModeSpec

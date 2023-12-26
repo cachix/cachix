@@ -148,9 +148,7 @@ stopIO DaemonEnv {daemonShutdownLatch} =
 queueJob :: Protocol.PushRequest -> Socket.Socket -> Daemon ()
 queueJob pushRequest _clientConn = do
   DaemonEnv {..} <- ask
-  -- TODO: subscribe the socket to updates
-  -- socketBuffer <- newTBMQueue 1000
-  -- subscribeToSTM daemonSubscriptionManager (pushId pushJob) (SubSocket socketBuffer clientConn)
+  -- TODO: subscribe the socket to updates if requested
 
   -- Queue the job
   void $

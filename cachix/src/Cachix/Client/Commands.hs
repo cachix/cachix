@@ -427,23 +427,28 @@ watchExecDaemon env pushOpts cacheName cmd args =
         C.sourceTMChan chan
           .| C.mapM_ (displayPushEvent statsRef)
 
-    displayPushEvent statsRef PushEvent {eventPushId, eventMessage} = liftIO $ do
-      let toKey path = (eventPushId, path)
+    -- Deduplicate events by path and retry status
+    displayPushEvent statsRef PushEvent {eventMessage} = liftIO $ do
+      stats <- readIORef statsRef
       case eventMessage of
         PushStorePathAttempt path pathSize retryStatus -> do
-          progress <- Daemon.Progress.new stderr (toS path) pathSize retryStatus
-          modifyIORef' statsRef (HashMap.insert (toKey path) progress)
+          case HashMap.lookup path stats of
+            Just (progress, prevRetryStatus)
+              | prevRetryStatus == retryStatus -> return ()
+              | otherwise -> do
+                  newProgress <- Daemon.Progress.update progress retryStatus
+                  writeIORef statsRef $ HashMap.insert path (newProgress, retryStatus) stats
+            Nothing -> do
+              progress <- Daemon.Progress.new stderr (toS path) pathSize retryStatus
+              writeIORef statsRef $ HashMap.insert path (progress, retryStatus) stats
         PushStorePathProgress path _ newBytes -> do
-          stats <- readIORef statsRef
-          case HashMap.lookup (toKey path) stats of
+          case HashMap.lookup path stats of
             Nothing -> return ()
-            Just progress -> Daemon.Progress.tick progress newBytes
+            Just (progress, _) -> Daemon.Progress.tick progress newBytes
         PushStorePathDone path -> do
-          stats <- readIORef statsRef
-          mapM_ Daemon.Progress.complete (HashMap.lookup (toKey path) stats)
+          mapM_ (Daemon.Progress.complete . fst) (HashMap.lookup path stats)
         PushStorePathFailed path _ -> do
-          stats <- readIORef statsRef
-          mapM_ Daemon.Progress.fail (HashMap.lookup (toKey path) stats)
+          mapM_ (Daemon.Progress.fail . fst) (HashMap.lookup path stats)
         _ -> return ()
 
     printLog h = getLineLoop

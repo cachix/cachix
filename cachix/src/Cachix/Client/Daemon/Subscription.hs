@@ -70,6 +70,7 @@ pushEventSTM manager key event =
   writeTBMQueue (managerEvents manager) (key, event)
 
 sendEventToSub :: Subscription v -> v -> STM ()
+-- TODO: implement socket subscriptions.
 sendEventToSub (SubSocket _queue _) _ = pure () -- writeTBMQueue queue
 sendEventToSub (SubChannel chan) event = writeTMChan chan event
 
@@ -85,9 +86,8 @@ runSubscriptionManager manager = do
         mapM_ (`sendEventToSub` event) (subscriptions <> globalSubscriptions)
         return False
 
-  if isDone
-    then return ()
-    else runSubscriptionManager manager
+  unless isDone $
+    runSubscriptionManager manager
 
 stopSubscriptionManager :: SubscriptionManager k v -> IO ()
 stopSubscriptionManager manager = do

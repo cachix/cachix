@@ -6,6 +6,7 @@ module Cachix.Client.OptionsParser
     DaemonOptions (..),
     PushArguments (..),
     PushOptions (..),
+    defaultPushOptions,
     PinOptions (..),
     BinaryCacheName,
     getOpts,
@@ -113,6 +114,27 @@ data PushOptions = PushOptions
   }
   deriving (Show)
 
+defaultCompressionLevel :: Int
+defaultCompressionLevel = 2
+
+defaultCompressionMethod :: Maybe BinaryCache.CompressionMethod
+defaultCompressionMethod = Nothing
+
+defaultNumJobs :: Int
+defaultNumJobs = 8
+
+defaultOmitDeriver :: Bool
+defaultOmitDeriver = False
+
+defaultPushOptions :: PushOptions
+defaultPushOptions =
+  PushOptions
+    { compressionLevel = defaultCompressionLevel,
+      compressionMethod = defaultCompressionMethod,
+      numJobs = defaultNumJobs,
+      omitDeriver = defaultOmitDeriver
+    }
+
 data DaemonCommand
   = DaemonPushPaths DaemonOptions [FilePath]
   | DaemonRun DaemonOptions PushOptions BinaryCacheName
@@ -167,7 +189,7 @@ commandParser =
               <> help
                 "The compression level to use. Supported range: [0-9] for xz and [0-16] for zstd."
               <> showDefault
-              <> value 2
+              <> value defaultCompressionLevel
           )
         <*> option
           (eitherReader validatedMethod)
@@ -176,7 +198,7 @@ commandParser =
               <> metavar "xz | zstd"
               <> help
                 "The compression method to use. Supported methods: xz | zstd. Defaults to zstd."
-              <> value Nothing
+              <> value defaultCompressionMethod
           )
         <*> option
           auto
@@ -184,7 +206,7 @@ commandParser =
               <> short 'j'
               <> help "The number of threads to use when pushing store paths."
               <> showDefault
-              <> value 8
+              <> value defaultNumJobs
           )
         <*> switch (long "omit-deriver" <> help "Do not publish which derivations built the store paths.")
     push = (\opts cache f -> Push $ f opts cache) <$> pushOptions <*> nameArg <*> (pushPaths <|> pushWatchStore)

@@ -26,7 +26,7 @@ spec = do
           closure = PushJob.ResolvedClosure pathSet pathSet
       initPushJob <- PushJob.new request
       timestamp <- getCurrentTime
-      let pushJob = PushJob.run closure timestamp initPushJob
+      let pushJob = PushJob.populateQueue closure timestamp initPushJob
       PushJob.status pushJob `shouldBe` Running
       PushJob.queue pushJob `shouldBe` pathSet
       PushJob.result pushJob `shouldBe` mempty
@@ -42,7 +42,7 @@ spec = do
 
         let pushJob =
               initPushJob
-                & PushJob.run closure timestamp
+                & PushJob.populateQueue closure timestamp
                 & PushJob.markStorePathPushed "foo"
         PushJob.status pushJob `shouldBe` Running
         PushJob.queue pushJob `shouldBe` Set.fromList ["bar"]
@@ -63,7 +63,7 @@ spec = do
         initPushJob <- PushJob.new request
         let pushJob =
               initPushJob
-                & PushJob.run closure timestamp
+                & PushJob.populateQueue closure timestamp
                 & PushJob.markStorePathFailed "foo"
         PushJob.status pushJob `shouldBe` Running
         PushJob.queue pushJob `shouldBe` Set.fromList ["bar"]

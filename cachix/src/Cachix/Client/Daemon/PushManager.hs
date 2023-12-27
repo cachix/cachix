@@ -170,7 +170,7 @@ resolvePushJob :: Protocol.PushRequestId -> PushJob.ResolvedClosure FilePath -> 
 resolvePushJob pushId closure = do
   timestamp <- liftIO getCurrentTime
 
-  _ <- modifyPushJob pushId $ PushJob.run closure timestamp
+  _ <- modifyPushJob pushId $ PushJob.populateQueue closure timestamp
 
   withPushJob pushId $ \pushJob -> do
     Katip.logLocM Katip.DebugS $ Katip.ls $ showClosureStats closure

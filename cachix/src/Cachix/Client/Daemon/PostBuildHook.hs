@@ -3,6 +3,8 @@
 
 module Cachix.Client.Daemon.PostBuildHook where
 
+import Data.Containers.ListUtils (nubOrd)
+import Data.String (String)
 import Data.String.Here
 import Protolude
 import System.Directory
@@ -16,7 +18,13 @@ import System.FilePath ((</>))
 import System.IO.Temp (withSystemTempDirectory)
 import System.Posix.Files
 
-withSetup :: Maybe FilePath -> (FilePath -> Text -> IO a) -> IO a
+type EnvVar = (String, String)
+
+modifyEnv :: EnvVar -> [EnvVar] -> [EnvVar]
+modifyEnv (envName, envValue) processEnv =
+  nubOrd $ (envName, envValue) : processEnv
+
+withSetup :: Maybe FilePath -> (FilePath -> EnvVar -> IO a) -> IO a
 withSetup mdaemonSock f =
   withSystemTempDirectory "cachix-daemon" $ \tempDir -> do
     let postBuildHookScriptPath = tempDir </> "post-build-hook.sh"
@@ -24,14 +32,33 @@ withSetup mdaemonSock f =
         daemonSock = fromMaybe (tempDir </> "daemon.sock") mdaemonSock
 
     cachixBin <- getExecutablePath
-
     writeFile postBuildHookScriptPath (postBuildHookScript cachixBin daemonSock)
     setFileMode postBuildHookScriptPath 0o755
-    writeFile postBuildHookConfigPath (postBuildHookConfig postBuildHookScriptPath)
 
+    mnixConfEnv <- buildNixConfEnv postBuildHookScriptPath
     nixUserConfFilesEnv <- buildNixUserConfFilesEnv postBuildHookConfigPath
+    nixConfEnvVar <- case mnixConfEnv of
+      Just nixConfEnv -> return nixConfEnv
+      Nothing -> do
+        writeFile postBuildHookConfigPath (postBuildHookConfig postBuildHookScriptPath)
+        return nixUserConfFilesEnv
 
-    f daemonSock nixUserConfFilesEnv
+    f daemonSock nixConfEnvVar
+
+-- | Build the NIX_CONF environment variable.
+--
+-- NIX_CONF completely overrides the nix.conf.
+-- This is generally undesirable because the user and system nix.confs contain important settings, like substituters.
+-- Therefore, this returns Nothing if NIX_CONF is not already set to allow fallback to NIX_USER_CONF_FILES.
+buildNixConfEnv :: FilePath -> IO (Maybe EnvVar)
+buildNixConfEnv postBuildHookScriptPath =
+  fmap appendNixConf <$> lookupEnv "NIX_CONF"
+  where
+    appendNixConf :: String -> EnvVar
+    appendNixConf conf =
+      ( "NIX_CONF",
+        conf <> "\n" <> toS (postBuildHookConfig postBuildHookScriptPath)
+      )
 
 -- | Build the NIX_USER_CONF_FILES environment variable.
 --
@@ -45,20 +72,22 @@ withSetup mdaemonSock f =
 --
 -- We don't need to load the system config from $NIX_CONF_DIR/nix.conf.
 -- Nix loads it by default and uses it as the base config.
-buildNixUserConfFilesEnv :: FilePath -> IO Text
+buildNixUserConfFilesEnv :: FilePath -> IO EnvVar
 buildNixUserConfFilesEnv nixConfPath = do
   -- A user can set NIX_USER_CONF_FILES to override the default nix.conf files.
   -- In that case, we reuse it and prepend our own config file.
   mexistingEnv <- lookupEnv "NIX_USER_CONF_FILES"
 
-  case mexistingEnv of
-    Just existingEnv -> return $ toS $ nixConfPath <> ":" <> existingEnv
+  newNixUserConfFiles <- case mexistingEnv of
+    Just existingEnv -> return $ nixConfPath <> ":" <> existingEnv
     Nothing -> do
       userConfigFiles <- getUserConfigFiles
 
       -- Combine all the nix.conf paths into one string, separated by colons.
       -- Filter out empty paths.
-      return $ toS $ intercalate ":" $ filter (not . null) $ nixConfPath : userConfigFiles
+      return $ intercalate ":" $ filter (not . null) $ nixConfPath : userConfigFiles
+
+  return ("NIX_USER_CONF_FILES", newNixUserConfFiles)
 
 getUserConfigFiles :: IO [FilePath]
 getUserConfigFiles =

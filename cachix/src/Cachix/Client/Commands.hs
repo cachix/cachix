@@ -353,7 +353,7 @@ watchStore env opts name = do
 
 watchExec :: Env -> PushOptions -> BinaryCacheName -> Text -> [Text] -> IO ()
 watchExec env pushOpts cacheName cmd args =
-  Daemon.PostBuildHook.withSetup Nothing $ \daemonSock userConfEnv ->
+  Daemon.PostBuildHook.withSetup Nothing $ \daemonSock nixConfEnv ->
     withSystemTempFile "daemon-log-capture" $ \_ logHandle -> do
       let daemonOptions = DaemonOptions {daemonSocketPath = Just daemonSock}
       daemon <- Daemon.new env daemonOptions (Just logHandle) pushOpts cacheName
@@ -365,10 +365,11 @@ watchExec env pushOpts cacheName cmd args =
       daemonChan <- Daemon.subscribe daemon
 
       processEnv <- getEnvironment
+      let newProcessEnv = Daemon.PostBuildHook.modifyEnv nixConfEnv processEnv
       let process =
             (System.Process.proc (toS cmd) (toS <$> args))
               { System.Process.std_out = System.Process.Inherit,
-                System.Process.env = Just (processEnv ++ [("NIX_USER_CONF_FILES", toS userConfEnv)]),
+                System.Process.env = Just newProcessEnv,
                 System.Process.delegate_ctlc = True
               }
       exitCode <- System.Process.withCreateProcess process $ \_ _ _ processHandle ->

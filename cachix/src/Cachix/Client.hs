@@ -35,7 +35,7 @@ main = displayConsoleRegions $ do
     Daemon (DaemonRun daemonOptions pushOptions mcacheName) -> Daemon.start env daemonOptions pushOptions mcacheName
     Daemon (DaemonStop daemonOptions) -> Daemon.Client.stop env daemonOptions
     Daemon (DaemonPushPaths daemonOptions storePaths) -> Daemon.Client.push env daemonOptions storePaths
-    Daemon (DaemonWatchExec pushOptions cacheName cmd args) -> Commands.watchExecDaemon env pushOptions cacheName cmd args
+    Daemon (DaemonWatchExec pushOptions cacheName cmd args) -> Commands.watchExec env pushOptions cacheName cmd args
     GenerateKeypair name -> Commands.generateKeypair env name
     Push pushArgs -> Commands.push env pushArgs
     Pin pingArgs -> Commands.pin env pingArgs

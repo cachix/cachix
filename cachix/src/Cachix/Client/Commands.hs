@@ -9,6 +9,8 @@ module Cachix.Client.Commands
     push,
     watchStore,
     watchExec,
+    watchExecDaemon,
+    watchExecStore,
     use,
     import',
     remove,
@@ -86,6 +88,7 @@ import Servant.API (NoContent (..))
 import Servant.Auth.Client
 import Servant.Client.Streaming
 import Servant.Conduit ()
+import System.Console.Pretty
 import System.Directory (doesFileExist)
 import System.Environment (getEnvironment)
 import System.IO (hIsTerminalDevice)
@@ -351,8 +354,28 @@ watchStore env opts name = do
   withPushParams env opts name $ \pushParams ->
     WatchStore.startWorkers (pushParamsStore pushParams) (numJobs opts) pushParams
 
+-- | Run a command and upload any new paths to the binary cache.
+--
+-- Registers a post-build hook if the user is trusted.
+-- Otherwise, falls back to watching the entire Nix store.
 watchExec :: Env -> PushOptions -> BinaryCacheName -> Text -> [Text] -> IO ()
-watchExec env pushOpts cacheName cmd args =
+watchExec env pushOptions cacheName cmd args = do
+  nixEnv <- getNixEnv
+
+  if InstallationMode.isTrusted nixEnv
+    then watchExecDaemon env pushOptions cacheName cmd args
+    else do
+      putErrText fallbackWarning
+      watchExecStore env pushOptions cacheName cmd args
+  where
+    fallbackWarning =
+      color Yellow "WARNING: " <> "failed to register a post-build hook for this command because you're not a trusted user. Falling back to watching the entire Nix store for new paths."
+
+-- | Run a command and push any new paths to the binary cache.
+--
+-- Requires the user to be a trusted user in a multi-user installation.
+watchExecDaemon :: Env -> PushOptions -> BinaryCacheName -> Text -> [Text] -> IO ()
+watchExecDaemon env pushOpts cacheName cmd args =
   Daemon.PostBuildHook.withSetup Nothing $ \daemonSock nixConfEnv ->
     withSystemTempFile "daemon-log-capture" $ \_ logHandle -> do
       let daemonOptions = DaemonOptions {daemonSocketPath = Just daemonSock}
@@ -428,3 +451,41 @@ watchExec env pushOpts cacheName cmd args =
             Right line -> do
               hPutStr stderr line
               getLineLoop
+
+-- | Runs a command while watching the entire Nix store and pushing any new paths.
+--
+-- Prefer to use the more granular 'watchExecDaemon' whenever possible.
+watchExecStore :: Env -> PushOptions -> BinaryCacheName -> Text -> [Text] -> IO ()
+watchExecStore env pushOpts name cmd args =
+  withPushParams env pushOpts name $ \pushParams -> do
+    stdoutOriginal <- hDuplicate stdout
+    let process =
+          (System.Process.proc (toS cmd) (toS <$> args))
+            { System.Process.std_out = System.Process.UseHandle stdoutOriginal
+            }
+        watch = do
+          hDuplicateTo stderr stdout -- redirect all stdout to stderr
+          WatchStore.startWorkers (pushParamsStore pushParams) (numJobs pushOpts) pushParams
+
+    (_, exitCode) <-
+      Async.concurrently watch $ do
+        exitCode <-
+          bracketOnError
+            (getProcessHandle <$> System.Process.createProcess process)
+            ( \processHandle -> do
+                -- Terminate the process
+                uninterruptibleMask_ (System.Process.terminateProcess processHandle)
+                -- Wait for the process to clean up and exit
+                _ <- System.Process.waitForProcess processHandle
+                -- Stop watching the store and wait for all paths to be pushed
+                Signals.raiseSignal Signals.sigINT
+            )
+            System.Process.waitForProcess
+
+        -- Stop watching the store and wait for all paths to be pushed
+        Signals.raiseSignal Signals.sigINT
+        return exitCode
+
+    exitWith exitCode
+  where
+    getProcessHandle (_, _, _, processHandle) = processHandle

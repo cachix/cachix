@@ -37,8 +37,8 @@ data ResolvedClosure p = ResolvedClosure
     rcMissingPaths :: Set p
   }
 
-run :: ResolvedClosure FilePath -> UTCTime -> PushJob -> PushJob
-run ResolvedClosure {..} timestamp pushJob@PushJob {..} = do
+populateQueue :: ResolvedClosure FilePath -> UTCTime -> PushJob -> PushJob
+populateQueue ResolvedClosure {..} timestamp pushJob@PushJob {..} = do
   let skippedPaths = Set.difference rcAllPaths rcMissingPaths
   pushJob
     { pushStatus = Running,

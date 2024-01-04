@@ -16,6 +16,7 @@ module Cachix.Client.Daemon.PushManager
     -- * Store paths
     queueStorePaths,
     removeStorePath,
+    queuedStorePathCount,
 
     -- * Tasks
     handleTask,
@@ -166,11 +167,19 @@ checkPushJobCompleted pushId = do
       _ <- modifyPushJob pushId $ PushJob.complete timestamp
       pushFinished pushJob
 
+queuedStorePathCount :: PushManager Integer
+queuedStorePathCount = do
+  pmPushJobs <- asks pmPushJobs
+  jobs <- liftIO $ readTVarIO pmPushJobs
+  pure $ foldl' countQueuedPaths 0 (HashMap.elems jobs)
+  where
+    countQueuedPaths acc job = acc + fromIntegral (Set.size $ pushQueue job)
+
 resolvePushJob :: Protocol.PushRequestId -> PushJob.ResolvedClosure FilePath -> PushManager ()
 resolvePushJob pushId closure = do
   timestamp <- liftIO getCurrentTime
 
-  _ <- modifyPushJob pushId $ PushJob.run closure timestamp
+  _ <- modifyPushJob pushId $ PushJob.populateQueue closure timestamp
 
   withPushJob pushId $ \pushJob -> do
     Katip.logLocM Katip.DebugS $ Katip.ls $ showClosureStats closure
@@ -199,7 +208,7 @@ handleTask :: PushParams PushManager () -> Task -> PushManager ()
 handleTask pushParams task = do
   case task of
     ResolveClosure pushId -> do
-      Katip.logLocM Katip.InfoS $ Katip.ls $ "Resolving closure for push job " <> (show pushId :: Text)
+      Katip.logLocM Katip.DebugS $ Katip.ls $ "Resolving closure for push job " <> (show pushId :: Text)
 
       withPushJob pushId $ \pushJob -> do
         let sps = Protocol.storePaths (pushRequest pushJob)

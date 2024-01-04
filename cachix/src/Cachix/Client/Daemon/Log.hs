@@ -15,7 +15,11 @@ where
 
 import Cachix.Client.Daemon.Types.Log as Log
 import qualified Control.Monad.Catch as E
+import Data.Text.Lazy.Builder
+import Katip (renderSeverity)
 import qualified Katip
+import qualified Katip.Format.Time as Katip.Format
+import Katip.Scribes.Handle (brackets, colorBySeverity)
 import Protolude
 
 new :: (MonadIO m) => Katip.Namespace -> Maybe Handle -> LogLevel -> m Logger
@@ -30,7 +34,7 @@ withLogger logger@(Logger {..}) f = do
   let kLogLevel = toKatipLogLevel logLevel
   let kLogHandle = fromMaybe stdout logHandle
   let registerScribe = liftIO $ do
-        scribeHandle <- Katip.mkHandleScribe Katip.ColorIfTerminal kLogHandle (Katip.permitItem kLogLevel) Katip.V2
+        scribeHandle <- Katip.mkHandleScribeWithFormatter conciseBracketFormat Katip.ColorIfTerminal kLogHandle (Katip.permitItem kLogLevel) Katip.V2
         Katip.registerScribe "stdout" scribeHandle Katip.defaultScribeSettings logKLogEnv
 
   E.bracket registerScribe (liftIO . Katip.closeScribes) $ \logEnv ->
@@ -60,3 +64,14 @@ toKatipLogLevel = \case
   Info -> Katip.InfoS
   Warning -> Katip.WarningS
   Error -> Katip.ErrorS
+
+conciseBracketFormat :: (Katip.LogItem a) => Katip.ItemFormatter a
+conciseBracketFormat withColor _verbosity Katip.Item {..} =
+  brackets nowStr
+    <> brackets (fromText (renderSeverity' _itemSeverity))
+    <> fromText " "
+    <> Katip.unLogStr _itemMessage
+  where
+    nowStr = fromText (Katip.Format.formatAsLogTime _itemTime)
+    renderSeverity' severity =
+      colorBySeverity withColor severity (renderSeverity severity)

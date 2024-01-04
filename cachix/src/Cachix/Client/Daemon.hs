@@ -117,6 +117,12 @@ run daemon = runDaemon daemon $ flip E.onError (return $ ExitFailure 1) $ do
 
           Katip.logFM Katip.InfoS "Shutting down daemon..."
 
+          queuedStorePathCount <- PushManager.runPushManager daemonPushManager PushManager.queuedStorePathCount
+          when (queuedStorePathCount > 0) $
+            Katip.logFM Katip.InfoS $
+              Katip.logStr $
+                "Remaining store paths: " <> (show queuedStorePathCount :: Text)
+
           -- Stop receiving new push requests
           liftIO $ Socket.shutdown sock Socket.ShutdownReceive `catchAny` \_ -> return ()
 
@@ -148,9 +154,7 @@ stopIO DaemonEnv {daemonShutdownLatch} =
 queueJob :: Protocol.PushRequest -> Socket.Socket -> Daemon ()
 queueJob pushRequest _clientConn = do
   DaemonEnv {..} <- ask
-  -- TODO: subscribe the socket to updates
-  -- socketBuffer <- newTBMQueue 1000
-  -- subscribeToSTM daemonSubscriptionManager (pushId pushJob) (SubSocket socketBuffer clientConn)
+  -- TODO: subscribe the socket to updates if requested
 
   -- Queue the job
   void $

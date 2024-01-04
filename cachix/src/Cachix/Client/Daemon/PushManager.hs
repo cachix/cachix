@@ -199,7 +199,7 @@ handleTask :: PushParams PushManager () -> Task -> PushManager ()
 handleTask pushParams task = do
   case task of
     ResolveClosure pushId -> do
-      Katip.logLocM Katip.InfoS $ Katip.ls $ "Resolving closure for push job " <> (show pushId :: Text)
+      Katip.logLocM Katip.DebugS $ Katip.ls $ "Resolving closure for push job " <> (show pushId :: Text)
 
       withPushJob pushId $ \pushJob -> do
         let sps = Protocol.storePaths (pushRequest pushJob)

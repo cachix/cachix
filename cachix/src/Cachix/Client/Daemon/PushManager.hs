@@ -16,6 +16,7 @@ module Cachix.Client.Daemon.PushManager
     -- * Store paths
     queueStorePaths,
     removeStorePath,
+    queuedStorePathCount,
 
     -- * Tasks
     handleTask,
@@ -165,6 +166,14 @@ checkPushJobCompleted pushId = do
       timestamp <- liftIO getCurrentTime
       _ <- modifyPushJob pushId $ PushJob.complete timestamp
       pushFinished pushJob
+
+queuedStorePathCount :: PushManager Integer
+queuedStorePathCount = do
+  pmPushJobs <- asks pmPushJobs
+  jobs <- liftIO $ readTVarIO pmPushJobs
+  pure $ foldl' countQueuedPaths 0 (HashMap.elems jobs)
+  where
+    countQueuedPaths acc job = acc + fromIntegral (Set.size $ pushQueue job)
 
 resolvePushJob :: Protocol.PushRequestId -> PushJob.ResolvedClosure FilePath -> PushManager ()
 resolvePushJob pushId closure = do

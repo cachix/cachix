@@ -66,7 +66,7 @@ toKatipLogLevel = \case
   Error -> Katip.ErrorS
 
 conciseBracketFormat :: (Katip.LogItem a) => Katip.ItemFormatter a
-conciseBracketFormat withColor _verb Katip.Item {..} =
+conciseBracketFormat withColor _verbosity Katip.Item {..} =
   brackets nowStr
     <> brackets (fromText (renderSeverity' _itemSeverity))
     <> fromText " "

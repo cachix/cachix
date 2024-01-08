@@ -20,8 +20,8 @@ jobs:
       with:
         package-path: cachix
     
-    - run: cabal sdist
-    - run: cd cachix-api && cabal sdist
+    - run: cabal sdist cachix
+    - run: cabal sdist cachix-api
 
     - uses: haskell-actions/hackage-publish@v1
       with:

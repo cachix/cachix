@@ -23,7 +23,7 @@ jobs:
     - run: cabal sdist cachix
     - run: cabal sdist cachix-api
 
-    - uses: haskell-actions/hackage-publish@v1
+    - uses: haskell-actions/hackage-publish@v1.1
       with:
         # http://hackage.haskell.org/users/account-management
         hackageToken: ${{ secrets.HACKAGE_AUTH_TOKEN }}

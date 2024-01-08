@@ -30,5 +30,3 @@ jobs:
 
     - run: cachix pin cachix ${{ github.ref_name }} $(nix build '.#cachix' --impure --print-out-paths)
       if: steps.autotag.outputs.created
-
-

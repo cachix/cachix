@@ -17,7 +17,8 @@ jobs:
 
     - uses: sol/haskell-autotag@v1
       id: autotag
-      package-path: cachix
+      with:
+        package-path: cachix
     
     - run: cabal sdist
     - run: cd cachix-api && cabal sdist

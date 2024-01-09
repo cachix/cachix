@@ -1,10 +1,9 @@
-name: "Release"
+name: Publish
 
 on:
-  workflow_call:
-    secrets:
-      HACKAGE_AUTH_TOKEN:
-        required: true
+  push:
+    branches:
+      - master
 
 jobs:
   release:
@@ -16,25 +15,20 @@ jobs:
       with:
         name: cachix
 
-    - name: Build distributables
-      run: nix build -L --show-trace .#release
+    - uses: sol/haskell-autotag@v1
+      id: autotag
+      with:
+        package-path: cachix
+    
+    - run: cabal sdist cachix
+    - run: cabal sdist cachix-api
 
-    - uses: haskell-actions/hackage-publish@v1
+    - uses: haskell-actions/hackage-publish@v1.1
       with:
         # http://hackage.haskell.org/users/account-management
         hackageToken: ${{ secrets.HACKAGE_AUTH_TOKEN }}
-        packagesPath: result/
         publish: true
+      if: steps.autotag.outputs.created
 
-  pin:
-    needs: release
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - uses: cachix/install-nix-action@v24
-    - uses: cachix/cachix-action@v13
-      with:
-        name: cachix
     - run: cachix pin cachix ${{ github.ref_name }} $(nix build '.#cachix' --impure --print-out-paths)
-
-
+      if: steps.autotag.outputs.created

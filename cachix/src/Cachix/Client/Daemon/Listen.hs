@@ -37,17 +37,23 @@ instance Exception ListenError where
     DecodingError err -> "Failed to decode request: " <> toS err
 
 -- | The main daemon server loop.
-listen :: (MonadIO m) => (Protocol.PushRequest -> Socket.Socket -> m ()) -> Socket.Socket -> m Socket.Socket
-listen pushToQueue sock = loop
+listen ::
+  (MonadIO m) =>
+  m () ->
+  (Protocol.PushRequest -> Socket.Socket -> m ()) ->
+  Socket.Socket ->
+  m Socket.Socket
+listen onClientStop onPushRequest sock = loop
   where
     loop = do
       result <- liftIO $ runExceptT $ readPushRequest sock
 
       case result of
         Right (ClientStop, clientConn) -> do
+          onClientStop
           return clientConn
         Right (ClientPushRequest pushRequest, clientConn) -> do
-          pushToQueue pushRequest clientConn
+          onPushRequest pushRequest clientConn
           loop
         Left err@(DecodingError _) -> do
           putErrText $ toS $ displayException err

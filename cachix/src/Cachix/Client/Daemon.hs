@@ -109,9 +109,7 @@ run daemon = runDaemon daemon $ flip E.onError (return $ ExitFailure 1) $ do
         E.bracketOnError (Daemon.openSocket daemonSocketPath) Daemon.closeSocket $ \sock -> do
           liftIO $ Socket.listen sock Socket.maxListenQueue
 
-          res <-
-            Async.race (waitForShutdown daemonShutdownLatch) $
-              Daemon.listen queueJob sock `E.finally` stop
+          listenThread <- Async.async $ Daemon.listen stop queueJob sock
 
           waitForShutdown daemonShutdownLatch
 
@@ -135,6 +133,8 @@ run daemon = runDaemon daemon $ flip E.onError (return $ ExitFailure 1) $ do
           Async.wait subscriptionManagerThread
 
           -- TODO: say goodbye to all clients waiting for their push to go through
+          Async.cancel listenThread
+          res <- Async.waitCatch listenThread
           case res of
             Right clientSock -> do
               -- Wave goodbye to the client that requested the shutdown

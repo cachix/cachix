@@ -33,10 +33,12 @@ import Control.Concurrent.STM.TMChan
 import Control.Exception.Safe (catchAny)
 import qualified Control.Monad.Catch as E
 import qualified Data.Text as T
+import qualified Hercules.CNix.Util as CNix.Util
 import qualified Katip
 import qualified Network.Socket as Socket
 import Protolude
 import System.Posix.Process (getProcessID)
+import qualified System.Posix.Signals as Signal
 import qualified UnliftIO.Async as Async
 
 -- | Configure a new daemon. Use 'run' to start it.
@@ -78,6 +80,7 @@ new daemonEnv daemonOptions daemonLogHandle daemonPushOptions daemonCacheName = 
 start :: Env -> DaemonOptions -> PushOptions -> BinaryCacheName -> IO ()
 start daemonEnv daemonOptions daemonPushOptions daemonCacheName = do
   daemon <- new daemonEnv daemonOptions Nothing daemonPushOptions daemonCacheName
+  installSignalHandlers daemon
   void $ run daemon
 
 -- | Run a daemon from a given configuration
@@ -150,6 +153,15 @@ stop = asks daemonShutdownLatch >>= initiateShutdown
 stopIO :: DaemonEnv -> IO ()
 stopIO DaemonEnv {daemonShutdownLatch} =
   initiateShutdown daemonShutdownLatch
+
+installSignalHandlers :: DaemonEnv -> IO ()
+installSignalHandlers daemon = do
+  for_ [Signal.sigTERM, Signal.sigINT] $ \signal ->
+    Signal.installHandler signal (Signal.CatchOnce handler) Nothing
+  where
+    handler = do
+      CNix.Util.triggerInterrupt
+      stopIO daemon
 
 queueJob :: Protocol.PushRequest -> Socket.Socket -> Daemon ()
 queueJob pushRequest _clientConn = do

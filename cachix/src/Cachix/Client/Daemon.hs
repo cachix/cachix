@@ -102,12 +102,12 @@ run daemon = runDaemon daemon $ flip E.onError (return $ ExitFailure 1) $ do
   subscriptionManagerThread <-
     liftIO $ Async.async $ runSubscriptionManager daemonSubscriptionManager
 
-  let shutdownQueue =
+  let stopPushManager =
         liftIO $ PushManager.stopPushManager daemonPushManager
 
   Push.withPushParams $ \pushParams ->
     E.bracketOnError (startWorkers pushParams) Worker.stopWorkers $ \workers -> do
-      flip E.onError shutdownQueue $
+      flip E.onError stopPushManager $
         -- TODO: retry the connection on socket errors
         E.bracketOnError (Daemon.openSocket daemonSocketPath) Daemon.closeSocket $ \sock -> do
           liftIO $ Socket.listen sock Socket.maxListenQueue
@@ -127,7 +127,7 @@ run daemon = runDaemon daemon $ flip E.onError (return $ ExitFailure 1) $ do
           -- Stop receiving new push requests
           liftIO $ Socket.shutdown sock Socket.ShutdownReceive `catchAny` \_ -> return ()
 
-          shutdownQueue
+          stopPushManager
 
           -- Gracefully shutdown the worker *before* closing the socket
           Worker.stopWorkers workers

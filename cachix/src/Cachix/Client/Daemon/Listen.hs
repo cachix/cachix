@@ -12,6 +12,7 @@ import Cachix.Client.Daemon.Protocol as Protocol
 import Control.Exception.Safe (catchAny)
 import qualified Control.Exception.Safe as Safe
 import qualified Data.Aeson as Aeson
+import qualified Katip
 import qualified Network.Socket as Socket
 import qualified Network.Socket.ByteString as Socket.BS
 import qualified Network.Socket.ByteString.Lazy as Socket.LBS
@@ -38,10 +39,14 @@ instance Exception ListenError where
 
 -- | The main daemon server loop.
 listen ::
-  (MonadIO m) =>
+  (Katip.KatipContext m) =>
+  -- | An action to run when the daemon is requested to stop
   m () ->
+  -- | An action to run when a push request is received
   (Protocol.PushRequest -> Socket.Socket -> m ()) ->
+  -- | An active socket to listen on
   Socket.Socket ->
+  -- | Returns a socket to the client that requested the daemon to stop
   m Socket.Socket
 listen onClientStop onPushRequest sock = loop
   where
@@ -56,7 +61,7 @@ listen onClientStop onPushRequest sock = loop
           onPushRequest pushRequest clientConn
           loop
         Left err@(DecodingError _) -> do
-          putErrText $ toS $ displayException err
+          Katip.logFM Katip.ErrorS $ Katip.ls $ displayException err
           loop
         Left err -> throwIO err
 

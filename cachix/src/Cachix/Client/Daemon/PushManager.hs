@@ -81,7 +81,7 @@ stopPushManager :: PushManagerEnv -> IO ()
 stopPushManager PushManagerEnv {pmTaskQueue, pmPushJobs} =
   atomically $ do
     pushJobs <- readTVar pmPushJobs
-    if all PushJob.isCompleted (HashMap.elems pushJobs)
+    if all PushJob.isProcessed (HashMap.elems pushJobs)
       then closeTBMQueue pmTaskQueue
       else retry
 
@@ -130,6 +130,11 @@ modifyPushJobs pushIds f = do
   pushJobs <- asks pmPushJobs
   liftIO $ atomically $ modifyTVar' pushJobs $ \pushJobs' ->
     foldl' (flip (HashMap.adjust f)) pushJobs' pushIds
+
+failPushJob :: Protocol.PushRequestId -> PushManager ()
+failPushJob pushId = do
+  timestamp <- liftIO getCurrentTime
+  void $ modifyPushJob pushId $ PushJob.fail timestamp
 
 -- Manage store paths
 
@@ -210,23 +215,24 @@ handleTask pushParams task = do
     ResolveClosure pushId -> do
       Katip.logLocM Katip.DebugS $ Katip.ls $ "Resolving closure for push job " <> (show pushId :: Text)
 
-      withPushJob pushId $ \pushJob -> do
-        let sps = Protocol.storePaths (pushRequest pushJob)
-            store = pushParamsStore pushParams
-        normalized <- mapM (normalizeStorePath store) sps
-        (allStorePaths, missingStorePaths) <- getMissingPathsForClosure pushParams (catMaybes normalized)
-        storePathsToPush <- pushOnClosureAttempt pushParams allStorePaths missingStorePaths
+      withPushJob pushId $ \pushJob ->
+        E.onException (failPushJob pushId) $ do
+          let sps = Protocol.storePaths (pushRequest pushJob)
+              store = pushParamsStore pushParams
+          normalized <- mapM (normalizeStorePath store) sps
+          (allStorePaths, missingStorePaths) <- getMissingPathsForClosure pushParams (catMaybes normalized)
+          storePathsToPush <- pushOnClosureAttempt pushParams allStorePaths missingStorePaths
 
-        resolvedClosure <- do
-          allPaths <- liftIO $ mapM (storeToFilePath store) allStorePaths
-          pathsToPush <- liftIO $ mapM (storeToFilePath store) storePathsToPush
-          return $
-            PushJob.ResolvedClosure
-              { rcAllPaths = Set.fromList allPaths,
-                rcMissingPaths = Set.fromList pathsToPush
-              }
+          resolvedClosure <- do
+            allPaths <- liftIO $ mapM (storeToFilePath store) allStorePaths
+            pathsToPush <- liftIO $ mapM (storeToFilePath store) storePathsToPush
+            return $
+              PushJob.ResolvedClosure
+                { rcAllPaths = Set.fromList allPaths,
+                  rcMissingPaths = Set.fromList pathsToPush
+                }
 
-        resolvePushJob pushId resolvedClosure
+          resolvePushJob pushId resolvedClosure
     PushStorePath filePath -> do
       qs <- asks pmTaskSemaphore
       E.bracket_ (QSem.waitQSem qs) (QSem.signalQSem qs) $ do

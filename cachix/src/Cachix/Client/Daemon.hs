@@ -33,10 +33,12 @@ import Control.Concurrent.STM.TMChan
 import Control.Exception.Safe (catchAny)
 import qualified Control.Monad.Catch as E
 import qualified Data.Text as T
+import qualified Hercules.CNix.Util as CNix.Util
 import qualified Katip
 import qualified Network.Socket as Socket
 import Protolude
 import System.Posix.Process (getProcessID)
+import qualified System.Posix.Signals as Signal
 import qualified UnliftIO.Async as Async
 
 -- | Configure a new daemon. Use 'run' to start it.
@@ -78,6 +80,7 @@ new daemonEnv daemonOptions daemonLogHandle daemonPushOptions daemonCacheName = 
 start :: Env -> DaemonOptions -> PushOptions -> BinaryCacheName -> IO ()
 start daemonEnv daemonOptions daemonPushOptions daemonCacheName = do
   daemon <- new daemonEnv daemonOptions Nothing daemonPushOptions daemonCacheName
+  installSignalHandlers daemon
   void $ run daemon
 
 -- | Run a daemon from a given configuration
@@ -99,19 +102,17 @@ run daemon = runDaemon daemon $ flip E.onError (return $ ExitFailure 1) $ do
   subscriptionManagerThread <-
     liftIO $ Async.async $ runSubscriptionManager daemonSubscriptionManager
 
-  let shutdownQueue =
+  let stopPushManager =
         liftIO $ PushManager.stopPushManager daemonPushManager
 
   Push.withPushParams $ \pushParams ->
     E.bracketOnError (startWorkers pushParams) Worker.stopWorkers $ \workers -> do
-      flip E.onError shutdownQueue $
+      flip E.onError stopPushManager $
         -- TODO: retry the connection on socket errors
         E.bracketOnError (Daemon.openSocket daemonSocketPath) Daemon.closeSocket $ \sock -> do
           liftIO $ Socket.listen sock Socket.maxListenQueue
 
-          res <-
-            Async.race (waitForShutdown daemonShutdownLatch) $
-              Daemon.listen queueJob sock `E.finally` stop
+          listenThread <- Async.async $ Daemon.listen stop queueJob sock
 
           waitForShutdown daemonShutdownLatch
 
@@ -126,7 +127,7 @@ run daemon = runDaemon daemon $ flip E.onError (return $ ExitFailure 1) $ do
           -- Stop receiving new push requests
           liftIO $ Socket.shutdown sock Socket.ShutdownReceive `catchAny` \_ -> return ()
 
-          shutdownQueue
+          stopPushManager
 
           -- Gracefully shutdown the worker *before* closing the socket
           Worker.stopWorkers workers
@@ -135,6 +136,8 @@ run daemon = runDaemon daemon $ flip E.onError (return $ ExitFailure 1) $ do
           Async.wait subscriptionManagerThread
 
           -- TODO: say goodbye to all clients waiting for their push to go through
+          Async.cancel listenThread
+          res <- Async.waitCatch listenThread
           case res of
             Right clientSock -> do
               -- Wave goodbye to the client that requested the shutdown
@@ -150,6 +153,15 @@ stop = asks daemonShutdownLatch >>= initiateShutdown
 stopIO :: DaemonEnv -> IO ()
 stopIO DaemonEnv {daemonShutdownLatch} =
   initiateShutdown daemonShutdownLatch
+
+installSignalHandlers :: DaemonEnv -> IO ()
+installSignalHandlers daemon = do
+  for_ [Signal.sigTERM, Signal.sigINT] $ \signal ->
+    Signal.installHandler signal (Signal.CatchOnce handler) Nothing
+  where
+    handler = do
+      CNix.Util.triggerInterrupt
+      stopIO daemon
 
 queueJob :: Protocol.PushRequest -> Socket.Socket -> Daemon ()
 queueJob pushRequest _clientConn = do

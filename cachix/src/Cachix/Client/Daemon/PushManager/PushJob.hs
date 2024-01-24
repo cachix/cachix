@@ -90,8 +90,21 @@ complete timestamp pushJob@PushJob {..} = do
       pushStats = pushStats {jsCompletedAt = Just timestamp}
     }
 
+fail :: UTCTime -> PushJob -> PushJob
+fail timestamp pushJob@PushJob {..} = do
+  pushJob
+    { pushStatus = Failed,
+      pushStats = pushStats {jsCompletedAt = Just timestamp}
+    }
+
 isCompleted :: PushJob -> Bool
 isCompleted PushJob {pushStatus} = pushStatus == Completed
+
+isFailed :: PushJob -> Bool
+isFailed PushJob {pushStatus} = pushStatus == Failed
+
+isProcessed :: PushJob -> Bool
+isProcessed pushJob = isCompleted pushJob || isFailed pushJob
 
 startedAt :: PushJob -> Maybe UTCTime
 startedAt PushJob {pushStats = JobStats {jsStartedAt}} = jsStartedAt

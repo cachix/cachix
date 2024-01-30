@@ -67,7 +67,7 @@ nix-env -if https://github.com/cachix/cachix/tarball/master --substituters 'http
 Or with Nix 2.4+:
 
 ```bash
-nix profile install github:cachix/cachix/latest
+nix profile install github:cachix/cachix/latest --accept-flake-config
 ```
 
 ## Support

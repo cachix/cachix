@@ -6,7 +6,23 @@ on:
       - master
 
 jobs:
+  autotag:
+    runs-on: ubuntu-latest
+    outputs:
+      created: ${{ steps.autotag.outputs.created }}
+    steps:
+    - uses: actions/checkout@v4
+
+    # Assume that the versions for cachix and cachix-api are kept in sync.
+    - uses: sol/haskell-autotag@v1
+      id: autotag
+      with:
+        package-path: cachix
+
   release:
+    needs: autotag
+    if: needs.autotag.outputs.created
+
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -15,20 +31,20 @@ jobs:
       with:
         name: cachix
 
-    - uses: sol/haskell-autotag@v1
-      id: autotag
-      with:
-        package-path: cachix
-    
-    - run: cabal sdist cachix
-    - run: cabal sdist cachix-api
+    - name: Update the 'latest' git tag
+      uses: EndBug/latest-tag@latest
 
-    - uses: haskell-actions/hackage-publish@v1.1
+    - name: Generate source distributions
+      run: |
+        cabal sdist cachix
+        cabal sdist cachix-api
+
+    - name: Publish to Hackage
+      uses: haskell-actions/hackage-publish@v1.1
       with:
         # http://hackage.haskell.org/users/account-management
         hackageToken: ${{ secrets.HACKAGE_AUTH_TOKEN }}
         publish: true
-      if: steps.autotag.outputs.created
 
-    - run: cachix pin cachix ${{ github.ref_name }} $(nix build '.#cachix' --impure --print-out-paths)
-      if: steps.autotag.outputs.created
+    - name: Pin the release
+      run: cachix pin cachix ${{ github.ref_name }} $(nix build '.#cachix' --impure --print-out-paths)

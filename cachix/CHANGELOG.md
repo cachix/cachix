@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [1.7.1] - 2023-02-20
+
+## Fixed
+
+- daemon: add explicit sigINT/sigTERM handler
+- daemon: improve shutdown when jobs fail
+- daemon: log decoding errors
+
 ## [1.7] - 2023-01-08
 
 ## Added

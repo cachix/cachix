@@ -30,6 +30,7 @@ jobs:
     - uses: cachix/cachix-action@v14
       with:
         name: cachix
+        signingKey: ${{ secrets.CACHIX_SIGNING_KEY }}
 
     - name: Update the 'latest' git tag
       uses: EndBug/latest-tag@latest
@@ -47,4 +48,6 @@ jobs:
         publish: true
 
     - name: Pin the release
+      env:
+        CACHIX_SIGNING_KEY: ${{ secrets.CACHIX_SIGNING_KEY }}
       run: cachix pin cachix ${{ github.ref_name }} $(nix build '.#cachix' --impure --print-out-paths)

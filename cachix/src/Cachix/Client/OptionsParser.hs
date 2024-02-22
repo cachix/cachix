@@ -5,12 +5,26 @@ module Cachix.Client.OptionsParser
     DaemonCommand (..),
     DaemonOptions (..),
     PushArguments (..),
+
+    -- * Push options
     PushOptions (..),
     defaultPushOptions,
+    defaultCompressionMethod,
+    defaultCompressionLevel,
+    defaultNumConcurrentChunks,
+    defaultChunkSize,
+    defaultNumJobs,
+    defaultOmitDeriver,
+
+    -- * Pin options
     PinOptions (..),
+
+    -- * Global options
+    Flags (..),
+
+    -- * Misc
     BinaryCacheName,
     getOpts,
-    Flags (..),
   )
 where
 
@@ -22,6 +36,7 @@ import qualified Cachix.Deploy.OptionsParser as DeployOptions
 import Cachix.Types.BinaryCache (BinaryCacheName)
 import qualified Cachix.Types.BinaryCache as BinaryCache
 import Cachix.Types.PinCreate (Keep (..))
+import Data.Conduit.ByteString (ChunkSize)
 import qualified Data.Text as T
 import Options.Applicative
 import Protolude hiding (toS)
@@ -107,9 +122,24 @@ data PinOptions = PinOptions
   deriving (Show)
 
 data PushOptions = PushOptions
-  { compressionLevel :: Int,
+  { -- | The compression level to use.
+    compressionLevel :: Int,
+    -- | The compression method to use.
+    -- Default value taken rom the cache settings.
     compressionMethod :: Maybe BinaryCache.CompressionMethod,
+    -- | The size of each uploaded part.
+    --
+    -- Common values for S3 are powers of 2 (8MiB, 16MiB, and so on), but this doesn't appear to be a requirement for S3 (unlike Glacier).
+    -- The range is from 5MiB to 5GiB.
+    --
+    -- Lower values will increase HTTP overhead, higher values require more memory to preload each part.
+    chunkSize :: Int,
+    -- | The number of chunks to upload concurrently.
+    -- The total memory usage is numJobs * numConcurrentChunks * chunkSize
+    numConcurrentChunks :: Int,
+    -- | The number of store paths to process concurrently.
     numJobs :: Int,
+    -- | Omit the derivation from the store path metadata.
     omitDeriver :: Bool
   }
   deriving (Show)
@@ -117,8 +147,20 @@ data PushOptions = PushOptions
 defaultCompressionLevel :: Int
 defaultCompressionLevel = 2
 
-defaultCompressionMethod :: Maybe BinaryCache.CompressionMethod
-defaultCompressionMethod = Nothing
+defaultCompressionMethod :: BinaryCache.CompressionMethod
+defaultCompressionMethod = BinaryCache.ZSTD
+
+defaultNumConcurrentChunks :: Int
+defaultNumConcurrentChunks = 4
+
+defaultChunkSize :: ChunkSize
+defaultChunkSize = 32 * 1024 * 1024 -- 32MiB
+
+minChunkSize :: ChunkSize
+minChunkSize = 5 * 1024 * 1024 -- 5MiB
+
+maxChunkSize :: ChunkSize
+maxChunkSize = 5 * 1024 * 1024 * 1024 -- 5GiB
 
 defaultNumJobs :: Int
 defaultNumJobs = 8
@@ -130,7 +172,9 @@ defaultPushOptions :: PushOptions
 defaultPushOptions =
   PushOptions
     { compressionLevel = defaultCompressionLevel,
-      compressionMethod = defaultCompressionMethod,
+      compressionMethod = Nothing,
+      chunkSize = defaultChunkSize,
+      numConcurrentChunks = defaultNumConcurrentChunks,
       numJobs = defaultNumJobs,
       omitDeriver = defaultOmitDeriver
     }
@@ -178,6 +222,9 @@ commandParser =
           Right a -> Right $ Just a
           Left b -> Left $ toS b
         else Left $ "Compression method " <> show method <> " not expected. Use xz or zstd."
+    validatedChunkSize c =
+      c <$ unless (c >= minChunkSize && c <= maxChunkSize) (readerError $ "value " <> show c <> " not in expected range: " <> prettyChunkRange)
+    prettyChunkRange = "[" <> show minChunkSize <> ".." <> show maxChunkSize <> "]"
     pushOptions :: Parser PushOptions
     pushOptions =
       PushOptions
@@ -197,13 +244,32 @@ commandParser =
               <> short 'm'
               <> metavar "xz | zstd"
               <> help
-                "The compression method to use. Supported methods: xz | zstd. Defaults to zstd."
-              <> value defaultCompressionMethod
+                "The compression method to use. Overrides the preferred compression method advertised by the cache. Supported methods: xz | zstd. Defaults to zstd."
+              <> value Nothing
+          )
+        <*> option
+          (auto >>= validatedChunkSize)
+          ( long "chunk-size"
+              <> short 's'
+              <> metavar prettyChunkRange
+              <> help "The size of each uploaded part in bytes. The supported range is from 5MiB to 5GiB."
+              <> showDefault
+              <> value defaultChunkSize
+          )
+        <*> option
+          auto
+          ( long "num-concurrent-chunks"
+              <> short 'n'
+              <> metavar "INT"
+              <> help "The number of chunks to upload concurrently. The total memory usage is jobs * num-concurrent-chunks * chunk-size."
+              <> showDefault
+              <> value defaultNumConcurrentChunks
           )
         <*> option
           auto
           ( long "jobs"
               <> short 'j'
+              <> metavar "INT"
               <> help "The number of threads to use when pushing store paths."
               <> showDefault
               <> value defaultNumJobs

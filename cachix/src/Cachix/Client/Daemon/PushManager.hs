@@ -298,6 +298,8 @@ newPushStrategy store authToken opts cacheName compressionMethod storePath =
           onDone = onDone,
           Client.Push.compressionMethod = compressionMethod,
           Client.Push.compressionLevel = Client.OptionsParser.compressionLevel opts,
+          Client.Push.chunkSize = Client.OptionsParser.chunkSize opts,
+          Client.Push.numConcurrentChunks = Client.OptionsParser.numConcurrentChunks opts,
           Client.Push.omitDeriver = Client.OptionsParser.omitDeriver opts
         }
 

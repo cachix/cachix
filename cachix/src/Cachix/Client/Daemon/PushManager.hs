@@ -46,7 +46,6 @@ import qualified Cachix.Types.BinaryCache as BinaryCache
 import qualified Conduit as C
 import Control.Concurrent.STM.TBMQueue
 import Control.Concurrent.STM.TVar
-import qualified Control.Exception.Safe as Safe
 import qualified Control.Monad.Catch as E
 import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
 import Control.Retry (RetryStatus)
@@ -211,28 +210,53 @@ resolvePushJob pushId closure = do
 handleTask :: PushParams PushManager () -> Task -> PushManager ()
 handleTask pushParams task = do
   case task of
-    ResolveClosure pushId -> do
+    ResolveClosure pushId ->
+      runResolveClosureTask pushParams pushId
+    PushStorePath filePath ->
+      runPushStorePathTask pushParams filePath
+
+runResolveClosureTask :: PushParams PushManager () -> Protocol.PushRequestId -> PushManager ()
+runResolveClosureTask pushParams pushId =
+  resolveClosure `withException` failJob
+  where
+    failJob :: SomeException -> PushManager ()
+    failJob err = do
+      failPushJob pushId
+
+      Katip.katipAddContext (Katip.sl "error" (displayException err)) $
+        Katip.logLocM Katip.ErrorS $
+          Katip.ls $
+            "Failed to resolve closure for push job " <> (show pushId :: Text)
+
+    resolveClosure = do
       Katip.logLocM Katip.DebugS $ Katip.ls $ "Resolving closure for push job " <> (show pushId :: Text)
 
-      withPushJob pushId $ \pushJob ->
-        flip E.onException (failPushJob pushId) $ do
-          let sps = Protocol.storePaths (pushRequest pushJob)
-              store = pushParamsStore pushParams
-          normalized <- mapM (normalizeStorePath store) sps
-          (allStorePaths, missingStorePaths) <- getMissingPathsForClosure pushParams (catMaybes normalized)
-          storePathsToPush <- pushOnClosureAttempt pushParams allStorePaths missingStorePaths
+      withPushJob pushId $ \pushJob -> do
+        let sps = Protocol.storePaths (pushRequest pushJob)
+            store = pushParamsStore pushParams
+        normalized <- mapM (normalizeStorePath store) sps
+        (allStorePaths, missingStorePaths) <- getMissingPathsForClosure pushParams (catMaybes normalized)
+        storePathsToPush <- pushOnClosureAttempt pushParams allStorePaths missingStorePaths
 
-          resolvedClosure <- do
-            allPaths <- liftIO $ mapM (storeToFilePath store) allStorePaths
-            pathsToPush <- liftIO $ mapM (storeToFilePath store) storePathsToPush
-            return $
-              PushJob.ResolvedClosure
-                { rcAllPaths = Set.fromList allPaths,
-                  rcMissingPaths = Set.fromList pathsToPush
-                }
+        resolvedClosure <- do
+          allPaths <- liftIO $ mapM (storeToFilePath store) allStorePaths
+          pathsToPush <- liftIO $ mapM (storeToFilePath store) storePathsToPush
+          return $
+            PushJob.ResolvedClosure
+              { rcAllPaths = Set.fromList allPaths,
+                rcMissingPaths = Set.fromList pathsToPush
+              }
 
-          resolvePushJob pushId resolvedClosure
-    PushStorePath filePath -> do
+        resolvePushJob pushId resolvedClosure
+
+runPushStorePathTask :: PushParams PushManager () -> FilePath -> PushManager ()
+runPushStorePathTask pushParams filePath = do
+  pushStorePath `withException` failStorePath
+  where
+    failStorePath =
+      pushStorePathFailed filePath . toS . displayException
+
+    pushStorePath = do
       qs <- asks pmTaskSemaphore
       E.bracket_ (QSem.waitQSem qs) (QSem.signalQSem qs) $ do
         Katip.logLocM Katip.DebugS $ Katip.ls $ "Pushing store path " <> filePath
@@ -240,8 +264,7 @@ handleTask pushParams task = do
         let store = pushParamsStore pushParams
         storePath <- liftIO $ parseStorePath store (toS filePath)
 
-        retryAll (uploadStorePath pushParams storePath)
-          `Safe.catchAny` (pushStorePathFailed filePath . toS . displayException)
+        retryAll $ uploadStorePath pushParams storePath
 
 newPushStrategy ::
   Store ->
@@ -384,8 +407,12 @@ storeToFilePath store storePath = do
   fp <- liftIO $ storePathToPath store storePath
   pure $ toS fp
 
+-- | Canonicalize and validate a store path
 normalizeStorePath :: (MonadIO m) => Store -> FilePath -> m (Maybe StorePath)
 normalizeStorePath store fp =
   liftIO $ runMaybeT $ do
     storePath <- MaybeT $ followLinksToStorePath store (encodeUtf8 $ T.pack fp)
     MaybeT $ filterInvalidStorePath store storePath
+
+withException :: (E.MonadCatch m) => m a -> (SomeException -> m a) -> m a
+withException action handler = action `E.catchAll` (\e -> handler e >> E.throwM e)

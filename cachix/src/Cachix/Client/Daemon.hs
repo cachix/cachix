@@ -76,7 +76,7 @@ new daemonEnv daemonOptions daemonLogHandle daemonPushOptions daemonCacheName = 
 
   return $ DaemonEnv {..}
 
--- | Configure and run the daemon. Equivalent to running 'new' and 'run'.
+-- | Configure and run the daemon. Equivalent to running 'new' and 'run' together with some signal handling.
 start :: Env -> DaemonOptions -> PushOptions -> BinaryCacheName -> IO ()
 start daemonEnv daemonOptions daemonPushOptions daemonCacheName = do
   daemon <- new daemonEnv daemonOptions Nothing daemonPushOptions daemonCacheName
@@ -107,7 +107,7 @@ run daemon = runDaemon daemon $ flip E.onError (return $ ExitFailure 1) $ do
 
   Push.withPushParams $ \pushParams ->
     E.bracketOnError (startWorkers pushParams) Worker.stopWorkers $ \workers -> do
-      flip E.onError stopPushManager $
+      flip E.onException stopPushManager $
         -- TODO: retry the connection on socket errors
         E.bracketOnError (Daemon.openSocket daemonSocketPath) Daemon.closeSocket $ \sock -> do
           liftIO $ Socket.listen sock Socket.maxListenQueue

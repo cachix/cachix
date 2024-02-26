@@ -182,13 +182,12 @@ queuedStorePathCount = do
 
 resolvePushJob :: Protocol.PushRequestId -> PushJob.ResolvedClosure FilePath -> PushManager ()
 resolvePushJob pushId closure = do
-  timestamp <- liftIO getCurrentTime
+  Katip.logLocM Katip.DebugS $ Katip.ls $ showClosureStats closure
 
+  timestamp <- liftIO getCurrentTime
   _ <- modifyPushJob pushId $ PushJob.populateQueue closure timestamp
 
   withPushJob pushId $ \pushJob -> do
-    Katip.logLocM Katip.DebugS $ Katip.ls $ showClosureStats closure
-
     pushStarted pushJob
     -- Create STM action for each path and then run everything atomically
     queueStorePaths pushId $ Set.toList (PushJob.rcMissingPaths closure)

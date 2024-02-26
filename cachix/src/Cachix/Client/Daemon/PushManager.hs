@@ -216,7 +216,7 @@ handleTask pushParams task = do
       Katip.logLocM Katip.DebugS $ Katip.ls $ "Resolving closure for push job " <> (show pushId :: Text)
 
       withPushJob pushId $ \pushJob ->
-        E.onException (failPushJob pushId) $ do
+        flip E.onException (failPushJob pushId) $ do
           let sps = Protocol.storePaths (pushRequest pushJob)
               store = pushParamsStore pushParams
           normalized <- mapM (normalizeStorePath store) sps

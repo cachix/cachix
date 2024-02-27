@@ -92,60 +92,61 @@ run daemon = runDaemon daemon $ flip E.onError (return $ ExitFailure 1) $ do
   config <- showConfiguration
   Katip.logFM Katip.InfoS $ Katip.ls $ "Configuration:\n" <> config
 
-  let workerCount = Options.numJobs daemonPushOptions
-      startWorkers pushParams =
-        Worker.startWorkers
-          workerCount
-          (PushManager.pmTaskQueue daemonPushManager)
-          (liftIO . PushManager.runPushManager daemonPushManager . PushManager.handleTask pushParams)
+  Push.withPushParams $ \pushParams -> do
+    subscriptionManagerThread <-
+      liftIO $ Async.async $ runSubscriptionManager daemonSubscriptionManager
 
-  subscriptionManagerThread <-
-    liftIO $ Async.async $ runSubscriptionManager daemonSubscriptionManager
+    let runWorkerTask =
+          liftIO . PushManager.runPushManager daemonPushManager . PushManager.handleTask pushParams
+    workersThreads <-
+      Worker.startWorkers
+        (Options.numJobs daemonPushOptions)
+        (PushManager.pmTaskQueue daemonPushManager)
+        runWorkerTask
 
-  let stopPushManager =
-        liftIO $ PushManager.stopPushManager daemonPushManager
+    -- TODO: retry the connection on socket errors
+    E.bracketOnError (Daemon.openSocket daemonSocketPath) Daemon.closeSocket $ \sock -> do
+      liftIO $ Socket.listen sock Socket.maxListenQueue
+      listenThread <- Async.async $ Daemon.listen stop queueJob sock
 
-  Push.withPushParams $ \pushParams ->
-    E.bracketOnError (startWorkers pushParams) Worker.stopWorkers $ \workers -> do
-      flip E.onException stopPushManager $
-        -- TODO: retry the connection on socket errors
-        E.bracketOnError (Daemon.openSocket daemonSocketPath) Daemon.closeSocket $ \sock -> do
-          liftIO $ Socket.listen sock Socket.maxListenQueue
+      -- Wait for a shutdown signal
+      waitForShutdown daemonShutdownLatch
 
-          listenThread <- Async.async $ Daemon.listen stop queueJob sock
+      Katip.logFM Katip.InfoS "Shutting down daemon..."
 
-          waitForShutdown daemonShutdownLatch
+      -- Stop receiving new push requests
+      liftIO $ Socket.shutdown sock Socket.ShutdownReceive `catchAny` \_ -> return ()
 
-          Katip.logFM Katip.InfoS "Shutting down daemon..."
+      PushManager.runPushManager daemonPushManager $ do
+        queuedStorePathCount <- PushManager.queuedStorePathCount
+        when (queuedStorePathCount > 0) $
+          Katip.logFM Katip.InfoS $
+            Katip.logStr $
+              "Remaining store paths: " <> (show queuedStorePathCount :: Text)
 
-          queuedStorePathCount <- PushManager.runPushManager daemonPushManager PushManager.queuedStorePathCount
-          when (queuedStorePathCount > 0) $
-            Katip.logFM Katip.InfoS $
-              Katip.logStr $
-                "Remaining store paths: " <> (show queuedStorePathCount :: Text)
+      -- Finish processing remaining push jobs
+      liftIO $ PushManager.stopPushManager daemonPushManager
 
-          -- Stop receiving new push requests
-          liftIO $ Socket.shutdown sock Socket.ShutdownReceive `catchAny` \_ -> return ()
+      -- Gracefully shut down the worker before closing the socket
+      Worker.stopWorkers workersThreads
 
-          stopPushManager
+      -- Close all event subscriptions
+      liftIO $ stopSubscriptionManager daemonSubscriptionManager
+      Async.wait subscriptionManagerThread
 
-          -- Gracefully shutdown the worker *before* closing the socket
-          Worker.stopWorkers workers
+      -- TODO: say goodbye to all clients waiting for their push to go through
+      listenThreadRes <- do
+        Async.cancel listenThread
+        Async.waitCatch listenThread
 
-          liftIO $ stopSubscriptionManager daemonSubscriptionManager
-          Async.wait subscriptionManagerThread
+      case listenThreadRes of
+        Right clientSock -> do
+          -- Wave goodbye to the client that requested the shutdown
+          liftIO $ Daemon.serverBye clientSock
+          liftIO $ Socket.shutdown clientSock Socket.ShutdownBoth `catchAny` \_ -> return ()
+        _ -> return ()
 
-          -- TODO: say goodbye to all clients waiting for their push to go through
-          Async.cancel listenThread
-          res <- Async.waitCatch listenThread
-          case res of
-            Right clientSock -> do
-              -- Wave goodbye to the client that requested the shutdown
-              liftIO $ Daemon.serverBye clientSock
-              liftIO $ Socket.shutdown clientSock Socket.ShutdownBoth `catchAny` \_ -> return ()
-            _ -> return ()
-
-          return ExitSuccess
+      return ExitSuccess
 
 stop :: Daemon ()
 stop = asks daemonShutdownLatch >>= initiateShutdown

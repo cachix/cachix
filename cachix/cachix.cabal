@@ -94,6 +94,7 @@ library
     Cachix.Client.NixVersion
     Cachix.Client.OptionsParser
     Cachix.Client.Push
+    Cachix.Client.Push.Options
     Cachix.Client.Push.S3
     Cachix.Client.PushQueue
     Cachix.Client.Retry

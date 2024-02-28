@@ -12,10 +12,15 @@ module Cachix.Client.Push
     PushSecret (..),
     getAuthTokenFromPushSecret,
     PushStrategy (..),
+    defaultPushStrategy,
     defaultWithXzipCompressor,
     defaultWithXzipCompressorWithLevel,
     defaultWithZstdCompressor,
     defaultWithZstdCompressorWithLevel,
+
+    -- * Push options
+    Push.Options.PushOptions (..),
+    Push.Options.defaultPushOptions,
 
     -- * Path info
     PathInfo (..),
@@ -44,6 +49,7 @@ import qualified Cachix.API as API
 import Cachix.API.Error
 import Cachix.API.Signing (fingerprint, passthroughHashSink, passthroughHashSinkB16, passthroughSizeSink)
 import Cachix.Client.Exception (CachixException (..))
+import qualified Cachix.Client.Push.Options as Push.Options
 import qualified Cachix.Client.Push.S3 as Push.S3
 import Cachix.Client.Retry (retryAll, retryHttp)
 import Cachix.Client.Secrets
@@ -61,7 +67,6 @@ import Control.Retry (RetryStatus)
 import Crypto.Sign.Ed25519
 import qualified Data.ByteString.Base64 as B64
 import Data.Conduit
-import Data.Conduit.ByteString (ChunkSize)
 import qualified Data.Conduit.Lzma as Lzma (compress)
 import qualified Data.Conduit.Zstd as Zstd (compress)
 import Data.IORef
@@ -135,17 +140,23 @@ data PushStrategy m r = PushStrategy
     onError :: ClientError -> m r,
     -- | An action to run after the path is pushed successfully.
     onDone :: m r,
-    -- | The compression method to use.
-    compressionMethod :: BinaryCache.CompressionMethod,
-    -- | The compression level to use.
-    compressionLevel :: Int,
-    -- | The chunk size to use.
-    chunkSize :: ChunkSize,
-    -- | The number of chunks to upload concurrently.
-    numConcurrentChunks :: Int,
-    -- | Whether to mit the deriver from the narinfo.
-    omitDeriver :: Bool
+    -- | Push options
+    pushOptions :: Push.Options.PushOptions
   }
+
+-- | A default push strategy to use as a starting point for further customization.
+-- This strategy does nothing on each hook and uses the default options.
+defaultPushStrategy :: PushStrategy IO ()
+defaultPushStrategy =
+  PushStrategy
+    { onAlreadyPresent = pure (),
+      onAttempt = \_ _ -> pure (),
+      onUncompressedNARStream = \_ _ -> Data.Conduit.awaitForever Data.Conduit.yield,
+      on401 = throwM,
+      onError = throwM,
+      onDone = pure (),
+      pushOptions = Push.Options.defaultPushOptions
+    }
 
 defaultWithXzipCompressor :: (MonadIO m) => (ConduitT ByteString ByteString m () -> b) -> b
 defaultWithXzipCompressor = ($ Lzma.compress (Just 2))
@@ -339,15 +350,16 @@ streamUploadNar pushParams storePath storePathSize retrystatus = do
       clientEnv = pushParamsClientEnv pushParams
 
   let strategy = pushParamsStrategy pushParams storePath
-      withCompressor = case compressionMethod strategy of
-        BinaryCache.XZ -> defaultWithXzipCompressorWithLevel (compressionLevel strategy)
-        BinaryCache.ZSTD -> defaultWithZstdCompressorWithLevel (compressionLevel strategy)
+      options = pushOptions strategy
+      withCompressor = case Push.Options.compressionMethod options of
+        BinaryCache.XZ -> defaultWithXzipCompressorWithLevel (Push.Options.compressionLevel options)
+        BinaryCache.ZSTD -> defaultWithZstdCompressorWithLevel (Push.Options.compressionLevel options)
 
   let uploadOptions =
         Push.S3.UploadMultipartOptions
-          { Push.S3.numConcurrentChunks = numConcurrentChunks strategy,
-            Push.S3.chunkSize = chunkSize strategy,
-            Push.S3.compressionMethod = compressionMethod strategy
+          { Push.S3.numConcurrentChunks = Push.Options.numConcurrentChunks options,
+            Push.S3.chunkSize = Push.Options.chunkSize options,
+            Push.S3.compressionMethod = Push.Options.compressionMethod options
           }
 
   narSizeRef <- liftIO $ newIORef 0
@@ -396,12 +408,12 @@ streamCopy pushParams storePath claimedFileSize retrystatus compressionMethod = 
       authToken = getCacheAuthToken (pushParamsSecret pushParams)
       clientEnv = pushParamsClientEnv pushParams
       strategy = pushParamsStrategy pushParams storePath
+      options = pushOptions strategy
 
   let uploadOptions =
         Push.S3.UploadMultipartOptions
-          { Push.S3.numConcurrentChunks = numConcurrentChunks strategy,
-            Push.S3.chunkSize = chunkSize strategy,
-            -- TODO: why is this not part of the strategy?
+          { Push.S3.numConcurrentChunks = Push.Options.numConcurrentChunks options,
+            Push.S3.chunkSize = Push.Options.chunkSize options,
             Push.S3.compressionMethod = compressionMethod
           }
 
@@ -439,6 +451,7 @@ newNarInfoCreate ::
 newNarInfoCreate pushParams storePath pathInfo UploadNarDetails {..} = do
   let store = pushParamsStore pushParams
   let strategy = pushParamsStrategy pushParams storePath
+  let options = pushOptions strategy
   storeDir <- Store.storeDir store
   storePathText <- liftIO $ toS <$> Store.storePathToPath store storePath
 
@@ -450,7 +463,7 @@ newNarInfoCreate pushParams storePath pathInfo UploadNarDetails {..} = do
 
   let deriver =
         fromMaybe "unknown-deriver" $
-          if omitDeriver strategy
+          if Push.Options.omitDeriver options
             then Nothing
             else piDeriver pathInfo
 

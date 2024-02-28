@@ -37,10 +37,8 @@ import qualified Cachix.Client.Daemon.PushManager.PushJob as PushJob
 import Cachix.Client.Daemon.Types.Log (Logger)
 import Cachix.Client.Daemon.Types.PushEvent
 import Cachix.Client.Daemon.Types.PushManager
-import Cachix.Client.OptionsParser as Client.OptionsParser
-  ( PushOptions (..),
-  )
-import Cachix.Client.Push as Client.Push
+import Cachix.Client.OptionsParser as Options
+import Cachix.Client.Push as Push
 import Cachix.Client.Retry (retryAll)
 import qualified Cachix.Types.BinaryCache as BinaryCache
 import qualified Conduit as C
@@ -65,7 +63,7 @@ import Servant.Auth.Client
 import Servant.Conduit ()
 import qualified UnliftIO.QSem as QSem
 
-newPushManagerEnv :: (MonadIO m) => PushOptions -> Logger -> OnPushEvent -> m PushManagerEnv
+newPushManagerEnv :: (MonadIO m) => Options.PushOptions -> Logger -> OnPushEvent -> m PushManagerEnv
 newPushManagerEnv pushOptions pmLogger pmOnPushEvent = liftIO $ do
   pmPushJobs <- newTVarIO mempty
   pmStorePathReferences <- newTVarIO mempty
@@ -269,7 +267,7 @@ runPushStorePathTask pushParams filePath = do
 newPushStrategy ::
   Store ->
   Maybe Token ->
-  PushOptions ->
+  Options.PushOptions ->
   Text ->
   BinaryCache.CompressionMethod ->
   (StorePath -> PushStrategy PushManager ())
@@ -311,18 +309,21 @@ newPushStrategy store authToken opts cacheName compressionMethod storePath =
         sp <- liftIO $ storePathToPath store storePath
         Katip.logFM Katip.InfoS $ Katip.ls $ "Pushed " <> (toS sp :: Text)
         pushStorePathDone (toS sp)
-   in PushStrategy
+   in Push.defaultPushStrategy
         { onAlreadyPresent = onAlreadyPresent,
           on401 = liftIO . handleCacheResponse cacheName authToken,
           onError = onError,
           onAttempt = onAttempt,
           onUncompressedNARStream = onUncompressedNARStream,
           onDone = onDone,
-          Client.Push.compressionMethod = compressionMethod,
-          Client.Push.compressionLevel = Client.OptionsParser.compressionLevel opts,
-          Client.Push.chunkSize = Client.OptionsParser.chunkSize opts,
-          Client.Push.numConcurrentChunks = Client.OptionsParser.numConcurrentChunks opts,
-          Client.Push.omitDeriver = Client.OptionsParser.omitDeriver opts
+          pushOptions =
+            Push.PushOptions
+              { Push.compressionMethod = compressionMethod,
+                Push.compressionLevel = Options.compressionLevel opts,
+                Push.chunkSize = Options.chunkSize opts,
+                Push.numConcurrentChunks = Options.numConcurrentChunks opts,
+                Push.omitDeriver = Options.omitDeriver opts
+              }
         }
 
 -- Push events

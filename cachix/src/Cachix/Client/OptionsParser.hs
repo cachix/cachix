@@ -9,12 +9,6 @@ module Cachix.Client.OptionsParser
     -- * Push options
     PushOptions (..),
     defaultPushOptions,
-    defaultCompressionMethod,
-    defaultCompressionLevel,
-    defaultNumConcurrentChunks,
-    defaultChunkSize,
-    defaultNumJobs,
-    defaultOmitDeriver,
 
     -- * Pin options
     PinOptions (..),
@@ -30,13 +24,13 @@ where
 
 import qualified Cachix.Client.Config as Config
 import qualified Cachix.Client.InstallationMode as InstallationMode
+import qualified Cachix.Client.Push.Options as Push.Options
 import Cachix.Client.URI (URI)
 import qualified Cachix.Client.URI as URI
 import qualified Cachix.Deploy.OptionsParser as DeployOptions
 import Cachix.Types.BinaryCache (BinaryCacheName)
 import qualified Cachix.Types.BinaryCache as BinaryCache
 import Cachix.Types.PinCreate (Keep (..))
-import Data.Conduit.ByteString (ChunkSize)
 import qualified Data.Text as T
 import Options.Applicative
 import Protolude hiding (toS)
@@ -144,39 +138,18 @@ data PushOptions = PushOptions
   }
   deriving (Show)
 
-defaultCompressionLevel :: Int
-defaultCompressionLevel = 2
-
-defaultCompressionMethod :: BinaryCache.CompressionMethod
-defaultCompressionMethod = BinaryCache.ZSTD
-
-defaultNumConcurrentChunks :: Int
-defaultNumConcurrentChunks = 4
-
-defaultChunkSize :: ChunkSize
-defaultChunkSize = 32 * 1024 * 1024 -- 32MiB
-
-minChunkSize :: ChunkSize
-minChunkSize = 5 * 1024 * 1024 -- 5MiB
-
-maxChunkSize :: ChunkSize
-maxChunkSize = 5 * 1024 * 1024 * 1024 -- 5GiB
-
 defaultNumJobs :: Int
 defaultNumJobs = 8
-
-defaultOmitDeriver :: Bool
-defaultOmitDeriver = False
 
 defaultPushOptions :: PushOptions
 defaultPushOptions =
   PushOptions
-    { compressionLevel = defaultCompressionLevel,
+    { compressionLevel = Push.Options.defaultCompressionLevel,
       compressionMethod = Nothing,
-      chunkSize = defaultChunkSize,
-      numConcurrentChunks = defaultNumConcurrentChunks,
+      chunkSize = Push.Options.defaultChunkSize,
+      numConcurrentChunks = Push.Options.defaultNumConcurrentChunks,
       numJobs = defaultNumJobs,
-      omitDeriver = defaultOmitDeriver
+      omitDeriver = Push.Options.defaultOmitDeriver
     }
 
 data DaemonCommand
@@ -223,8 +196,8 @@ commandParser =
           Left b -> Left $ toS b
         else Left $ "Compression method " <> show method <> " not expected. Use xz or zstd."
     validatedChunkSize c =
-      c <$ unless (c >= minChunkSize && c <= maxChunkSize) (readerError $ "value " <> show c <> " not in expected range: " <> prettyChunkRange)
-    prettyChunkRange = "[" <> show minChunkSize <> ".." <> show maxChunkSize <> "]"
+      c <$ unless (c >= Push.Options.minChunkSize && c <= Push.Options.maxChunkSize) (readerError $ "value " <> show c <> " not in expected range: " <> prettyChunkRange)
+    prettyChunkRange = "[" <> show Push.Options.minChunkSize <> ".." <> show Push.Options.maxChunkSize <> "]"
     pushOptions :: Parser PushOptions
     pushOptions =
       PushOptions
@@ -236,7 +209,7 @@ commandParser =
               <> help
                 "The compression level to use. Supported range: [0-9] for xz and [0-16] for zstd."
               <> showDefault
-              <> value defaultCompressionLevel
+              <> value Push.Options.defaultCompressionLevel
           )
         <*> option
           (eitherReader validatedMethod)
@@ -254,7 +227,7 @@ commandParser =
               <> metavar prettyChunkRange
               <> help "The size of each uploaded part in bytes. The supported range is from 5MiB to 5GiB."
               <> showDefault
-              <> value defaultChunkSize
+              <> value Push.Options.defaultChunkSize
           )
         <*> option
           auto
@@ -263,7 +236,7 @@ commandParser =
               <> metavar "INT"
               <> help "The number of chunks to upload concurrently. The total memory usage is jobs * num-concurrent-chunks * chunk-size."
               <> showDefault
-              <> value defaultNumConcurrentChunks
+              <> value Push.Options.defaultNumConcurrentChunks
           )
         <*> option
           auto

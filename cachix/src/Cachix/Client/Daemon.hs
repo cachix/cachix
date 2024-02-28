@@ -24,7 +24,6 @@ import Cachix.Client.Daemon.Types as Types
 import qualified Cachix.Client.Daemon.Types.PushManager as PushManager
 import qualified Cachix.Client.Daemon.Worker as Worker
 import Cachix.Client.Env as Env
-import Cachix.Client.OptionsParser (DaemonOptions, PushOptions)
 import qualified Cachix.Client.OptionsParser as Options
 import Cachix.Client.Push
 import Cachix.Types.BinaryCache (BinaryCacheName)
@@ -46,11 +45,11 @@ new ::
   -- | The Cachix environment.
   Env ->
   -- | Daemon-specific options.
-  DaemonOptions ->
+  Options.DaemonOptions ->
   -- | An optional handle to output logs to.
   Maybe Handle ->
   -- | Push options, like compression settings and number of jobs.
-  PushOptions ->
+  Options.PushOptions ->
   -- | The name of the binary cache to push to.
   BinaryCacheName ->
   -- | The configured daemon environment.
@@ -77,7 +76,7 @@ new daemonEnv daemonOptions daemonLogHandle daemonPushOptions daemonCacheName = 
   return $ DaemonEnv {..}
 
 -- | Configure and run the daemon. Equivalent to running 'new' and 'run' together with some signal handling.
-start :: Env -> DaemonOptions -> PushOptions -> BinaryCacheName -> IO ()
+start :: Env -> Options.DaemonOptions -> Options.PushOptions -> BinaryCacheName -> IO ()
 start daemonEnv daemonOptions daemonPushOptions daemonCacheName = do
   daemon <- new daemonEnv daemonOptions Nothing daemonPushOptions daemonCacheName
   installSignalHandlers daemon

@@ -17,7 +17,7 @@ import Cachix.Client.Daemon.Types.Log (Logger)
 import Cachix.Client.Daemon.Types.PushEvent (PushEvent)
 import Cachix.Client.Daemon.Types.PushManager (PushManagerEnv (..))
 import Cachix.Client.Env as Env
-import Cachix.Client.OptionsParser (PushOptions)
+import qualified Cachix.Client.OptionsParser as Options
 import Cachix.Client.Push
 import Cachix.Types.BinaryCache (BinaryCache, BinaryCacheName)
 import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
@@ -30,7 +30,7 @@ data DaemonEnv = DaemonEnv
   { -- | Cachix client env
     daemonEnv :: Env,
     -- | Push options, like compression settings and number of jobs
-    daemonPushOptions :: PushOptions,
+    daemonPushOptions :: Options.PushOptions,
     -- | Path to the socket that the daemon listens on
     daemonSocketPath :: FilePath,
     -- | The push secret for the binary cache

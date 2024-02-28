@@ -15,10 +15,10 @@ import qualified Cachix.Client.Config as Config
 import Cachix.Client.Env (Env (..))
 import Cachix.Client.Exception (CachixException (..))
 import Cachix.Client.HumanSize (humanSize)
-import Cachix.Client.OptionsParser
+import Cachix.Client.OptionsParser as Options
   ( PushOptions (..),
   )
-import Cachix.Client.Push
+import Cachix.Client.Push as Push
 import Cachix.Client.Retry (retryHttp)
 import Cachix.Client.Secrets
 import Cachix.Client.Servant
@@ -53,9 +53,11 @@ pushStrategy store authToken opts name compressionMethod storePath =
       onAttempt = \_ _ -> pass,
       onUncompressedNARStream = showUploadProgress,
       onDone = pass,
-      Cachix.Client.Push.compressionMethod = compressionMethod,
-      Cachix.Client.Push.compressionLevel = Cachix.Client.OptionsParser.compressionLevel opts,
-      Cachix.Client.Push.omitDeriver = Cachix.Client.OptionsParser.omitDeriver opts
+      Push.compressionMethod = compressionMethod,
+      Push.compressionLevel = Options.compressionLevel opts,
+      Push.chunkSize = Options.chunkSize opts,
+      Push.numConcurrentChunks = Options.numConcurrentChunks opts,
+      Push.omitDeriver = Options.omitDeriver opts
     }
   where
     retryText :: RetryStatus -> Text
@@ -113,7 +115,7 @@ withPushParams' env pushOpts name pushSecret m = do
         Left err -> handleCacheResponse name authToken err
         Right binaryCache -> pure (Just $ BinaryCache.preferredCompressionMethod binaryCache)
   let compressionMethod =
-        fromMaybe BinaryCache.ZSTD (head $ catMaybes [Cachix.Client.OptionsParser.compressionMethod pushOpts, compressionMethodBackend])
+        fromMaybe BinaryCache.ZSTD (head $ catMaybes [Options.compressionMethod pushOpts, compressionMethodBackend])
 
   withStore $ \store ->
     m

@@ -2,7 +2,12 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE Rank2Types #-}
 
-module Cachix.Client.Push.S3 where
+module Cachix.Client.Push.S3
+  ( UploadMultipartResult (..),
+    UploadMultipartOptions (..),
+    uploadMultipart,
+  )
+where
 
 import qualified Cachix.API as API
 import Cachix.API.Error
@@ -31,60 +36,52 @@ import qualified Servant.Client as Client
 import Servant.Client.Streaming
 import Servant.Conduit ()
 
--- | The size of each uploaded part.
---
--- Common values for S3 are 8MB and 16MB. The minimum is 5MB.
---
--- Lower values will increase HTTP overhead. Some cloud services impose request body limits.
--- For example, Amazon API Gateway caps out at 10MB.
-chunkSize :: ChunkSize
-chunkSize = 8 * 1024 * 1024
+data UploadMultipartOptions = UploadMultipartOptions
+  { numConcurrentChunks :: Int,
+    chunkSize :: ChunkSize,
+    compressionMethod :: CompressionMethod
+  }
 
--- | The number of parts to upload concurrently.
--- Speeds up the upload of very large files.
-concurrentParts :: Int
-concurrentParts = 8
-
--- | The size of the temporary output buffer.
---
--- Keep this value high to avoid stalling smaller uploads while waiting for a large upload to complete.
--- Each completed upload response is very lightweight.
-outputBufferSize :: Int
-outputBufferSize = 100
-
-data UploadResult = UploadResult
+data UploadMultipartResult = UploadMultipartResult
   { urNarId :: UUID,
     urUploadId :: Text,
     urParts :: Maybe (NonEmpty Multipart.CompletedPart)
   }
   deriving stock (Eq, Show)
 
-streamUpload ::
+uploadMultipart ::
   forall m.
   (MonadUnliftIO m, MonadResource m) =>
   ClientEnv ->
   Token ->
   Text ->
-  CompressionMethod ->
+  UploadMultipartOptions ->
   ConduitT
     ByteString
     Void
     m
-    (Either ClientError UploadResult)
-streamUpload env authToken cacheName compressionMethod = do
+    (Either ClientError UploadMultipartResult)
+uploadMultipart env authToken cacheName options = do
   createMultipartUpload >>= \case
     Left err -> return $ Left err
     Right (Multipart.CreateMultipartUploadResponse {narId, uploadId}) -> do
       handleC (abortMultipartUpload narId uploadId) $
-        chunkStream (Just chunkSize)
-          .| concurrentMapM_ concurrentParts outputBufferSize (uploadPart narId uploadId)
+        chunkStream (Just (chunkSize options))
+          .| concurrentMapM_ (numConcurrentChunks options) outputBufferSize (uploadPart narId uploadId)
           .| completeMultipartUpload narId uploadId
   where
+    -- The size of the temporary output buffer.
+    --
+    -- Keep this value high to avoid stalling smaller uploads while waiting for a large upload to complete.
+    -- Each completed upload response is very lightweight.
+    outputBufferSize :: Int
+    outputBufferSize = 2 * numConcurrentChunks options
+
     manager = Client.manager env
 
     createMultipartUpload :: ConduitT ByteString Void m (Either ClientError Multipart.CreateMultipartUploadResponse)
     createMultipartUpload = do
-      let createNarRequest = API.createNar cachixClient authToken cacheName (Just compressionMethod)
+      let createNarRequest = API.createNar cachixClient authToken cacheName (Just (compressionMethod options))
       liftIO $ retryHttp $ runClientM createNarRequest env
 
     uploadPart :: UUID -> Text -> (Int, ByteString) -> m (Maybe Multipart.CompletedPart)
@@ -117,7 +114,7 @@ streamUpload env authToken cacheName compressionMethod = do
       parts <- CC.sinkList
       return $
         Right $
-          UploadResult
+          UploadMultipartResult
             { urNarId = narId,
               urUploadId = uploadId,
               urParts = sequenceA (NonEmpty.fromList parts)

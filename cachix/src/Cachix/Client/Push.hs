@@ -23,7 +23,7 @@ module Cachix.Client.Push
     newPathInfoFromNarInfo,
 
     -- * Streaming upload
-    Push.S3.UploadResult (..),
+    Push.S3.UploadMultipartResult (..),
     UploadNarDetails (..),
     streamUploadNar,
     streamCopy,
@@ -61,6 +61,7 @@ import Control.Retry (RetryStatus)
 import Crypto.Sign.Ed25519
 import qualified Data.ByteString.Base64 as B64
 import Data.Conduit
+import Data.Conduit.ByteString (ChunkSize)
 import qualified Data.Conduit.Lzma as Lzma (compress)
 import qualified Data.Conduit.Zstd as Zstd (compress)
 import Data.IORef
@@ -134,8 +135,15 @@ data PushStrategy m r = PushStrategy
     onError :: ClientError -> m r,
     -- | An action to run after the path is pushed successfully.
     onDone :: m r,
+    -- | The compression method to use.
     compressionMethod :: BinaryCache.CompressionMethod,
+    -- | The compression level to use.
     compressionLevel :: Int,
+    -- | The chunk size to use.
+    chunkSize :: ChunkSize,
+    -- | The number of chunks to upload concurrently.
+    numConcurrentChunks :: Int,
+    -- | Whether to mit the deriver from the narinfo.
     omitDeriver :: Bool
   }
 
@@ -243,10 +251,10 @@ pushClosure traversal pushParams inputStorePaths = do
 completeNarUpload ::
   (MonadUnliftIO m) =>
   PushParams n r ->
-  Push.S3.UploadResult ->
+  Push.S3.UploadMultipartResult ->
   Api.NarInfoCreate ->
   m ()
-completeNarUpload pushParams Push.S3.UploadResult {..} nic = do
+completeNarUpload pushParams Push.S3.UploadMultipartResult {..} nic = do
   let cacheName = pushParamsName pushParams
       authToken = getCacheAuthToken (pushParamsSecret pushParams)
       clientEnv = pushParamsClientEnv pushParams
@@ -324,7 +332,7 @@ streamUploadNar ::
   StorePath ->
   Int64 ->
   RetryStatus ->
-  ConduitT ByteString Void (ResourceT m) (Either ClientError (Push.S3.UploadResult, UploadNarDetails))
+  ConduitT ByteString Void (ResourceT m) (Either ClientError (Push.S3.UploadMultipartResult, UploadNarDetails))
 streamUploadNar pushParams storePath storePathSize retrystatus = do
   let cacheName = pushParamsName pushParams
       authToken = getCacheAuthToken (pushParamsSecret pushParams)
@@ -334,6 +342,13 @@ streamUploadNar pushParams storePath storePathSize retrystatus = do
       withCompressor = case compressionMethod strategy of
         BinaryCache.XZ -> defaultWithXzipCompressorWithLevel (compressionLevel strategy)
         BinaryCache.ZSTD -> defaultWithZstdCompressorWithLevel (compressionLevel strategy)
+
+  let uploadOptions =
+        Push.S3.UploadMultipartOptions
+          { Push.S3.numConcurrentChunks = numConcurrentChunks strategy,
+            Push.S3.chunkSize = chunkSize strategy,
+            Push.S3.compressionMethod = compressionMethod strategy
+          }
 
   narSizeRef <- liftIO $ newIORef 0
   fileSizeRef <- liftIO $ newIORef 0
@@ -348,7 +363,7 @@ streamUploadNar pushParams storePath storePathSize retrystatus = do
       .| compressor
       .| passthroughSizeSink fileSizeRef
       .| passthroughHashSinkB16 fileHashRef
-      .| Push.S3.streamUpload clientEnv authToken cacheName (compressionMethod strategy)
+      .| Push.S3.uploadMultipart clientEnv authToken cacheName uploadOptions
 
   for result $ \uploadResult -> liftIO $ do
     narSize <- readIORef narSizeRef
@@ -375,12 +390,20 @@ streamCopy ::
   Int64 ->
   RetryStatus ->
   BinaryCache.CompressionMethod ->
-  ConduitT ByteString Void (ResourceT m) (Either ClientError (Push.S3.UploadResult, UploadNarDetails))
+  ConduitT ByteString Void (ResourceT m) (Either ClientError (Push.S3.UploadMultipartResult, UploadNarDetails))
 streamCopy pushParams storePath claimedFileSize retrystatus compressionMethod = do
   let cacheName = pushParamsName pushParams
       authToken = getCacheAuthToken (pushParamsSecret pushParams)
       clientEnv = pushParamsClientEnv pushParams
       strategy = pushParamsStrategy pushParams storePath
+
+  let uploadOptions =
+        Push.S3.UploadMultipartOptions
+          { Push.S3.numConcurrentChunks = numConcurrentChunks strategy,
+            Push.S3.chunkSize = chunkSize strategy,
+            -- TODO: why is this not part of the strategy?
+            Push.S3.compressionMethod = compressionMethod
+          }
 
   fileSizeRef <- liftIO $ newIORef 0
   fileHashRef <- liftIO $ newIORef ("" :: ByteString)
@@ -390,7 +413,7 @@ streamCopy pushParams storePath claimedFileSize retrystatus compressionMethod = 
       .| onUncompressedNARStream strategy retrystatus claimedFileSize
       .| passthroughSizeSink fileSizeRef
       .| passthroughHashSinkB16 fileHashRef
-      .| Push.S3.streamUpload clientEnv authToken cacheName compressionMethod
+      .| Push.S3.uploadMultipart clientEnv authToken cacheName uploadOptions
 
   for result $ \uploadResult -> liftIO $ do
     fileSize <- readIORef fileSizeRef

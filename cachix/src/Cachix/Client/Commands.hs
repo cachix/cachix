@@ -381,23 +381,28 @@ watchExecDaemon env pushOpts cacheName cmd args =
       let daemonOptions = DaemonOptions {daemonSocketPath = Just daemonSock}
       daemon <- Daemon.new env daemonOptions (Just logHandle) pushOpts cacheName
 
-      -- Launch the daemon in the background
+      exitCode <-
+        bracket (startDaemonThread daemon) (shutdownDaemonThread daemon logHandle) $ \_ -> do
+          processEnv <- getEnvironment
+          let newProcessEnv = Daemon.PostBuildHook.modifyEnv nixConfEnv processEnv
+          let process =
+                (System.Process.proc (toS cmd) (toS <$> args))
+                  { System.Process.std_out = System.Process.Inherit,
+                    System.Process.env = Just newProcessEnv,
+                    System.Process.delegate_ctlc = True
+                  }
+          System.Process.withCreateProcess process $ \_ _ _ processHandle ->
+            System.Process.waitForProcess processHandle
+
+      exitWith exitCode
+  where
+    -- Launch the daemon in the background and subscribe to all push events
+    startDaemonThread daemon = do
       daemonThread <- Async.async $ Daemon.run daemon
-
-      -- Subscribe to all push events
       daemonChan <- Daemon.subscribe daemon
+      return (daemonThread, daemonChan)
 
-      processEnv <- getEnvironment
-      let newProcessEnv = Daemon.PostBuildHook.modifyEnv nixConfEnv processEnv
-      let process =
-            (System.Process.proc (toS cmd) (toS <$> args))
-              { System.Process.std_out = System.Process.Inherit,
-                System.Process.env = Just newProcessEnv,
-                System.Process.delegate_ctlc = True
-              }
-      exitCode <- System.Process.withCreateProcess process $ \_ _ _ processHandle ->
-        System.Process.waitForProcess processHandle
-
+    shutdownDaemonThread daemon logHandle (daemonThread, daemonChan) = do
       -- TODO: process and fold events into a state during command execution
       daemonExitCode <- Async.withAsync (postWatchExec daemonChan) $ \_ -> do
         Daemon.stopIO daemon
@@ -408,8 +413,6 @@ watchExecDaemon env pushOpts cacheName cmd args =
         ExitFailure _ -> printLog logHandle
         ExitSuccess -> return ()
 
-      exitWith exitCode
-  where
     postWatchExec chan = do
       statsRef <- newIORef HashMap.empty
       runConduit $

@@ -19,7 +19,7 @@ import Data.Text.Lazy.Builder
 import Katip (renderSeverity)
 import qualified Katip
 import qualified Katip.Format.Time as Katip.Format
-import Katip.Scribes.Handle (brackets, colorBySeverity)
+import Katip.Scribes.Handle (brackets, colorBySeverity, getKeys)
 import Protolude
 
 new :: (MonadIO m) => Katip.Namespace -> Maybe Handle -> LogLevel -> m Logger
@@ -66,12 +66,14 @@ toKatipLogLevel = \case
   Error -> Katip.ErrorS
 
 conciseBracketFormat :: (Katip.LogItem a) => Katip.ItemFormatter a
-conciseBracketFormat withColor _verbosity Katip.Item {..} =
+conciseBracketFormat withColor verbosity Katip.Item {..} =
   brackets nowStr
     <> brackets (fromText (renderSeverity' _itemSeverity))
+    <> mconcat ks
     <> fromText " "
     <> Katip.unLogStr _itemMessage
   where
     nowStr = fromText (Katip.Format.formatAsLogTime _itemTime)
+    ks = map brackets $ getKeys verbosity _itemPayload
     renderSeverity' severity =
       colorBySeverity withColor severity (renderSeverity severity)

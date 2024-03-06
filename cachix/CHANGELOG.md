@@ -5,9 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [1.7.2] - 2024-03-06
+
+### Added
+
+- `--chunk-size`: defaults to 32MiB
+- `--num-concurrent-chunks`: defaults to 4
+
+### Fixed
+
+- cachix push: allow pushing of big store paths (up to 320GB) by increasing chunk size to 32MB
+- daemon: fix a bug where nothing would be pushed at all
+
 ## [1.7.1] - 2023-02-20
 
-## Fixed
+### Fixed
 
 - daemon: add explicit sigINT/sigTERM handler
 - daemon: improve shutdown when jobs fail
@@ -15,13 +27,13 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [1.7] - 2023-01-08
 
-## Added
+### Added
 
 - daemon mode: push to cachix while building
 
 - `cachix import`: allow importing S3 binary caches into Cachix
 
-## Fixed
+### Fixed
 
 - Ignore sigPIPE exception
 
@@ -37,7 +49,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [1.6.1] - 2023-09-25
 
-## Fixed
+### Fixed
 
 - deploy: Correctly format `cachix deploy agent` exception messages
 
@@ -53,17 +65,17 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 - Set the file system encoding to utf8 to fix some hash mismatch errors
 
-## Added
+### Added
 
 - Implement a daemon for pushing store paths (more on this feature later on blog.cachix.org)
 
 ## [1.6] - 2023-06-27
 
-## Added
+### Added
 
 - `cachix remove MYCACHE`: reverses `cachix use MYCACHE`.
 
-## Changed
+### Changed
 
 - `cachix push` now displays a progress bar and summary before pushing.
 

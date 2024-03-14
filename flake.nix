@@ -30,7 +30,7 @@
     # Try to use the same Nix version as cnix-store, if available.
     getNix = { pkgs, haskellPackages ? pkgs.haskellPackages }:
       haskellPackages.hercules-ci-cnix-store.nixPackage
-        or pkgs.nixVersions.nix_2_9;
+        or pkgs.nix;
 
     customHaskellPackages = { pkgs, haskellPackages }: rec {
       cachix-api = haskellPackages.callCabal2nix "cachix-api" ./cachix-api {};

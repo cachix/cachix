@@ -39,7 +39,7 @@ import Cachix.Client.Exception (CachixException (..))
 import qualified Cachix.Client.InstallationMode as InstallationMode
 import qualified Cachix.Client.NixConf as NixConf
 import Cachix.Client.NixVersion (assertNixVersion)
-import Cachix.Client.OptionsParser
+import Cachix.Client.OptionsParser as Options
   ( DaemonOptions (..),
     PinOptions (..),
     PushArguments (..),
@@ -230,7 +230,7 @@ discoverAwsEnv maybeEndpoint maybeRegion = do
     <&> Amazonka.configureService s3Endpoint
       . maybe identity (#region .~) region
 
-import' :: Env -> PushOptions -> Text -> URI -> IO ()
+import' :: Env -> Options.PushOptions -> Text -> URI -> IO ()
 import' env pushOptions name s3uri = do
   awsEnv <- discoverAwsEnv (URI.getQueryParam s3uri "endpoint") (URI.getQueryParam s3uri "region")
   putErrText $ "Importing narinfos/nars using " <> show (numJobs pushOptions) <> " workers from " <> URI.serialize s3uri <> " to " <> name
@@ -349,7 +349,7 @@ pin env pinOpts = do
       exists <- doesFileExist (toS artifactPath)
       unless exists $ throwIO $ ArtifactNotFound $ "Artifact " <> artifactPath <> " doesn't exist."
 
-watchStore :: Env -> PushOptions -> Text -> IO ()
+watchStore :: Env -> Options.PushOptions -> Text -> IO ()
 watchStore env opts name = do
   withPushParams env opts name $ \pushParams ->
     WatchStore.startWorkers (pushParamsStore pushParams) (numJobs opts) pushParams
@@ -358,7 +358,7 @@ watchStore env opts name = do
 --
 -- Registers a post-build hook if the user is trusted.
 -- Otherwise, falls back to watching the entire Nix store.
-watchExec :: Env -> PushOptions -> BinaryCacheName -> Text -> [Text] -> IO ()
+watchExec :: Env -> Options.PushOptions -> BinaryCacheName -> Text -> [Text] -> IO ()
 watchExec env pushOptions cacheName cmd args = do
   nixEnv <- getNixEnv
 
@@ -374,7 +374,7 @@ watchExec env pushOptions cacheName cmd args = do
 -- | Run a command and push any new paths to the binary cache.
 --
 -- Requires the user to be a trusted user in a multi-user installation.
-watchExecDaemon :: Env -> PushOptions -> BinaryCacheName -> Text -> [Text] -> IO ()
+watchExecDaemon :: Env -> Options.PushOptions -> BinaryCacheName -> Text -> [Text] -> IO ()
 watchExecDaemon env pushOpts cacheName cmd args =
   Daemon.PostBuildHook.withSetup Nothing $ \daemonSock nixConfEnv ->
     withSystemTempFile "daemon-log-capture" $ \_ logHandle -> do
@@ -458,7 +458,7 @@ watchExecDaemon env pushOpts cacheName cmd args =
 -- | Runs a command while watching the entire Nix store and pushing any new paths.
 --
 -- Prefer to use the more granular 'watchExecDaemon' whenever possible.
-watchExecStore :: Env -> PushOptions -> BinaryCacheName -> Text -> [Text] -> IO ()
+watchExecStore :: Env -> Options.PushOptions -> BinaryCacheName -> Text -> [Text] -> IO ()
 watchExecStore env pushOpts name cmd args =
   withPushParams env pushOpts name $ \pushParams -> do
     stdoutOriginal <- hDuplicate stdout

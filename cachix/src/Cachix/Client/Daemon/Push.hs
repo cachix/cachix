@@ -5,10 +5,11 @@ import Cachix.Client.Commands.Push hiding (pushStrategy)
 import qualified Cachix.Client.Daemon.PushManager as PushManager
 import Cachix.Client.Daemon.Types (Daemon, DaemonEnv (..), PushManager)
 import Cachix.Client.Env (Env (..))
-import Cachix.Client.OptionsParser as Client.OptionsParser
+import Cachix.Client.OptionsParser as Options
   ( PushOptions (..),
   )
-import Cachix.Client.Push as Client.Push
+import Cachix.Client.Push as Push
+import qualified Cachix.Client.Push.Options as Push.Options
 import Cachix.Client.Retry (retryHttp)
 import Cachix.Client.Servant
 import Cachix.Types.BinaryCache (BinaryCacheName)
@@ -54,8 +55,8 @@ getBinaryCache env authToken name = do
     Left err -> handleCacheResponse name authToken err
     Right binaryCache -> pure binaryCache
 
-getCompressionMethod :: PushOptions -> BinaryCache.BinaryCache -> BinaryCache.CompressionMethod
+getCompressionMethod :: Options.PushOptions -> BinaryCache.BinaryCache -> BinaryCache.CompressionMethod
 getCompressionMethod opts binaryCache =
-  fromMaybe BinaryCache.ZSTD $
-    Client.OptionsParser.compressionMethod opts
+  fromMaybe Push.Options.defaultCompressionMethod $
+    Options.compressionMethod opts
       <|> Just (BinaryCache.preferredCompressionMethod binaryCache)

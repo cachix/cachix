@@ -44,20 +44,23 @@ import System.Console.Pretty
 import System.Environment (lookupEnv)
 import System.IO (hIsTerminalDevice)
 
-pushStrategy :: Store -> Maybe Token -> PushOptions -> Text -> BinaryCache.CompressionMethod -> StorePath -> PushStrategy IO ()
+pushStrategy :: Store -> Maybe Token -> Options.PushOptions -> Text -> BinaryCache.CompressionMethod -> StorePath -> PushStrategy IO ()
 pushStrategy store authToken opts name compressionMethod storePath =
-  PushStrategy
+  Push.defaultPushStrategy
     { onAlreadyPresent = pass,
       on401 = handleCacheResponse name authToken,
       onError = throwM,
       onAttempt = \_ _ -> pass,
       onUncompressedNARStream = showUploadProgress,
       onDone = pass,
-      Push.compressionMethod = compressionMethod,
-      Push.compressionLevel = Options.compressionLevel opts,
-      Push.chunkSize = Options.chunkSize opts,
-      Push.numConcurrentChunks = Options.numConcurrentChunks opts,
-      Push.omitDeriver = Options.omitDeriver opts
+      pushOptions =
+        Push.PushOptions
+          { Push.compressionMethod = compressionMethod,
+            Push.compressionLevel = Options.compressionLevel opts,
+            Push.chunkSize = Options.chunkSize opts,
+            Push.numConcurrentChunks = Options.numConcurrentChunks opts,
+            Push.omitDeriver = Options.omitDeriver opts
+          }
     }
   where
     retryText :: RetryStatus -> Text
@@ -98,12 +101,12 @@ pushStrategy store authToken opts name compressionMethod storePath =
         Conduit.yield chunk
         onTick chunk
 
-withPushParams :: Env -> PushOptions -> BinaryCacheName -> (PushParams IO () -> IO ()) -> IO ()
+withPushParams :: Env -> Options.PushOptions -> BinaryCacheName -> (PushParams IO () -> IO ()) -> IO ()
 withPushParams env pushOpts name m = do
   pushSecret <- getPushSecretRequired (config env) name
   withPushParams' env pushOpts name pushSecret m
 
-withPushParams' :: Env -> PushOptions -> BinaryCacheName -> PushSecret -> (PushParams IO () -> IO ()) -> IO ()
+withPushParams' :: Env -> Options.PushOptions -> BinaryCacheName -> PushSecret -> (PushParams IO () -> IO ()) -> IO ()
 withPushParams' env pushOpts name pushSecret m = do
   let authToken = getAuthTokenFromPushSecret pushSecret
 

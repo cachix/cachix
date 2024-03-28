@@ -54,7 +54,7 @@ import qualified Data.HashMap.Strict as HashMap
 import Data.IORef
 import qualified Data.Set as Set
 import qualified Data.Text as T
-import Data.Time (getCurrentTime)
+import Data.Time (UTCTime, diffUTCTime, getCurrentTime)
 import Hercules.CNix (StorePath)
 import Hercules.CNix.Store (Store, parseStorePath, storePathToPath)
 import qualified Katip
@@ -66,23 +66,50 @@ import Servant.Conduit ()
 import qualified UnliftIO.QSem as QSem
 
 newPushManagerEnv :: (MonadIO m) => PushOptions -> Logger -> OnPushEvent -> m PushManagerEnv
-newPushManagerEnv pushOptions pmLogger pmOnPushEvent = liftIO $ do
+newPushManagerEnv pushOptions pmLogger onPushEvent = liftIO $ do
   pmPushJobs <- newTVarIO mempty
   pmStorePathReferences <- newTVarIO mempty
   pmTaskQueue <- newTBMQueueIO 1000
   pmTaskSemaphore <- QSem.newQSem (numJobs pushOptions)
+  pmLastEventTimestamp <- newTVarIO =<< getCurrentTime
+  let pmOnPushEvent id pushEvent =
+        bumpLastEventTimestamp pmLastEventTimestamp >> onPushEvent id pushEvent
+
   return $ PushManagerEnv {..}
 
 runPushManager :: (MonadIO m) => PushManagerEnv -> PushManager a -> m a
 runPushManager env f = liftIO $ unPushManager f `runReaderT` env
 
-stopPushManager :: PushManagerEnv -> IO ()
-stopPushManager PushManagerEnv {pmTaskQueue, pmPushJobs} =
-  atomically $ do
-    pushJobs <- readTVar pmPushJobs
-    if all PushJob.isProcessed (HashMap.elems pushJobs)
-      then closeTBMQueue pmTaskQueue
-      else retry
+stopPushManager :: PushManagerEnv -> Int -> IO ()
+stopPushManager PushManagerEnv {pmTaskQueue, pmPushJobs, pmLastEventTimestamp} timeoutSeconds =
+  runGracefulShutdown
+  where
+    runGracefulShutdown = do
+      now <- getCurrentTime
+
+      didShutDown <- atomically $ do
+        pushJobs <- readTVar pmPushJobs
+        lastEventTimestamp <- readTVar pmLastEventTimestamp
+
+        let noPendingJobs = all PushJob.isProcessed (HashMap.elems pushJobs)
+
+        let isShutdownTimeout =
+              fromIntegral timeoutSeconds <= now `diffUTCTime` lastEventTimestamp
+
+        if noPendingJobs || isShutdownTimeout
+          then do
+            closeTBMQueue pmTaskQueue
+            pure True
+          else pure False
+
+      unless didShutDown $ do
+        threadDelay (1 * 1000 * 1000)
+        runGracefulShutdown
+
+bumpLastEventTimestamp :: TVar UTCTime -> IO ()
+bumpLastEventTimestamp lastEventTimestamp = do
+  now <- getCurrentTime
+  atomically $ writeTVar lastEventTimestamp now
 
 -- Manage push jobs
 

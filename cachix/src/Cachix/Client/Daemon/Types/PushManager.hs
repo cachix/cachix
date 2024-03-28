@@ -48,6 +48,8 @@ data PushManagerEnv = PushManagerEnv
     pmTaskSemaphore :: QSem,
     -- | A callback for push events.
     pmOnPushEvent :: OnPushEvent,
+    -- | The timestamp of the most recent event. This is used to track activity internally.
+    pmLastEventTimestamp :: TVar UTCTime,
     pmLogger :: Logger
   }
 

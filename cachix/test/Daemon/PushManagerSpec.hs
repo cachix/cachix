@@ -148,7 +148,7 @@ spec = do
     describe "timeout" $ do
       it "times out a transaction after n seconds" $ do
         timestamp <- newTVarIO =<< getCurrentTime
-        atomicallyWithTimeout timestamp timeoutOptions retry
+        atomicallyWithTimeout timeoutOptions timestamp retry
 
 withPushManager :: (PushManagerEnv -> IO a) -> IO a
 withPushManager f = do

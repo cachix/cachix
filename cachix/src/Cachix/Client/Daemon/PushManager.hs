@@ -87,11 +87,10 @@ runPushManager env f = liftIO $ unPushManager f `runReaderT` env
 
 stopPushManager :: TimeoutOptions -> PushManagerEnv -> IO ()
 stopPushManager timeoutOptions PushManagerEnv {..} = do
-  atomicallyWithTimeout pmLastEventTimestamp timeoutOptions $ do
+  atomicallyWithTimeout timeoutOptions pmLastEventTimestamp $ do
     pendingJobs <- readTVar pmPendingJobCount
-    if pendingJobs > 0
-      then retry
-      else closeTBMQueue pmTaskQueue
+    check (pendingJobs <= 0)
+  atomically $ closeTBMQueue pmTaskQueue
 
 -- Manage push jobs
 
@@ -464,13 +463,13 @@ decrementTVar tvar = modifyTVar' tvar (subtract 1)
 
 -- | Run a transaction with a timeout.
 atomicallyWithTimeout ::
+  TimeoutOptions ->
   -- | A TVar timestamp to compare against
   TVar UTCTime ->
-  TimeoutOptions ->
   -- | The transaction to run
   STM () ->
   IO ()
-atomicallyWithTimeout timeVar TimeoutOptions {..} transaction = do
+atomicallyWithTimeout TimeoutOptions {..} timeVar transaction = do
   timeoutVar <- newTVarIO False
   Async.race_
     (updateShutdownTimeout timeoutVar)

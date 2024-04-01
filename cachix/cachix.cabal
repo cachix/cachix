@@ -262,6 +262,7 @@ test-suite cachix-test
     , retry
     , servant-auth-client
     , servant-client-core
+    , stm
     , temporary
     , time
 

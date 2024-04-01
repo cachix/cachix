@@ -27,6 +27,9 @@ module Cachix.Client.Daemon.PushManager
     pushStorePathProgress,
     pushStorePathDone,
     pushStorePathFailed,
+
+    -- * Helpers
+    atomicallyWithTimeout,
   )
 where
 
@@ -44,6 +47,7 @@ import Cachix.Client.Push as Client.Push
 import Cachix.Client.Retry (retryAll)
 import qualified Cachix.Types.BinaryCache as BinaryCache
 import qualified Conduit as C
+import qualified Control.Concurrent.Async as Async
 import Control.Concurrent.STM.TBMQueue
 import Control.Concurrent.STM.TVar
 import qualified Control.Monad.Catch as E
@@ -72,8 +76,7 @@ newPushManagerEnv pushOptions pmLogger onPushEvent = liftIO $ do
   pmTaskQueue <- newTBMQueueIO 1000
   pmTaskSemaphore <- QSem.newQSem (numJobs pushOptions)
   pmLastEventTimestamp <- newTVarIO =<< getCurrentTime
-  let pmOnPushEvent id pushEvent =
-        bumpLastEventTimestamp pmLastEventTimestamp >> onPushEvent id pushEvent
+  let pmOnPushEvent id pushEvent = bumpTVarTimestamp pmLastEventTimestamp >> onPushEvent id pushEvent
 
   return $ PushManagerEnv {..}
 
@@ -81,35 +84,13 @@ runPushManager :: (MonadIO m) => PushManagerEnv -> PushManager a -> m a
 runPushManager env f = liftIO $ unPushManager f `runReaderT` env
 
 stopPushManager :: PushManagerEnv -> Int -> IO ()
-stopPushManager PushManagerEnv {pmTaskQueue, pmPushJobs, pmLastEventTimestamp} timeoutSeconds =
-  runGracefulShutdown
-  where
-    runGracefulShutdown = do
-      now <- getCurrentTime
-
-      didShutDown <- atomically $ do
-        pushJobs <- readTVar pmPushJobs
-        lastEventTimestamp <- readTVar pmLastEventTimestamp
-
-        let noPendingJobs = all PushJob.isProcessed (HashMap.elems pushJobs)
-
-        let isShutdownTimeout =
-              fromIntegral timeoutSeconds <= now `diffUTCTime` lastEventTimestamp
-
-        if noPendingJobs || isShutdownTimeout
-          then do
-            closeTBMQueue pmTaskQueue
-            pure True
-          else pure False
-
-      unless didShutDown $ do
-        threadDelay (1 * 1000 * 1000)
-        runGracefulShutdown
-
-bumpLastEventTimestamp :: TVar UTCTime -> IO ()
-bumpLastEventTimestamp lastEventTimestamp = do
-  now <- getCurrentTime
-  atomically $ writeTVar lastEventTimestamp now
+stopPushManager PushManagerEnv {pmTaskQueue, pmPushJobs, pmLastEventTimestamp} timeoutSeconds = do
+  atomicallyWithTimeout pmLastEventTimestamp timeoutSeconds $ do
+    pushJobs <- readTVar pmPushJobs
+    let noPendingJobs = all PushJob.isProcessed (HashMap.elems pushJobs)
+    if noPendingJobs
+      then closeTBMQueue pmTaskQueue
+      else retry
 
 -- Manage push jobs
 
@@ -445,3 +426,29 @@ normalizeStorePath store fp =
 
 withException :: (E.MonadCatch m) => m a -> (SomeException -> m a) -> m a
 withException action handler = action `E.catchAll` (\e -> handler e >> E.throwM e)
+
+bumpTVarTimestamp :: (MonadIO m) => TVar UTCTime -> m ()
+bumpTVarTimestamp tvar = liftIO $ do
+  now <- getCurrentTime
+  atomically $ writeTVar tvar now
+
+atomicallyWithTimeout :: TVar UTCTime -> Int -> STM () -> IO ()
+atomicallyWithTimeout timeVar timeoutSeconds transaction = do
+  timeoutVar <- newTVarIO False
+  Async.race_
+    (updateShutdownTimeout timeoutVar)
+    (waitForGracefulShutdown timeoutVar)
+  where
+    waitForGracefulShutdown timeout =
+      atomically $ transaction `orElse` checkShutdownTimeout timeout
+
+    updateShutdownTimeout timeoutVar =
+      forever $ do
+        now <- getCurrentTime
+        atomically $ do
+          timestamp <- readTVar timeVar
+          let isTimeout = fromIntegral timeoutSeconds <= now `diffUTCTime` timestamp
+          writeTVar timeoutVar isTimeout
+        threadDelay (1 * 1000 * 1000)
+
+    checkShutdownTimeout timeout = check =<< readTVar timeout

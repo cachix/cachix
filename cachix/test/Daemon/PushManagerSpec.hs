@@ -6,6 +6,7 @@ import Cachix.Client.Daemon.PushManager
 import qualified Cachix.Client.Daemon.PushManager.PushJob as PushJob
 import Cachix.Client.Daemon.Types.PushManager
 import Cachix.Client.OptionsParser (defaultPushOptions)
+import Control.Concurrent.STM.TVar
 import Control.Retry (defaultRetryStatus)
 import qualified Data.Set as Set
 import Data.Time (getCurrentTime)
@@ -112,6 +113,21 @@ spec = do
               prPushedPaths = Set.fromList paths,
               prSkippedPaths = mempty
             }
+
+    it "shuts down gracefully" $ do
+      logger <- Log.new "daemon" Nothing Log.Debug
+      pm <- newPushManagerEnv defaultPushOptions logger mempty
+      _ <- runPushManager pm $ do
+        let request = Protocol.PushRequest {Protocol.storePaths = ["foo"]}
+        addPushJob request
+
+      stopPushManager pm 2
+
+  describe "STM" $
+    describe "timeout" $ do
+      it "times out a transaction after n seconds" $ do
+        timestamp <- newTVarIO =<< getCurrentTime
+        atomicallyWithTimeout timestamp 2 retry
 
 withPushManager :: (PushManagerEnv -> IO a) -> IO a
 withPushManager f = do

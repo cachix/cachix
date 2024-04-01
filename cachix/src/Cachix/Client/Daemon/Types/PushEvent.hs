@@ -13,7 +13,8 @@ import Data.Time (UTCTime)
 import Protolude
 
 data PushEvent = PushEvent
-  { eventTimestamp :: UTCTime,
+  { -- TODO: newtype a monotonic clock
+    eventTimestamp :: UTCTime,
     eventPushId :: Protocol.PushRequestId,
     eventMessage :: PushEventMessage
   }

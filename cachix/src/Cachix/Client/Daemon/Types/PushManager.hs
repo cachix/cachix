@@ -5,6 +5,7 @@
 module Cachix.Client.Daemon.Types.PushManager
   ( PushManagerEnv (..),
     PushManager (..),
+    PushJobStore,
     PushJob (..),
     JobStatus (..),
     JobStats (..),
@@ -50,6 +51,8 @@ data PushManagerEnv = PushManagerEnv
     pmOnPushEvent :: OnPushEvent,
     -- | The timestamp of the most recent event. This is used to track activity internally.
     pmLastEventTimestamp :: TVar UTCTime,
+    -- | The number of pending (uncompleted) jobs.
+    pmPendingJobCount :: TVar Int,
     pmLogger :: Logger
   }
 

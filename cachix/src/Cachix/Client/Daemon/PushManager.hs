@@ -12,6 +12,7 @@ module Cachix.Client.Daemon.PushManager
     lookupPushJob,
     withPushJob,
     resolvePushJob,
+    pendingJobCount,
 
     -- * Store paths
     queueStorePaths,
@@ -72,11 +73,12 @@ import qualified UnliftIO.QSem as QSem
 newPushManagerEnv :: (MonadIO m) => PushOptions -> Logger -> OnPushEvent -> m PushManagerEnv
 newPushManagerEnv pushOptions pmLogger onPushEvent = liftIO $ do
   pmPushJobs <- newTVarIO mempty
+  pmPendingJobCount <- newTVarIO 0
   pmStorePathReferences <- newTVarIO mempty
   pmTaskQueue <- newTBMQueueIO 1000
   pmTaskSemaphore <- QSem.newQSem (numJobs pushOptions)
   pmLastEventTimestamp <- newTVarIO =<< getCurrentTime
-  let pmOnPushEvent id pushEvent = bumpTVarTimestamp pmLastEventTimestamp >> onPushEvent id pushEvent
+  let pmOnPushEvent id pushEvent = updateTimestampTVar pmLastEventTimestamp >> onPushEvent id pushEvent
 
   return $ PushManagerEnv {..}
 
@@ -84,13 +86,12 @@ runPushManager :: (MonadIO m) => PushManagerEnv -> PushManager a -> m a
 runPushManager env f = liftIO $ unPushManager f `runReaderT` env
 
 stopPushManager :: PushManagerEnv -> Int -> IO ()
-stopPushManager PushManagerEnv {pmTaskQueue, pmPushJobs, pmLastEventTimestamp} timeoutSeconds = do
+stopPushManager PushManagerEnv {..} timeoutSeconds = do
   atomicallyWithTimeout pmLastEventTimestamp timeoutSeconds $ do
-    pushJobs <- readTVar pmPushJobs
-    let noPendingJobs = all PushJob.isProcessed (HashMap.elems pushJobs)
-    if noPendingJobs
-      then closeTBMQueue pmTaskQueue
-      else retry
+    pendingJobs <- readTVar pmPendingJobCount
+    if pendingJobs > 0
+      then retry
+      else closeTBMQueue pmTaskQueue
 
 -- Manage push jobs
 
@@ -104,6 +105,7 @@ addPushJob pushRequest = do
   liftIO $
     atomically $ do
       modifyTVar' pmPushJobs $ HashMap.insert (pushId pushJob) pushJob
+      incrementTVar pmPendingJobCount
       writeTBMQueue pmTaskQueue $ ResolveClosure (pushId pushJob)
 
   return (pushId pushJob)
@@ -111,7 +113,12 @@ addPushJob pushRequest = do
 removePushJob :: Protocol.PushRequestId -> PushManager ()
 removePushJob pushId = do
   PushManagerEnv {..} <- ask
-  liftIO $ atomically $ modifyTVar' pmPushJobs $ HashMap.delete pushId
+  liftIO $ atomically $ do
+    mpushJob <- HashMap.lookup pushId <$> readTVar pmPushJobs
+    for_ mpushJob $ \pushJob -> do
+      -- Decrement the job count if this job had not been processed yet
+      unless (PushJob.isProcessed pushJob) (decrementTVar pmPendingJobCount)
+      modifyTVar' pmPushJobs (HashMap.delete pushId)
 
 lookupPushJob :: Protocol.PushRequestId -> PushManager (Maybe PushJob)
 lookupPushJob pushId = do
@@ -128,7 +135,11 @@ withPushJob pushId f =
 modifyPushJob :: Protocol.PushRequestId -> (PushJob -> PushJob) -> PushManager (Maybe PushJob)
 modifyPushJob pushId f = do
   pushJobs <- asks pmPushJobs
-  liftIO $ atomically $ stateTVar pushJobs $ \jobs -> do
+  liftIO $ atomically $ modifyPushJobSTM pushJobs pushId f
+
+modifyPushJobSTM :: PushJobStore -> Protocol.PushRequestId -> (PushJob -> PushJob) -> STM (Maybe PushJob)
+modifyPushJobSTM pushJobs pushId f =
+  stateTVar pushJobs $ \jobs -> do
     let pj = HashMap.adjust f pushId jobs
     (HashMap.lookup pushId pj, pj)
 
@@ -140,8 +151,16 @@ modifyPushJobs pushIds f = do
 
 failPushJob :: Protocol.PushRequestId -> PushManager ()
 failPushJob pushId = do
+  PushManagerEnv {..} <- ask
   timestamp <- liftIO getCurrentTime
-  void $ modifyPushJob pushId $ PushJob.fail timestamp
+  liftIO $ atomically $ do
+    _ <- modifyPushJobSTM pmPushJobs pushId $ PushJob.fail timestamp
+    decrementTVar pmPendingJobCount
+
+pendingJobCount :: PushManager Int
+pendingJobCount = do
+  pmPendingJobCount <- asks pmPendingJobCount
+  liftIO $ readTVarIO pmPendingJobCount
 
 -- Manage store paths
 
@@ -172,11 +191,14 @@ lookupStorePathReferences storePath = do
 
 checkPushJobCompleted :: Protocol.PushRequestId -> PushManager ()
 checkPushJobCompleted pushId = do
+  PushManagerEnv {..} <- ask
   mpushJob <- lookupPushJob pushId
   for_ mpushJob $ \pushJob ->
     when (Set.null $ pushQueue pushJob) $ do
       timestamp <- liftIO getCurrentTime
-      _ <- modifyPushJob pushId $ PushJob.complete timestamp
+      liftIO $ atomically $ do
+        _ <- modifyPushJobSTM pmPushJobs pushId $ PushJob.complete timestamp
+        decrementTVar pmPendingJobCount
       pushFinished pushJob
 
 queuedStorePathCount :: PushManager Integer
@@ -409,9 +431,6 @@ pushStorePathFailed storePath errMsg = do
 
 -- Helpers
 
-transactionally :: (Foldable t, MonadIO m) => t (STM ()) -> m ()
-transactionally = liftIO . atomically . sequence_
-
 storeToFilePath :: (MonadIO m) => Store -> StorePath -> m FilePath
 storeToFilePath store storePath = do
   fp <- liftIO $ storePathToPath store storePath
@@ -427,12 +446,31 @@ normalizeStorePath store fp =
 withException :: (E.MonadCatch m) => m a -> (SomeException -> m a) -> m a
 withException action handler = action `E.catchAll` (\e -> handler e >> E.throwM e)
 
-bumpTVarTimestamp :: (MonadIO m) => TVar UTCTime -> m ()
-bumpTVarTimestamp tvar = liftIO $ do
+-- STM helpers
+
+transactionally :: (Foldable t, MonadIO m) => t (STM ()) -> m ()
+transactionally = liftIO . atomically . sequence_
+
+updateTimestampTVar :: (MonadIO m) => TVar UTCTime -> m ()
+updateTimestampTVar tvar = liftIO $ do
   now <- getCurrentTime
   atomically $ writeTVar tvar now
 
-atomicallyWithTimeout :: TVar UTCTime -> Int -> STM () -> IO ()
+incrementTVar :: TVar Int -> STM ()
+incrementTVar tvar = modifyTVar' tvar (+ 1)
+
+decrementTVar :: TVar Int -> STM ()
+decrementTVar tvar = modifyTVar' tvar (subtract 1)
+
+-- | Run a transaction with a timeout.
+atomicallyWithTimeout ::
+  -- | A TVar timestamp to compare against
+  TVar UTCTime ->
+  -- | Timeout in seconds
+  Int ->
+  -- | The transaction to run
+  STM () ->
+  IO ()
 atomicallyWithTimeout timeVar timeoutSeconds transaction = do
   timeoutVar <- newTVarIO False
   Async.race_

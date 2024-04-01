@@ -125,7 +125,12 @@ run daemon = runDaemon daemon $ flip E.onError (return $ ExitFailure 1) $ do
               "Remaining store paths: " <> (show queuedStorePathCount :: Text)
 
       -- Finish processing remaining push jobs
-      liftIO $ PushManager.stopPushManager daemonPushManager 60
+      let timeoutOptions =
+            PushManager.TimeoutOptions
+              { PushManager.toTimeout = 60.0,
+                PushManager.toPollingInterval = 1.0
+              }
+      liftIO $ PushManager.stopPushManager timeoutOptions daemonPushManager
 
       -- Gracefully shut down the worker before closing the socket
       Worker.stopWorkers workersThreads

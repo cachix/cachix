@@ -12,6 +12,7 @@ module Cachix.Client.Daemon.Types.PushManager
     PushResult (..),
     OnPushEvent,
     Task (..),
+    TimeoutOptions (..),
   )
 where
 
@@ -120,5 +121,13 @@ data JobStats = JobStats
   { jsCreatedAt :: UTCTime,
     jsStartedAt :: Maybe UTCTime,
     jsCompletedAt :: Maybe UTCTime
+  }
+  deriving stock (Eq, Show)
+
+data TimeoutOptions = TimeoutOptions
+  { -- | The maximum time to wait in seconds.
+    toTimeout :: Float,
+    -- | The interval at which to check the timeout condition.
+    toPollingInterval :: Float
   }
   deriving stock (Eq, Show)

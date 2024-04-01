@@ -59,7 +59,7 @@ import qualified Data.HashMap.Strict as HashMap
 import Data.IORef
 import qualified Data.Set as Set
 import qualified Data.Text as T
-import Data.Time (UTCTime, diffUTCTime, getCurrentTime)
+import Data.Time (UTCTime, diffUTCTime, getCurrentTime, secondsToNominalDiffTime)
 import Hercules.CNix (StorePath)
 import Hercules.CNix.Store (Store, parseStorePath, storePathToPath)
 import qualified Katip
@@ -85,9 +85,9 @@ newPushManagerEnv pushOptions pmLogger onPushEvent = liftIO $ do
 runPushManager :: (MonadIO m) => PushManagerEnv -> PushManager a -> m a
 runPushManager env f = liftIO $ unPushManager f `runReaderT` env
 
-stopPushManager :: PushManagerEnv -> Int -> IO ()
-stopPushManager PushManagerEnv {..} timeoutSeconds = do
-  atomicallyWithTimeout pmLastEventTimestamp timeoutSeconds $ do
+stopPushManager :: TimeoutOptions -> PushManagerEnv -> IO ()
+stopPushManager timeoutOptions PushManagerEnv {..} = do
+  atomicallyWithTimeout pmLastEventTimestamp timeoutOptions $ do
     pendingJobs <- readTVar pmPendingJobCount
     if pendingJobs > 0
       then retry
@@ -466,12 +466,11 @@ decrementTVar tvar = modifyTVar' tvar (subtract 1)
 atomicallyWithTimeout ::
   -- | A TVar timestamp to compare against
   TVar UTCTime ->
-  -- | Timeout in seconds
-  Int ->
+  TimeoutOptions ->
   -- | The transaction to run
   STM () ->
   IO ()
-atomicallyWithTimeout timeVar timeoutSeconds transaction = do
+atomicallyWithTimeout timeVar TimeoutOptions {..} transaction = do
   timeoutVar <- newTVarIO False
   Async.race_
     (updateShutdownTimeout timeoutVar)
@@ -485,8 +484,9 @@ atomicallyWithTimeout timeVar timeoutSeconds transaction = do
         now <- getCurrentTime
         atomically $ do
           timestamp <- readTVar timeVar
-          let isTimeout = fromIntegral timeoutSeconds <= now `diffUTCTime` timestamp
+          let isTimeout =
+                secondsToNominalDiffTime (realToFrac toTimeout) <= now `diffUTCTime` timestamp
           writeTVar timeoutVar isTimeout
-        threadDelay (1 * 1000 * 1000)
+        threadDelay $ ceiling (toPollingInterval * 1000.0 * 1000.0)
 
     checkShutdownTimeout timeout = check =<< readTVar timeout

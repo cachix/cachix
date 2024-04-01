@@ -249,6 +249,7 @@ test-suite cachix-test
 
   build-depends:
     , aeson
+    , async
     , bytestring
     , cachix
     , cachix-api

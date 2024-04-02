@@ -58,16 +58,14 @@ addFailedPath storePath pushResult =
 markStorePathPushed :: FilePath -> PushJob -> PushJob
 markStorePathPushed storePath pushJob@(PushJob {pushQueue, pushResult}) =
   pushJob
-    { pushStatus = Running,
-      pushQueue = Set.delete storePath pushQueue,
+    { pushQueue = Set.delete storePath pushQueue,
       pushResult = addPushedPath storePath pushResult
     }
 
 markStorePathFailed :: FilePath -> PushJob -> PushJob
 markStorePathFailed storePath pushJob@(PushJob {pushQueue, pushResult}) =
   pushJob
-    { pushStatus = Running,
-      pushQueue = Set.delete storePath pushQueue,
+    { pushQueue = Set.delete storePath pushQueue,
       pushResult = addFailedPath storePath pushResult
     }
 

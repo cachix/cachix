@@ -6,6 +6,8 @@ import Cachix.Client.Daemon.PushManager
 import qualified Cachix.Client.Daemon.PushManager.PushJob as PushJob
 import Cachix.Client.Daemon.Types.PushManager
 import Cachix.Client.OptionsParser (defaultPushOptions)
+import Control.Concurrent.Async (concurrently_)
+import Control.Concurrent.STM.TVar
 import Control.Retry (defaultRetryStatus)
 import qualified Data.Set as Set
 import Data.Time (getCurrentTime)
@@ -113,6 +115,41 @@ spec = do
               prSkippedPaths = mempty
             }
 
+    describe "graceful shutdown" $ do
+      it "shuts down with no jobs" $ do
+        logger <- Log.new "daemon" Nothing Log.Debug
+        pm <- newPushManagerEnv defaultPushOptions logger mempty
+        stopPushManager timeoutOptions pm
+
+      it "shuts down after jobs complete" $ do
+        let paths = ["foo"]
+        let longTimeoutOptions = TimeoutOptions {toTimeout = 10.0, toPollingInterval = 0.1}
+        logger <- Log.new "daemon" Nothing Log.Debug
+        pm <- newPushManagerEnv defaultPushOptions logger mempty
+
+        _ <- runPushManager pm $ do
+          let request = Protocol.PushRequest {Protocol.storePaths = paths}
+          addPushJob request
+
+        concurrently_ (stopPushManager longTimeoutOptions pm) $
+          runPushManager pm $
+            for_ paths pushStorePathDone
+
+      it "shuts down on job stall" $ do
+        logger <- Log.new "daemon" Nothing Log.Debug
+        pm <- newPushManagerEnv defaultPushOptions logger mempty
+        _ <- runPushManager pm $ do
+          let request = Protocol.PushRequest {Protocol.storePaths = ["foo"]}
+          addPushJob request
+
+        stopPushManager timeoutOptions pm
+
+  describe "STM" $
+    describe "timeout" $ do
+      it "times out a transaction after n seconds" $ do
+        timestamp <- newTVarIO =<< getCurrentTime
+        atomicallyWithTimeout timeoutOptions timestamp retry
+
 withPushManager :: (PushManagerEnv -> IO a) -> IO a
 withPushManager f = do
   logger <- liftIO $ Log.new "daemon" Nothing Log.Debug
@@ -120,3 +157,6 @@ withPushManager f = do
 
 inPushManager :: PushManager a -> IO a
 inPushManager f = withPushManager (`runPushManager` f)
+
+timeoutOptions :: TimeoutOptions
+timeoutOptions = TimeoutOptions {toTimeout = 0.2, toPollingInterval = 0.1}

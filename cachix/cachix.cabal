@@ -249,6 +249,7 @@ test-suite cachix-test
 
   build-depends:
     , aeson
+    , async
     , bytestring
     , cachix
     , cachix-api
@@ -262,6 +263,7 @@ test-suite cachix-test
     , retry
     , servant-auth-client
     , servant-client-core
+    , stm
     , temporary
     , time
 

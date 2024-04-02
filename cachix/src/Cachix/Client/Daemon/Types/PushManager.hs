@@ -5,12 +5,14 @@
 module Cachix.Client.Daemon.Types.PushManager
   ( PushManagerEnv (..),
     PushManager (..),
+    PushJobStore,
     PushJob (..),
     JobStatus (..),
     JobStats (..),
     PushResult (..),
     OnPushEvent,
     Task (..),
+    TimeoutOptions (..),
   )
 where
 
@@ -48,6 +50,10 @@ data PushManagerEnv = PushManagerEnv
     pmTaskSemaphore :: QSem,
     -- | A callback for push events.
     pmOnPushEvent :: OnPushEvent,
+    -- | The timestamp of the most recent event. This is used to track activity internally.
+    pmLastEventTimestamp :: TVar UTCTime,
+    -- | The number of pending (uncompleted) jobs.
+    pmPendingJobCount :: TVar Int,
     pmLogger :: Logger
   }
 
@@ -115,5 +121,13 @@ data JobStats = JobStats
   { jsCreatedAt :: UTCTime,
     jsStartedAt :: Maybe UTCTime,
     jsCompletedAt :: Maybe UTCTime
+  }
+  deriving stock (Eq, Show)
+
+data TimeoutOptions = TimeoutOptions
+  { -- | The maximum time to wait in seconds.
+    toTimeout :: Float,
+    -- | The interval at which to check the timeout condition.
+    toPollingInterval :: Float
   }
   deriving stock (Eq, Show)

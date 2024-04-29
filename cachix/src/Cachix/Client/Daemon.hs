@@ -108,6 +108,7 @@ run daemon = runDaemon daemon $ flip E.onError (return $ ExitFailure 1) $ do
     E.bracketOnError (Daemon.openSocket daemonSocketPath) Daemon.closeSocket $ \sock -> do
       liftIO $ Socket.listen sock Socket.maxListenQueue
       listenThread <- Async.async $ Daemon.listen stop queueJob sock
+      Async.link listenThread
 
       -- Wait for a shutdown signal
       waitForShutdown daemonShutdownLatch

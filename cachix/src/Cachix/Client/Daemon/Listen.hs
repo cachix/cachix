@@ -68,7 +68,9 @@ listen onClientStop onPushRequest sock = loop
         Left err@(DecodingError _) -> do
           Katip.logFM Katip.ErrorS $ Katip.ls $ displayException err
           loop
-        Left err -> throwIO err
+        Left err -> do
+          Katip.logFM Katip.ErrorS $ Katip.ls $ displayException err
+          throwIO err
 
 serverBye :: Socket.Socket -> IO ()
 serverBye sock =

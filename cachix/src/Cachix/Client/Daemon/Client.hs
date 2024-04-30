@@ -10,6 +10,7 @@ import Control.Concurrent.STM.TBMQueue
 import Control.Exception.Safe (catchAny)
 import qualified Data.Aeson as Aeson
 import qualified Data.ByteString as BS
+import Data.IORef
 import Data.Time.Clock
 import qualified Network.Socket as Socket
 import qualified Network.Socket.ByteString as Socket.BS
@@ -37,15 +38,17 @@ push _env daemonOptions storePaths =
 stop :: Env -> DaemonOptions -> IO ()
 stop _env daemonOptions =
   withDaemonConn (daemonSocketPath daemonOptions) $ \sock -> do
+    putErrText "Setting up queues for daemon communication"
     let size = 100
     (rx, tx) :: (TBMQueue Protocol.DaemonMessage, TBMQueue Protocol.ClientMessage) <-
       atomically $ (,) <$> newTBMQueue size <*> newTBMQueue size
 
     mainThread <- myThreadId
-    lastPongMVar <- newEmptyMVar
+    lastPongRef <- newIORef =<< getCurrentTime
     rxThread <- Async.async $ fix $ \loop -> do
       -- Wait for the socket to close
       bs <- Socket.BS.recv sock 4096 `catchAny` (\_ -> return BS.empty)
+      putErrText "Received message from daemon"
 
       -- A zero-length response means that the daemon has closed the socket
       guard $ not $ BS.null bs
@@ -65,23 +68,25 @@ stop _env daemonOptions =
         loop
 
     pingThread <- Async.async $ forever $ do
-      threadDelay (20 * 1000 * 1000)
       timestamp <- getCurrentTime
-      lastPong <- readMVar lastPongMVar
+      lastPong <- readIORef lastPongRef
       when (timestamp >= addUTCTime 30 lastPong) $ do
         putErrText "Daemon is unresponsive, killing"
         throwTo mainThread Unresponsive
       putErrText "Sending ping to daemon"
       atomically $ writeTBMQueue tx Protocol.ClientPing
+      threadDelay (20 * 1000 * 1000)
 
     -- Request the daemon to stop
+    putErrText "Sending client stop"
     atomically $ writeTBMQueue tx Protocol.ClientStop
 
     fix $ \loop -> do
       atomically (readTBMQueue rx) >>= \case
         Nothing -> return ()
         Just Protocol.DaemonPong -> do
-          putMVar lastPongMVar =<< getCurrentTime
+          putErrText "Got back pong"
+          writeIORef lastPongRef =<< getCurrentTime
           loop
         Just Protocol.DaemonBye -> do
           Async.cancel rxThread
@@ -91,13 +96,16 @@ stop _env daemonOptions =
 
 withDaemonConn :: Maybe FilePath -> (Socket.Socket -> IO a) -> IO a
 withDaemonConn optionalSocketPath f = do
+  putErrText "Connecting to Cachix Daemon"
   socketPath <- maybe getSocketPath pure optionalSocketPath
   bracket (open socketPath) Socket.close f `onException` failedToConnectTo socketPath
   where
     open socketPath = do
       sock <- Socket.socket Socket.AF_UNIX Socket.Stream Socket.defaultProtocol
+      putErrText $ "Connecting to: " <> show socketPath
       Socket.connect sock (Socket.SockAddrUnix socketPath)
 
+      putErrText "Setting up non-blocking socket"
       -- Network.Socket.accept sets the socket to non-blocking by default.
       Socket.withFdSocket sock $ \fd ->
         Posix.setFdOption (fromIntegral fd) Posix.NonBlockingRead False

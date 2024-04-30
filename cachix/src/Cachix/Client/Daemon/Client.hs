@@ -47,19 +47,22 @@ stop _env daemonOptions =
     lastPongRef <- newIORef =<< getCurrentTime
     rxThread <- Async.async $ fix $ \loop -> do
       -- Wait for the socket to close
-      bs <- Socket.BS.recv sock 4096 `catchAny` (\_ -> return BS.empty)
-      putErrText "Received message from daemon"
+      bs <- Socket.BS.recv sock 4096 `catchAny` (\_ -> putErrText "socket error" >> pure BS.empty)
 
       -- A zero-length response means that the daemon has closed the socket
-      guard $ not $ BS.null bs
-
-      case Aeson.eitherDecodeStrict bs of
-        Left err -> do
-          putErrText (toS err)
-          throwTo mainThread Unresponsive
-        Right msg -> do
-          atomically $ writeTBMQueue rx msg
+      if BS.null bs
+        then do
+          putErrText "Got nothing. sleeping"
+          threadDelay (1 * 1000 * 1000)
           loop
+        else case Aeson.eitherDecodeStrict bs of
+          Left err -> do
+            putErrText (toS err)
+            throwTo mainThread Unresponsive
+          Right msg -> do
+            putErrText $ "Received message from daemon: " <> show msg
+            atomically $ writeTBMQueue rx msg
+            loop
 
     txThread <- Async.async $ fix $ \loop -> do
       mmsg <- atomically $ readTBMQueue tx
@@ -105,10 +108,10 @@ withDaemonConn optionalSocketPath f = do
       putErrText $ "Connecting to: " <> show socketPath
       Socket.connect sock (Socket.SockAddrUnix socketPath)
 
-      putErrText "Setting up non-blocking socket"
+      -- putErrText "Setting up non-blocking socket"
       -- Network.Socket.accept sets the socket to non-blocking by default.
-      Socket.withFdSocket sock $ \fd ->
-        Posix.setFdOption (fromIntegral fd) Posix.NonBlockingRead False
+      -- Socket.withFdSocket sock $ \fd ->
+      --   Posix.setFdOption (fromIntegral fd) Posix.NonBlockingRead False
 
       return sock
 

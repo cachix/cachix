@@ -19,14 +19,14 @@ data ClientMessage
   = ClientPushRequest !PushRequest
   | ClientStop
   | ClientPing
-  deriving stock (Generic)
+  deriving stock (Generic, Show)
   deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)
 
 -- | JSON messages that the daemon can send to the client
 data DaemonMessage
   = DaemonPong
   | DaemonBye
-  deriving stock (Generic)
+  deriving stock (Generic, Show)
   deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)
 
 newtype PushRequestId = PushRequestId UUID

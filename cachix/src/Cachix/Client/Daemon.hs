@@ -125,6 +125,7 @@ run daemon = runDaemon daemon $ flip E.onError (return $ ExitFailure 1) $ do
             Katip.logStr $
               "Remaining store paths: " <> (show queuedStorePathCount :: Text)
 
+      Katip.logFM Katip.DebugS "Waiting for push manager to clear remaining jobs..."
       -- Finish processing remaining push jobs
       let timeoutOptions =
             PushManager.TimeoutOptions
@@ -132,26 +133,33 @@ run daemon = runDaemon daemon $ flip E.onError (return $ ExitFailure 1) $ do
                 PushManager.toPollingInterval = 1.0
               }
       liftIO $ PushManager.stopPushManager timeoutOptions daemonPushManager
+      Katip.logFM Katip.DebugS "Push manager shut down."
 
       -- Gracefully shut down the worker before closing the socket
       Worker.stopWorkers workersThreads
 
       -- Close all event subscriptions
+      Katip.logFM Katip.DebugS "Shutting down event manager..."
       liftIO $ stopSubscriptionManager daemonSubscriptionManager
       Async.wait subscriptionManagerThread
+      Katip.logFM Katip.DebugS "Event manager shut down."
 
       -- TODO: say goodbye to all clients waiting for their push to go through
+      Katip.logFM Katip.DebugS "Waiting for listen thread to exit..."
       listenThreadRes <- do
         Async.cancel listenThread
         Async.waitCatch listenThread
+      Katip.logFM Katip.DebugS "Listen thread exited."
 
       case listenThreadRes of
         Right clientSock -> do
+          Katip.logFM Katip.DebugS "Sending goodbye to client..."
           -- Wave goodbye to the client that requested the shutdown
           liftIO $ Daemon.serverBye clientSock
           liftIO $ Socket.shutdown clientSock Socket.ShutdownBoth `catchAny` \_ -> return ()
         _ -> return ()
 
+      Katip.logFM Katip.InfoS "Daemon shut down. Exiting."
       return ExitSuccess
 
 stop :: Daemon ()

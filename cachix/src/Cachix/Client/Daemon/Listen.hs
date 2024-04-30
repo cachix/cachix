@@ -54,7 +54,12 @@ listen onClientStop onPushRequest sock = loop
       result <- liftIO $ runExceptT $ readPushRequest sock
 
       case result of
+        Right (ClientPing, clientConn) -> do
+          Katip.logFM Katip.DebugS "Received ping"
+          liftIO $ Socket.LBS.sendAll clientConn (Aeson.encode DaemonPong)
+          loop
         Right (ClientStop, clientConn) -> do
+          Katip.logFM Katip.DebugS "Received stop request"
           onClientStop
           return clientConn
         Right (ClientPushRequest pushRequest, clientConn) -> do

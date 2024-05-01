@@ -69,6 +69,7 @@ library
     Cachix.Client.Config.Orphans
     Cachix.Client.Daemon
     Cachix.Client.Daemon.Client
+    Cachix.Client.Daemon.EventLoop
     Cachix.Client.Daemon.Listen
     Cachix.Client.Daemon.Log
     Cachix.Client.Daemon.PostBuildHook
@@ -78,12 +79,15 @@ library
     Cachix.Client.Daemon.PushManager
     Cachix.Client.Daemon.PushManager.PushJob
     Cachix.Client.Daemon.ShutdownLatch
+    Cachix.Client.Daemon.SocketStore
     Cachix.Client.Daemon.Subscription
     Cachix.Client.Daemon.Types
     Cachix.Client.Daemon.Types.Daemon
+    Cachix.Client.Daemon.Types.EventLoop
     Cachix.Client.Daemon.Types.Log
     Cachix.Client.Daemon.Types.PushEvent
     Cachix.Client.Daemon.Types.PushManager
+    Cachix.Client.Daemon.Types.SocketStore
     Cachix.Client.Daemon.Worker
     Cachix.Client.Env
     Cachix.Client.Exception

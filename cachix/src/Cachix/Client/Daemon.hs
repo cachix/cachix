@@ -13,14 +13,17 @@ where
 import qualified Cachix.Client.Commands.Push as Commands.Push
 import qualified Cachix.Client.Config as Config
 import Cachix.Client.Config.Orphans ()
+import qualified Cachix.Client.Daemon.EventLoop as EventLoop
 import Cachix.Client.Daemon.Listen as Daemon
 import qualified Cachix.Client.Daemon.Log as Log
 import Cachix.Client.Daemon.Protocol as Protocol
 import Cachix.Client.Daemon.Push as Push
 import qualified Cachix.Client.Daemon.PushManager as PushManager
 import Cachix.Client.Daemon.ShutdownLatch
+import qualified Cachix.Client.Daemon.SocketStore as SocketStore
 import Cachix.Client.Daemon.Subscription as Subscription
 import Cachix.Client.Daemon.Types as Types
+import Cachix.Client.Daemon.Types.EventLoop (DaemonEvent (ShutdownGracefully))
 import qualified Cachix.Client.Daemon.Types.PushManager as PushManager
 import qualified Cachix.Client.Daemon.Worker as Worker
 import Cachix.Client.Env as Env
@@ -30,12 +33,13 @@ import Cachix.Client.Push
 import Cachix.Types.BinaryCache (BinaryCacheName)
 import qualified Cachix.Types.BinaryCache as BinaryCache
 import Control.Concurrent.STM.TMChan
-import Control.Exception.Safe (catchAny)
 import qualified Control.Monad.Catch as E
 import qualified Data.Text as T
+import qualified Data.Vector as Vector
 import qualified Hercules.CNix.Util as CNix.Util
 import qualified Katip
 import qualified Network.Socket as Socket
+import qualified Network.Socket.ByteString as Socket.BS
 import Protolude
 import System.Posix.Process (getProcessID)
 import qualified System.Posix.Signals as Signal
@@ -63,6 +67,9 @@ new daemonEnv daemonOptions daemonLogHandle daemonPushOptions daemonCacheName = 
   daemonLogger <- Log.new "cachix.daemon" daemonLogHandle daemonLogLevel
 
   daemonSocketPath <- maybe getSocketPath pure (Options.daemonSocketPath daemonOptions)
+  daemonSocketThread <- newEmptyMVar
+  daemonEventLoop <- EventLoop.new
+  daemonClients <- SocketStore.newSocketStore
   daemonShutdownLatch <- newShutdownLatch
   daemonPid <- getProcessID
 
@@ -104,70 +111,82 @@ run daemon = runDaemon daemon $ flip E.onError (return $ ExitFailure 1) $ do
         (PushManager.pmTaskQueue daemonPushManager)
         runWorkerTask
 
-    -- TODO: retry the connection on socket errors
-    E.bracketOnError (Daemon.openSocket daemonSocketPath) Daemon.closeSocket $ \sock -> do
-      liftIO $ Socket.listen sock Socket.maxListenQueue
-      listenThread <- Async.async $ Daemon.listen stop queueJob sock
-      Async.link listenThread
+    liftIO $
+      Async.async (Daemon.listen daemonEventLoop daemonSocketPath)
+        >>= putMVar daemonSocketThread
 
-      -- Wait for a shutdown signal
-      waitForShutdown daemonShutdownLatch
+    EventLoop.run daemonEventLoop $ \(exitLatch, event) ->
+      case event of
+        EventLoop.AddSocketClient conn ->
+          SocketStore.addSocket conn (Daemon.handleClient daemonEventLoop) daemonClients
+        EventLoop.RemoveSocketClient socketId ->
+          SocketStore.removeSocket socketId daemonClients
+        EventLoop.ReconnectSocket ->
+          -- TODO: implement reconnection logic
+          EventLoop.exitLoopWith (ExitFailure 1) exitLatch
+        EventLoop.ReceivedMessage clientMsg ->
+          case clientMsg of
+            ClientPushRequest pushRequest -> queueJob pushRequest
+            ClientStop -> EventLoop.send daemonEventLoop EventLoop.ShutdownGracefully
+            _ -> return ()
+        EventLoop.ShutdownGracefully -> do
+          Katip.logFM Katip.InfoS "Shutting down daemon..."
+          initiateShutdown daemonShutdownLatch
 
-      Katip.logFM Katip.InfoS "Shutting down daemon..."
+          PushManager.runPushManager daemonPushManager $ do
+            queuedStorePathCount <- PushManager.queuedStorePathCount
+            when (queuedStorePathCount > 0) $
+              Katip.logFM Katip.InfoS $
+                Katip.logStr $
+                  "Remaining store paths: " <> (show queuedStorePathCount :: Text)
 
-      -- Stop receiving new push requests
-      liftIO $ Socket.shutdown sock Socket.ShutdownReceive `catchAny` \_ -> return ()
+            Katip.logFM Katip.DebugS "Waiting for push manager to clear remaining jobs..."
+            -- Finish processing remaining push jobs
+            let timeoutOptions =
+                  PushManager.TimeoutOptions
+                    { PushManager.toTimeout = 60.0,
+                      PushManager.toPollingInterval = 1.0
+                    }
+            liftIO $ PushManager.stopPushManager timeoutOptions daemonPushManager
+            Katip.logFM Katip.DebugS "Push manager shut down."
 
-      PushManager.runPushManager daemonPushManager $ do
-        queuedStorePathCount <- PushManager.queuedStorePathCount
-        when (queuedStorePathCount > 0) $
-          Katip.logFM Katip.InfoS $
-            Katip.logStr $
-              "Remaining store paths: " <> (show queuedStorePathCount :: Text)
+            -- Gracefully shut down the worker before closing the socket
+            Worker.stopWorkers workersThreads
 
-      Katip.logFM Katip.DebugS "Waiting for push manager to clear remaining jobs..."
-      -- Finish processing remaining push jobs
-      let timeoutOptions =
-            PushManager.TimeoutOptions
-              { PushManager.toTimeout = 60.0,
-                PushManager.toPollingInterval = 1.0
-              }
-      liftIO $ PushManager.stopPushManager timeoutOptions daemonPushManager
-      Katip.logFM Katip.DebugS "Push manager shut down."
+            -- Close all event subscriptions
+            Katip.logFM Katip.DebugS "Shutting down event manager..."
+            liftIO $ stopSubscriptionManager daemonSubscriptionManager
+            Async.wait subscriptionManagerThread
+            Katip.logFM Katip.DebugS "Event manager shut down."
 
-      -- Gracefully shut down the worker before closing the socket
-      Worker.stopWorkers workersThreads
+            let sayGoodbye socket = do
+                  let clientSock = SocketStore.socket socket
+                  let clientThread = SocketStore.handlerThread socket
+                  Async.cancel clientThread
+                  Katip.logFM Katip.DebugS "Sending goodbye to client..."
+                  -- Wave goodbye to the client that requested the shutdown
+                  liftIO $ Daemon.serverBye clientSock
+                  liftIO $ Socket.shutdown clientSock Socket.ShutdownBoth `onException` return ()
+                  ebs :: Either SomeException ByteString <- liftIO $ try $ Socket.BS.recv clientSock 4096
+                  case ebs of
+                    Left err ->
+                      Katip.logFM Katip.WarningS "Client did not disconnect cleanly."
+                    Right bs ->
+                      Katip.logFM Katip.DebugS "Client disconnected."
 
-      -- Close all event subscriptions
-      Katip.logFM Katip.DebugS "Shutting down event manager..."
-      liftIO $ stopSubscriptionManager daemonSubscriptionManager
-      Async.wait subscriptionManagerThread
-      Katip.logFM Katip.DebugS "Event manager shut down."
+            Async.mapConcurrently_ sayGoodbye =<< SocketStore.toList daemonClients
 
-      -- TODO: say goodbye to all clients waiting for their push to go through
-      Katip.logFM Katip.DebugS "Waiting for listen thread to exit..."
-      listenThreadRes <- do
-        Async.cancel listenThread
-        Async.waitCatch listenThread
-      Katip.logFM Katip.DebugS "Listen thread exited."
-
-      case listenThreadRes of
-        Right clientSock -> do
-          Katip.logFM Katip.DebugS "Sending goodbye to client..."
-          -- Wave goodbye to the client that requested the shutdown
-          liftIO $ Daemon.serverBye clientSock
-          liftIO $ Socket.shutdown clientSock Socket.ShutdownBoth `catchAny` \_ -> return ()
-        _ -> return ()
-
-      Katip.logFM Katip.InfoS "Daemon shut down. Exiting."
-      return ExitSuccess
+            Katip.logFM Katip.InfoS "Daemon shut down. Exiting."
+            EventLoop.exitLoopWith ExitSuccess exitLatch
 
 stop :: Daemon ()
-stop = asks daemonShutdownLatch >>= initiateShutdown
+stop = do
+  eventloop <- asks daemonEventLoop
+  EventLoop.send eventloop ShutdownGracefully
 
 stopIO :: DaemonEnv -> IO ()
-stopIO DaemonEnv {daemonShutdownLatch} =
-  initiateShutdown daemonShutdownLatch
+stopIO DaemonEnv {daemonEventLoop} =
+  EventLoop.send daemonEventLoop ShutdownGracefully
 
 installSignalHandlers :: DaemonEnv -> IO ()
 installSignalHandlers daemon = do
@@ -178,10 +197,10 @@ installSignalHandlers daemon = do
       CNix.Util.triggerInterrupt
       stopIO daemon
 
-queueJob :: Protocol.PushRequest -> Socket.Socket -> Daemon ()
-queueJob pushRequest _clientConn = do
-  DaemonEnv {..} <- ask
-  -- TODO: subscribe the socket to updates if requested
+queueJob :: Protocol.PushRequest -> Daemon ()
+queueJob pushRequest = do
+  daemonPushManager <- asks daemonPushManager
+  -- TODO: subscribe the socket to updates if available
 
   -- Queue the job
   void $

@@ -13,7 +13,7 @@ import qualified Cachix.Client.Daemon.EventLoop as EventLoop
 import Cachix.Client.Daemon.Protocol as Protocol
 import Cachix.Client.Daemon.Types.EventLoop (EventLoop)
 import Cachix.Client.Daemon.Types.SocketStore (SocketId)
-import qualified Control.Exception.Safe as Safe
+import Control.Exception.Safe (catchAny)
 import qualified Control.Monad.Catch as E
 import qualified Data.Aeson as Aeson
 import qualified Data.ByteString as BS
@@ -95,7 +95,7 @@ handleClient eventloop socketId conn = do
 
 serverBye :: Socket.Socket -> IO ()
 serverBye sock =
-  Socket.LBS.sendAll sock (Aeson.encode DaemonBye) `onException` return ()
+  Socket.LBS.sendAll sock (Aeson.encode DaemonBye) `catchAny` (\_ -> return ())
 
 -- mapSyncException :: (Exception e1, Exception e2, Safe.MonadCatch m) => m a -> (e1 -> e2) -> m a
 -- mapSyncException a f = a `Safe.catch` (Safe.throwM . f)

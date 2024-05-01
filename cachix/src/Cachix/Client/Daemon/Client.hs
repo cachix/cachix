@@ -7,6 +7,7 @@ import Cachix.Client.OptionsParser (DaemonOptions (..))
 import qualified Cachix.Client.Retry as Retry
 import qualified Control.Concurrent.Async as Async
 import Control.Concurrent.STM.TBMQueue
+import Control.Exception.Safe (catchAny)
 import qualified Data.Aeson as Aeson
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy.Char8 as Lazy.Char8
@@ -101,7 +102,7 @@ stop _env daemonOptions =
       where
         go = do
           -- Wait for the socket to close
-          bs <- Socket.BS.recv sock 4096 `onException` return BS.empty
+          bs <- Socket.BS.recv sock 4096 `catchAny` (\_ -> return BS.empty)
 
           -- A zero-length response means that the daemon has closed the socket
           if BS.null bs

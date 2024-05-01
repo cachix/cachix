@@ -3,6 +3,7 @@ module Cachix.Client.Daemon.Worker
     stopWorkers,
     startWorker,
     stopWorker,
+    Immortal.Thread,
   )
 where
 

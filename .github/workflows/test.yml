@@ -18,21 +18,13 @@ jobs:
     - uses: cachix/cachix-action@v14
       with:
         name: cachix
-
-    - uses: cachix/cachix-action@v14
-      with:
-        name: cachix
-        installCommand: NIXPKGS_ALLOW_BROKEN=1 nix-env -if .
+        installCommand: nix profile install -L --show-trace --accept-flake-config
         signingKey: '${{ secrets.CACHIX_SIGNING_KEY }}'
 
-    - run:  nix build -L '.#ci' '.#cachix' --show-trace --impure
+    - run: nix build -L '.#ci' '.#cachix' --show-trace --impure
 
     - name: Install dev Cachix
-      run: nix-env -if .
-
-    # TODO; remove this
-    # make sure it's all uploaded to cachix
-    - run: echo > /tmp/store-path-pre-build
+      run: nix profile install -L --show-trace
 
     - name: "watch-exec test"
       env:

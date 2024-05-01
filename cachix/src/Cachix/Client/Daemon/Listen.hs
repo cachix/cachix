@@ -32,7 +32,7 @@ import System.Directory
   )
 import qualified System.Environment as System
 import System.FilePath ((</>))
-import System.IO.Error (isDoesNotExistError)
+import System.IO.Error (isDoesNotExistError, isResourceVanishedError)
 
 data ListenError
   = SocketError SomeException
@@ -58,22 +58,24 @@ listen eventloop daemonSocketPath = forever $ do
 
 handleClient ::
   forall m.
-  (E.MonadCatch m, Katip.KatipContext m) =>
+  (E.MonadMask m, Katip.KatipContext m) =>
   EventLoop ->
   SocketId ->
   Socket ->
   m ()
 handleClient eventloop socketId conn = do
-  go `E.onException` removeClient
+  go `E.finally` removeClient
   where
     go = do
-      bs <- liftIO $ Socket.BS.recv conn 4096
-      -- If the socket returns 0 bytes, then it is closed
-      if BS.null bs
-        then removeClient
-        else do
+      ebs <- liftIO $ try $ Socket.BS.recv conn 4096
+
+      case ebs of
+        Left err | isResourceVanishedError err -> return ()
+        Left _ -> return ()
+        -- If the socket returns 0 bytes, then it is closed
+        Right bs | BS.null bs -> return ()
+        Right bs -> do
           msgs <- catMaybes <$> mapM decodeMessage (Char8.split '\n' bs)
-          liftIO $ putErrText $ "Received: " <> show msgs
 
           forM_ msgs $ \msg -> do
             EventLoop.send eventloop (EventLoop.ReceivedMessage msg)
@@ -81,6 +83,8 @@ handleClient eventloop socketId conn = do
               Protocol.ClientPing ->
                 liftIO $ Socket.LBS.sendAll conn (Aeson.encode DaemonPong)
               _ -> return ()
+
+          go
 
     decodeMessage :: ByteString -> m (Maybe Protocol.ClientMessage)
     decodeMessage "" = return Nothing

@@ -76,14 +76,19 @@ main = do
             WebSocket.identifier = Agent.agentIdentifier agentName
           }
 
-  Log.withLog logOptions $ \withLog ->
+  Log.withLog logOptions $ \withLog -> do
+    print "Starting deployment"
     void . Lock.withTryLock (lockFilename agentName) $ do
+      print "Lock acquired"
       -- Open a connection to logging stream
       (logQueue, loggingThread) <- runLogStream withLog logWebsocketOptions
+      print "Log stream started"
 
       -- Open a connection to Cachix and block until it's ready.
       service <- WebSocket.new withLog serviceWebsocketOptions
       shutdownService <- Agent.connectToService service
+
+      print "Service connected"
 
       deploy withLog deployment service (Conduit.sinkTMQueue logQueue)
         `finally` do

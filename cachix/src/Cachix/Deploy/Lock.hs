@@ -28,6 +28,7 @@ defaultLockDirectory = "cachix" </> "deploy" </> "locks"
 getLockDirectory :: IO FilePath
 getLockDirectory = do
   lockDirectory <- Directory.getXdgDirectory Directory.XdgCache defaultLockDirectory
+  print lockDirectory
 
   Directory.createDirectoryIfMissing True lockDirectory
   Directory.setPermissions lockDirectory $

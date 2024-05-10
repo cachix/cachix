@@ -15,7 +15,8 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - uses: cachix/install-nix-action@v26
-    - uses: cachix/cachix-action@master
+    - name: Setup read-only Cachix cache
+      uses: cachix/cachix-action@master
       with:
         name: cachix
         skipPush: true
@@ -29,14 +30,16 @@ jobs:
         echo "out_path=$out_path" >> "$GITHUB_OUTPUT"
         echo "cachix=$out_path/bin/cachix" >> "$GITHUB_OUTPUT"
 
-    - uses: cachix/cachix-action@master
+    - name: Cache dev build
+      uses: cachix/cachix-action@master
       with:
         name: cachix
         cachixBin: '${{ steps.cachix.outputs.cachix }}'
         pathsToPush: '${{ steps.cachix.outputs.out_path }}'
         signingKey: '${{ secrets.CACHIX_SIGNING_KEY }}'
 
-    - uses: cachix/cachix-action@master
+    - name: Setup Cachix cache with dev build
+      uses: cachix/cachix-action@master
       with:
         name: cachix
         cachixBin: '${{ steps.cachix.outputs.cachix }}'

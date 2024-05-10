@@ -18,7 +18,18 @@ jobs:
     - uses: cachix/cachix-action@v14
       with:
         name: cachix
-        installCommand: nix profile install -L --show-trace --accept-flake-config
+        skipPush: true
+
+    - name: Build dev Cachix
+      id: cachix
+      run: |
+        out_path=$(nix build .#cachix -L --show-trace --print-out-paths)
+        echo "cachix=$out_path/bin/cachix" >> "$GITHUB_OUTPUT"
+
+    - uses: cachix/cachix-action@v14
+      with:
+        name: cachix
+        cachixBin: '${{ steps.cachix.outputs.cachix }}'
         signingKey: '${{ secrets.CACHIX_SIGNING_KEY }}'
 
     - run: nix build -L '.#ci' '.#cachix' --show-trace --impure

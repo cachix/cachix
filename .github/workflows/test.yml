@@ -26,7 +26,15 @@ jobs:
       id: cachix
       run: |
         out_path=$(nix build .#cachix -L --show-trace --print-out-paths)
+        echo "out_path=$out_path" >> "$GITHUB_OUTPUT"
         echo "cachix=$out_path/bin/cachix" >> "$GITHUB_OUTPUT"
+
+    - uses: cachix/cachix-action@master
+      with:
+        name: cachix
+        cachixBin: '${{ steps.cachix.outputs.cachix }}'
+        pathsToPush: '${{ steps.cachix.outputs.out_path }}'
+        signingKey: '${{ secrets.CACHIX_SIGNING_KEY }}'
 
     - uses: cachix/cachix-action@master
       with:

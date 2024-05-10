@@ -3,6 +3,7 @@
 
 module Cachix.Client.Daemon.PostBuildHook where
 
+import Control.Monad.Catch (MonadMask)
 import Data.Containers.ListUtils (nubOrd)
 import Data.String (String)
 import Data.String.Here
@@ -15,7 +16,7 @@ import System.Directory
   )
 import System.Environment (getExecutablePath, lookupEnv)
 import System.FilePath ((</>))
-import System.IO.Temp (withSystemTempDirectory)
+import System.IO.Temp (getCanonicalTemporaryDirectory, withTempDirectory)
 import System.Posix.Files
 
 type EnvVar = (String, String)
@@ -26,7 +27,7 @@ modifyEnv (envName, envValue) processEnv =
 
 withSetup :: Maybe FilePath -> (FilePath -> EnvVar -> IO a) -> IO a
 withSetup mdaemonSock f =
-  withSystemTempDirectory "cachix-daemon" $ \tempDir -> do
+  withDaemonTempDirectory "cachix-daemon" $ \tempDir -> do
     let postBuildHookScriptPath = tempDir </> "post-build-hook.sh"
         postBuildHookConfigPath = tempDir </> "nix.conf"
         daemonSock = fromMaybe (tempDir </> "daemon.sock") mdaemonSock
@@ -118,3 +119,15 @@ exec ${toS cachixBin :: Text} daemon push \\
   --socket ${toS socketPath :: Text} \\
   $OUT_PATHS
   |]
+
+-- | Run an action with a temporary directory.
+--
+-- Respects the RUNNER_TEMP environment variable if set.
+-- This is important on self-hosted GitHub runners with locked down system temp directories.
+-- The directory is deleted after use.
+withDaemonTempDirectory :: (MonadIO m, MonadMask m) => String -> (FilePath -> m a) -> m a
+withDaemonTempDirectory name action = do
+  runnerTempDir <- liftIO $ lookupEnv "RUNNER_TEMP"
+  systemTempDir <- liftIO getCanonicalTemporaryDirectory
+  let tempDir = maybe systemTempDir toS runnerTempDir
+  withTempDirectory tempDir name action

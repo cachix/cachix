@@ -7,6 +7,7 @@ on:
 jobs:
   tests:
     strategy:
+      fail-fast: false
       matrix:
         # macos-13 == x86_64
         # macos-latest == macos-14 == aarch64
@@ -50,6 +51,7 @@ jobs:
     - name: "watch-exec test"
       env:
         signingKey: ${{ secrets.CACHIX_SIGNING_KEY }}
+        NIX_USER_CONF_FILES: ""
       if: ${{ env.signingKey != '' }}
       run: ${{ steps.cachix.outputs.cachix }} watch-exec cachix -- nix-build genpaths.nix --substituters 'https://cache.nixos.org'
 

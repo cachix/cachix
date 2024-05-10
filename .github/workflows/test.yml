@@ -15,10 +15,12 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - uses: cachix/install-nix-action@v26
-    - uses: cachix/cachix-action@v14
+    - uses: cachix/cachix-action@master
       with:
         name: cachix
         skipPush: true
+        # TODO: allow skipping install
+        # installCommand: ""
 
     - name: Build dev Cachix
       id: cachix
@@ -26,7 +28,7 @@ jobs:
         out_path=$(nix build .#cachix -L --show-trace --print-out-paths)
         echo "cachix=$out_path/bin/cachix" >> "$GITHUB_OUTPUT"
 
-    - uses: cachix/cachix-action@v14
+    - uses: cachix/cachix-action@master
       with:
         name: cachix
         cachixBin: '${{ steps.cachix.outputs.cachix }}'
@@ -34,17 +36,14 @@ jobs:
 
     - run: nix build -L '.#ci' '.#cachix' --show-trace --impure
 
-    - name: Install dev Cachix
-      run: nix profile install -L --show-trace
-
     - name: "watch-exec test"
       env:
         signingKey: ${{ secrets.CACHIX_SIGNING_KEY }}
       if: ${{ env.signingKey != '' }}
-      run: cachix watch-exec cachix -- nix-build genpaths.nix --substituters 'https://cache.nixos.org'
+      run: ${{ steps.cachix.outputs.cachix }} watch-exec cachix -- nix-build genpaths.nix --substituters 'https://cache.nixos.org'
 
     - name: "daemon watch-exec test"
       env:
         signingKey: ${{ secrets.CACHIX_SIGNING_KEY }}
       if: ${{ env.signingKey != '' }}
-      run: cachix daemon watch-exec cachix -- nix-build genpaths.nix --substituters 'https://cache.nixos.org'
+      run: ${{ steps.cachix.outputs.cachix }} daemon watch-exec cachix -- nix-build genpaths.nix --substituters 'https://cache.nixos.org'

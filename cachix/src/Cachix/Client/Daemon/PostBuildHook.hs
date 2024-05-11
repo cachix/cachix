@@ -1,7 +1,20 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE TypeApplications #-}
 
-module Cachix.Client.Daemon.PostBuildHook where
+module Cachix.Client.Daemon.PostBuildHook
+  ( -- * Post-build hook setup
+    PostBuildHookEnv (..),
+    withSetup,
+
+    -- * Set up env vars
+    EnvVar,
+    modifyEnv,
+
+    -- * Internal
+    buildNixConfEnv,
+    buildNixUserConfFilesEnv,
+  )
+where
 
 import Control.Monad.Catch (MonadMask)
 import Data.Containers.ListUtils (nubOrd)
@@ -25,9 +38,17 @@ modifyEnv :: EnvVar -> [EnvVar] -> [EnvVar]
 modifyEnv (envName, envValue) processEnv =
   nubOrd $ (envName, envValue) : processEnv
 
-withSetup :: Maybe FilePath -> (FilePath -> EnvVar -> IO a) -> IO a
+data PostBuildHookEnv = PostBuildHookEnv
+  { tempDir :: !FilePath,
+    postBuildHookConfigPath :: !FilePath,
+    postBuildHookScriptPath :: !FilePath,
+    daemonSock :: !FilePath,
+    envVar :: !EnvVar
+  }
+
+withSetup :: Maybe FilePath -> (PostBuildHookEnv -> IO a) -> IO a
 withSetup mdaemonSock f =
-  withDaemonTempDirectory "cachix-daemon" $ \tempDir -> do
+  withRunnerFriendlyTempDirectory "cachix-daemon" $ \tempDir -> do
     let postBuildHookScriptPath = tempDir </> "post-build-hook.sh"
         postBuildHookConfigPath = tempDir </> "nix.conf"
         daemonSock = fromMaybe (tempDir </> "daemon.sock") mdaemonSock
@@ -38,13 +59,13 @@ withSetup mdaemonSock f =
 
     mnixConfEnv <- buildNixConfEnv postBuildHookScriptPath
     nixUserConfFilesEnv <- buildNixUserConfFilesEnv postBuildHookConfigPath
-    nixConfEnvVar <- case mnixConfEnv of
+    envVar <- case mnixConfEnv of
       Just nixConfEnv -> return nixConfEnv
       Nothing -> do
         writeFile postBuildHookConfigPath (postBuildHookConfig postBuildHookScriptPath)
         return nixUserConfFilesEnv
 
-    f daemonSock nixConfEnvVar
+    f PostBuildHookEnv {..}
 
 -- | Build the NIX_CONF environment variable.
 --
@@ -125,8 +146,8 @@ exec ${toS cachixBin :: Text} daemon push \\
 -- Respects the RUNNER_TEMP environment variable if set.
 -- This is important on self-hosted GitHub runners with locked down system temp directories.
 -- The directory is deleted after use.
-withDaemonTempDirectory :: (MonadIO m, MonadMask m) => String -> (FilePath -> m a) -> m a
-withDaemonTempDirectory name action = do
+withRunnerFriendlyTempDirectory :: (MonadIO m, MonadMask m) => String -> (FilePath -> m a) -> m a
+withRunnerFriendlyTempDirectory name action = do
   runnerTempDir <- liftIO $ lookupEnv "RUNNER_TEMP"
   systemTempDir <- liftIO getCanonicalTemporaryDirectory
   let tempDir = maybe systemTempDir toS runnerTempDir

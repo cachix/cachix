@@ -93,7 +93,7 @@ import System.Directory (doesFileExist)
 import System.Environment (getEnvironment)
 import System.IO (hIsTerminalDevice)
 import System.IO.Error (isEOFError)
-import System.IO.Temp (withSystemTempFile)
+import System.IO.Temp (withTempFile)
 import qualified System.Posix.Signals as Signals
 import qualified System.Process
 import qualified URI.ByteString as UBS
@@ -376,15 +376,15 @@ watchExec env pushOptions cacheName cmd args = do
 -- Requires the user to be a trusted user in a multi-user installation.
 watchExecDaemon :: Env -> PushOptions -> BinaryCacheName -> Text -> [Text] -> IO ()
 watchExecDaemon env pushOpts cacheName cmd args =
-  Daemon.PostBuildHook.withSetup Nothing $ \daemonSock nixConfEnv ->
-    withSystemTempFile "daemon-log-capture" $ \_ logHandle -> do
-      let daemonOptions = DaemonOptions {daemonSocketPath = Just daemonSock}
+  Daemon.PostBuildHook.withSetup Nothing $ \hookEnv ->
+    withTempFile (Daemon.PostBuildHook.tempDir hookEnv) "daemon-log-capture" $ \_ logHandle -> do
+      let daemonOptions = DaemonOptions {daemonSocketPath = Just (Daemon.PostBuildHook.daemonSock hookEnv)}
       daemon <- Daemon.new env daemonOptions (Just logHandle) pushOpts cacheName
 
       exitCode <-
         bracket (startDaemonThread daemon) (shutdownDaemonThread daemon logHandle) $ \_ -> do
           processEnv <- getEnvironment
-          let newProcessEnv = Daemon.PostBuildHook.modifyEnv nixConfEnv processEnv
+          let newProcessEnv = Daemon.PostBuildHook.modifyEnv (Daemon.PostBuildHook.envVar hookEnv) processEnv
           let process =
                 (System.Process.proc (toS cmd) (toS <$> args))
                   { System.Process.std_out = System.Process.Inherit,

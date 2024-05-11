@@ -7,41 +7,55 @@ on:
 jobs:
   tests:
     strategy:
+      fail-fast: false
       matrix:
-        # macos-13 == x86_64
-        # macos-latest == macos-14 == aarch64
-        os: [ubuntu-latest, macos-13, macos-latest]
+        os:
+          - ubuntu-latest
+          - [self-hosted, linux, ARM64]
+          - macos-13 # x86_64
+          - macos-latest # macos-14 == aarch64
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
     - uses: cachix/install-nix-action@v26
-    - uses: cachix/cachix-action@v14
+    - name: Setup read-only Cachix cache
+      uses: cachix/cachix-action@master
       with:
         name: cachix
+        skipPush: true
 
-    - uses: cachix/cachix-action@v14
+    - name: Build dev Cachix
+      id: cachix
+      run: |
+        cachix_out=$(nix build .#cachix -L --show-trace --print-out-paths)
+        echo "cachix_out=$cachix_out" >> "$GITHUB_OUTPUT"
+        echo "cachix_bin=$cachix_out/bin/cachix" >> "$GITHUB_OUTPUT"
+
+    - name: Cache dev build
+      uses: cachix/cachix-action@master
       with:
         name: cachix
-        installCommand: NIXPKGS_ALLOW_BROKEN=1 nix-env -if .
+        cachixBin: '${{ steps.cachix.outputs.cachix_bin }}'
+        pathsToPush: '${{ steps.cachix.outputs.cachix_out }}'
         signingKey: '${{ secrets.CACHIX_SIGNING_KEY }}'
 
-    - run:  nix build -L '.#ci' '.#cachix' --show-trace --impure
+    - name: Setup Cachix cache with dev build
+      uses: cachix/cachix-action@master
+      with:
+        name: cachix
+        cachixBin: '${{ steps.cachix.outputs.cachix_bin }}'
+        signingKey: '${{ secrets.CACHIX_SIGNING_KEY }}'
 
-    - name: Install dev Cachix
-      run: nix-env -if .
-
-    # TODO; remove this
-    # make sure it's all uploaded to cachix
-    - run: echo > /tmp/store-path-pre-build
+    - run: nix build -L '.#ci' '.#cachix' --show-trace --impure
 
     - name: "watch-exec test"
       env:
         signingKey: ${{ secrets.CACHIX_SIGNING_KEY }}
       if: ${{ env.signingKey != '' }}
-      run: cachix watch-exec cachix -- nix-build genpaths.nix --substituters 'https://cache.nixos.org'
+      run: ${{ steps.cachix.outputs.cachix_bin }} watch-exec cachix -- nix-build genpaths.nix --substituters 'https://cache.nixos.org'
 
     - name: "daemon watch-exec test"
       env:
         signingKey: ${{ secrets.CACHIX_SIGNING_KEY }}
       if: ${{ env.signingKey != '' }}
-      run: cachix daemon watch-exec cachix -- nix-build genpaths.nix --substituters 'https://cache.nixos.org'
+      run: ${{ steps.cachix.outputs.cachix_bin }} daemon watch-exec cachix -- nix-build genpaths.nix --substituters 'https://cache.nixos.org'

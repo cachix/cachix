@@ -36,7 +36,6 @@ import Control.Concurrent.STM.TMChan
 import Control.Exception.Safe (catchAny)
 import qualified Control.Monad.Catch as E
 import qualified Data.Text as T
-import qualified Data.Vector as Vector
 import qualified Hercules.CNix.Util as CNix.Util
 import qualified Katip
 import qualified Network.Socket as Socket
@@ -103,7 +102,7 @@ run daemon = runDaemon daemon $ flip E.onError (return $ ExitFailure 1) $ do
 
   Push.withPushParams $ \pushParams -> do
     subscriptionManagerThread <-
-      liftIO $ Async.async $ runSubscriptionManager daemonSubscriptionManager
+      Async.async $ runSubscriptionManager daemonSubscriptionManager
 
     let runWorkerTask =
           liftIO . PushManager.runPushManager daemonPushManager . PushManager.handleTask pushParams
@@ -113,29 +112,27 @@ run daemon = runDaemon daemon $ flip E.onError (return $ ExitFailure 1) $ do
         (PushManager.pmTaskQueue daemonPushManager)
         runWorkerTask
 
-    liftIO $
-      Async.async (Daemon.listen daemonEventLoop daemonSocketPath)
-        >>= putMVar daemonSocketThread
+    listenThread <- Async.async (Daemon.listen daemonEventLoop daemonSocketPath)
+    liftIO $ putMVar daemonSocketThread listenThread
 
-    EventLoop.run daemonEventLoop $ \(exitLatch, event) ->
-      case event of
-        EventLoop.AddSocketClient conn ->
-          SocketStore.addSocket conn (Daemon.handleClient daemonEventLoop) daemonClients
-        EventLoop.RemoveSocketClient socketId ->
-          SocketStore.removeSocket socketId daemonClients
-        EventLoop.ReconnectSocket ->
-          -- TODO: implement reconnection logic
-          EventLoop.exitLoopWith (ExitFailure 1) exitLatch
-        EventLoop.ReceivedMessage clientMsg ->
-          case clientMsg of
-            ClientPushRequest pushRequest -> queueJob pushRequest
-            ClientStop -> EventLoop.send daemonEventLoop EventLoop.ShutdownGracefully
-            _ -> return ()
-        EventLoop.ShutdownGracefully -> do
-          Katip.logFM Katip.InfoS "Shutting down daemon..."
-          shutdownGracefully subscriptionManagerThread workersThreads
-          Katip.logFM Katip.InfoS "Daemon shut down. Exiting."
-          EventLoop.exitLoopWith ExitSuccess exitLatch
+    EventLoop.run daemonEventLoop $ \case
+      EventLoop.AddSocketClient conn ->
+        SocketStore.addSocket conn (Daemon.handleClient daemonEventLoop) daemonClients
+      EventLoop.RemoveSocketClient socketId ->
+        SocketStore.removeSocket socketId daemonClients
+      EventLoop.ReconnectSocket ->
+        -- TODO: implement reconnection logic
+        EventLoop.exitLoopWith (ExitFailure 1) daemonEventLoop
+      EventLoop.ReceivedMessage clientMsg ->
+        case clientMsg of
+          ClientPushRequest pushRequest -> queueJob pushRequest
+          ClientStop -> EventLoop.send daemonEventLoop EventLoop.ShutdownGracefully
+          _ -> return ()
+      EventLoop.ShutdownGracefully -> do
+        Katip.logFM Katip.InfoS "Shutting down daemon..."
+        shutdownGracefully subscriptionManagerThread workersThreads
+        Katip.logFM Katip.InfoS "Daemon shut down. Exiting."
+        EventLoop.exitLoopWith ExitSuccess daemonEventLoop
 
 stop :: Daemon ()
 stop = do
@@ -144,7 +141,7 @@ stop = do
 
 stopIO :: DaemonEnv -> IO ()
 stopIO DaemonEnv {daemonEventLoop} =
-  EventLoop.send daemonEventLoop ShutdownGracefully
+  EventLoop.sendIO daemonEventLoop ShutdownGracefully
 
 installSignalHandlers :: DaemonEnv -> IO ()
 installSignalHandlers daemon = do

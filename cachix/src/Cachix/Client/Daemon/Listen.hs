@@ -46,7 +46,7 @@ instance Exception ListenError where
 
 -- | The main daemon server loop.
 listen ::
-  (MonadIO m, E.MonadMask m) =>
+  (E.MonadMask m, Katip.KatipContext m) =>
   EventLoop ->
   FilePath ->
   m ()

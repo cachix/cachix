@@ -52,11 +52,6 @@ withDaemonConn optionalSocketPath f = do
     open socketPath = do
       sock <- Socket.socket Socket.AF_UNIX Socket.Stream Socket.defaultProtocol
       Socket.connect sock (Socket.SockAddrUnix socketPath)
-
-      -- Network.Socket.accept sets the socket to non-blocking by default.
-      Socket.withFdSocket sock $ \fd ->
-        Posix.setFdOption (fromIntegral fd) Posix.NonBlockingRead False
-
       return sock
 
     failedToConnectTo :: FilePath -> IO ()

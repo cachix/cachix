@@ -27,6 +27,9 @@
     systems = [ "x86_64-linux" "i686-linux" "x86_64-darwin" "aarch64-linux" "aarch64-darwin" ];
     forAllSystems = f: builtins.listToAttrs (map (name: { inherit name; value = f name; }) systems);
 
+    # Keep in sync with stack.yaml
+    ghcVersion = "96";
+
     # Try to use the same Nix version as cnix-store, if available.
     getNix = { pkgs, haskellPackages ? pkgs.haskellPackages }:
       haskellPackages.hercules-ci-cnix-store.nixPackage
@@ -90,9 +93,8 @@
             pkgs.pkg-config
             pkgs.libsodium
             (getNix { inherit pkgs; })
-            # sync with stack.yaml LTS
-            pkgs.haskell.compiler.ghc948
-            (pkgs.haskell-language-server.override { supportedGhcVersions = [ "948" ]; })
+            pkgs.haskell.compiler."ghc${ghcVersion}"
+            (pkgs.haskell-language-server.override { supportedGhcVersions = [ ghcVersion ]; })
           ]
           ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
             pkgs.darwin.apple_sdk.frameworks.Cocoa

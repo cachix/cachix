@@ -58,7 +58,7 @@ stop _env daemonOptions =
     lastPongRef <- newIORef =<< getCurrentTime
     pingThread <- Async.async (runPingThread lastPongRef rx tx)
 
-    -- mapM_ Async.link [rxThread, txThread, pingThread]
+    mapM_ Async.link [rxThread, txThread, pingThread]
 
     -- Request the daemon to stop
     atomically $ writeTBMQueue tx Protocol.ClientStop

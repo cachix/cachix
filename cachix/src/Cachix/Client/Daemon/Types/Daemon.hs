@@ -13,9 +13,11 @@ import qualified Cachix.Client.Daemon.Log as Log
 import qualified Cachix.Client.Daemon.Protocol as Protocol
 import Cachix.Client.Daemon.ShutdownLatch (ShutdownLatch)
 import Cachix.Client.Daemon.Subscription (SubscriptionManager)
+import Cachix.Client.Daemon.Types.EventLoop (EventLoop)
 import Cachix.Client.Daemon.Types.Log (Logger)
 import Cachix.Client.Daemon.Types.PushEvent (PushEvent)
 import Cachix.Client.Daemon.Types.PushManager (PushManagerEnv (..))
+import Cachix.Client.Daemon.Types.SocketStore (SocketStore)
 import Cachix.Client.Env as Env
 import Cachix.Client.OptionsParser (PushOptions)
 import Cachix.Client.Push
@@ -29,10 +31,14 @@ import System.Posix.Types (ProcessID)
 data DaemonEnv = DaemonEnv
   { -- | Cachix client env
     daemonEnv :: Env,
+    -- | The main event loop
+    daemonEventLoop :: EventLoop,
     -- | Push options, like compression settings and number of jobs
     daemonPushOptions :: PushOptions,
     -- | Path to the socket that the daemon listens on
     daemonSocketPath :: FilePath,
+    -- | Main inbound socket thread
+    daemonSocketThread :: MVar (Async ()),
     -- | The push secret for the binary cache
     daemonPushSecret :: PushSecret,
     -- | The name of the binary cache to push to
@@ -41,6 +47,8 @@ data DaemonEnv = DaemonEnv
     daemonBinaryCache :: BinaryCache,
     -- | The state of active push requests
     daemonPushManager :: PushManagerEnv,
+    -- | Connected clients over the socket
+    daemonClients :: SocketStore,
     -- | A multiplexer for push events.
     daemonSubscriptionManager :: SubscriptionManager Protocol.PushRequestId PushEvent,
     -- | Logging env

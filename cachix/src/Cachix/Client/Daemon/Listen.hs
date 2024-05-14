@@ -1,5 +1,6 @@
 module Cachix.Client.Daemon.Listen
   ( listen,
+    handleClient,
     serverBye,
     getSocketPath,
     openSocket,
@@ -8,11 +9,17 @@ module Cachix.Client.Daemon.Listen
 where
 
 import Cachix.Client.Config.Orphans ()
+import qualified Cachix.Client.Daemon.EventLoop as EventLoop
 import Cachix.Client.Daemon.Protocol as Protocol
+import Cachix.Client.Daemon.Types.EventLoop (EventLoop)
+import Cachix.Client.Daemon.Types.SocketStore (SocketId)
 import Control.Exception.Safe (catchAny)
-import qualified Control.Exception.Safe as Safe
+import qualified Control.Monad.Catch as E
 import qualified Data.Aeson as Aeson
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as Char8
 import qualified Katip
+import Network.Socket (Socket)
 import qualified Network.Socket as Socket
 import qualified Network.Socket.ByteString as Socket.BS
 import qualified Network.Socket.ByteString.Lazy as Socket.LBS
@@ -35,59 +42,63 @@ data ListenError
 instance Exception ListenError where
   displayException = \case
     SocketError err -> "Failed to read from the daemon socket: " <> show err
-    DecodingError err -> "Failed to decode request: " <> toS err
+    DecodingError err -> "Failed to decode request:\n" <> toS err
 
 -- | The main daemon server loop.
 listen ::
-  (Katip.KatipContext m) =>
-  -- | An action to run when the daemon is requested to stop
-  m () ->
-  -- | An action to run when a push request is received
-  (Protocol.PushRequest -> Socket.Socket -> m ()) ->
-  -- | An active socket to listen on
-  Socket.Socket ->
-  -- | Returns a socket to the client that requested the daemon to stop
-  m Socket.Socket
-listen onClientStop onPushRequest sock = loop
-  where
-    loop = do
-      result <- liftIO $ runExceptT $ readPushRequest sock
+  (MonadIO m, E.MonadMask m) =>
+  EventLoop ->
+  FilePath ->
+  m ()
+listen eventloop daemonSocketPath = forever $ do
+  E.bracketOnError (openSocket daemonSocketPath) closeSocket $ \sock -> do
+    liftIO $ Socket.listen sock Socket.maxListenQueue
+    (conn, _peerAddr) <- liftIO $ Socket.accept sock
+    EventLoop.send eventloop (EventLoop.AddSocketClient conn)
 
-      case result of
-        Right (ClientStop, clientConn) -> do
-          onClientStop
-          return clientConn
-        Right (ClientPushRequest pushRequest, clientConn) -> do
-          onPushRequest pushRequest clientConn
-          loop
-        Left err@(DecodingError _) -> do
-          Katip.logFM Katip.ErrorS $ Katip.ls $ displayException err
-          loop
-        Left err -> throwIO err
+handleClient ::
+  forall m.
+  (E.MonadCatch m, Katip.KatipContext m) =>
+  EventLoop ->
+  SocketId ->
+  Socket ->
+  m ()
+handleClient eventloop socketId conn = do
+  go `E.onException` removeClient
+  where
+    go = do
+      bs <- liftIO $ Socket.BS.recv conn 4096
+      -- If the socket returns 0 bytes, then it is closed
+      if BS.null bs
+        then removeClient
+        else do
+          msgs <- catMaybes <$> mapM decodeMessage (Char8.split '\n' bs)
+          liftIO $ putErrText $ "Received: " <> show msgs
+
+          forM_ msgs $ \msg -> do
+            EventLoop.send eventloop (EventLoop.ReceivedMessage msg)
+            case msg of
+              Protocol.ClientPing ->
+                liftIO $ Socket.LBS.sendAll conn (Aeson.encode DaemonPong)
+              _ -> return ()
+
+    decodeMessage :: ByteString -> m (Maybe Protocol.ClientMessage)
+    decodeMessage "" = return Nothing
+    decodeMessage bs =
+      case Aeson.eitherDecodeStrict bs of
+        Left err -> do
+          Katip.logFM Katip.ErrorS $ Katip.ls $ displayException (DecodingError (toS err))
+          return Nothing
+        Right msg -> return (Just msg)
+
+    removeClient = EventLoop.send eventloop (EventLoop.RemoveSocketClient socketId)
 
 serverBye :: Socket.Socket -> IO ()
 serverBye sock =
   Socket.LBS.sendAll sock (Aeson.encode DaemonBye) `catchAny` (\_ -> return ())
 
--- | Try to read and decode a push request.
-readPushRequest :: Socket.Socket -> ExceptT ListenError IO (ClientMessage, Socket.Socket)
-readPushRequest sock = do
-  (bs, clientConn) <- readFromSocket `mapSyncException` SocketError
-  decodeMessage clientConn bs
-  where
-    readFromSocket = liftIO $ do
-      -- NOTE: this sets up a non-blocking socket to the client
-      (conn, _peerAddr) <- Socket.accept sock
-      bs <- Socket.BS.recv conn 4096
-      return (bs, conn)
-
-    decodeMessage conn bs =
-      case Aeson.eitherDecodeStrict bs of
-        Left err -> throwE $ DecodingError (toS err)
-        Right pushRequest -> return (pushRequest, conn)
-
-mapSyncException :: (Exception e1, Exception e2, Safe.MonadCatch m) => m a -> (e1 -> e2) -> m a
-mapSyncException a f = a `Safe.catch` (Safe.throwM . f)
+-- mapSyncException :: (Exception e1, Exception e2, Safe.MonadCatch m) => m a -> (e1 -> e2) -> m a
+-- mapSyncException a f = a `Safe.catch` (Safe.throwM . f)
 
 getSocketPath :: IO FilePath
 getSocketPath = do

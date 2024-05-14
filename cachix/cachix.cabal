@@ -266,5 +266,6 @@ test-suite cachix-test
     , stm
     , temporary
     , time
+    , versions
 
   build-tool-depends: hspec-discover:hspec-discover

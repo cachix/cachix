@@ -91,14 +91,13 @@ start daemonEnv daemonOptions daemonPushOptions daemonCacheName = do
   installSignalHandlers daemon
   void $ run daemon
 
--- | Run a daemon from a given configuration
+-- | Run a daemon from a given configuration.
 run :: DaemonEnv -> IO ExitCode
 run daemon = runDaemon daemon $ flip E.onError (return $ ExitFailure 1) $ do
   Katip.logFM Katip.InfoS "Starting Cachix Daemon"
   DaemonEnv {..} <- ask
 
-  config <- showConfiguration
-  Katip.logFM Katip.InfoS $ Katip.ls $ "Configuration:\n" <> config
+  printConfiguration
 
   Push.withPushParams $ \pushParams -> do
     subscriptionManagerThread <-
@@ -168,7 +167,13 @@ subscribe DaemonEnv {..} = do
     subscribeToAllSTM daemonSubscriptionManager (SubChannel chan)
     dupTMChan chan
 
--- | Print debug information about the daemon configuration
+-- | Print the daemon configuration to the log.
+printConfiguration :: Daemon ()
+printConfiguration = do
+  config <- showConfiguration
+  Katip.logFM Katip.InfoS $ Katip.ls $ "Configuration:\n" <> config
+
+-- | Fetch debug information about the daemon configuration.
 showConfiguration :: Daemon Text
 showConfiguration = do
   DaemonEnv {..} <- ask

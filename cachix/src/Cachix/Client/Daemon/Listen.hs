@@ -34,6 +34,7 @@ import qualified System.Environment as System
 import System.FilePath ((</>))
 import System.IO.Error (isDoesNotExistError, isResourceVanishedError)
 
+-- TODO: reconcile with Client
 data ListenError
   = SocketError SomeException
   | DecodingError Text
@@ -44,7 +45,7 @@ instance Exception ListenError where
     SocketError err -> "Failed to read from the daemon socket: " <> show err
     DecodingError err -> "Failed to decode request:\n" <> toS err
 
--- | The main daemon server loop.
+-- | Listen for incoming connections on the given socket path.
 listen ::
   (E.MonadMask m, Katip.KatipContext m) =>
   EventLoop ->
@@ -56,6 +57,10 @@ listen eventloop daemonSocketPath = forever $ do
     (conn, _peerAddr) <- liftIO $ Socket.accept sock
     EventLoop.send eventloop (EventLoop.AddSocketClient conn)
 
+-- | Handle incoming messages from a client.
+--
+-- Automatically responds to pings.
+-- Requests the daemon to remove the client socket once the loop exits.
 handleClient ::
   forall m.
   (E.MonadMask m, Katip.KatipContext m) =>
@@ -100,9 +105,6 @@ handleClient eventloop socketId conn = do
 serverBye :: Socket.Socket -> IO ()
 serverBye sock =
   Socket.LBS.sendAll sock (Aeson.encode DaemonBye) `catchAny` (\_ -> return ())
-
--- mapSyncException :: (Exception e1, Exception e2, Safe.MonadCatch m) => m a -> (e1 -> e2) -> m a
--- mapSyncException a f = a `Safe.catch` (Safe.throwM . f)
 
 getSocketPath :: IO FilePath
 getSocketPath = do

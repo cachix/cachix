@@ -29,8 +29,13 @@ addSocket socket handler (SocketStore st) = do
   liftIO $ atomically $ modifyTVar' st $ HashMap.insert socketId (Socket {..})
 
 removeSocket :: (MonadIO m) => SocketId -> SocketStore -> m ()
-removeSocket socketId (SocketStore st) =
-  liftIO $ atomically $ modifyTVar' st $ HashMap.delete socketId
+removeSocket socketId (SocketStore stvar) = do
+  msocket <- liftIO $ atomically $ stateTVar stvar $ \st ->
+    let msocket = HashMap.lookup socketId st
+     in (msocket, HashMap.delete socketId st)
+
+  -- shut down the handler thread
+  mapM_ (Async.uninterruptibleCancel . handlerThread) msocket
 
 toList :: (MonadIO m) => SocketStore -> m [Socket]
 toList (SocketStore st) = do

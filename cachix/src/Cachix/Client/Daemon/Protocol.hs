@@ -16,15 +16,17 @@ import Protolude
 
 -- | JSON messages that the client can send to the daemon
 data ClientMessage
-  = ClientPushRequest PushRequest
+  = ClientPushRequest !PushRequest
   | ClientStop
-  deriving stock (Generic)
+  | ClientPing
+  deriving stock (Generic, Show)
   deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)
 
 -- | JSON messages that the daemon can send to the client
 data DaemonMessage
-  = DaemonBye
-  deriving stock (Generic)
+  = DaemonPong
+  | DaemonBye
+  deriving stock (Generic, Show)
   deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)
 
 newtype PushRequestId = PushRequestId UUID

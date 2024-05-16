@@ -31,8 +31,8 @@ import Protolude hiding (toS)
 import Protolude.Conv
 import System.IO (BufferMode (..), hSetBuffering)
 
-lockFilename :: Text -> FilePath
-lockFilename agentName = "deployment-" <> toS agentName
+lockFilenameFrom :: Text -> FilePath
+lockFilenameFrom agentName = "deployment-" <> toS agentName
 
 -- | Activate the new deployment.
 --
@@ -76,8 +76,10 @@ main = do
             WebSocket.identifier = Agent.agentIdentifier agentName
           }
 
+  lockFilePath <- Lock.newLockFilePath (lockFilenameFrom agentName)
+
   Log.withLog logOptions $ \withLog ->
-    void . Lock.withTryLock (lockFilename agentName) $ do
+    void . Lock.withTryLock lockFilePath $ do
       -- Open a connection to logging stream
       (logQueue, loggingThread) <- runLogStream withLog logWebsocketOptions
 

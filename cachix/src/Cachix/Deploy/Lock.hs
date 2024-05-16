@@ -1,6 +1,7 @@
 module Cachix.Deploy.Lock
   ( defaultLockDirectory,
     getLockDirectory,
+    newLockFilePath,
     readPidFile,
     withTryLock,
     withTryLockAndPid,
@@ -24,6 +25,11 @@ pidExtension = "pid"
 
 defaultLockDirectory :: FilePath
 defaultLockDirectory = "cachix" </> "deploy" </> "locks"
+
+newLockFilePath :: FilePath -> IO FilePath
+newLockFilePath path = do
+  lockDirectory <- getLockDirectory
+  return $ lockDirectory </> path <.> lockExtension
 
 getLockDirectory :: IO FilePath
 getLockDirectory = do

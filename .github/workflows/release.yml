@@ -30,6 +30,7 @@ jobs:
     - uses: cachix/cachix-action@v14
       with:
         name: cachix
+        authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
         signingKey: ${{ secrets.CACHIX_SIGNING_KEY }}
 
     - name: Update the 'latest' git tag

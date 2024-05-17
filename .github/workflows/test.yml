@@ -37,6 +37,7 @@ jobs:
         name: cachix
         cachixBin: '${{ steps.cachix.outputs.cachix_bin }}'
         pathsToPush: '${{ steps.cachix.outputs.cachix_out }}'
+        authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
         signingKey: '${{ secrets.CACHIX_SIGNING_KEY }}'
 
     - name: Setup Cachix cache with dev build
@@ -44,6 +45,7 @@ jobs:
       with:
         name: cachix
         cachixBin: '${{ steps.cachix.outputs.cachix_bin }}'
+        authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
         signingKey: '${{ secrets.CACHIX_SIGNING_KEY }}'
 
     - run: nix build -L '.#ci' '.#cachix' --show-trace --impure

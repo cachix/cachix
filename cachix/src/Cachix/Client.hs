@@ -24,9 +24,9 @@ main = displayConsoleRegions $ do
   (flags, command) <- getOpts
   env <- mkEnv flags
 
-  installSignalHandlers
-
   initNixStore
+
+  installSignalHandlers
 
   let cachixOptions = cachixoptions env
   case command of
@@ -52,8 +52,8 @@ main = displayConsoleRegions $ do
 installSignalHandlers :: IO ()
 installSignalHandlers = do
   -- Ignore sigPIPE.
-  -- By default, sigPIPE will crash the entire program when the reading end of a pipe is closed.
-  -- By ignoring sigPIPE, an exception is thrown inline instead, which we can handle.
+  -- The default handler terminates the process.
+  -- WARN: may be reset to SIG_DFL when initializing the Nix library.
   _ <- Signal.installHandler Signal.sigPIPE Signal.Ignore Nothing
 
   return ()

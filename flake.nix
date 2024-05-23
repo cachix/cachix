@@ -32,8 +32,7 @@
 
     # Try to use the same Nix version as cnix-store, if available.
     getNix = { pkgs, haskellPackages ? pkgs.haskellPackages }:
-      haskellPackages.hercules-ci-cnix-store.nixPackage
-        or pkgs.nix;
+      haskellPackages.hercules-ci-cnix-store.nixPackage or pkgs.nix;
 
     customHaskellPackages = { pkgs, haskellPackages }: rec {
       cachix-api = haskellPackages.callCabal2nix "cachix-api" ./cachix-api {};
@@ -46,13 +45,6 @@
           or haskellPackages.hnix-store-core;
         nix = getNix { inherit pkgs haskellPackages; };
       };
-    };
-
-    preCommitHooks = {
-      cabal-fmt.enable = true;
-      hlint.enable = true;
-      ormolu.enable = true;
-      shellcheck.enable = true;
     };
   in
     {
@@ -72,44 +64,27 @@
           default = pkgs.haskell.lib.justStaticExecutables cachix;
           ci = self.devShells.${system}.default.ci;
           release = pkgs.symlinkJoin { name = "release"; paths = builtins.attrValues release; };
+          devenv-up = self.devShells.${system}.default.config.procfileScript;
         });
 
       checks = forAllSystems (system: {
         pre-commit-check = pre-commit-hooks.lib.${system}.run {
           src = ./.;
-          hooks = preCommitHooks;
+          inherit ((import ./git-hooks.nix).pre-commit) hooks;
         };
       });
 
       devShells = forAllSystems (system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
-
-          packages = [
-            pkgs.lzma
-            pkgs.zlib
-            pkgs.boost
-            pkgs.stack
-            pkgs.pkg-config
-            pkgs.libsodium
-            (getNix { inherit pkgs; })
-            pkgs.haskell.compiler."ghc${ghcVersion}"
-            (pkgs.haskell-language-server.override { supportedGhcVersions = [ ghcVersion ]; })
-          ]
-          ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
-            pkgs.darwin.apple_sdk.frameworks.Cocoa
-            pkgs.darwin.apple_sdk.frameworks.CoreServices
-          ];
         in
-        rec {
-          default = devenv;
-
-          devenv = inputs.devenv.lib.mkShell {
+        {
+          default = inputs.devenv.lib.mkShell {
             inherit inputs pkgs;
-            modules = [{
-              inherit packages;
-              pre-commit.hooks = preCommitHooks;
-            }];
+            modules = [
+              ({ _module.args = { inherit ghcVersion getNix; }; })
+              ./devenv.nix
+            ];
           };
         }
       );

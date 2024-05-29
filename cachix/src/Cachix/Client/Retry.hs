@@ -1,7 +1,6 @@
 module Cachix.Client.Retry
   ( retryAll,
     retryAllWithPolicy,
-    retryAllWithLogging,
     retryHttp,
     retryHttpWith,
     endlessRetryPolicy,
@@ -11,10 +10,7 @@ where
 
 import Cachix.Client.Exception (CachixException (..))
 import qualified Control.Concurrent.Async as Async
-import Control.Exception.Safe
-  ( Handler (..),
-    isSyncException,
-  )
+import Control.Exception.Safe (Handler (..))
 import Control.Monad.Catch (MonadCatch, MonadMask, handleJust, throwM)
 import Control.Retry
 import Data.List (lookup)
@@ -67,25 +63,6 @@ retryAllWithPolicy policy f =
     -- Retry everything else
     allHandler _ = Handler $ \(_ :: SomeException) -> return True
 
--- Catches all exceptions except async exceptions with logging support
-retryAllWithLogging ::
-  (MonadIO m, MonadMask m) =>
-  RetryPolicyM m ->
-  (Bool -> SomeException -> RetryStatus -> m ()) ->
-  m a ->
-  m a
-retryAllWithLogging policy logger f =
-  recovering policy handlers $
-    const (rethrowLinkedThreadExceptions f)
-  where
-    handlers = skipAsyncExceptions ++ [exitCodeHandler, loggingHandler]
-
-    -- Skip over exitSuccess/exitFailure
-    exitCodeHandler _ = Handler $ \(_ :: ExitCode) -> return False
-
-    -- Log and retry everything else
-    loggingHandler = logRetries (return . isSyncException) logger
-
 -- | Unwrap 'Async.ExceptionInLinkedThread' exceptions and rethrow the inner exception.
 rethrowLinkedThreadExceptions :: (MonadCatch m) => m a -> m a
 rethrowLinkedThreadExceptions =
@@ -107,13 +84,12 @@ retryHttpWith policy = recoveringDynamic policy handlers . const
   where
     handlers :: [RetryStatus -> Handler m RetryAction]
     handlers =
-      skipAsyncExceptions' ++ [retryHttpExceptions, retryClientExceptions, retrySyncExceptions]
+      skipAsyncExceptions' ++ [retryHttpExceptions, retryClientExceptions]
 
     skipAsyncExceptions' = map (fmap toRetryAction .) skipAsyncExceptions
 
     retryHttpExceptions _ = Handler httpExceptionToRetryAction
     retryClientExceptions _ = Handler clientExceptionToRetryAction
-    retrySyncExceptions _ = Handler $ \(_ :: SomeException) -> return ConsultPolicy
 
     httpExceptionToRetryAction :: HTTP.HttpException -> m RetryAction
     httpExceptionToRetryAction (HTTP.HttpExceptionRequest _ (HTTP.StatusCodeException response _))

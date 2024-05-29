@@ -32,6 +32,8 @@ import qualified Network.HTTP.Client as HTTP
 import Network.HTTP.Types.Header (hRetryAfter)
 import qualified Network.HTTP.Types.Status as HTTP
 import Protolude hiding (Handler (..), handleJust)
+import Servant.Client (ClientError (..))
+import qualified Servant.Client as Servant
 import qualified Text.ParserCombinators.ReadPrec as ReadPrec (lift)
 
 defaultRetryPolicy :: RetryPolicy
@@ -105,11 +107,12 @@ retryHttpWith policy = recoveringDynamic policy handlers . const
   where
     handlers :: [RetryStatus -> Handler m RetryAction]
     handlers =
-      skipAsyncExceptions' ++ [retryHttpExceptions, retrySyncExceptions]
+      skipAsyncExceptions' ++ [retryHttpExceptions, retryClientExceptions, retrySyncExceptions]
 
     skipAsyncExceptions' = map (fmap toRetryAction .) skipAsyncExceptions
 
     retryHttpExceptions _ = Handler httpExceptionToRetryAction
+    retryClientExceptions _ = Handler clientExceptionToRetryAction
     retrySyncExceptions _ = Handler $ \(_ :: SomeException) -> return ConsultPolicy
 
     httpExceptionToRetryAction :: HTTP.HttpException -> m RetryAction
@@ -117,8 +120,15 @@ retryHttpWith policy = recoveringDynamic policy handlers . const
       | statusMayHaveRetryHeader (HTTP.responseStatus response) = overrideDelayWithRetryAfter response
     httpExceptionToRetryAction ex = return . toRetryAction . shouldRetryHttpException $ ex
 
-    statusMayHaveRetryHeader :: HTTP.Status -> Bool
-    statusMayHaveRetryHeader = flip elem [HTTP.tooManyRequests429, HTTP.serviceUnavailable503]
+    clientExceptionToRetryAction :: ClientError -> m RetryAction
+    clientExceptionToRetryAction (FailureResponse _req res)
+      | shouldRetryHttpStatusCode (Servant.responseStatusCode res) =
+          return ConsultPolicy
+    clientExceptionToRetryAction (ConnectionError ex) =
+      case fromException ex of
+        Just httpException -> httpExceptionToRetryAction httpException
+        Nothing -> return DontRetry
+    clientExceptionToRetryAction _ = return DontRetry
 
 data RetryAfter
   = RetryAfterDate UTCTime
@@ -171,9 +181,15 @@ shouldRetryHttpException (HTTP.HttpExceptionRequest _ reason) =
       | HTTP.statusIsServerError status -> True
     HTTP.ResponseBodyTooShort _ _ -> True
     HTTP.ResponseTimeout -> True
-    HTTP.StatusCodeException response _
-      | HTTP.responseStatus response == HTTP.tooManyRequests429 -> True
-    HTTP.StatusCodeException response _
-      | HTTP.statusIsServerError (HTTP.responseStatus response) -> True
+    HTTP.StatusCodeException response _ ->
+      shouldRetryHttpStatusCode (HTTP.responseStatus response)
     HTTP.HttpZlibException _ -> True
     _ -> False
+
+shouldRetryHttpStatusCode :: HTTP.Status -> Bool
+shouldRetryHttpStatusCode code | code == HTTP.tooManyRequests429 = True
+shouldRetryHttpStatusCode code | HTTP.statusIsServerError code = True
+shouldRetryHttpStatusCode _ = False
+
+statusMayHaveRetryHeader :: HTTP.Status -> Bool
+statusMayHaveRetryHeader = flip elem [HTTP.tooManyRequests429, HTTP.serviceUnavailable503]

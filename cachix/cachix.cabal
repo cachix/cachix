@@ -240,7 +240,7 @@ executable .cachix-deployment
 test-suite cachix-test
   import:             defaults
   type:               exitcode-stdio-1.0
-  ghc-options:        -threaded -rtsopts -with-rtsopts=-N
+  ghc-options:        -threaded -rtsopts -with-rtsopts=-N -Wno-orphans
   main-is:            Main.hs
   hs-source-dirs:     test
   other-modules:

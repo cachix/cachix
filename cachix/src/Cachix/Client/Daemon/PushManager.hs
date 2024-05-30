@@ -94,20 +94,28 @@ stopPushManager timeoutOptions PushManagerEnv {..} = do
 
 -- Manage push jobs
 
-addPushJob :: Protocol.PushRequest -> PushManager Protocol.PushRequestId
+addPushJob :: Protocol.PushRequest -> PushManager (Maybe Protocol.PushRequestId)
 addPushJob pushRequest = do
   PushManagerEnv {..} <- ask
   pushJob <- PushJob.new pushRequest
 
   Katip.logLocM Katip.DebugS $ Katip.ls $ "Queued push job " <> (show (pushId pushJob) :: Text)
 
-  liftIO $
-    atomically $ do
-      modifyTVar' pmPushJobs $ HashMap.insert (pushId pushJob) pushJob
-      incrementTVar pmPendingJobCount
-      writeTBMQueue pmTaskQueue $ ResolveClosure (pushId pushJob)
+  let queueJob = do
+        modifyTVar' pmPushJobs $ HashMap.insert (pushId pushJob) pushJob
+        incrementTVar pmPendingJobCount
+        res <- tryWriteTBMQueue pmTaskQueue $ ResolveClosure (pushId pushJob)
+        case res of
+          Just True -> return True
+          _ -> retry
 
-  return (pushId pushJob)
+  didQueue <- liftIO $ atomically $ queueJob `orElse` return False
+
+  if didQueue
+    then return $ Just $ pushId pushJob
+    else do
+      Katip.logLocM Katip.WarningS "Failed to queue push job. Queue likely full."
+      return Nothing
 
 removePushJob :: Protocol.PushRequestId -> PushManager ()
 removePushJob pushId = do

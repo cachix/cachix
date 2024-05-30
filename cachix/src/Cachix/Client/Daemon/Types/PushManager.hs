@@ -69,7 +69,9 @@ newtype PushManager a = PushManager {unPushManager :: ReaderT PushManagerEnv IO 
       MonadReader PushManagerEnv,
       MonadCatch,
       MonadMask,
-      MonadThrow
+      MonadThrow,
+      Alternative,
+      MonadPlus
     )
 
 instance Katip.Katip PushManager where

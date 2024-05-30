@@ -8,11 +8,15 @@ import Cachix.Client.Daemon.Types.PushManager
 import Cachix.Client.OptionsParser (defaultPushOptions)
 import Control.Concurrent.Async (concurrently_)
 import Control.Concurrent.STM.TVar
+import Control.Monad (fail)
 import Control.Retry (defaultRetryStatus)
 import qualified Data.Set as Set
 import Data.Time (getCurrentTime)
 import Protolude
 import Test.Hspec
+
+instance MonadFail PushManager where
+  fail msg = liftIO (expectationFailure msg) >> mzero
 
 spec :: Spec
 spec = do
@@ -79,19 +83,17 @@ spec = do
   describe "push manager" $ do
     it "queues push jobs " $ inPushManager $ do
       let request = Protocol.PushRequest {Protocol.storePaths = ["foo", "bar"]}
-      pushId <- addPushJob request
-      mpushJob <- lookupPushJob pushId
+      Just pushId <- addPushJob request
+      Just pushJob <- lookupPushJob pushId
       liftIO $ do
-        mpushJob `shouldSatisfy` isJust
-        for_ mpushJob $ \pushJob -> do
-          PushJob.pushId pushJob `shouldBe` pushId
-          PushJob.pushRequest pushJob `shouldBe` request
+        PushJob.pushId pushJob `shouldBe` pushId
+        PushJob.pushRequest pushJob `shouldBe` request
 
     it "manages the lifecycle of a push job" $ inPushManager $ do
       let paths = ["bar", "foo"]
 
       let pushRequest = Protocol.PushRequest {Protocol.storePaths = paths}
-      pushId <- addPushJob pushRequest
+      Just pushId <- addPushJob pushRequest
 
       let pathSet = Set.fromList paths
           closure = PushJob.ResolvedClosure pathSet pathSet

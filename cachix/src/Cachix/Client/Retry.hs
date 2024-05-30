@@ -88,23 +88,23 @@ retryHttpWith policy = recoveringDynamic policy handlers . const
 
     skipAsyncExceptions' = map (fmap toRetryAction .) skipAsyncExceptions
 
-    retryHttpExceptions _ = Handler httpExceptionToRetryAction
-    retryClientExceptions _ = Handler clientExceptionToRetryAction
+    retryHttpExceptions _ = Handler httpExceptionToRetryHandler
+    retryClientExceptions _ = Handler clientExceptionToRetryHandler
 
-    httpExceptionToRetryAction :: HTTP.HttpException -> m RetryAction
-    httpExceptionToRetryAction (HTTP.HttpExceptionRequest _ (HTTP.StatusCodeException response _))
+    httpExceptionToRetryHandler :: HTTP.HttpException -> m RetryAction
+    httpExceptionToRetryHandler (HTTP.HttpExceptionRequest _ (HTTP.StatusCodeException response _))
       | statusMayHaveRetryHeader (HTTP.responseStatus response) = overrideDelayWithRetryAfter response
-    httpExceptionToRetryAction ex = return . toRetryAction . shouldRetryHttpException $ ex
+    httpExceptionToRetryHandler ex = return . toRetryAction . shouldRetryHttpException $ ex
 
-    clientExceptionToRetryAction :: ClientError -> m RetryAction
-    clientExceptionToRetryAction (FailureResponse _req res)
+    clientExceptionToRetryHandler :: ClientError -> m RetryAction
+    clientExceptionToRetryHandler (FailureResponse _req res)
       | shouldRetryHttpStatusCode (Servant.responseStatusCode res) =
           return ConsultPolicy
-    clientExceptionToRetryAction (ConnectionError ex) =
+    clientExceptionToRetryHandler (ConnectionError ex) =
       case fromException ex of
-        Just httpException -> httpExceptionToRetryAction httpException
+        Just httpException -> httpExceptionToRetryHandler httpException
         Nothing -> return DontRetry
-    clientExceptionToRetryAction _ = return DontRetry
+    clientExceptionToRetryHandler _ = return DontRetry
 
 data RetryAfter
   = RetryAfterDate UTCTime
@@ -162,6 +162,7 @@ shouldRetryHttpException (HTTP.HttpExceptionRequest _ reason) =
     HTTP.HttpZlibException _ -> True
     _ -> False
 
+-- | Determine whether the HTTP status code is worth retrying.
 shouldRetryHttpStatusCode :: HTTP.Status -> Bool
 shouldRetryHttpStatusCode code | code == HTTP.tooManyRequests429 = True
 shouldRetryHttpStatusCode code | HTTP.statusIsServerError code = True

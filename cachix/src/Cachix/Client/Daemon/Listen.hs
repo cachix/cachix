@@ -69,10 +69,10 @@ handleClient ::
   Socket ->
   m ()
 handleClient eventloop socketId conn = do
-  go `E.finally` removeClient
+  go BS.empty `E.finally` removeClient
   where
-    go = do
-      ebs <- liftIO $ try $ Socket.BS.recv conn 4096
+    go leftovers = do
+      ebs <- liftIO $ try $ Socket.BS.recv conn 8192
 
       case ebs of
         Left err | isResourceVanishedError err -> return ()
@@ -80,31 +80,32 @@ handleClient eventloop socketId conn = do
         -- If the socket returns 0 bytes, then it is closed
         Right bs | BS.null bs -> return ()
         Right bs -> do
-          msgs <- catMaybes <$> mapM decodeMessage (Char8.split '\n' bs)
+          let (rawMsgs, newLeftovers) = Protocol.splitMessages (BS.append leftovers bs)
+          msgs <- catMaybes <$> mapM decodeMessage rawMsgs
 
           forM_ msgs $ \msg -> do
             EventLoop.send eventloop (EventLoop.ReceivedMessage msg)
             case msg of
               Protocol.ClientPing ->
-                liftIO $ Socket.LBS.sendAll conn (Aeson.encode DaemonPong)
+                liftIO $ Socket.LBS.sendAll conn $ Protocol.newMessage DaemonPong
               _ -> return ()
 
-          go
-
-    decodeMessage :: ByteString -> m (Maybe Protocol.ClientMessage)
-    decodeMessage "" = return Nothing
-    decodeMessage bs =
-      case Aeson.eitherDecodeStrict bs of
-        Left err -> do
-          Katip.logFM Katip.ErrorS $ Katip.ls $ displayException (DecodingError (toS err))
-          return Nothing
-        Right msg -> return (Just msg)
+          go newLeftovers
 
     removeClient = EventLoop.send eventloop (EventLoop.RemoveSocketClient socketId)
 
+decodeMessage :: (Katip.KatipContext m) => ByteString -> m (Maybe Protocol.ClientMessage)
+decodeMessage "" = return Nothing
+decodeMessage bs =
+  case Aeson.eitherDecodeStrict bs of
+    Left err -> do
+      Katip.logFM Katip.ErrorS $ Katip.ls $ displayException (DecodingError (toS err))
+      return Nothing
+    Right msg -> return (Just msg)
+
 serverBye :: Socket.Socket -> IO ()
 serverBye sock =
-  Socket.LBS.sendAll sock (Aeson.encode DaemonBye) `catchAny` (\_ -> return ())
+  Socket.LBS.sendAll sock (Protocol.newMessage DaemonBye) `catchAny` (\_ -> return ())
 
 getSocketPath :: IO FilePath
 getSocketPath = do

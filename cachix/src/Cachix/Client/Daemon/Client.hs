@@ -17,6 +17,7 @@ import qualified Network.Socket as Socket
 import qualified Network.Socket.ByteString as Socket.BS
 import qualified Network.Socket.ByteString.Lazy as Socket.LBS
 import Protolude
+import System.IO.Error (isResourceVanishedError)
 
 data SocketError
   = -- | The socket has been closed
@@ -31,7 +32,7 @@ instance Exception SocketError where
   displayException = \case
     SocketClosed -> "The socket has been closed"
     SocketStalled -> "The socket has stopped responding to pings"
-    SocketDecodingError err -> "Failed to decode message from socket: " <> toS err
+    SocketDecodingError err -> "Failed to decode the message from socket: " <> toS err
 
 -- | Queue up push requests with the daemon
 --
@@ -39,7 +40,7 @@ instance Exception SocketError where
 push :: Env -> DaemonOptions -> [FilePath] -> IO ()
 push _env daemonOptions storePaths =
   withDaemonConn (daemonSocketPath daemonOptions) $ \sock -> do
-    Socket.LBS.sendAll sock $ Aeson.encode pushRequest `Lazy.Char8.snoc` '\n'
+    Socket.LBS.sendAll sock $ Protocol.newMessage pushRequest
   where
     pushRequest =
       Protocol.ClientPushRequest $
@@ -67,13 +68,17 @@ stop _env daemonOptions =
       mmsg <- atomically (readTBMQueue rx)
       case mmsg of
         Nothing -> return ()
-        Just (Left err) -> putErrText $ toS $ displayException err
+        Just (Left err) -> do
+          putErrText $ toS $ displayException err
+          exitFailure
         Just (Right msg) ->
           case msg of
             Protocol.DaemonPong -> do
               writeIORef lastPongRef =<< getCurrentTime
               loop
-            Protocol.DaemonBye -> exitSuccess
+            Protocol.DaemonBye ->
+              -- TODO: process exit code
+              exitSuccess
   where
     runPingThread lastPongRef rx tx = go
       where
@@ -95,26 +100,34 @@ stop _env daemonOptions =
           case mmsg of
             Nothing -> return ()
             Just msg -> do
-              Retry.retryAll $ const $ Socket.LBS.sendAll sock $ Aeson.encode msg `Lazy.Char8.snoc` '\n'
+              Retry.retryAll $ const $ Socket.LBS.sendAll sock $ Protocol.newMessage msg
               go
 
-    handleIncoming rx sock = go
+    handleIncoming rx sock = go BS.empty
       where
-        go = do
-          -- Wait for the socket to close
-          bs <- Socket.BS.recv sock 4096 `catchAny` (\_ -> return BS.empty)
+        socketClosed = atomically $ writeTBMQueue rx (Left SocketClosed)
 
-          -- A zero-length response means that the daemon has closed the socket
-          if BS.null bs
-            then atomically $ writeTBMQueue rx (Left SocketClosed)
-            else case Aeson.eitherDecodeStrict bs of
-              Left err -> do
-                let terr = toS err
-                putErrText terr
-                atomically $ writeTBMQueue rx (Left (SocketDecodingError terr))
-              Right msg -> do
-                atomically $ writeTBMQueue rx (Right msg)
-                go
+        go leftovers = do
+          ebs <- liftIO $ try $ Socket.BS.recv sock 4096
+
+          case ebs of
+            Left err | isResourceVanishedError err -> socketClosed
+            Left err -> socketClosed
+            -- If the socket returns 0 bytes, then it is closed
+            Right bs | BS.null bs -> socketClosed
+            Right bs -> do
+              let (rawMsgs, newLeftovers) = Protocol.splitMessages (BS.append leftovers bs)
+
+              forM_ (map Aeson.eitherDecodeStrict rawMsgs) $ \emsg -> do
+                case emsg of
+                  Left err -> do
+                    let terr = toS err
+                    putErrText terr
+                    atomically $ writeTBMQueue rx (Left (SocketDecodingError terr))
+                  Right msg -> do
+                    atomically $ writeTBMQueue rx (Right msg)
+
+              go newLeftovers
 
 withDaemonConn :: Maybe FilePath -> (Socket.Socket -> IO a) -> IO a
 withDaemonConn optionalSocketPath f = do

@@ -6,10 +6,14 @@ module Cachix.Client.Daemon.Protocol
     PushRequestId,
     newPushRequestId,
     PushRequest (..),
+    newMessage,
+    splitMessages,
   )
 where
 
 import qualified Data.Aeson as Aeson
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as LBS
 import Data.UUID (UUID)
 import qualified Data.UUID.V4 as UUID
 import Protolude
@@ -42,3 +46,22 @@ data PushRequest = PushRequest
   }
   deriving stock (Eq, Generic, Show)
   deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)
+
+newMessage :: (Aeson.ToJSON a) => a -> LBS.ByteString
+newMessage msg =
+  Aeson.encode msg `LBS.snoc` fromIntegral (fromEnum '\n')
+
+splitMessages :: ByteString -> ([ByteString], ByteString)
+splitMessages = go []
+  where
+    go acc bs =
+      case BS.break (== _n) bs of
+        (line, "") -> (reverse acc, line)
+        (line, "\n") -> go (line `cons` acc) mempty
+        (line, rest) ->
+          go (line `cons` acc) (BS.drop 1 rest)
+
+    cons "" xs = xs
+    cons x xs = x : xs
+
+    _n = fromIntegral (fromEnum '\n')

@@ -1,7 +1,6 @@
 module Cachix.Client.Retry
   ( retryAll,
     retryAllWithPolicy,
-    retryAllWithLogging,
     retryHttp,
     retryHttpWith,
     endlessRetryPolicy,
@@ -11,10 +10,7 @@ where
 
 import Cachix.Client.Exception (CachixException (..))
 import qualified Control.Concurrent.Async as Async
-import Control.Exception.Safe
-  ( Handler (..),
-    isSyncException,
-  )
+import Control.Exception.Safe (Handler (..))
 import Control.Monad.Catch (MonadCatch, MonadMask, handleJust, throwM)
 import Control.Retry
 import Data.List (lookup)
@@ -32,6 +28,8 @@ import qualified Network.HTTP.Client as HTTP
 import Network.HTTP.Types.Header (hRetryAfter)
 import qualified Network.HTTP.Types.Status as HTTP
 import Protolude hiding (Handler (..), handleJust)
+import Servant.Client (ClientError (..))
+import qualified Servant.Client as Servant
 import qualified Text.ParserCombinators.ReadPrec as ReadPrec (lift)
 
 defaultRetryPolicy :: RetryPolicy
@@ -65,25 +63,6 @@ retryAllWithPolicy policy f =
     -- Retry everything else
     allHandler _ = Handler $ \(_ :: SomeException) -> return True
 
--- Catches all exceptions except async exceptions with logging support
-retryAllWithLogging ::
-  (MonadIO m, MonadMask m) =>
-  RetryPolicyM m ->
-  (Bool -> SomeException -> RetryStatus -> m ()) ->
-  m a ->
-  m a
-retryAllWithLogging policy logger f =
-  recovering policy handlers $
-    const (rethrowLinkedThreadExceptions f)
-  where
-    handlers = skipAsyncExceptions ++ [exitCodeHandler, loggingHandler]
-
-    -- Skip over exitSuccess/exitFailure
-    exitCodeHandler _ = Handler $ \(_ :: ExitCode) -> return False
-
-    -- Log and retry everything else
-    loggingHandler = logRetries (return . isSyncException) logger
-
 -- | Unwrap 'Async.ExceptionInLinkedThread' exceptions and rethrow the inner exception.
 rethrowLinkedThreadExceptions :: (MonadCatch m) => m a -> m a
 rethrowLinkedThreadExceptions =
@@ -105,20 +84,27 @@ retryHttpWith policy = recoveringDynamic policy handlers . const
   where
     handlers :: [RetryStatus -> Handler m RetryAction]
     handlers =
-      skipAsyncExceptions' ++ [retryHttpExceptions, retrySyncExceptions]
+      skipAsyncExceptions' ++ [retryHttpExceptions, retryClientExceptions]
 
     skipAsyncExceptions' = map (fmap toRetryAction .) skipAsyncExceptions
 
-    retryHttpExceptions _ = Handler httpExceptionToRetryAction
-    retrySyncExceptions _ = Handler $ \(_ :: SomeException) -> return ConsultPolicy
+    retryHttpExceptions _ = Handler httpExceptionToRetryHandler
+    retryClientExceptions _ = Handler clientExceptionToRetryHandler
 
-    httpExceptionToRetryAction :: HTTP.HttpException -> m RetryAction
-    httpExceptionToRetryAction (HTTP.HttpExceptionRequest _ (HTTP.StatusCodeException response _))
+    httpExceptionToRetryHandler :: HTTP.HttpException -> m RetryAction
+    httpExceptionToRetryHandler (HTTP.HttpExceptionRequest _ (HTTP.StatusCodeException response _))
       | statusMayHaveRetryHeader (HTTP.responseStatus response) = overrideDelayWithRetryAfter response
-    httpExceptionToRetryAction ex = return . toRetryAction . shouldRetryHttpException $ ex
+    httpExceptionToRetryHandler ex = return . toRetryAction . shouldRetryHttpException $ ex
 
-    statusMayHaveRetryHeader :: HTTP.Status -> Bool
-    statusMayHaveRetryHeader = flip elem [HTTP.tooManyRequests429, HTTP.serviceUnavailable503]
+    clientExceptionToRetryHandler :: ClientError -> m RetryAction
+    clientExceptionToRetryHandler (FailureResponse _req res)
+      | shouldRetryHttpStatusCode (Servant.responseStatusCode res) =
+          return ConsultPolicy
+    clientExceptionToRetryHandler (ConnectionError ex) =
+      case fromException ex of
+        Just httpException -> httpExceptionToRetryHandler httpException
+        Nothing -> return DontRetry
+    clientExceptionToRetryHandler _ = return DontRetry
 
 data RetryAfter
   = RetryAfterDate UTCTime
@@ -171,9 +157,16 @@ shouldRetryHttpException (HTTP.HttpExceptionRequest _ reason) =
       | HTTP.statusIsServerError status -> True
     HTTP.ResponseBodyTooShort _ _ -> True
     HTTP.ResponseTimeout -> True
-    HTTP.StatusCodeException response _
-      | HTTP.responseStatus response == HTTP.tooManyRequests429 -> True
-    HTTP.StatusCodeException response _
-      | HTTP.statusIsServerError (HTTP.responseStatus response) -> True
+    HTTP.StatusCodeException response _ ->
+      shouldRetryHttpStatusCode (HTTP.responseStatus response)
     HTTP.HttpZlibException _ -> True
     _ -> False
+
+-- | Determine whether the HTTP status code is worth retrying.
+shouldRetryHttpStatusCode :: HTTP.Status -> Bool
+shouldRetryHttpStatusCode code | code == HTTP.tooManyRequests429 = True
+shouldRetryHttpStatusCode code | HTTP.statusIsServerError code = True
+shouldRetryHttpStatusCode _ = False
+
+statusMayHaveRetryHeader :: HTTP.Status -> Bool
+statusMayHaveRetryHeader = flip elem [HTTP.tooManyRequests429, HTTP.serviceUnavailable503]

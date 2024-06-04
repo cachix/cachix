@@ -60,8 +60,8 @@
           };
         in
         {
-          cachix = pkgs.haskell.lib.justStaticExecutables cachix;
-          default = pkgs.haskell.lib.justStaticExecutables cachix;
+          cachix = hlib.enableLibraryProfiling (hlib.enableExecutableProfiling (hlib.justStaticExecutables cachix));
+          default = hlib.enableLibraryProfiling (hlib.enableExecutableProfiling (hlib.justStaticExecutables cachix));
           ci = self.devShells.${system}.default.ci;
           release = pkgs.symlinkJoin { name = "release"; paths = builtins.attrValues release; };
           devenv-up = self.devShells.${system}.default.config.procfileScript;

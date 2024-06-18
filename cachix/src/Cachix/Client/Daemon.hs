@@ -84,16 +84,18 @@ new daemonEnv daemonOptions daemonLogHandle daemonPushOptions daemonCacheName = 
 
   return $ DaemonEnv {..}
 
--- | Configure and run the daemon. Equivalent to running 'new' and 'run' together with some signal handling.
+-- | Configure and run the daemon as a CLI command.
+-- Equivalent to running 'new' and 'run' together with some signal handling.
 start :: Env -> DaemonOptions -> PushOptions -> BinaryCacheName -> IO ()
 start daemonEnv daemonOptions daemonPushOptions daemonCacheName = do
   daemon <- new daemonEnv daemonOptions Nothing daemonPushOptions daemonCacheName
   installSignalHandlers daemon
-  void $ run daemon
+  result <- run daemon
+  exitWith (toExitCode result)
 
 -- | Run a daemon from a given configuration.
-run :: DaemonEnv -> IO ExitCode
-run daemon = runDaemon daemon $ flip E.onError (return $ ExitFailure 1) $ do
+run :: DaemonEnv -> IO (Either DaemonError ())
+run daemon = fmap join <$> runDaemon daemon $ do
   Katip.logFM Katip.InfoS "Starting Cachix Daemon"
   DaemonEnv {..} <- ask
 
@@ -114,14 +116,14 @@ run daemon = runDaemon daemon $ flip E.onError (return $ ExitFailure 1) $ do
     listenThread <- Async.async (Daemon.listen daemonEventLoop daemonSocketPath)
     liftIO $ putMVar daemonSocketThread listenThread
 
-    EventLoop.run daemonEventLoop $ \case
+    eventLoopRes <- EventLoop.run daemonEventLoop $ \case
       EventLoop.AddSocketClient conn ->
         SocketStore.addSocket conn (Daemon.handleClient daemonEventLoop) daemonClients
       EventLoop.RemoveSocketClient socketId ->
         SocketStore.removeSocket socketId daemonClients
       EventLoop.ReconnectSocket ->
         -- TODO: implement reconnection logic
-        EventLoop.exitLoopWith (ExitFailure 1) daemonEventLoop
+        EventLoop.exitLoopWith (Left DaemonSocketError) daemonEventLoop
       EventLoop.ReceivedMessage clientMsg ->
         case clientMsg of
           ClientPushRequest pushRequest -> queueJob pushRequest
@@ -129,9 +131,14 @@ run daemon = runDaemon daemon $ flip E.onError (return $ ExitFailure 1) $ do
           _ -> return ()
       EventLoop.ShutdownGracefully -> do
         Katip.logFM Katip.InfoS "Shutting down daemon..."
-        shutdownGracefully subscriptionManagerThread workersThreads
+        pushResult <- shutdownGracefully subscriptionManagerThread workersThreads
         Katip.logFM Katip.InfoS "Daemon shut down. Exiting."
-        EventLoop.exitLoopWith ExitSuccess daemonEventLoop
+        EventLoop.exitLoopWith pushResult daemonEventLoop
+
+    return $ case eventLoopRes of
+      Left err -> Left (DaemonEventLoopError err)
+      Right (Left err) -> Left err
+      Right (Right ()) -> Right ()
 
 stop :: Daemon ()
 stop = do
@@ -190,50 +197,68 @@ showConfiguration = do
         "Compression: " <> show (Push.getCompressionMethod daemonPushOptions daemonBinaryCache)
       ]
 
-shutdownGracefully :: Async () -> [Worker.Thread] -> Daemon ()
+shutdownGracefully :: Async () -> [Worker.Thread] -> Daemon (Either DaemonError ())
 shutdownGracefully subscriptionManagerThread workersThreads = do
   DaemonEnv {..} <- ask
 
+  -- Indicate that the daemon is shutting down
   initiateShutdown daemonShutdownLatch
-  PushManager.runPushManager daemonPushManager $ do
-    queuedStorePathCount <- PushManager.queuedStorePathCount
-    when (queuedStorePathCount > 0) $
-      Katip.logFM Katip.InfoS $
-        Katip.logStr $
-          "Remaining store paths: " <> (show queuedStorePathCount :: Text)
 
-  Katip.logFM Katip.DebugS "Waiting for push manager to clear remaining jobs..."
-  -- Finish processing remaining push jobs
-  let timeoutOptions =
-        PushManager.TimeoutOptions
-          { PushManager.toTimeout = 60.0,
-            PushManager.toPollingInterval = 1.0
-          }
-  liftIO $ PushManager.stopPushManager timeoutOptions daemonPushManager
-  Katip.logFM Katip.DebugS "Push manager shut down."
+  -- Stop the push manager and wait for any remaining paths to be uploaded
+  shutdownPushManager daemonPushManager
 
-  -- Gracefully shut down the worker before closing the socket
+  -- Stop worker threads
   Worker.stopWorkers workersThreads
 
   -- Close all event subscriptions
-  Katip.logFM Katip.DebugS "Shutting down event manager..."
-  liftIO $ stopSubscriptionManager daemonSubscriptionManager
-  Async.wait subscriptionManagerThread
-  Katip.logFM Katip.DebugS "Event manager shut down."
+  shutdownSubscriptions daemonSubscriptionManager
 
-  let sayGoodbye socket = do
-        let clientSock = SocketStore.socket socket
-        let clientThread = SocketStore.handlerThread socket
-        Async.cancel clientThread
+  failedJobs <-
+    PushManager.runPushManager daemonPushManager PushManager.getFailedPushJobs
+  let pushResult =
+        if not (null failedJobs)
+          then Left DaemonPushFailure
+          else Right ()
 
-        -- Wave goodbye to the client that requested the shutdown
-        liftIO $ Daemon.serverBye clientSock
-        liftIO $ Socket.shutdown clientSock Socket.ShutdownBoth `catchAny` (\_ -> return ())
-        -- Wait for the other end to disconnect
-        ebs <- liftIO $ try $ Socket.BS.recv clientSock 4096
-        case ebs of
-          Left err | isResourceVanishedError err -> Katip.logFM Katip.DebugS "Client did not disconnect cleanly."
-          Left err -> Katip.logFM Katip.DebugS $ Katip.ls $ "Client socket threw an error: " <> displayException err
-          Right _ -> Katip.logFM Katip.DebugS "Client disconnected."
+  -- Gracefully close open connections to clients
+  Async.mapConcurrently_ (sayGoodbye pushResult) =<< SocketStore.toList daemonClients
 
-  Async.mapConcurrently_ sayGoodbye =<< SocketStore.toList daemonClients
+  return pushResult
+  where
+    shutdownPushManager daemonPushManager = do
+      queuedStorePathCount <- PushManager.runPushManager daemonPushManager PushManager.queuedStorePathCount
+      when (queuedStorePathCount > 0) $
+        Katip.logFM Katip.InfoS $
+          Katip.logStr $
+            "Remaining store paths: " <> (show queuedStorePathCount :: Text)
+
+      Katip.logFM Katip.DebugS "Waiting for push manager to clear remaining jobs..."
+      -- Finish processing remaining push jobs
+      let timeoutOptions =
+            PushManager.TimeoutOptions
+              { PushManager.toTimeout = 60.0,
+                PushManager.toPollingInterval = 1.0
+              }
+      liftIO $ PushManager.stopPushManager timeoutOptions daemonPushManager
+      Katip.logFM Katip.DebugS "Push manager shut down."
+
+    shutdownSubscriptions daemonSubscriptionManager = do
+      Katip.logFM Katip.DebugS "Shutting down event manager..."
+      liftIO $ stopSubscriptionManager daemonSubscriptionManager
+      Async.wait subscriptionManagerThread
+      Katip.logFM Katip.DebugS "Event manager shut down."
+
+    sayGoodbye exitResult socket = do
+      let clientSock = SocketStore.socket socket
+      let clientThread = SocketStore.handlerThread socket
+      Async.cancel clientThread
+
+      -- Wave goodbye to the client that requested the shutdown
+      liftIO $ Daemon.serverBye clientSock exitResult
+      liftIO $ Socket.shutdown clientSock Socket.ShutdownBoth `catchAny` (\_ -> return ())
+      -- Wait for the other end to disconnect
+      ebs <- liftIO $ try $ Socket.BS.recv clientSock 4096
+      case ebs of
+        Left err | isResourceVanishedError err -> Katip.logFM Katip.DebugS "Client did not disconnect cleanly."
+        Left err -> Katip.logFM Katip.DebugS $ Katip.ls $ "Client socket threw an error: " <> displayException err
+        Right _ -> Katip.logFM Katip.DebugS "Client disconnected."

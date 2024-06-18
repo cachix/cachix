@@ -404,12 +404,12 @@ watchExecDaemon env pushOpts cacheName cmd args =
 
     shutdownDaemonThread daemon logHandle (daemonThread, daemonChan) = do
       -- TODO: process and fold events into a state during command execution
-      daemonExitCode <- Async.withAsync (postWatchExec daemonChan) $ \_ -> do
+      daemonRes <- Async.withAsync (postWatchExec daemonChan) $ \_ -> do
         Daemon.stopIO daemon
         Async.wait daemonThread
 
       -- Print the daemon log in case there was an internal error
-      case daemonExitCode of
+      case toExitCode daemonRes of
         ExitFailure _ -> printLog logHandle
         ExitSuccess -> return ()
 

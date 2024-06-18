@@ -29,7 +29,7 @@ data ClientMessage
 -- | JSON messages that the daemon can send to the client
 data DaemonMessage
   = DaemonPong
-  | DaemonBye
+  | DaemonBye Int
   deriving stock (Generic, Show)
   deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)
 

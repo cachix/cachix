@@ -14,6 +14,10 @@ module Cachix.Client.Daemon.PushManager
     resolvePushJob,
     pendingJobCount,
 
+    -- * Query
+    filterPushJobs,
+    getFailedPushJobs,
+
     -- * Store paths
     queueStorePaths,
     removeStorePath,
@@ -131,6 +135,14 @@ lookupPushJob :: Protocol.PushRequestId -> PushManager (Maybe PushJob)
 lookupPushJob pushId = do
   pushJobs <- asks pmPushJobs
   liftIO $ HashMap.lookup pushId <$> readTVarIO pushJobs
+
+filterPushJobs :: (PushJob -> Bool) -> PushManager [PushJob]
+filterPushJobs f = do
+  pushJobs <- asks pmPushJobs
+  liftIO $ filter f . HashMap.elems <$> readTVarIO pushJobs
+
+getFailedPushJobs :: PushManager [PushJob]
+getFailedPushJobs = filterPushJobs PushJob.isFailed
 
 withPushJob :: Protocol.PushRequestId -> (PushJob -> PushManager ()) -> PushManager ()
 withPushJob pushId f =

@@ -11,6 +11,7 @@ where
 import Cachix.Client.Config.Orphans ()
 import qualified Cachix.Client.Daemon.EventLoop as EventLoop
 import Cachix.Client.Daemon.Protocol as Protocol
+import Cachix.Client.Daemon.Types (DaemonError, toExitCodeInt)
 import Cachix.Client.Daemon.Types.EventLoop (EventLoop)
 import Cachix.Client.Daemon.Types.SocketStore (SocketId)
 import Control.Exception.Safe (catchAny)
@@ -48,7 +49,7 @@ instance Exception ListenError where
 -- | Listen for incoming connections on the given socket path.
 listen ::
   (E.MonadMask m, Katip.KatipContext m) =>
-  EventLoop ->
+  EventLoop a ->
   FilePath ->
   m ()
 listen eventloop daemonSocketPath = forever $ do
@@ -62,9 +63,9 @@ listen eventloop daemonSocketPath = forever $ do
 -- Automatically responds to pings.
 -- Requests the daemon to remove the client socket once the loop exits.
 handleClient ::
-  forall m.
+  forall m a.
   (E.MonadMask m, Katip.KatipContext m) =>
-  EventLoop ->
+  EventLoop a ->
   SocketId ->
   Socket ->
   m ()
@@ -103,9 +104,11 @@ decodeMessage bs =
       return Nothing
     Right msg -> return (Just msg)
 
-serverBye :: Socket.Socket -> IO ()
-serverBye sock =
-  Socket.LBS.sendAll sock (Protocol.newMessage DaemonBye) `catchAny` (\_ -> return ())
+serverBye :: Socket.Socket -> Either DaemonError () -> IO ()
+serverBye sock exitResult =
+  Socket.LBS.sendAll sock (Protocol.newMessage (DaemonBye exitCode)) `catchAny` (\_ -> return ())
+  where
+    exitCode = toExitCodeInt exitResult
 
 getSocketPath :: IO FilePath
 getSocketPath = do

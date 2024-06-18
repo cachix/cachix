@@ -76,9 +76,10 @@ stop _env daemonOptions =
             Protocol.DaemonPong -> do
               writeIORef lastPongRef =<< getCurrentTime
               loop
-            Protocol.DaemonBye ->
-              -- TODO: process exit code
-              exitSuccess
+            Protocol.DaemonBye exitCode ->
+              case exitCode of
+                0 -> exitSuccess
+                _ -> exitWith (ExitFailure exitCode)
   where
     runPingThread lastPongRef rx tx = go
       where
@@ -112,7 +113,7 @@ stop _env daemonOptions =
 
           case ebs of
             Left err | isResourceVanishedError err -> socketClosed
-            Left err -> socketClosed
+            Left _err -> socketClosed
             -- If the socket returns 0 bytes, then it is closed
             Right bs | BS.null bs -> socketClosed
             Right bs -> do

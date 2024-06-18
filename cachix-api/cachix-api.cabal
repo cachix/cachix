@@ -91,7 +91,7 @@ library
     , async
     , bytestring
     , conduit               >=1.3.0
-    , cryptonite
+    , crypton
     , deriving-aeson
     , exceptions
     , http-media

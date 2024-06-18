@@ -216,9 +216,9 @@ shutdownGracefully subscriptionManagerThread workersThreads = do
   failedJobs <-
     PushManager.runPushManager daemonPushManager PushManager.getFailedPushJobs
   let pushResult =
-        if not (null failedJobs)
-          then Left DaemonPushFailure
-          else Right ()
+        if null failedJobs
+          then Right ()
+          else Left DaemonPushFailure
 
   -- Gracefully close open connections to clients
   Async.mapConcurrently_ (sayGoodbye pushResult) =<< SocketStore.toList daemonClients

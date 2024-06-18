@@ -216,7 +216,10 @@ checkPushJobCompleted pushId = do
     when (Set.null $ pushQueue pushJob) $ do
       timestamp <- liftIO getCurrentTime
       liftIO $ atomically $ do
-        _ <- modifyPushJobSTM pmPushJobs pushId $ PushJob.complete timestamp
+        _ <- modifyPushJobSTM pmPushJobs pushId $ \pushJob ->
+          if PushJob.hasFailedPaths pushJob
+            then PushJob.fail timestamp pushJob
+            else PushJob.complete timestamp pushJob
         decrementTVar pmPendingJobCount
       pushFinished pushJob
 

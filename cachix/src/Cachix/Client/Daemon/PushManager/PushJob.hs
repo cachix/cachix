@@ -81,10 +81,16 @@ result PushJob {pushResult} = pushResult
 hasQueuedPaths :: PushJob -> Bool
 hasQueuedPaths = not . Set.null . queue
 
+hasFailedPaths :: PushJob -> Bool
+hasFailedPaths = not . Set.null . prFailedPaths . result
+
 complete :: UTCTime -> PushJob -> PushJob
 complete timestamp pushJob@PushJob {..} = do
   pushJob
-    { pushStatus = Completed,
+    { pushStatus =
+        case pushStatus of
+          Running -> Completed
+          _ -> pushStatus,
       pushStats = pushStats {jsCompletedAt = Just timestamp}
     }
 

@@ -7,10 +7,8 @@ import Cachix.Client.OptionsParser (DaemonOptions (..))
 import qualified Cachix.Client.Retry as Retry
 import qualified Control.Concurrent.Async as Async
 import Control.Concurrent.STM.TBMQueue
-import Control.Exception.Safe (catchAny)
 import qualified Data.Aeson as Aeson
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy.Char8 as Lazy.Char8
 import Data.IORef
 import Data.Time.Clock
 import qualified Network.Socket as Socket

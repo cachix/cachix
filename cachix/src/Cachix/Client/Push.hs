@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE Rank2Types #-}
 
 {- This is a standalone module so it shouldn't depend on any CLI state like Env -}
@@ -66,6 +67,7 @@ import qualified Data.Conduit.Lzma as Lzma (compress)
 import qualified Data.Conduit.Zstd as Zstd (compress)
 import Data.IORef
 import qualified Data.Set as Set
+import Data.String.Here (iTrim)
 import qualified Data.Text as T
 import Hercules.CNix (StorePath)
 import qualified Hercules.CNix.Std.Set as Std.Set
@@ -442,11 +444,21 @@ newNarInfoCreate pushParams storePath pathInfo UploadNarDetails {..} = do
   storeDir <- Store.storeDir store
   storePathText <- liftIO $ toS <$> Store.storePathToPath store storePath
 
-  -- TODO: show expected vs actual NAR hash
   when (undNarHash /= piNarHash pathInfo) $
     throwM $
-      NarHashMismatch $
-        toS storePathText <> ": Nar hash mismatch between nix-store --dump and nix db. You can repair db metadata by running as root: $ nix-store --verify --repair --check-contents"
+      NarHashMismatch
+        [iTrim|
+${storePathText}: the computed NAR hash doesn't match the hash returned by the Nix store.
+
+Expected: ${undNarHash}
+Got:      ${piNarHash pathInfo}
+
+1. Try repairing the Nix store:
+
+   sudo nix-store --verify --repair --check-contents
+
+2. If the issue persists, report it to https://github.com/cachix/cachix/issues
+        |]
 
   let deriver =
         fromMaybe "unknown-deriver" $

@@ -18,7 +18,6 @@ import Control.Exception.Safe (catchAny)
 import qualified Control.Monad.Catch as E
 import qualified Data.Aeson as Aeson
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Char8 as Char8
 import qualified Katip
 import Network.Socket (Socket)
 import qualified Network.Socket as Socket
@@ -106,9 +105,14 @@ decodeMessage bs =
 
 serverBye :: Socket.Socket -> Either DaemonError () -> IO ()
 serverBye sock exitResult =
-  Socket.LBS.sendAll sock (Protocol.newMessage (DaemonBye exitCode)) `catchAny` (\_ -> return ())
+  Socket.LBS.sendAll sock (Protocol.newMessage (DaemonExit exitStatus)) `catchAny` (\_ -> return ())
   where
+    exitStatus = DaemonExitStatus {exitCode, exitMessage}
     exitCode = toExitCodeInt exitResult
+    exitMessage =
+      case exitResult of
+        Left err -> Just (toS $ displayException err)
+        Right _ -> Nothing
 
 getSocketPath :: IO FilePath
 getSocketPath = do

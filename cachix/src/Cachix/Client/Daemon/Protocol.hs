@@ -3,6 +3,7 @@
 module Cachix.Client.Daemon.Protocol
   ( ClientMessage (..),
     DaemonMessage (..),
+    DaemonExitStatus (..),
     PushRequestId,
     newPushRequestId,
     PushRequest (..),
@@ -23,14 +24,21 @@ data ClientMessage
   = ClientPushRequest !PushRequest
   | ClientStop
   | ClientPing
-  deriving stock (Generic, Show)
+  deriving stock (Eq, Generic, Show)
   deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)
 
 -- | JSON messages that the daemon can send to the client
 data DaemonMessage
   = DaemonPong
-  | DaemonBye Int
-  deriving stock (Generic, Show)
+  | DaemonExit !DaemonExitStatus
+  deriving stock (Eq, Generic, Show)
+  deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)
+
+data DaemonExitStatus = DaemonExitStatus
+  { exitCode :: !Int,
+    exitMessage :: !(Maybe Text)
+  }
+  deriving stock (Eq, Generic, Show)
   deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)
 
 newtype PushRequestId = PushRequestId UUID

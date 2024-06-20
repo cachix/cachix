@@ -74,10 +74,10 @@ stop _env daemonOptions =
             Protocol.DaemonPong -> do
               writeIORef lastPongRef =<< getCurrentTime
               loop
-            Protocol.DaemonBye exitCode ->
-              case exitCode of
+            Protocol.DaemonExit exitStatus ->
+              case exitCode exitStatus of
                 0 -> exitSuccess
-                _ -> exitWith (ExitFailure exitCode)
+                code -> exitWith (ExitFailure code)
   where
     runPingThread lastPongRef rx tx = go
       where

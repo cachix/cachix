@@ -8,11 +8,18 @@ where
 import Cachix.Client.Daemon.Types.EventLoop (EventLoopError (..))
 import Protolude
 
+-- | An error that can occur in the daemon.
+--
+-- These should not escape the main 'run' function.
 data DaemonError
-  = DaemonUnhandledException UnhandledException
-  | DaemonEventLoopError EventLoopError
-  | DaemonSocketError
-  | DaemonPushFailure
+  = -- | The daemon shut down due to an unhandled exception
+    DaemonUnhandledException UnhandledException
+  | -- | There was an error in the daemon's event loop
+    DaemonEventLoopError EventLoopError
+  | -- | There was an error with the daemon's socket
+    DaemonSocketError
+  | -- | Failed to push some store paths
+    DaemonPushFailure
   deriving stock (Show, Eq)
 
 instance Exception DaemonError where

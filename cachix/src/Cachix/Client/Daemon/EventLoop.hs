@@ -57,6 +57,7 @@ send' logger eventloop@(EventLoop {queue}) event = do
       logger Katip.ErrorS $ "Failed to write to event loop: " <> message
       exitLoopWithFailure EventLoopFull eventloop
 
+-- | Run the event loop until it exits with 'exitLoopWith'.
 run :: (MonadIO m) => EventLoop a -> (DaemonEvent -> m ()) -> m (Either EventLoopError a)
 run eventloop f = do
   fix $ \loop -> do
@@ -69,8 +70,10 @@ run eventloop f = do
       Just exitValue -> return exitValue
       Nothing -> loop
 
+-- | Short-circuit the event loop and exit with a given return value.
 exitLoopWith :: (MonadIO m) => a -> EventLoop a -> m ()
 exitLoopWith exitValue (EventLoop {exitLatch}) = void $ liftIO $ tryPutMVar exitLatch (Right exitValue)
 
+-- | Short-circuit the event loop in case of an internal error.
 exitLoopWithFailure :: (MonadIO m) => EventLoopError -> EventLoop a -> m ()
 exitLoopWithFailure err (EventLoop {exitLatch}) = void $ liftIO $ tryPutMVar exitLatch (Left err)

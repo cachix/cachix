@@ -53,10 +53,8 @@ class HasExitCode a where
 
 instance HasExitCode DaemonError where
   toExitCode err = ExitFailure $ case err of
-    DaemonUnhandledException _ -> 1
-    DaemonEventLoopError _ -> 3
-    DaemonSocketError -> 4
-    DaemonPushFailure -> 5
+    DaemonPushFailure -> 3
+    _remainingErrors -> 1
 
 instance (HasExitCode a) => HasExitCode (Maybe a) where
   toExitCode Nothing = ExitSuccess

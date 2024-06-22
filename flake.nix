@@ -13,7 +13,8 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     devenv = {
-      url = "github:cachix/devenv/python-rewrite";
+      url = "github:cachix/devenv";
+      inputs.nixpkgs.follows = "nixpkgs";
       inputs.flake-compat.follows = "flake-compat";
       inputs.pre-commit-hooks.follows = "pre-commit-hooks";
     };

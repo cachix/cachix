@@ -86,6 +86,7 @@ library
     Cachix.Client.Daemon.Subscription
     Cachix.Client.Daemon.Types
     Cachix.Client.Daemon.Types.Daemon
+    Cachix.Client.Daemon.Types.Error
     Cachix.Client.Daemon.Types.EventLoop
     Cachix.Client.Daemon.Types.Log
     Cachix.Client.Daemon.Types.PushEvent
@@ -240,11 +241,12 @@ executable .cachix-deployment
 test-suite cachix-test
   import:             defaults
   type:               exitcode-stdio-1.0
-  ghc-options:        -threaded -rtsopts -with-rtsopts=-N
+  ghc-options:        -threaded -rtsopts -with-rtsopts=-N -Wno-orphans
   main-is:            Main.hs
   hs-source-dirs:     test
   other-modules:
     Daemon.PostBuildHookSpec
+    Daemon.ProtocolSpec
     Daemon.PushManagerSpec
     DeploySpec
     InstallationModeSpec

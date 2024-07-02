@@ -14,6 +14,10 @@ module Cachix.Client.Daemon.PushManager
     resolvePushJob,
     pendingJobCount,
 
+    -- * Query
+    filterPushJobs,
+    getFailedPushJobs,
+
     -- * Store paths
     queueStorePaths,
     removeStorePath,
@@ -94,20 +98,28 @@ stopPushManager timeoutOptions PushManagerEnv {..} = do
 
 -- Manage push jobs
 
-addPushJob :: Protocol.PushRequest -> PushManager Protocol.PushRequestId
+addPushJob :: Protocol.PushRequest -> PushManager (Maybe Protocol.PushRequestId)
 addPushJob pushRequest = do
   PushManagerEnv {..} <- ask
   pushJob <- PushJob.new pushRequest
 
   Katip.logLocM Katip.DebugS $ Katip.ls $ "Queued push job " <> (show (pushId pushJob) :: Text)
 
-  liftIO $
-    atomically $ do
-      modifyTVar' pmPushJobs $ HashMap.insert (pushId pushJob) pushJob
-      incrementTVar pmPendingJobCount
-      writeTBMQueue pmTaskQueue $ ResolveClosure (pushId pushJob)
+  let queueJob = do
+        modifyTVar' pmPushJobs $ HashMap.insert (pushId pushJob) pushJob
+        incrementTVar pmPendingJobCount
+        res <- tryWriteTBMQueue pmTaskQueue $ ResolveClosure (pushId pushJob)
+        case res of
+          Just True -> return True
+          _ -> retry
 
-  return (pushId pushJob)
+  didQueue <- liftIO $ atomically $ queueJob `orElse` return False
+
+  if didQueue
+    then return $ Just $ pushId pushJob
+    else do
+      Katip.logLocM Katip.WarningS "Failed to queue push job. Queue likely full."
+      return Nothing
 
 removePushJob :: Protocol.PushRequestId -> PushManager ()
 removePushJob pushId = do
@@ -123,6 +135,14 @@ lookupPushJob :: Protocol.PushRequestId -> PushManager (Maybe PushJob)
 lookupPushJob pushId = do
   pushJobs <- asks pmPushJobs
   liftIO $ HashMap.lookup pushId <$> readTVarIO pushJobs
+
+filterPushJobs :: (PushJob -> Bool) -> PushManager [PushJob]
+filterPushJobs f = do
+  pushJobs <- asks pmPushJobs
+  liftIO $ filter f . HashMap.elems <$> readTVarIO pushJobs
+
+getFailedPushJobs :: PushManager [PushJob]
+getFailedPushJobs = filterPushJobs PushJob.isFailed
 
 withPushJob :: Protocol.PushRequestId -> (PushJob -> PushManager ()) -> PushManager ()
 withPushJob pushId f =
@@ -196,7 +216,10 @@ checkPushJobCompleted pushId = do
     when (Set.null $ pushQueue pushJob) $ do
       timestamp <- liftIO getCurrentTime
       liftIO $ atomically $ do
-        _ <- modifyPushJobSTM pmPushJobs pushId $ PushJob.complete timestamp
+        _ <- modifyPushJobSTM pmPushJobs pushId $ \pushJob ->
+          if PushJob.hasFailedPaths pushJob
+            then PushJob.fail timestamp pushJob
+            else PushJob.complete timestamp pushJob
         decrementTVar pmPendingJobCount
       pushFinished pushJob
 

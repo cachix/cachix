@@ -1,5 +1,6 @@
 module Cachix.Client.Daemon.Types.EventLoop
   ( EventLoop (..),
+    EventLoopError (..),
     ExitLatch,
     DaemonEvent (..),
   )
@@ -12,14 +13,24 @@ import Network.Socket (Socket)
 import Protolude
 
 -- | An event loop that processes 'DaemonEvent's.
-data EventLoop = EventLoop
+data EventLoop a = EventLoop
   { queue :: TBMQueue DaemonEvent,
-    exitLatch :: ExitLatch
+    exitLatch :: ExitLatch a
   }
 
 -- | An exit latch is a semaphore that signals the event loop to exit.
 -- The exit code should be returned by the 'EventLoop'.
-type ExitLatch = MVar ExitCode
+type ExitLatch a = MVar (Either EventLoopError a)
+
+data EventLoopError
+  = EventLoopClosed
+  | EventLoopFull
+  deriving stock (Show, Eq)
+
+instance Exception EventLoopError where
+  displayException = \case
+    EventLoopClosed -> "The event loop is closed"
+    EventLoopFull -> "The event loop is full"
 
 -- | Daemon events that are handled by the 'EventLoop'.
 data DaemonEvent

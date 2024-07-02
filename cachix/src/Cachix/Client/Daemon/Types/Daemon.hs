@@ -1,4 +1,5 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Cachix.Client.Daemon.Types.Daemon
   ( -- * Daemon
@@ -13,6 +14,7 @@ import qualified Cachix.Client.Daemon.Log as Log
 import qualified Cachix.Client.Daemon.Protocol as Protocol
 import Cachix.Client.Daemon.ShutdownLatch (ShutdownLatch)
 import Cachix.Client.Daemon.Subscription (SubscriptionManager)
+import Cachix.Client.Daemon.Types.Error (DaemonError (DaemonUnhandledException), UnhandledException (..))
 import Cachix.Client.Daemon.Types.EventLoop (EventLoop)
 import Cachix.Client.Daemon.Types.Log (Logger)
 import Cachix.Client.Daemon.Types.PushEvent (PushEvent)
@@ -22,6 +24,7 @@ import Cachix.Client.Env as Env
 import Cachix.Client.OptionsParser (PushOptions)
 import Cachix.Client.Push
 import Cachix.Types.BinaryCache (BinaryCache, BinaryCacheName)
+import qualified Control.Exception.Safe as Safe
 import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
 import Control.Monad.IO.Unlift (MonadUnliftIO)
 import qualified Katip
@@ -32,7 +35,7 @@ data DaemonEnv = DaemonEnv
   { -- | Cachix client env
     daemonEnv :: Env,
     -- | The main event loop
-    daemonEventLoop :: EventLoop,
+    daemonEventLoop :: EventLoop (Either DaemonError ()),
     -- | Push options, like compression settings and number of jobs
     daemonPushOptions :: PushOptions,
     -- | Path to the socket that the daemon listens on
@@ -86,8 +89,19 @@ instance Katip.KatipContext Daemon where
   localKatipNamespace f (Daemon m) = Daemon (local (\s -> s {daemonLogger = Log.localKatipNamespace f (daemonLogger s)}) m)
 
 -- | Run a pre-configured daemon.
-runDaemon :: DaemonEnv -> Daemon a -> IO a
-runDaemon env f = do
+runDaemon :: DaemonEnv -> Daemon a -> IO (Either DaemonError a)
+runDaemon env f = tryDaemon $ do
   Log.withLogger (daemonLogger env) $ \logger -> do
     let pushManagerEnv = (daemonPushManager env) {pmLogger = logger}
     unDaemon f `runReaderT` env {daemonLogger = logger, daemonPushManager = pushManagerEnv}
+  where
+    tryDaemon :: IO a -> IO (Either DaemonError a)
+    tryDaemon a =
+      Safe.catch
+        (a >>= \v -> return (Right v))
+        (return . Left . wrapUnhandledErrors)
+
+    -- Wrap errors in a DaemonError
+    wrapUnhandledErrors :: SomeException -> DaemonError
+    wrapUnhandledErrors e | Just daemonError <- fromException @DaemonError e = daemonError
+    wrapUnhandledErrors e = DaemonUnhandledException (UnhandledException e)

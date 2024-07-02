@@ -4,6 +4,10 @@ module Cachix.Client.Daemon.Types
     Daemon,
     runDaemon,
 
+    -- * Daemon errors
+    DaemonError (..),
+    HasExitCode (..),
+
     -- * Log
     LogLevel (..),
 
@@ -21,6 +25,7 @@ module Cachix.Client.Daemon.Types
 where
 
 import Cachix.Client.Daemon.Types.Daemon
+import Cachix.Client.Daemon.Types.Error
 import Cachix.Client.Daemon.Types.Log
 import Cachix.Client.Daemon.Types.PushEvent as PushEvent
 import Cachix.Client.Daemon.Types.PushManager as PushManager

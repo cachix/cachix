@@ -1,8 +1,11 @@
 # Match resolver with nixos-unstable haskellPackages
 resolver: lts-22.26
+system-ghc: true
+
 allow-newer: true
 allow-newer-deps:
 - lzma-conduit
+
 packages:
 - cachix
 - cachix-api
@@ -13,7 +16,7 @@ extra-deps:
 - hnix-store-core-0.6.1.0
 - algebraic-graphs-0.6.1
 - lzma-conduit-1.2.3@sha256:d33d14a1e95b134f90ecd73636328ec9b0aa14a6d2666f905443523d90bd159f,1712
+
+notify-if-nix-on-path: false
 nix:
-  enable: true
-  pure: false
-  shell-file: ./shell.nix
+  enable: false

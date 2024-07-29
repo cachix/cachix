@@ -35,6 +35,8 @@ data Task
 
 type PushJobStore = TVar (HashMap Protocol.PushRequestId PushJob)
 
+type StorePathIndex = TVar (HashMap FilePath [Protocol.PushRequestId])
+
 -- TODO: a lot of the logic surrounding deduping, search, and job tracking could be replaced by sqlite.
 -- sqlite can run in-memory if we don't need persistence.
 -- If we do, then we can we get stop/resume for free.
@@ -42,8 +44,8 @@ data PushManagerEnv = PushManagerEnv
   { -- | A store of push jobs indexed by a PushRequestId.
     pmPushJobs :: PushJobStore,
     -- | A mapping of store paths to push requests.
-    -- Used to prevent duplicate pushes and track which store paths are referenced by which push requests.
-    pmStorePathReferences :: TVar (HashMap FilePath [Protocol.PushRequestId]),
+    -- Used when deduplicating pushes.
+    pmStorePathIndex :: StorePathIndex,
     -- | FIFO queue of push tasks.
     pmTaskQueue :: TBMQueue Task,
     -- | A semaphore to control task concurrency.

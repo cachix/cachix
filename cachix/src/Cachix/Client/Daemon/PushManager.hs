@@ -78,7 +78,7 @@ newPushManagerEnv :: (MonadIO m) => PushOptions -> Logger -> OnPushEvent -> m Pu
 newPushManagerEnv pushOptions pmLogger onPushEvent = liftIO $ do
   pmPushJobs <- newTVarIO mempty
   pmPendingJobCount <- newTVarIO 0
-  pmStorePathReferences <- newTVarIO mempty
+  pmStorePathIndex <- newTVarIO mempty
   pmTaskQueue <- newTBMQueueIO 1000
   pmTaskSemaphore <- QSem.newQSem (numJobs pushOptions)
   pmLastEventTimestamp <- newTVarIO =<< getCurrentTime
@@ -188,24 +188,24 @@ queueStorePaths pushId storePaths = do
   PushManagerEnv {..} <- ask
 
   let addToQueue storePath = do
-        isDuplicate <- HashMap.member storePath <$> readTVar pmStorePathReferences
+        isDuplicate <- HashMap.member storePath <$> readTVar pmStorePathIndex
         unless isDuplicate $
           writeTBMQueue pmTaskQueue (PushStorePath storePath)
 
-        modifyTVar' pmStorePathReferences $ HashMap.insertWith (<>) storePath [pushId]
+        modifyTVar' pmStorePathIndex $ HashMap.insertWith (<>) storePath [pushId]
 
   transactionally $ map addToQueue storePaths
 
 removeStorePath :: FilePath -> PushManager ()
 removeStorePath storePath = do
-  pmStorePathReferences <- asks pmStorePathReferences
+  storePathIndex <- asks pmStorePathIndex
   liftIO $ atomically $ do
-    modifyTVar' pmStorePathReferences $ HashMap.delete storePath
+    modifyTVar' storePathIndex $ HashMap.delete storePath
 
-lookupStorePathReferences :: FilePath -> PushManager [Protocol.PushRequestId]
-lookupStorePathReferences storePath = do
-  pmStorePathReferences <- asks pmStorePathReferences
-  references <- liftIO $ readTVarIO pmStorePathReferences
+lookupStorePathIndex :: FilePath -> PushManager [Protocol.PushRequestId]
+lookupStorePathIndex storePath = do
+  storePathIndex <- asks pmStorePathIndex
+  references <- liftIO $ readTVarIO storePathIndex
   return $ fromMaybe [] (HashMap.lookup storePath references)
 
 checkPushJobCompleted :: Protocol.PushRequestId -> PushManager ()
@@ -421,17 +421,17 @@ sendStorePathEvent pushIds msg = do
 pushStorePathAttempt :: FilePath -> Int64 -> RetryStatus -> PushManager ()
 pushStorePathAttempt storePath size retryStatus = do
   let pushRetryStatus = newPushRetryStatus retryStatus
-  pushIds <- lookupStorePathReferences storePath
+  pushIds <- lookupStorePathIndex storePath
   sendStorePathEvent pushIds (PushStorePathAttempt storePath size pushRetryStatus)
 
 pushStorePathProgress :: FilePath -> Int64 -> Int64 -> PushManager ()
 pushStorePathProgress storePath currentBytes newBytes = do
-  pushIds <- lookupStorePathReferences storePath
+  pushIds <- lookupStorePathIndex storePath
   sendStorePathEvent pushIds (PushStorePathProgress storePath currentBytes newBytes)
 
 pushStorePathDone :: FilePath -> PushManager ()
 pushStorePathDone storePath = do
-  pushIds <- lookupStorePathReferences storePath
+  pushIds <- lookupStorePathIndex storePath
   modifyPushJobs pushIds (PushJob.markStorePathPushed storePath)
 
   sendStorePathEvent pushIds (PushStorePathDone storePath)
@@ -442,7 +442,7 @@ pushStorePathDone storePath = do
 
 pushStorePathFailed :: FilePath -> Text -> PushManager ()
 pushStorePathFailed storePath errMsg = do
-  pushIds <- lookupStorePathReferences storePath
+  pushIds <- lookupStorePathIndex storePath
   modifyPushJobs pushIds (PushJob.markStorePathFailed storePath)
 
   sendStorePathEvent pushIds (PushStorePathFailed storePath errMsg)

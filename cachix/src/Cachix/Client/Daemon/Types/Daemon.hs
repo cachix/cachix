@@ -42,13 +42,10 @@ data DaemonEnv = DaemonEnv
     daemonSocketPath :: FilePath,
     -- | Main inbound socket thread
     daemonSocketThread :: MVar (Async ()),
-    -- | The push secret for the binary cache
-    daemonPushSecret :: PushSecret,
     -- | The name of the binary cache to push to
     daemonCacheName :: BinaryCacheName,
     -- | The binary cache to push to
     daemonBinaryCache :: BinaryCache,
-    daemonPushParams :: PushParams PushManager (),
     -- | The state of active push requests
     daemonPushManager :: PushManagerEnv,
     -- | Connected clients over the socket

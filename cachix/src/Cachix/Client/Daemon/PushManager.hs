@@ -75,8 +75,8 @@ import Servant.Auth.Client
 import Servant.Conduit ()
 import qualified UnliftIO.QSem as QSem
 
-newPushManagerEnv :: (MonadIO m) => PushOptions -> Logger -> OnPushEvent -> m PushManagerEnv
-newPushManagerEnv pushOptions pmLogger onPushEvent = liftIO $ do
+newPushManagerEnv :: (MonadIO m) => Logger -> PushParams PushManager () -> PushOptions -> OnPushEvent -> m PushManagerEnv
+newPushManagerEnv pmLogger pmPushParams pushOptions onPushEvent = liftIO $ do
   pmPushJobs <- newTVarIO mempty
   pmPendingJobCount <- newTVarIO 0
   pmStorePathIndex <- newTVarIO mempty
@@ -260,8 +260,9 @@ resolvePushJob pushId closure = do
               "Skipped paths: " <> show skippedCount
             ]
 
-handleTask :: PushParams PushManager () -> Task -> PushManager ()
-handleTask pushParams task = do
+handleTask :: Task -> PushManager ()
+handleTask task = do
+  pushParams <- asks pmPushParams
   case task of
     ResolveClosure pushId ->
       runResolveClosureTask pushParams pushId

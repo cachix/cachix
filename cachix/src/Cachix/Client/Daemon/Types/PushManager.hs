@@ -20,6 +20,7 @@ import qualified Cachix.Client.Daemon.Log as Log
 import qualified Cachix.Client.Daemon.Protocol as Protocol
 import Cachix.Client.Daemon.Types.Log (Logger)
 import Cachix.Client.Daemon.Types.PushEvent (PushEvent (..))
+import Cachix.Client.Push (PushParams)
 import Control.Concurrent.STM.TBMQueue
 import Control.Concurrent.STM.TVar
 import Control.Monad.Catch
@@ -41,7 +42,8 @@ type StorePathIndex = TVar (HashMap FilePath [Protocol.PushRequestId])
 -- sqlite can run in-memory if we don't need persistence.
 -- If we do, then we can we get stop/resume for free.
 data PushManagerEnv = PushManagerEnv
-  { -- | A store of push jobs indexed by a PushRequestId.
+  { pmPushParams :: PushParams PushManager (),
+    -- | A store of push jobs indexed by a PushRequestId.
     pmPushJobs :: PushJobStore,
     -- | A mapping of store paths to push requests.
     -- Used when deduplicating pushes.

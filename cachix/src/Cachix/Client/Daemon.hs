@@ -62,7 +62,7 @@ new ::
   BinaryCacheName ->
   -- | The configured daemon environment.
   IO DaemonEnv
-new daemonEnv daemonNixStore daemonOptions daemonLogHandle daemonPushOptions daemonCacheName = do
+new daemonEnv nixStore daemonOptions daemonLogHandle daemonPushOptions daemonCacheName = do
   let daemonLogLevel =
         if Config.verbose (Env.cachixoptions daemonEnv)
           then Debug
@@ -83,8 +83,8 @@ new daemonEnv daemonNixStore daemonOptions daemonLogHandle daemonPushOptions dae
   daemonSubscriptionManager <- Subscription.newSubscriptionManager
   let onPushEvent = Subscription.pushEvent daemonSubscriptionManager
 
-  let daemonPushParams = Push.newPushParams daemonNixStore (clientenv daemonEnv) daemonBinaryCache daemonPushSecret daemonPushOptions
-  daemonPushManager <- PushManager.newPushManagerEnv daemonPushOptions daemonLogger onPushEvent
+  let pushParams = Push.newPushParams nixStore (clientenv daemonEnv) daemonBinaryCache daemonPushSecret daemonPushOptions
+  daemonPushManager <- PushManager.newPushManagerEnv daemonLogger pushParams daemonPushOptions onPushEvent
 
   return $ DaemonEnv {..}
 
@@ -109,13 +109,11 @@ run daemon = fmap join <$> runDaemon daemon $ do
   subscriptionManagerThread <-
     Async.async $ runSubscriptionManager daemonSubscriptionManager
 
-  let runWorkerTask =
-        liftIO . PushManager.runPushManager daemonPushManager . PushManager.handleTask daemonPushParams
   workersThreads <-
     Worker.startWorkers
       (Options.numJobs daemonPushOptions)
       (PushManager.pmTaskQueue daemonPushManager)
-      runWorkerTask
+      (liftIO . PushManager.runPushManager daemonPushManager . PushManager.handleTask)
 
   listenThread <- Async.async (Daemon.listen daemonEventLoop daemonSocketPath)
   liftIO $ putMVar daemonSocketThread listenThread

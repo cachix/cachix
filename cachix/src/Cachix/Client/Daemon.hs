@@ -35,6 +35,7 @@ import qualified Cachix.Types.BinaryCache as BinaryCache
 import Control.Concurrent.STM.TMChan
 import Control.Exception.Safe (catchAny)
 import qualified Data.Text as T
+import Hercules.CNix.Store (Store, withStore)
 import qualified Hercules.CNix.Util as CNix.Util
 import qualified Katip
 import qualified Network.Socket as Socket
@@ -49,6 +50,8 @@ import qualified UnliftIO.Async as Async
 new ::
   -- | The Cachix environment.
   Env ->
+  -- | A handle to the Nix store.
+  Store ->
   -- | Daemon-specific options.
   DaemonOptions ->
   -- | An optional handle to output logs to.
@@ -59,7 +62,7 @@ new ::
   BinaryCacheName ->
   -- | The configured daemon environment.
   IO DaemonEnv
-new daemonEnv daemonOptions daemonLogHandle daemonPushOptions daemonCacheName = do
+new daemonEnv daemonNixStore daemonOptions daemonLogHandle daemonPushOptions daemonCacheName = do
   let daemonLogLevel =
         if Config.verbose (Env.cachixoptions daemonEnv)
           then Debug
@@ -79,18 +82,21 @@ new daemonEnv daemonOptions daemonLogHandle daemonPushOptions daemonCacheName = 
 
   daemonSubscriptionManager <- Subscription.newSubscriptionManager
   let onPushEvent = Subscription.pushEvent daemonSubscriptionManager
+
+  let daemonPushParams = Push.newPushParams daemonNixStore (clientenv daemonEnv) daemonBinaryCache daemonPushSecret daemonPushOptions
   daemonPushManager <- PushManager.newPushManagerEnv daemonPushOptions daemonLogger onPushEvent
 
   return $ DaemonEnv {..}
 
 -- | Configure and run the daemon as a CLI command.
--- Equivalent to running 'new' and 'run' together with some signal handling.
+-- Equivalent to running 'withStore', new', and 'run', together with some signal handling.
 start :: Env -> DaemonOptions -> PushOptions -> BinaryCacheName -> IO ()
-start daemonEnv daemonOptions daemonPushOptions daemonCacheName = do
-  daemon <- new daemonEnv daemonOptions Nothing daemonPushOptions daemonCacheName
-  installSignalHandlers daemon
-  result <- run daemon
-  exitWith (toExitCode result)
+start daemonEnv daemonOptions daemonPushOptions daemonCacheName =
+  withStore $ \store -> do
+    daemon <- new daemonEnv store daemonOptions Nothing daemonPushOptions daemonCacheName
+    installSignalHandlers daemon
+    result <- run daemon
+    exitWith (toExitCode result)
 
 -- | Run a daemon from a given configuration.
 run :: DaemonEnv -> IO (Either DaemonError ())
@@ -100,44 +106,43 @@ run daemon = fmap join <$> runDaemon daemon $ do
 
   printConfiguration
 
-  Push.withPushParams $ \pushParams -> do
-    subscriptionManagerThread <-
-      Async.async $ runSubscriptionManager daemonSubscriptionManager
+  subscriptionManagerThread <-
+    Async.async $ runSubscriptionManager daemonSubscriptionManager
 
-    let runWorkerTask =
-          liftIO . PushManager.runPushManager daemonPushManager . PushManager.handleTask pushParams
-    workersThreads <-
-      Worker.startWorkers
-        (Options.numJobs daemonPushOptions)
-        (PushManager.pmTaskQueue daemonPushManager)
-        runWorkerTask
+  let runWorkerTask =
+        liftIO . PushManager.runPushManager daemonPushManager . PushManager.handleTask daemonPushParams
+  workersThreads <-
+    Worker.startWorkers
+      (Options.numJobs daemonPushOptions)
+      (PushManager.pmTaskQueue daemonPushManager)
+      runWorkerTask
 
-    listenThread <- Async.async (Daemon.listen daemonEventLoop daemonSocketPath)
-    liftIO $ putMVar daemonSocketThread listenThread
+  listenThread <- Async.async (Daemon.listen daemonEventLoop daemonSocketPath)
+  liftIO $ putMVar daemonSocketThread listenThread
 
-    eventLoopRes <- EventLoop.run daemonEventLoop $ \case
-      EventLoop.AddSocketClient conn ->
-        SocketStore.addSocket conn (Daemon.handleClient daemonEventLoop) daemonClients
-      EventLoop.RemoveSocketClient socketId ->
-        SocketStore.removeSocket socketId daemonClients
-      EventLoop.ReconnectSocket ->
-        -- TODO: implement reconnection logic
-        EventLoop.exitLoopWith (Left DaemonSocketError) daemonEventLoop
-      EventLoop.ReceivedMessage clientMsg ->
-        case clientMsg of
-          ClientPushRequest pushRequest -> queueJob pushRequest
-          ClientStop -> EventLoop.send daemonEventLoop EventLoop.ShutdownGracefully
-          _ -> return ()
-      EventLoop.ShutdownGracefully -> do
-        Katip.logFM Katip.InfoS "Shutting down daemon..."
-        pushResult <- shutdownGracefully subscriptionManagerThread workersThreads
-        Katip.logFM Katip.InfoS "Daemon shut down. Exiting."
-        EventLoop.exitLoopWith pushResult daemonEventLoop
+  eventLoopRes <- EventLoop.run daemonEventLoop $ \case
+    EventLoop.AddSocketClient conn ->
+      SocketStore.addSocket conn (Daemon.handleClient daemonEventLoop) daemonClients
+    EventLoop.RemoveSocketClient socketId ->
+      SocketStore.removeSocket socketId daemonClients
+    EventLoop.ReconnectSocket ->
+      -- TODO: implement reconnection logic
+      EventLoop.exitLoopWith (Left DaemonSocketError) daemonEventLoop
+    EventLoop.ReceivedMessage clientMsg ->
+      case clientMsg of
+        ClientPushRequest pushRequest -> queueJob pushRequest
+        ClientStop -> EventLoop.send daemonEventLoop EventLoop.ShutdownGracefully
+        _ -> return ()
+    EventLoop.ShutdownGracefully -> do
+      Katip.logFM Katip.InfoS "Shutting down daemon..."
+      pushResult <- shutdownGracefully subscriptionManagerThread workersThreads
+      Katip.logFM Katip.InfoS "Daemon shut down. Exiting."
+      EventLoop.exitLoopWith pushResult daemonEventLoop
 
-    return $ case eventLoopRes of
-      Left err -> Left (DaemonEventLoopError err)
-      Right (Left err) -> Left err
-      Right (Right ()) -> Right ()
+  return $ case eventLoopRes of
+    Left err -> Left (DaemonEventLoopError err)
+    Right (Left err) -> Left err
+    Right (Right ()) -> Right ()
 
 stop :: Daemon ()
 stop = do

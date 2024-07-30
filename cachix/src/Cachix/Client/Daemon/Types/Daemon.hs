@@ -18,7 +18,7 @@ import Cachix.Client.Daemon.Types.Error (DaemonError (DaemonUnhandledException),
 import Cachix.Client.Daemon.Types.EventLoop (EventLoop)
 import Cachix.Client.Daemon.Types.Log (Logger)
 import Cachix.Client.Daemon.Types.PushEvent (PushEvent)
-import Cachix.Client.Daemon.Types.PushManager (PushManagerEnv (..))
+import Cachix.Client.Daemon.Types.PushManager (PushManager, PushManagerEnv (..))
 import Cachix.Client.Daemon.Types.SocketStore (SocketStore)
 import Cachix.Client.Env as Env
 import Cachix.Client.OptionsParser (PushOptions)
@@ -48,6 +48,7 @@ data DaemonEnv = DaemonEnv
     daemonCacheName :: BinaryCacheName,
     -- | The binary cache to push to
     daemonBinaryCache :: BinaryCache,
+    daemonPushParams :: PushParams PushManager (),
     -- | The state of active push requests
     daemonPushManager :: PushManagerEnv,
     -- | Connected clients over the socket

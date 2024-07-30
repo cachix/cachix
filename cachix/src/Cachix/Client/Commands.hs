@@ -377,24 +377,25 @@ watchExec env pushOptions cacheName cmd args = do
 watchExecDaemon :: Env -> PushOptions -> BinaryCacheName -> Text -> [Text] -> IO ()
 watchExecDaemon env pushOpts cacheName cmd args =
   Daemon.PostBuildHook.withSetup Nothing $ \hookEnv ->
-    withTempFile (Daemon.PostBuildHook.tempDir hookEnv) "daemon-log-capture" $ \_ logHandle -> do
-      let daemonOptions = DaemonOptions {daemonSocketPath = Just (Daemon.PostBuildHook.daemonSock hookEnv)}
-      daemon <- Daemon.new env daemonOptions (Just logHandle) pushOpts cacheName
+    withTempFile (Daemon.PostBuildHook.tempDir hookEnv) "daemon-log-capture" $ \_ logHandle ->
+      withStore $ \store -> do
+        let daemonOptions = DaemonOptions {daemonSocketPath = Just (Daemon.PostBuildHook.daemonSock hookEnv)}
+        daemon <- Daemon.new env store daemonOptions (Just logHandle) pushOpts cacheName
 
-      exitCode <-
-        bracket (startDaemonThread daemon) (shutdownDaemonThread daemon logHandle) $ \_ -> do
-          processEnv <- getEnvironment
-          let newProcessEnv = Daemon.PostBuildHook.modifyEnv (Daemon.PostBuildHook.envVar hookEnv) processEnv
-          let process =
-                (System.Process.proc (toS cmd) (toS <$> args))
-                  { System.Process.std_out = System.Process.Inherit,
-                    System.Process.env = Just newProcessEnv,
-                    System.Process.delegate_ctlc = True
-                  }
-          System.Process.withCreateProcess process $ \_ _ _ processHandle ->
-            System.Process.waitForProcess processHandle
+        exitCode <-
+          bracket (startDaemonThread daemon) (shutdownDaemonThread daemon logHandle) $ \_ -> do
+            processEnv <- getEnvironment
+            let newProcessEnv = Daemon.PostBuildHook.modifyEnv (Daemon.PostBuildHook.envVar hookEnv) processEnv
+            let process =
+                  (System.Process.proc (toS cmd) (toS <$> args))
+                    { System.Process.std_out = System.Process.Inherit,
+                      System.Process.env = Just newProcessEnv,
+                      System.Process.delegate_ctlc = True
+                    }
+            System.Process.withCreateProcess process $ \_ _ _ processHandle ->
+              System.Process.waitForProcess processHandle
 
-      exitWith exitCode
+        exitWith exitCode
   where
     -- Launch the daemon in the background and subscribe to all push events
     startDaemonThread daemon = do

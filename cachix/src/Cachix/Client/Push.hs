@@ -33,9 +33,11 @@ module Cachix.Client.Push
     -- * Narinfo
     narinfoExists,
     newNarInfoCreate,
+    queryNarInfoBulk,
 
     -- * Pushing a closure of store paths
     pushClosure,
+    computeClosure,
     getMissingPathsForClosure,
     mapConcurrentlyBounded,
   )
@@ -495,15 +497,26 @@ Got:      ${piNarHash pathInfo}
 getMissingPathsForClosure :: (MonadIO m, MonadMask m) => PushParams n r -> [StorePath] -> m ([StorePath], [StorePath])
 getMissingPathsForClosure pushParams inputPaths = do
   let store = pushParamsStore pushParams
-      clientEnv = pushParamsClientEnv pushParams
-  -- Get the transitive closure of dependencies
-  paths <- liftIO $ do
-    inputs <- Std.Set.new
-    for_ inputPaths $ Std.Set.insertFP inputs
-    closure <- Store.computeFSClosure store Store.defaultClosureParams inputs
+  paths <- computeClosure store inputPaths
+  queryNarInfoBulk pushParams paths
+
+-- | Get the transitive closure of dependencies
+computeClosure :: (MonadIO m) => Store -> [StorePath] -> m [StorePath]
+computeClosure store inputPaths =
+  liftIO $ do
+    inputSet <- Std.Set.fromListFP inputPaths
+    closure <- Store.computeFSClosure store Store.defaultClosureParams inputSet
     Std.Set.toListFP closure
-  hashes <- liftIO $ for paths (fmap (decodeUtf8With lenientDecode) . Store.getStorePathHash)
-  -- Check what store paths are missing
+
+queryNarInfoBulk :: (MonadIO m, MonadMask m) => PushParams n r -> [StorePath] -> m ([StorePath], [StorePath])
+queryNarInfoBulk pushParams paths = do
+  let clientEnv = pushParamsClientEnv pushParams
+
+  pathsAndHashes <- liftIO $
+    for paths $ \path -> do
+      hash' <- decodeUtf8With lenientDecode <$> Store.getStorePathHash path
+      pure (hash', path)
+  let hashes = fmap fst pathsAndHashes
   missingHashesList <-
     retryHttp $
       liftIO $
@@ -514,12 +527,9 @@ getMissingPathsForClosure pushParams inputPaths = do
             (pushParamsName pushParams)
             hashes
           `runClientM` clientEnv
-  let missingHashes = Set.fromList (encodeUtf8 <$> missingHashesList)
-  pathsAndHashes <- liftIO $
-    for paths $ \path -> do
-      hash_ <- Store.getStorePathHash path
-      pure (hash_, path)
-  let missing = map snd $ filter (\(hash_, _path) -> Set.member hash_ missingHashes) pathsAndHashes
+
+  let missingHashes = Set.fromList missingHashesList
+  let missing = map snd $ filter (\(hash', _path) -> Set.member hash' missingHashes) pathsAndHashes
   return (paths, missing)
 
 mapConcurrentlyBounded :: (Traversable t) => Int -> (a -> IO b) -> t a -> IO (t b)

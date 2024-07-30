@@ -25,7 +25,8 @@ module Cachix.Client.Daemon.PushManager
 
     -- * Tasks
     handleTask,
-    -- Push events
+
+    -- * Push events
     pushStarted,
     pushFinished,
     pushStorePathAttempt,
@@ -436,7 +437,7 @@ pushStorePathDone storePath = do
 
   sendStorePathEvent pushIds (PushStorePathDone storePath)
 
-  forM_ pushIds checkPushJobCompleted
+  mapM_ checkPushJobCompleted pushIds
 
   removeStorePath storePath
 
@@ -447,7 +448,7 @@ pushStorePathFailed storePath errMsg = do
 
   sendStorePathEvent pushIds (PushStorePathFailed storePath errMsg)
 
-  forM_ pushIds checkPushJobCompleted
+  mapM_ checkPushJobCompleted pushIds
 
   removeStorePath storePath
 

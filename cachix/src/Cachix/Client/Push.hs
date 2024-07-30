@@ -98,7 +98,7 @@ getAuthTokenFromPushSecret = \case
   PushSigningKey token _ -> nullTokenToMaybe token
   where
     nullTokenToMaybe (Token "") = Nothing
-    nullTokenToMaybe (Token token) = Just $ Token token
+    nullTokenToMaybe token = Just token
 
 -- | Parameters for pushing a closure of store paths, to be passed to 'pushClosure'.
 -- This also contains the parameters for pushing a single path, in 'pushParamStrategy'.

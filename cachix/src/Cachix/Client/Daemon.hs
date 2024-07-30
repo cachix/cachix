@@ -40,11 +40,13 @@ import qualified Hercules.CNix.Util as CNix.Util
 import qualified Katip
 import qualified Network.Socket as Socket
 import qualified Network.Socket.ByteString as Socket.BS
-import Protolude
+import Protolude hiding (bracket)
 import System.IO.Error (isResourceVanishedError)
 import System.Posix.Process (getProcessID)
 import qualified System.Posix.Signals as Signal
+import UnliftIO (MonadUnliftIO)
 import qualified UnliftIO.Async as Async
+import UnliftIO.Exception (bracket)
 
 -- | Configure a new daemon. Use 'run' to start it.
 new ::
@@ -69,22 +71,26 @@ new daemonEnv nixStore daemonOptions daemonLogHandle daemonPushOptions daemonCac
           else Info
   daemonLogger <- Log.new "cachix.daemon" daemonLogHandle daemonLogLevel
 
-  daemonSocketPath <- maybe getSocketPath pure (Options.daemonSocketPath daemonOptions)
-  daemonSocketThread <- newEmptyMVar
   daemonEventLoop <- EventLoop.new
-  daemonClients <- SocketStore.newSocketStore
   daemonShutdownLatch <- newShutdownLatch
   daemonPid <- getProcessID
+
+  daemonSocketPath <- maybe getSocketPath pure (Options.daemonSocketPath daemonOptions)
+  daemonSocketThread <- newEmptyMVar
+  daemonClients <- SocketStore.newSocketStore
 
   daemonPushSecret <- Commands.Push.getPushSecretRequired (config daemonEnv) daemonCacheName
   let authToken = getAuthTokenFromPushSecret daemonPushSecret
   daemonBinaryCache <- Push.getBinaryCache daemonEnv authToken daemonCacheName
 
+  daemonSubscriptionManagerThread <- newEmptyMVar
   daemonSubscriptionManager <- Subscription.newSubscriptionManager
   let onPushEvent = Subscription.pushEvent daemonSubscriptionManager
 
   let pushParams = Push.newPushParams nixStore (clientenv daemonEnv) daemonBinaryCache daemonPushSecret daemonPushOptions
   daemonPushManager <- PushManager.newPushManagerEnv daemonLogger pushParams daemonPushOptions onPushEvent
+
+  daemonWorkerThreads <- newEmptyMVar
 
   return $ DaemonEnv {..}
 
@@ -106,17 +112,17 @@ run daemon = fmap join <$> runDaemon daemon $ do
 
   printConfiguration
 
-  subscriptionManagerThread <-
-    Async.async $ runSubscriptionManager daemonSubscriptionManager
+  Async.async (runSubscriptionManager daemonSubscriptionManager)
+    >>= (liftIO . putMVar daemonSubscriptionManagerThread)
 
-  workersThreads <-
-    Worker.startWorkers
-      (Options.numJobs daemonPushOptions)
-      (PushManager.pmTaskQueue daemonPushManager)
-      (liftIO . PushManager.runPushManager daemonPushManager . PushManager.handleTask)
+  Worker.startWorkers
+    (Options.numJobs daemonPushOptions)
+    (PushManager.pmTaskQueue daemonPushManager)
+    (liftIO . PushManager.runPushManager daemonPushManager . PushManager.handleTask)
+    >>= (liftIO . putMVar daemonWorkerThreads)
 
-  listenThread <- Async.async (Daemon.listen daemonEventLoop daemonSocketPath)
-  liftIO $ putMVar daemonSocketThread listenThread
+  Async.async (Daemon.listen daemonEventLoop daemonSocketPath)
+    >>= (liftIO . putMVar daemonSocketThread)
 
   eventLoopRes <- EventLoop.run daemonEventLoop $ \case
     EventLoop.AddSocketClient conn ->
@@ -133,7 +139,7 @@ run daemon = fmap join <$> runDaemon daemon $ do
         _ -> return ()
     EventLoop.ShutdownGracefully -> do
       Katip.logFM Katip.InfoS "Shutting down daemon..."
-      pushResult <- shutdownGracefully subscriptionManagerThread workersThreads
+      pushResult <- shutdownGracefully
       Katip.logFM Katip.InfoS "Daemon shut down. Exiting."
       EventLoop.exitLoopWith pushResult daemonEventLoop
 
@@ -199,8 +205,8 @@ showConfiguration = do
         "Compression: " <> show (Push.getCompressionMethod daemonPushOptions daemonBinaryCache)
       ]
 
-shutdownGracefully :: Async () -> [Worker.Thread] -> Daemon (Either DaemonError ())
-shutdownGracefully subscriptionManagerThread workersThreads = do
+shutdownGracefully :: Daemon (Either DaemonError ())
+shutdownGracefully = do
   DaemonEnv {..} <- ask
 
   -- Indicate that the daemon is shutting down
@@ -210,10 +216,10 @@ shutdownGracefully subscriptionManagerThread workersThreads = do
   shutdownPushManager daemonPushManager
 
   -- Stop worker threads
-  Worker.stopWorkers workersThreads
+  withTakeMVar daemonWorkerThreads Worker.stopWorkers
 
   -- Close all event subscriptions
-  shutdownSubscriptions daemonSubscriptionManager
+  withTakeMVar daemonSubscriptionManagerThread (shutdownSubscriptions daemonSubscriptionManager)
 
   failedJobs <-
     PushManager.runPushManager daemonPushManager PushManager.getFailedPushJobs
@@ -244,10 +250,10 @@ shutdownGracefully subscriptionManagerThread workersThreads = do
       liftIO $ PushManager.stopPushManager timeoutOptions daemonPushManager
       Katip.logFM Katip.DebugS "Push manager shut down."
 
-    shutdownSubscriptions daemonSubscriptionManager = do
+    shutdownSubscriptions daemonSubscriptionManager subscriptionManagerThread = do
       Katip.logFM Katip.DebugS "Shutting down event manager..."
       liftIO $ stopSubscriptionManager daemonSubscriptionManager
-      Async.wait subscriptionManagerThread
+      _ <- Async.wait subscriptionManagerThread
       Katip.logFM Katip.DebugS "Event manager shut down."
 
     sayGoodbye exitResult socket = do
@@ -264,3 +270,15 @@ shutdownGracefully subscriptionManagerThread workersThreads = do
         Left err | isResourceVanishedError err -> Katip.logFM Katip.DebugS "Client did not disconnect cleanly."
         Left err -> Katip.logFM Katip.DebugS $ Katip.ls $ "Client socket threw an error: " <> displayException err
         Right _ -> Katip.logFM Katip.DebugS "Client disconnected."
+
+withTakeMVar :: (MonadUnliftIO m) => MVar a -> (a -> m ()) -> m ()
+withTakeMVar mvar f = do
+  bracket acquire release wrapper
+  where
+    acquire = liftIO $ tryTakeMVar mvar
+
+    release Nothing = pure ()
+    release (Just x) = liftIO $ putMVar mvar x
+
+    wrapper Nothing = pure ()
+    wrapper (Just x) = f x

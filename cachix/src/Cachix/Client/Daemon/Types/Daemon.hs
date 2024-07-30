@@ -18,11 +18,11 @@ import Cachix.Client.Daemon.Types.Error (DaemonError (DaemonUnhandledException),
 import Cachix.Client.Daemon.Types.EventLoop (EventLoop)
 import Cachix.Client.Daemon.Types.Log (Logger)
 import Cachix.Client.Daemon.Types.PushEvent (PushEvent)
-import Cachix.Client.Daemon.Types.PushManager (PushManager, PushManagerEnv (..))
+import Cachix.Client.Daemon.Types.PushManager (PushManagerEnv (..))
 import Cachix.Client.Daemon.Types.SocketStore (SocketStore)
+import qualified Cachix.Client.Daemon.Worker as Worker
 import Cachix.Client.Env as Env
 import Cachix.Client.OptionsParser (PushOptions)
-import Cachix.Client.Push
 import Cachix.Types.BinaryCache (BinaryCache, BinaryCacheName)
 import qualified Control.Exception.Safe as Safe
 import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
@@ -50,8 +50,12 @@ data DaemonEnv = DaemonEnv
     daemonPushManager :: PushManagerEnv,
     -- | Connected clients over the socket
     daemonClients :: SocketStore,
-    -- | A multiplexer for push events.
+    -- | A pool of worker threads
+    daemonWorkerThreads :: MVar [Worker.Thread],
+    -- | A multiplexer for push events
     daemonSubscriptionManager :: SubscriptionManager Protocol.PushRequestId PushEvent,
+    -- | A thread handle for the subscription manager
+    daemonSubscriptionManagerThread :: MVar (Async ()),
     -- | Logging env
     daemonLogger :: Logger,
     -- | Shutdown latch

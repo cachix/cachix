@@ -325,28 +325,32 @@ pushOptionsParser =
           <> help "Do not publish which derivations built the store paths."
 
 pushCommand :: Parser CachixCommand
-pushCommand = Push <$> pushArgumentsParser
-
-pushArgumentsParser :: Parser PushArguments
-pushArgumentsParser = pushWatchStoreParser <|> pushPathsParser
-
-pushWatchStoreParser :: Parser PushArguments
-pushWatchStoreParser =
-  PushWatchStore <$> pushOptionsParser <*> cacheNameParser <* watchStoreFlag
+pushCommand = toPushCommand <$> pushOptionsParser <*> cacheNameParser <*> pushArgumentsParser
   where
-    watchStoreFlag =
-      switch $
-        long "watch-store"
-          <> short 'w'
-          <> hidden
-          <> help "DEPRECATED: use watch-store command instead."
+    -- Figure out which subcommand we're in at the end and pass it the previous options.
+    -- We can't do that beforehand because the paths argument parser needs to come after the cache name argument parser.
+    toPushCommand pushOptions cacheName pushArguments =
+      Push $ pushArguments pushOptions cacheName
 
-pushPathsParser :: Parser PushArguments
-pushPathsParser =
-  PushPaths
-    <$> pushOptionsParser
-    <*> cacheNameParser
-    <*> many (strArgument (metavar "PATHS..."))
+pushArgumentsParser :: Parser (PushOptions -> BinaryCacheName -> PushArguments)
+pushArgumentsParser = pushPathsParser <|> deprecatedPushWatchStoreParser
+
+pushPathsParser :: Parser (PushOptions -> BinaryCacheName -> PushArguments)
+pushPathsParser = toPushPaths <$> pathArgs
+  where
+    -- Move the path arguments to the end
+    toPushPaths paths pushOptions cacheName =
+      PushPaths pushOptions cacheName paths
+
+    pathArgs =
+      many $ strArgument (metavar "PATHS...")
+
+deprecatedPushWatchStoreParser :: Parser (PushOptions -> BinaryCacheName -> PushArguments)
+deprecatedPushWatchStoreParser =
+  flag' PushWatchStore $
+    long "watch-store"
+      <> short 'w'
+      <> help "DEPRECATED: use watch-store command instead."
 
 importCommand :: Parser CachixCommand
 importCommand =

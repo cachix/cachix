@@ -49,48 +49,6 @@ data Flags = Flags
     verbose :: Bool
   }
 
-flagParser :: Config.ConfigPath -> Parser Flags
-flagParser defaultConfigPath = do
-  hostname <-
-    optional $
-      option
-        uriOption
-        ( mconcat
-            [ long "hostname",
-              metavar "URI",
-              help ("Host to connect to (default: " <> defaultHostname <> ")")
-            ]
-        )
-        -- Accept `host` for backwards compatibility
-        <|> option uriOption (long "host" <> hidden)
-
-  configPath <-
-    strOption $
-      mconcat
-        [ long "config",
-          short 'c',
-          value defaultConfigPath,
-          metavar "CONFIGPATH",
-          showDefault,
-          help "Cachix configuration file"
-        ]
-
-  verbose <-
-    switch $
-      mconcat
-        [ long "verbose",
-          short 'v',
-          help "Verbose mode"
-        ]
-
-  pure Flags {hostname, configPath, verbose}
-  where
-    defaultHostname = URI.serialize URI.defaultCachixURI
-
-uriOption :: ReadM URI
-uriOption = eitherReader $ \s ->
-  first show $ URI.parseURI (toS s)
-
 data CachixCommand
   = AuthToken (Maybe Text)
   | Config Config.Command
@@ -191,159 +149,7 @@ data DaemonOptions = DaemonOptions
   }
   deriving (Show)
 
-commandParser :: Parser CachixCommand
-commandParser =
-  subparser $
-    command "authtoken" (infoH authtoken (progDesc "Configure an authentication token for Cachix"))
-      <> command "config" (Config <$> Config.parser)
-      <> (hidden <> command "daemon" (infoH (Daemon <$> daemon) (progDesc "Run a daemon that listens to push requests over a unix socket")))
-      <> command "generate-keypair" (infoH generateKeypair (progDesc "Generate a signing key pair for a binary cache"))
-      <> command "push" (infoH push (progDesc "Upload Nix store paths to a binary cache"))
-      <> command "import" (infoH import' (progDesc "Import the contents of a binary cache from an S3-compatible object storage service into Cachix"))
-      <> command "pin" (infoH pin (progDesc "Pin a store path to prevent it from being garbage collected"))
-      <> command "watch-exec" (infoH watchExec (progDesc "Run a command while watching /nix/store for newly added store paths and upload them to a binary cache"))
-      <> command "watch-store" (infoH watchStore (progDesc "Watch /nix/store for newly added store paths and upload them to a binary cache"))
-      <> command "use" (infoH use (progDesc "Configure a binary cache in nix.conf"))
-      <> command "remove" (infoH remove (progDesc "Remove a binary cache from nix.conf"))
-      <> command "deploy" (infoH (DeployCommand <$> DeployOptions.parser) (progDesc "Manage remote Nix-based systems with Cachix Deploy"))
-  where
-    nameArg = strArgument (metavar "CACHE-NAME")
-    authtoken = AuthToken <$> (stdinFlag <|> (Just <$> authTokenArg))
-      where
-        stdinFlag = flag' Nothing (long "stdin" <> help "Read the auth token from stdin")
-        authTokenArg = strArgument (metavar "AUTH-TOKEN")
-    generateKeypair = GenerateKeypair <$> nameArg
-    validatedLevel l =
-      l <$ unless (l `elem` [0 .. 16]) (readerError $ "value " <> show l <> " not in expected range: [0..16]")
-    validatedMethod :: Prelude.String -> Either Prelude.String (Maybe BinaryCache.CompressionMethod)
-    validatedMethod method =
-      if method `elem` ["xz", "zstd"]
-        then case readEither (T.toUpper (toS method)) of
-          Right a -> Right $ Just a
-          Left b -> Left $ toS b
-        else Left $ "Compression method " <> show method <> " not expected. Use xz or zstd."
-    validatedChunkSize c =
-      c <$ unless (c >= minChunkSize && c <= maxChunkSize) (readerError $ "value " <> show c <> " not in expected range: " <> prettyChunkRange)
-    prettyChunkRange = "[" <> show minChunkSize <> ".." <> show maxChunkSize <> "]"
-    pushOptions :: Parser PushOptions
-    pushOptions =
-      PushOptions
-        <$> option
-          (auto >>= validatedLevel)
-          ( long "compression-level"
-              <> short 'c'
-              <> metavar "[0..16]"
-              <> help
-                "The compression level to use. Supported range: [0-9] for xz and [0-16] for zstd."
-              <> showDefault
-              <> value defaultCompressionLevel
-          )
-        <*> option
-          (eitherReader validatedMethod)
-          ( long "compression-method"
-              <> short 'm'
-              <> metavar "xz | zstd"
-              <> help
-                "The compression method to use. Overrides the preferred compression method advertised by the cache. Supported methods: xz | zstd. Defaults to zstd."
-              <> value Nothing
-          )
-        <*> option
-          (auto >>= validatedChunkSize)
-          ( long "chunk-size"
-              <> short 's'
-              <> metavar prettyChunkRange
-              <> help "The size of each uploaded part in bytes. The supported range is from 5MiB to 5GiB."
-              <> showDefault
-              <> value defaultChunkSize
-          )
-        <*> option
-          auto
-          ( long "num-concurrent-chunks"
-              <> short 'n'
-              <> metavar "INT"
-              <> help "The number of chunks to upload concurrently. The total memory usage is jobs * num-concurrent-chunks * chunk-size."
-              <> showDefault
-              <> value defaultNumConcurrentChunks
-          )
-        <*> option
-          auto
-          ( long "jobs"
-              <> short 'j'
-              <> metavar "INT"
-              <> help "The number of threads to use when pushing store paths."
-              <> showDefault
-              <> value defaultNumJobs
-          )
-        <*> switch (long "omit-deriver" <> help "Do not publish which derivations built the store paths.")
-    push = (\opts cache f -> Push $ f opts cache) <$> pushOptions <*> nameArg <*> (pushPaths <|> pushWatchStore)
-    pushPaths =
-      (\paths opts cache -> PushPaths opts cache paths)
-        <$> many (strArgument (metavar "PATHS..."))
-    import' = Import <$> pushOptions <*> nameArg <*> strArgument (metavar "S3-URI" <> help "e.g. s3://mybucket?endpoint=https://myexample.com&region=eu-central-1")
-    keepParser = daysParser <|> revisionsParser <|> foreverParser <|> pure Nothing
-    -- these three flag are mutually exclusive
-    daysParser = Just . Days <$> option auto (long "keep-days" <> metavar "INT")
-    revisionsParser = Just . Revisions <$> option auto (long "keep-revisions" <> metavar "INT")
-    foreverParser = flag' (Just Forever) (long "keep-forever")
-    pinOptions =
-      PinOptions
-        <$> nameArg
-        <*> strArgument (metavar "PIN-NAME")
-        <*> strArgument (metavar "STORE-PATH")
-        <*> many (strOption (metavar "ARTIFACTS..." <> long "artifact" <> short 'a'))
-        <*> keepParser
-    pin = Pin <$> pinOptions
-    daemon =
-      subparser $
-        command "push" (infoH daemonPush (progDesc "Push store paths to the daemon"))
-          <> command "run" (infoH daemonRun (progDesc "Launch the daemon"))
-          <> command "stop" (infoH daemonStop (progDesc "Stop the daemon and wait for any queued paths to be pushed"))
-          <> command "watch-exec" (infoH daemonWatchExec (progDesc "Run a command and upload any store paths built during its execution"))
-    daemonPush = DaemonPushPaths <$> daemonOptions <*> many (strArgument (metavar "PATHS..."))
-    daemonRun = DaemonRun <$> daemonOptions <*> pushOptions <*> nameArg
-    daemonStop = DaemonStop <$> daemonOptions
-    daemonWatchExec = DaemonWatchExec <$> pushOptions <*> nameArg <*> strArgument (metavar "CMD") <*> many (strArgument (metavar "-- ARGS"))
-    daemonOptions = DaemonOptions <$> optional (strOption (long "socket" <> short 's' <> metavar "SOCKET"))
-    watchExec = WatchExec <$> pushOptions <*> nameArg <*> strArgument (metavar "CMD") <*> many (strArgument (metavar "-- ARGS"))
-    watchStore = WatchStore <$> pushOptions <*> nameArg
-    pushWatchStore =
-      (\() opts cache -> PushWatchStore opts cache)
-        <$> flag'
-          ()
-          ( long "watch-store"
-              <> short 'w'
-              <> help "DEPRECATED: use watch-store command instead."
-          )
-    remove = Remove <$> nameArg
-    use =
-      Use
-        <$> nameArg
-        <*> ( InstallationMode.UseOptions
-                <$> optional
-                  ( option
-                      (maybeReader InstallationMode.fromString)
-                      ( long "mode"
-                          <> short 'm'
-                          <> metavar "nixos | root-nixconf | user-nixconf"
-                          <> help "Mode in which to configure binary caches for Nix. Supported values: nixos | root-nixconf | user-nixconf"
-                      )
-                  )
-                <*> strOption
-                  ( long "nixos-folder"
-                      <> short 'd'
-                      <> help "Base directory for NixOS configuration generation"
-                      <> value "/etc/nixos/"
-                      <> showDefault
-                  )
-                <*> optional
-                  ( strOption
-                      ( long "output-directory"
-                          <> short 'O'
-                          <> help "Output directory where nix.conf and netrc will be updated."
-                      )
-                  )
-            )
-
+-- | CLI parser entry point
 getOpts :: IO (Flags, CachixCommand)
 getOpts = do
   configpath <- Config.getDefaultFilename
@@ -351,23 +157,357 @@ getOpts = do
   customExecParser (prefs preferences) (optsInfo configpath)
 
 optsInfo :: Config.ConfigPath -> ParserInfo (Flags, CachixCommand)
-optsInfo configpath = infoH parser desc
+optsInfo configpath =
+  infoH
+    (parser <**> helper)
+    ( fullDesc
+        <> progDesc "To get started log in to https://app.cachix.org"
+        <> header "https://cachix.org command line interface"
+    )
   where
     parser = (,) <$> flagParser configpath <*> (commandParser <|> versionParser)
-    versionParser :: Parser CachixCommand
-    versionParser =
-      flag'
-        Version
-        ( long "version"
-            <> short 'V'
-            <> help "Show cachix version"
-        )
 
-desc :: InfoMod a
-desc =
-  fullDesc
-    <> progDesc "To get started log in to https://app.cachix.org"
-    <> header "https://cachix.org command line interface"
+commandParser :: Parser CachixCommand
+commandParser =
+  subparser $
+    fold
+      [ command "authtoken" $ infoH authTokenCommand $ progDesc "Configure an authentication token for Cachix",
+        command "config" configCommand,
+        command "daemon" $ infoH daemonCommand $ progDesc "Run a daemon that listens to push requests over a unix socket",
+        command "generate-keypair" $ infoH generateKeypairCommand $ progDesc "Generate a signing key pair for a binary cache",
+        command "push" $ infoH pushCommand $ progDesc "Upload Nix store paths to a binary cache",
+        command "import" $ infoH importCommand $ progDesc "Import the contents of a binary cache from an S3-compatible object storage service into Cachix",
+        command "pin" $ infoH pinCommand $ progDesc "Pin a store path to prevent it from being garbage collected",
+        command "watch-exec" $ infoH watchExecCommand $ progDesc "Run a command while watching /nix/store for newly added store paths and upload them to a binary cache",
+        command "watch-store" $ infoH watchStoreCommand $ progDesc "Watch /nix/store for newly added store paths and upload them to a binary cache",
+        command "use" $ infoH useCommand $ progDesc "Configure a binary cache in nix.conf",
+        command "remove" $ infoH removeCommand $ progDesc "Remove a binary cache from nix.conf",
+        command "deploy" $ infoH deployCommand $ progDesc "Manage remote Nix-based systems with Cachix Deploy"
+      ]
+
+flagParser :: Config.ConfigPath -> Parser Flags
+flagParser defaultConfigPath = do
+  Flags <$> configPath <*> (host <|> hostname) <*> verbose
+  where
+    defaultHostname = URI.serialize URI.defaultCachixURI
+
+    hostOpts =
+      [ metavar "URI",
+        help $ "Host to connect to (default: " <> defaultHostname <> ")"
+      ]
+
+    -- Accept both hostname and host.
+    -- TODO: switch to host.
+    hostname =
+      optional . option uriOption $
+        long "hostname" <> mconcat hostOpts
+
+    host =
+      optional . option uriOption $
+        long "host" <> hidden
+
+    configPath =
+      strOption $
+        mconcat
+          [ long "config",
+            short 'c',
+            value defaultConfigPath,
+            metavar "CONFIGPATH",
+            showDefault,
+            help "Cachix configuration file"
+          ]
+
+    verbose =
+      switch $
+        long "verbose"
+          <> short 'v'
+          <> help "Verbose mode"
+
+uriOption :: ReadM URI
+uriOption = eitherReader (first show . URI.parseURI . toS)
+
+cacheNameParser :: Parser BinaryCacheName
+cacheNameParser = strArgument (metavar "CACHE-NAME")
+
+authTokenCommand :: Parser CachixCommand
+authTokenCommand = AuthToken <$> (stdinFlag <|> (Just <$> authTokenArg))
+  where
+    stdinFlag = flag' Nothing (long "stdin" <> help "Read the auth token from stdin")
+    authTokenArg = strArgument (metavar "AUTH-TOKEN")
+
+configCommand :: ParserInfo CachixCommand
+configCommand = Config <$> Config.parser
+
+generateKeypairCommand :: Parser CachixCommand
+generateKeypairCommand = GenerateKeypair <$> cacheNameParser
+
+pushOptionsParser :: Parser PushOptions
+pushOptionsParser =
+  PushOptions
+    <$> compressionLevel
+    <*> compressionMethod
+    <*> chunkSize
+    <*> numConcurrentChunks
+    <*> numJobs
+    <*> omitDeriver
+  where
+    compressionLevel =
+      option (auto >>= validateCompressionLevel) $
+        long "compression-level"
+          <> short 'c'
+          <> metavar "[0..16]"
+          <> help
+            "The compression level to use. Supported range: [0-9] for xz and [0-16] for zstd."
+          <> showDefault
+          <> value defaultCompressionLevel
+
+    validateCompressionLevel l =
+      l
+        <$ unless
+          (l `elem` [0 .. 16])
+          (readerError $ "value " <> show l <> " not in expected range: [0..16]")
+
+    compressionMethod =
+      option (eitherReader validateCompressionMethod) $
+        long "compression-method"
+          <> short 'm'
+          <> metavar "xz | zstd"
+          <> help
+            "The compression method to use. Overrides the preferred compression method advertised by the cache. Supported methods: xz | zstd. Defaults to zstd."
+          <> value Nothing
+
+    validateCompressionMethod :: Prelude.String -> Either Prelude.String (Maybe BinaryCache.CompressionMethod)
+    validateCompressionMethod method =
+      if method `elem` ["xz", "zstd"]
+        then case readEither (T.toUpper (toS method)) of
+          Right a -> Right $ Just a
+          Left b -> Left $ toS b
+        else Left $ "Compression method " <> show method <> " not expected. Use xz or zstd."
+
+    chunkSize =
+      option (auto >>= validateChunkSize) $
+        long "chunk-size"
+          <> short 's'
+          <> metavar prettyChunkRange
+          <> help "The size of each uploaded part in bytes. The supported range is from 5MiB to 5GiB."
+          <> showDefault
+          <> value defaultChunkSize
+
+    validateChunkSize c =
+      c
+        <$ unless
+          (c >= minChunkSize && c <= maxChunkSize)
+          (readerError $ "value " <> show c <> " not in expected range: " <> prettyChunkRange)
+
+    prettyChunkRange = "[" <> show minChunkSize <> ".." <> show maxChunkSize <> "]"
+
+    numConcurrentChunks =
+      option auto $
+        long "num-concurrent-chunks"
+          <> short 'n'
+          <> metavar "INT"
+          <> help "The number of chunks to upload concurrently. The total memory usage is jobs * num-concurrent-chunks * chunk-size."
+          <> showDefault
+          <> value defaultNumConcurrentChunks
+
+    numJobs =
+      option auto $
+        long "jobs"
+          <> short 'j'
+          <> metavar "INT"
+          <> help "The number of threads to use when pushing store paths."
+          <> showDefault
+          <> value defaultNumJobs
+
+    omitDeriver =
+      switch $
+        long "omit-deriver"
+          <> help "Do not publish which derivations built the store paths."
+
+pushCommand :: Parser CachixCommand
+pushCommand = Push <$> pushArgumentsParser
+
+pushArgumentsParser :: Parser PushArguments
+pushArgumentsParser = pushWatchStoreParser <|> pushPathsParser
+
+pushWatchStoreParser :: Parser PushArguments
+pushWatchStoreParser =
+  PushWatchStore <$> pushOptionsParser <*> cacheNameParser <* watchStoreFlag
+  where
+    watchStoreFlag =
+      switch $
+        long "watch-store"
+          <> short 'w'
+          <> hidden
+          <> help "DEPRECATED: use watch-store command instead."
+
+pushPathsParser :: Parser PushArguments
+pushPathsParser =
+  PushPaths
+    <$> pushOptionsParser
+    <*> cacheNameParser
+    <*> many (strArgument (metavar "PATHS..."))
+
+importCommand :: Parser CachixCommand
+importCommand =
+  Import
+    <$> pushOptionsParser
+    <*> cacheNameParser
+    <*> s3UriOption
+  where
+    s3UriOption =
+      strArgument $
+        metavar "S3-URI"
+          <> help "e.g. s3://mybucket?endpoint=https://myexample.com&region=eu-central-1"
+
+pinCommand :: Parser CachixCommand
+pinCommand = Pin <$> pinOptionsParser
+
+pinOptionsParser :: Parser PinOptions
+pinOptionsParser =
+  PinOptions
+    <$> cacheNameParser
+    <*> pinName
+    <*> storePath
+    <*> artifacts
+    <*> keepParser
+  where
+    pinName = strArgument $ metavar "PIN-NAME"
+
+    storePath = strArgument $ metavar "STORE-PATH"
+
+    artifacts =
+      many . strOption $
+        metavar "ARTIFACTS..."
+          <> long "artifact"
+          <> short 'a'
+
+keepParser :: Parser (Maybe Keep)
+keepParser =
+  daysParser
+    <|> revisionsParser
+    <|> foreverParser
+    <|> pure Nothing
+  where
+    -- these three flag are mutually exclusive
+    daysParser =
+      Just . Days <$> keepDays
+
+    keepDays =
+      option auto $
+        long "keep-days"
+          <> metavar "INT"
+
+    revisionsParser =
+      Just . Revisions <$> keepRevisions
+
+    keepRevisions =
+      option auto $
+        long "keep-revisions"
+          <> metavar "INT"
+
+    foreverParser =
+      flag' (Just Forever) $
+        long "keep-forever"
+
+daemonCommand :: Parser CachixCommand
+daemonCommand = Daemon <$> daemonSubCommand
+
+daemonSubCommand :: Parser DaemonCommand
+daemonSubCommand =
+  subparser $
+    fold
+      [ command "push" $ infoH daemonPush $ progDesc "Push store paths to the daemon",
+        command "run" $ infoH daemonRun $ progDesc "Launch the daemon",
+        command "stop" $ infoH daemonStop $ progDesc "Stop the daemon and wait for any queued paths to be pushed",
+        command "watch-exec" $ infoH daemonWatchExec $ progDesc "Run a command and upload any store paths built during its execution"
+      ]
+
+daemonPush :: Parser DaemonCommand
+daemonPush =
+  DaemonPushPaths
+    <$> daemonOptionsParser
+    <*> many (strArgument (metavar "PATHS..."))
+
+daemonRun :: Parser DaemonCommand
+daemonRun =
+  DaemonRun
+    <$> daemonOptionsParser
+    <*> pushOptionsParser
+    <*> cacheNameParser
+
+daemonStop :: Parser DaemonCommand
+daemonStop = DaemonStop <$> daemonOptionsParser
+
+daemonWatchExec :: Parser DaemonCommand
+daemonWatchExec =
+  DaemonWatchExec
+    <$> pushOptionsParser
+    <*> cacheNameParser
+    <*> strArgument (metavar "CMD")
+    <*> many (strArgument (metavar "-- ARGS"))
+
+daemonOptionsParser :: Parser DaemonOptions
+daemonOptionsParser =
+  DaemonOptions <$> socketOption
+  where
+    socketOption =
+      optional . strOption $
+        long "socket"
+          <> short 's'
+          <> metavar "SOCKET"
+
+deployCommand :: Parser CachixCommand
+deployCommand = DeployCommand <$> DeployOptions.parser
+
+watchExecCommand :: Parser CachixCommand
+watchExecCommand =
+  WatchExec
+    <$> pushOptionsParser
+    <*> cacheNameParser
+    <*> strArgument (metavar "CMD")
+    <*> many (strArgument (metavar "-- ARGS"))
+
+watchStoreCommand :: Parser CachixCommand
+watchStoreCommand = WatchStore <$> pushOptionsParser <*> cacheNameParser
+
+removeCommand :: Parser CachixCommand
+removeCommand = Remove <$> cacheNameParser
+
+useCommand :: Parser CachixCommand
+useCommand = Use <$> cacheNameParser <*> installationMode
+
+installationMode :: Parser InstallationMode.UseOptions
+installationMode =
+  InstallationMode.UseOptions <$> useMode <*> nixosFolderPath <*> outputDir
+  where
+    useMode =
+      optional . option (maybeReader InstallationMode.fromString) $
+        long "mode"
+          <> short 'm'
+          <> metavar "nixos | root-nixconf | user-nixconf"
+          <> help "Mode in which to configure binary caches for Nix. Supported values: nixos | root-nixconf | user-nixconf"
+
+    nixosFolderPath =
+      strOption $
+        long "nixos-folder"
+          <> short 'd'
+          <> help "Base directory for NixOS configuration generation"
+          <> value "/etc/nixos/"
+          <> showDefault
+
+    outputDir =
+      optional . strOption $
+        long "output-directory"
+          <> short 'O'
+          <> help "Output directory where nix.conf and netrc will be updated."
+
+versionParser :: Parser CachixCommand
+versionParser =
+  flag' Version $
+    long "version"
+      <> short 'V'
+      <> help "Show cachix version"
 
 -- TODO: usage footer
 infoH :: Parser a -> InfoMod a -> ParserInfo a

@@ -10,7 +10,7 @@ packages:
 - cachix
 - cachix-api
 extra-deps:
-- hercules-ci-cnix-store-0.3.5.1
+- hercules-ci-cnix-store-0.3.6.0
 - cabal-pkg-config-version-hook-0.1.0.1
 - nix-narinfo-0.1.1.1
 - hnix-store-core-0.6.1.0

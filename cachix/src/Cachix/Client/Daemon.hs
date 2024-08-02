@@ -34,7 +34,6 @@ import Cachix.Types.BinaryCache (BinaryCacheName)
 import qualified Cachix.Types.BinaryCache as BinaryCache
 import Control.Concurrent.STM.TMChan
 import Control.Exception.Safe (catchAny)
-import qualified Control.Monad.Catch as E
 import qualified Data.Text as T
 import qualified Hercules.CNix.Util as CNix.Util
 import qualified Katip

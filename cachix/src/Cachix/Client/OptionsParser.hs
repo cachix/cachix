@@ -158,32 +158,74 @@ getOpts = do
 
 optsInfo :: Config.ConfigPath -> ParserInfo (Flags, CachixCommand)
 optsInfo configpath =
-  infoH
-    (parser <**> helper)
-    ( fullDesc
-        <> progDesc "To get started log in to https://app.cachix.org"
-        <> header "https://cachix.org command line interface"
-    )
+  infoH parser $
+    fullDesc
+      <> progDesc "To get started, log in to https://app.cachix.org"
+      <> header "https://cachix.org command line interface"
   where
     parser = (,) <$> flagParser configpath <*> (commandParser <|> versionParser)
 
 commandParser :: Parser CachixCommand
 commandParser =
-  subparser $
-    fold
-      [ command "authtoken" $ infoH authTokenCommand $ progDesc "Configure an authentication token for Cachix",
-        command "config" configCommand,
-        command "daemon" $ infoH daemonCommand $ progDesc "Run a daemon that listens to push requests over a unix socket",
-        command "generate-keypair" $ infoH generateKeypairCommand $ progDesc "Generate a signing key pair for a binary cache",
-        command "push" $ infoH pushCommand $ progDesc "Upload Nix store paths to a binary cache",
-        command "import" $ infoH importCommand $ progDesc "Import the contents of a binary cache from an S3-compatible object storage service into Cachix",
-        command "pin" $ infoH pinCommand $ progDesc "Pin a store path to prevent it from being garbage collected",
-        command "watch-exec" $ infoH watchExecCommand $ progDesc "Run a command while watching /nix/store for newly added store paths and upload them to a binary cache",
-        command "watch-store" $ infoH watchStoreCommand $ progDesc "Watch /nix/store for newly added store paths and upload them to a binary cache",
-        command "use" $ infoH useCommand $ progDesc "Configure a binary cache in nix.conf",
-        command "remove" $ infoH removeCommand $ progDesc "Remove a binary cache from nix.conf",
-        command "deploy" $ infoH deployCommand $ progDesc "Manage remote Nix-based systems with Cachix Deploy"
-      ]
+  configCommands
+    <|> cacheCommands
+    <|> pushCommands
+    <|> storePathCommands
+    <|> daemonCommands
+    <|> deployCommands
+  where
+    configCommands =
+      subparser $
+        fold
+          [ commandGroup "Config commands:",
+            hidden,
+            command "authtoken" $ infoH authTokenCommand $ progDesc "Configure an authentication token for Cachix",
+            command "config" configCommand
+          ]
+
+    cacheCommands =
+      subparser $
+        fold
+          [ commandGroup "Cache commands:",
+            hidden,
+            command "generate-keypair" $ infoH generateKeypairCommand $ progDesc "Generate a signing key pair for a binary cache",
+            command "use" $ infoH useCommand $ progDesc "Configure a binary cache in nix.conf",
+            command "remove" $ infoH removeCommand $ progDesc "Remove a binary cache from nix.conf"
+          ]
+
+    pushCommands =
+      subparser $
+        fold
+          [ commandGroup "Push commands:",
+            command "push" $ infoH pushCommand $ progDesc "Upload Nix store paths to a binary cache",
+            command "watch-exec" $ infoH watchExecCommand $ progDesc "Run a command while watching /nix/store for newly added store paths and upload them to a binary cache",
+            command "watch-store" $ infoH watchStoreCommand $ progDesc "Watch /nix/store for newly added store paths and upload them to a binary cache",
+            command "import" $ infoH importCommand $ progDesc "Import the contents of a binary cache from an S3-compatible object storage service into Cachix"
+          ]
+
+    storePathCommands =
+      subparser $
+        fold
+          [ commandGroup "Store path commands:",
+            hidden,
+            command "pin" $ infoH pinCommand $ progDesc "Pin a store path to prevent it from being garbage collected"
+          ]
+
+    daemonCommands =
+      subparser $
+        fold
+          [ commandGroup "Daemon commands:",
+            hidden,
+            command "daemon" $ infoH daemonCommand $ progDesc "Run a daemon that listens to push requests over a unix socket"
+          ]
+
+    deployCommands =
+      subparser $
+        fold
+          [ commandGroup "Cachix Deploy commands:",
+            hidden,
+            command "deploy" $ infoH deployCommand $ progDesc "Manage remote Nix-based systems with Cachix Deploy"
+          ]
 
 flagParser :: Config.ConfigPath -> Parser Flags
 flagParser defaultConfigPath = do
@@ -204,7 +246,7 @@ flagParser defaultConfigPath = do
 
     host =
       optional . option uriOption $
-        long "host" <> hidden
+        long "host" <> metavar "URI"
 
     configPath =
       strOption $

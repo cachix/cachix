@@ -20,6 +20,7 @@ import Data.Time (getCurrentTime)
 import qualified Hercules.CNix as CNix
 import Protolude
 import Servant.Auth.Client (Token (Token))
+import System.IO.Temp (withSystemTempDirectory)
 import Test.Hspec
 
 instance MonadFail PushManager where
@@ -158,7 +159,7 @@ spec = do
 withPushManager :: (PushManagerEnv -> IO a) -> IO a
 withPushManager f = do
   CNix.init
-  CNix.withStore $ \store -> do
+  withTempStore $ \store -> do
     logger <- liftIO $ Log.new "daemon" Nothing Log.Debug
     cachixOptions <- Env.defaultCachixOptions
     clientEnv <- Env.createClientEnv cachixOptions
@@ -170,6 +171,11 @@ withPushManager f = do
 
 inPushManager :: PushManager a -> IO a
 inPushManager f = withPushManager (`runPushManager` f)
+
+withTempStore :: (CNix.Store -> IO a) -> IO a
+withTempStore f =
+  withSystemTempDirectory "cnix-test-store" $ \d ->
+    CNix.withStoreFromURI (toS d) f
 
 newBinaryCache :: BinaryCache.BinaryCacheName -> BinaryCache.BinaryCache
 newBinaryCache name =

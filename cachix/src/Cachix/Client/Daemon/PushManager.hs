@@ -75,8 +75,8 @@ import Servant.Auth.Client
 import Servant.Conduit ()
 import qualified UnliftIO.QSem as QSem
 
-newPushManagerEnv :: (MonadIO m) => Logger -> PushParams PushManager () -> PushOptions -> OnPushEvent -> m PushManagerEnv
-newPushManagerEnv pmLogger pmPushParams pushOptions onPushEvent = liftIO $ do
+newPushManagerEnv :: (MonadIO m) => PushOptions -> PushParams PushManager () -> OnPushEvent -> Logger -> m PushManagerEnv
+newPushManagerEnv pushOptions pmPushParams onPushEvent pmLogger = liftIO $ do
   pmPushJobs <- newTVarIO mempty
   pmPendingJobCount <- newTVarIO 0
   pmStorePathIndex <- newTVarIO mempty

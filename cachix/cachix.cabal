@@ -266,6 +266,7 @@ test-suite cachix-test
     , dhall
     , directory
     , extra
+    , hercules-ci-cnix-store
     , here
     , hspec
     , protolude

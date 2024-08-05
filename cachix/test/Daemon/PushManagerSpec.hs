@@ -2,17 +2,24 @@ module Daemon.PushManagerSpec where
 
 import qualified Cachix.Client.Daemon.Log as Log
 import qualified Cachix.Client.Daemon.Protocol as Protocol
+import qualified Cachix.Client.Daemon.Push as Daemon.Push
 import Cachix.Client.Daemon.PushManager
 import qualified Cachix.Client.Daemon.PushManager.PushJob as PushJob
 import Cachix.Client.Daemon.Types.PushManager
+import qualified Cachix.Client.Env as Env
 import Cachix.Client.OptionsParser (defaultPushOptions)
+import Cachix.Client.Push (PushSecret (PushToken))
+import qualified Cachix.Types.BinaryCache as BinaryCache
+import Cachix.Types.Permission (Permission (Write))
 import Control.Concurrent.Async (concurrently_)
 import Control.Concurrent.STM.TVar
 import Control.Monad (fail)
 import Control.Retry (defaultRetryStatus)
 import qualified Data.Set as Set
 import Data.Time (getCurrentTime)
+import qualified Hercules.CNix as CNix
 import Protolude
+import Servant.Auth.Client (Token (Token))
 import Test.Hspec
 
 instance MonadFail PushManager where
@@ -118,16 +125,13 @@ spec = do
             }
 
     describe "graceful shutdown" $ do
-      it "shuts down with no jobs" $ do
-        logger <- Log.new "daemon" Nothing Log.Debug
-        pm <- newPushManagerEnv defaultPushOptions logger mempty
-        stopPushManager timeoutOptions pm
+      it "shuts down with no jobs" $
+        withPushManager $
+          stopPushManager timeoutOptions
 
-      it "shuts down after jobs complete" $ do
+      it "shuts down after jobs complete" $ withPushManager $ \pm -> do
         let paths = ["foo"]
         let longTimeoutOptions = TimeoutOptions {toTimeout = 10.0, toPollingInterval = 0.1}
-        logger <- Log.new "daemon" Nothing Log.Debug
-        pm <- newPushManagerEnv defaultPushOptions logger mempty
 
         _ <- runPushManager pm $ do
           let request = Protocol.PushRequest {Protocol.storePaths = paths}
@@ -137,14 +141,13 @@ spec = do
           runPushManager pm $
             for_ paths pushStorePathDone
 
-      it "shuts down on job stall" $ do
-        logger <- Log.new "daemon" Nothing Log.Debug
-        pm <- newPushManagerEnv defaultPushOptions logger mempty
-        _ <- runPushManager pm $ do
-          let request = Protocol.PushRequest {Protocol.storePaths = ["foo"]}
-          addPushJob request
+      it "shuts down on job stall" $
+        withPushManager $ \pm -> do
+          _ <- runPushManager pm $ do
+            let request = Protocol.PushRequest {Protocol.storePaths = ["foo"]}
+            addPushJob request
 
-        stopPushManager timeoutOptions pm
+          stopPushManager timeoutOptions pm
 
   describe "STM" $
     describe "timeout" $ do
@@ -154,11 +157,31 @@ spec = do
 
 withPushManager :: (PushManagerEnv -> IO a) -> IO a
 withPushManager f = do
-  logger <- liftIO $ Log.new "daemon" Nothing Log.Debug
-  newPushManagerEnv defaultPushOptions logger mempty >>= f
+  CNix.init
+  CNix.withStore $ \store -> do
+    logger <- liftIO $ Log.new "daemon" Nothing Log.Debug
+    cachixOptions <- Env.defaultCachixOptions
+    clientEnv <- Env.createClientEnv cachixOptions
+    let binaryCache = newBinaryCache "test"
+        pushSecret = PushToken (Token "test")
+        pushOptions = defaultPushOptions
+        pushParams = Daemon.Push.newPushParams store clientEnv binaryCache pushSecret pushOptions
+    newPushManagerEnv pushOptions pushParams mempty logger >>= f
 
 inPushManager :: PushManager a -> IO a
 inPushManager f = withPushManager (`runPushManager` f)
+
+newBinaryCache :: BinaryCache.BinaryCacheName -> BinaryCache.BinaryCache
+newBinaryCache name =
+  BinaryCache.BinaryCache
+    { BinaryCache.name = name,
+      BinaryCache.uri = "https://" <> name <> ".cachix.org",
+      BinaryCache.isPublic = True,
+      BinaryCache.publicSigningKeys = [],
+      BinaryCache.githubUsername = "",
+      BinaryCache.permission = Write,
+      BinaryCache.preferredCompressionMethod = BinaryCache.ZSTD
+    }
 
 timeoutOptions :: TimeoutOptions
 timeoutOptions = TimeoutOptions {toTimeout = 0.2, toPollingInterval = 0.1}

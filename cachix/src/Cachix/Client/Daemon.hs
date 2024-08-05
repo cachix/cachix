@@ -88,7 +88,7 @@ new daemonEnv nixStore daemonOptions daemonLogHandle daemonPushOptions daemonCac
   let onPushEvent = Subscription.pushEvent daemonSubscriptionManager
 
   let pushParams = Push.newPushParams nixStore (clientenv daemonEnv) daemonBinaryCache daemonPushSecret daemonPushOptions
-  daemonPushManager <- PushManager.newPushManagerEnv daemonLogger pushParams daemonPushOptions onPushEvent
+  daemonPushManager <- PushManager.newPushManagerEnv daemonPushOptions pushParams onPushEvent daemonLogger
 
   daemonWorkerThreads <- newEmptyMVar
 

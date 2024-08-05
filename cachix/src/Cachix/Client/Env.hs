@@ -3,6 +3,7 @@ module Cachix.Client.Env
     mkEnv,
     createClientEnv,
     customManagerSettings,
+    Config.defaultCachixOptions,
   )
 where
 

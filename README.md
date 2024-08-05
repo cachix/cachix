@@ -9,37 +9,46 @@
 $ cachix --help
 https://cachix.org command line interface
 
-Usage: cachix [--hostname URI] [-c|--config CONFIGPATH] [-v|--verbose]
-              (-V|--version)
+Usage: cachix [-c|--config CONFIGPATH] [--host URI | --hostname URI]
+              [-v|--verbose] (COMMAND | (-V|--version))
 
-  To get started log in to https://app.cachix.org
+  To get started, log in to https://app.cachix.org
 
 Available options:
   -h,--help                Show this help text
-  --hostname URI           Host to connect to (default: https://cachix.org)
   -c,--config CONFIGPATH   Cachix configuration file
-                           (default: "/home/domen/.config/cachix/cachix.dhall")
+                           (default: "/home/sandydoo/.config/cachix/cachix.dhall")
+  --hostname URI           Host to connect to (default: https://cachix.org)
   -v,--verbose             Verbose mode
   -V,--version             Show cachix version
 
-Available commands:
+Config commands:
   authtoken                Configure an authentication token for Cachix
   config                   Manage configuration settings for cachix
-  daemon                   Run a daemon that listens to push requests over a
-                           unix socket
+
+Cache commands:
   generate-keypair         Generate a signing key pair for a binary cache
+  use                      Configure a binary cache in nix.conf
+  remove                   Remove a binary cache from nix.conf
+
+Push commands:
   push                     Upload Nix store paths to a binary cache
-  import                   Import the contents of a binary cache from an
-                           S3-compatible object storage service into Cachix,
-                           e.g. s3://localhost:9000/mybucket
-  pin                      Pin a store path to prevent it from being garbage
-                           collected
   watch-exec               Run a command while watching /nix/store for newly
                            added store paths and upload them to a binary cache
   watch-store              Watch /nix/store for newly added store paths and
                            upload them to a binary cache
-  use                      Configure a binary cache in nix.conf
-  remove                   Remove a binary cache from nix.conf
+  import                   Import the contents of a binary cache from an
+                           S3-compatible object storage service into Cachix
+
+Store path commands:
+  pin                      Pin a store path to prevent it from being garbage
+                           collected
+
+Daemon commands:
+  daemon                   Run a daemon that listens to push requests over a
+                           unix socket
+
+Cachix Deploy commands:
   deploy                   Manage remote Nix-based systems with Cachix Deploy
 ```
 

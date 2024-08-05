@@ -1,5 +1,3 @@
-{-# LANGUAGE ApplicativeDo #-}
-
 module Cachix.Client.OptionsParser
   ( CachixCommand (..),
     DaemonCommand (..),
@@ -228,7 +226,7 @@ commandParser =
           ]
 
 flagParser :: Config.ConfigPath -> Parser Flags
-flagParser defaultConfigPath = do
+flagParser defaultConfigPath =
   Flags <$> configPath <*> (host <|> hostname) <*> verbose
   where
     defaultHostname = URI.serialize URI.defaultCachixURI

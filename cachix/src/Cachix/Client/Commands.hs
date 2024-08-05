@@ -204,7 +204,7 @@ push env (PushPaths opts name cliPaths) = do
       (0, _) -> putErrText "Nothing to push."
       (_, 0) -> putErrText "Nothing to push - all store paths are already on Cachix."
       _ -> putErrText "\nAll done."
-push _ _ =
+push _ (PushWatchStore _ _) =
   throwIO $
     DeprecatedCommand "DEPRECATED: cachix watch-store has replaced cachix push --watch-store."
 

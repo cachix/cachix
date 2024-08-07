@@ -1,9 +1,18 @@
-[![Test](https://github.com/cachix/cachix/workflows/Test/badge.svg)](https://github.com/cachix/cachix/actions)
-[![Hackage](https://img.shields.io/hackage/v/cachix.svg)](https://hackage.haskell.org/package/cachix)
+<p align="left">
+  <a href="https://cachix.org">
+    <picture>
+      <source media="(prefers-color-scheme: light)" srcset="logos/cachix-with-brand-light.svg">
+      <source media="(prefers-color-scheme: dark)" srcset="logos/cachix-with-brand-dark.svg">
+      <img src="logos/cachix-with-brand-light.svg" width="200" alt="Cachix logo">
+    </picture>
+  </a>
+</p>
+
 
 ## [Cachix](https://cachix.org) - Nix binary cache hosting: Never build software twice.
 
-<img src="https://user-images.githubusercontent.com/126339/130430964-7794b915-89d1-4b08-94be-3d32444dc8b2.png" width="200">
+[![Test](https://github.com/cachix/cachix/workflows/Test/badge.svg)](https://github.com/cachix/cachix/actions)
+[![Hackage](https://img.shields.io/hackage/v/cachix.svg)](https://hackage.haskell.org/package/cachix)
 
 ```
 $ cachix --help

@@ -8,15 +8,16 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    pre-commit-hooks = {
-      url = "github:cachix/pre-commit-hooks.nix";
+    git-hooks = {
+      url = "github:cachix/git-hooks.nix";
       inputs.nixpkgs.follows = "nixpkgs";
+      inputs.flake-compat.follows = "flake-compat";
     };
     devenv = {
       url = "github:cachix/devenv";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.flake-compat.follows = "flake-compat";
-      inputs.pre-commit-hooks.follows = "pre-commit-hooks";
+      inputs.pre-commit-hooks.follows = "git-hooks";
     };
     flake-compat = {
       url = "github:edolstra/flake-compat";
@@ -24,7 +25,7 @@
     };
   };
 
-  outputs = { self, nixpkgs, pre-commit-hooks, ... }@inputs: let
+  outputs = { self, nixpkgs, git-hooks, ... }@inputs: let
     systems = [ "x86_64-linux" "i686-linux" "x86_64-darwin" "aarch64-linux" "aarch64-darwin" ];
     forAllSystems = f: builtins.listToAttrs (map (name: { inherit name; value = f name; }) systems);
 
@@ -66,7 +67,7 @@
         });
 
       checks = forAllSystems (system: {
-        pre-commit-check = pre-commit-hooks.lib.${system}.run {
+        pre-commit-check = git-hooks.lib.${system}.run {
           src = ./.;
           inherit ((import ./git-hooks.nix).pre-commit) hooks;
         };

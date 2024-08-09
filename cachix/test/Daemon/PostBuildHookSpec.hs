@@ -1,9 +1,9 @@
 module Daemon.PostBuildHookSpec where
 
-import Cachix.Client.Daemon.PostBuildHook
+import Cachix.Daemon.PostBuildHook
 import Data.String
 import Protolude
-import qualified System.Environment as System
+import System.Environment qualified as System
 import Test.Hspec
 
 spec :: Spec

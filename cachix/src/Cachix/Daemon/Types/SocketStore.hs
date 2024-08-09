@@ -1,9 +1,9 @@
-module Cachix.Client.Daemon.Types.SocketStore (Socket (..), SocketId, SocketStore (..)) where
+module Cachix.Daemon.Types.SocketStore (Socket (..), SocketId, SocketStore (..)) where
 
 import Control.Concurrent.STM.TVar (TVar)
 import Data.HashMap.Strict (HashMap)
 import Data.UUID (UUID)
-import qualified Network.Socket as Network (Socket)
+import Network.Socket qualified as Network (Socket)
 import Protolude
 
 data Socket = Socket

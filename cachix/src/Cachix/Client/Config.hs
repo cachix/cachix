@@ -28,14 +28,14 @@ where
 import Cachix.Client.Config.Orphans ()
 import Cachix.Client.Exception (CachixException (..))
 import Cachix.Client.URI as URI
-import qualified Control.Exception.Safe as Safe
+import Control.Exception.Safe qualified as Safe
 import Data.Either.Extra (eitherToMaybe)
 import Data.String.Here
-import qualified Dhall
-import qualified Dhall.Pretty
-import qualified Options.Applicative as Opt
-import qualified Prettyprinter as Pretty
-import qualified Prettyprinter.Render.Text as Pretty
+import Dhall qualified
+import Dhall.Pretty qualified
+import Options.Applicative qualified as Opt
+import Prettyprinter qualified as Pretty
+import Prettyprinter.Render.Text qualified as Pretty
 import Protolude hiding (toS)
 import Protolude.Conv
 import Servant.Auth.Client

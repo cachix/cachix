@@ -2,9 +2,9 @@
 
 module Cachix.Client.Config.Orphans where
 
-import qualified Data.Aeson as Aeson
-import qualified Dhall
-import qualified Dhall.Core
+import Data.Aeson qualified as Aeson
+import Dhall qualified
+import Dhall.Core qualified
 import Protolude hiding (toS)
 import Protolude.Conv
 import Servant.Auth.Client

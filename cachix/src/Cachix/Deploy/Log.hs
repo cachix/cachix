@@ -2,17 +2,17 @@
 
 module Cachix.Deploy.Log where
 
-import qualified Cachix.API.WebSocketSubprotocol as WSS
-import qualified Control.Concurrent.STM.TMQueue as TMQueue
+import Cachix.API.WebSocketSubprotocol qualified as WSS
+import Control.Concurrent.STM.TMQueue qualified as TMQueue
 import Control.Exception.Safe (MonadMask, bracket)
-import qualified Data.Aeson as Aeson
+import Data.Aeson qualified as Aeson
 import Data.Conduit ((.|))
-import qualified Data.Conduit as Conduit
-import qualified Data.Conduit.Combinators as Conduit
-import qualified Data.Conduit.TQueue as Conduit
+import Data.Conduit qualified as Conduit
+import Data.Conduit.Combinators qualified as Conduit
+import Data.Conduit.TQueue qualified as Conduit
 import Data.Time.Clock (getCurrentTime)
-import qualified Katip
-import qualified Network.WebSockets as WS
+import Katip qualified
+import Network.WebSockets qualified as WS
 import Protolude hiding (bracket, toS)
 import Protolude.Conv (toS)
 

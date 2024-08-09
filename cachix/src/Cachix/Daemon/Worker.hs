@@ -1,4 +1,4 @@
-module Cachix.Client.Daemon.Worker
+module Cachix.Daemon.Worker
   ( startWorkers,
     stopWorkers,
     startWorker,
@@ -7,11 +7,11 @@ module Cachix.Client.Daemon.Worker
   )
 where
 
-import qualified Control.Concurrent.Async as Async
+import Control.Concurrent.Async qualified as Async
 import Control.Concurrent.STM.TBMQueue
-import qualified Control.Immortal as Immortal
+import Control.Immortal qualified as Immortal
 import Control.Monad.IO.Unlift (MonadUnliftIO)
-import qualified Katip
+import Katip qualified
 import Protolude
 
 startWorkers ::

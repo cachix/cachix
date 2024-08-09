@@ -30,69 +30,42 @@ common defaults
   build-depends:      base >=4.7 && <5
   default-extensions:
     DeriveAnyClass
-    DeriveGeneric
     DerivingVia
     LambdaCase
-    NamedFieldPuns
     NoImplicitPrelude
-    NoImportQualifiedPost
     OverloadedStrings
     RecordWildCards
-    ScopedTypeVariables
 
   ghc-options:
     -Wall -Wcompat -Wincomplete-record-updates
     -Wincomplete-uni-patterns -Wredundant-constraints -fwarn-tabs
     -fwarn-unused-imports -fwarn-missing-signatures
-    -fwarn-name-shadowing -fwarn-incomplete-patterns
+    -fwarn-name-shadowing -fwarn-incomplete-patterns -Wunused-packages
+    -Wredundant-bang-patterns
 
   -- TODO: address partial record fields in Cachix Deploy
   -- if impl(ghc >= 8.4)
   --   ghc-options:       -Wpartial-fields
 
-  if impl(ghc >=8.10)
-    ghc-options: -Wunused-packages
-
-  if impl(ghc >=9.2)
-    ghc-options: -Wredundant-bang-patterns
-
   if impl(ghc >=9.4)
     ghc-options: -Wredundant-strictness-flags -Wforall-identifier
 
-  default-language:   Haskell2010
+  default-language:   GHC2021
 
 library
   import:            defaults
   exposed-modules:
     Cachix.Client
     Cachix.Client.CNix
-    Cachix.Client.Commands
-    Cachix.Client.Commands.Push
+    Cachix.Client.Command
+    Cachix.Client.Command.Cache
+    Cachix.Client.Command.Config
+    Cachix.Client.Command.Import
+    Cachix.Client.Command.Pin
+    Cachix.Client.Command.Push
+    Cachix.Client.Command.Watch
     Cachix.Client.Config
     Cachix.Client.Config.Orphans
-    Cachix.Client.Daemon
-    Cachix.Client.Daemon.Client
-    Cachix.Client.Daemon.EventLoop
-    Cachix.Client.Daemon.Listen
-    Cachix.Client.Daemon.Log
-    Cachix.Client.Daemon.PostBuildHook
-    Cachix.Client.Daemon.Progress
-    Cachix.Client.Daemon.Protocol
-    Cachix.Client.Daemon.Push
-    Cachix.Client.Daemon.PushManager
-    Cachix.Client.Daemon.PushManager.PushJob
-    Cachix.Client.Daemon.ShutdownLatch
-    Cachix.Client.Daemon.SocketStore
-    Cachix.Client.Daemon.Subscription
-    Cachix.Client.Daemon.Types
-    Cachix.Client.Daemon.Types.Daemon
-    Cachix.Client.Daemon.Types.Error
-    Cachix.Client.Daemon.Types.EventLoop
-    Cachix.Client.Daemon.Types.Log
-    Cachix.Client.Daemon.Types.PushEvent
-    Cachix.Client.Daemon.Types.PushManager
-    Cachix.Client.Daemon.Types.SocketStore
-    Cachix.Client.Daemon.Worker
     Cachix.Client.Env
     Cachix.Client.Exception
     Cachix.Client.HumanSize
@@ -110,6 +83,29 @@ library
     Cachix.Client.URI
     Cachix.Client.Version
     Cachix.Client.WatchStore
+    Cachix.Daemon
+    Cachix.Daemon.Client
+    Cachix.Daemon.EventLoop
+    Cachix.Daemon.Listen
+    Cachix.Daemon.Log
+    Cachix.Daemon.PostBuildHook
+    Cachix.Daemon.Progress
+    Cachix.Daemon.Protocol
+    Cachix.Daemon.Push
+    Cachix.Daemon.PushManager
+    Cachix.Daemon.PushManager.PushJob
+    Cachix.Daemon.ShutdownLatch
+    Cachix.Daemon.SocketStore
+    Cachix.Daemon.Subscription
+    Cachix.Daemon.Types
+    Cachix.Daemon.Types.Daemon
+    Cachix.Daemon.Types.Error
+    Cachix.Daemon.Types.EventLoop
+    Cachix.Daemon.Types.Log
+    Cachix.Daemon.Types.PushEvent
+    Cachix.Daemon.Types.PushManager
+    Cachix.Daemon.Types.SocketStore
+    Cachix.Daemon.Worker
     Cachix.Deploy.Activate
     Cachix.Deploy.ActivateCommand
     Cachix.Deploy.Agent

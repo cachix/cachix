@@ -1,6 +1,6 @@
 module Main (main) where
 
-import qualified Cachix.Client as CC
+import Cachix.Client qualified as CC
 import Cachix.Client.CNix (handleCppExceptions)
 import Cachix.Client.Exception (CachixException)
 import Control.Exception.Safe (Handler (..), catches, displayException)

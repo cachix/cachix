@@ -12,7 +12,7 @@ import Data.Versions hiding (versioning')
 import Protolude
 import System.Process (readProcessWithExitCode)
 import Text.Megaparsec (Parsec, anySingle, choice, eof, lookAhead, manyTill, parse)
-import qualified Text.Megaparsec as P
+import Text.Megaparsec qualified as P
 import Text.Megaparsec.Char (digitChar)
 
 minimalVersion :: SemVer

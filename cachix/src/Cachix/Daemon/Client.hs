@@ -1,19 +1,19 @@
-module Cachix.Client.Daemon.Client (push, stop) where
+module Cachix.Daemon.Client (push, stop) where
 
-import Cachix.Client.Daemon.Listen (getSocketPath)
-import Cachix.Client.Daemon.Protocol as Protocol
 import Cachix.Client.Env as Env
 import Cachix.Client.OptionsParser (DaemonOptions (..))
-import qualified Cachix.Client.Retry as Retry
-import qualified Control.Concurrent.Async as Async
+import Cachix.Client.Retry qualified as Retry
+import Cachix.Daemon.Listen (getSocketPath)
+import Cachix.Daemon.Protocol as Protocol
+import Control.Concurrent.Async qualified as Async
 import Control.Concurrent.STM.TBMQueue
-import qualified Data.Aeson as Aeson
-import qualified Data.ByteString as BS
+import Data.Aeson qualified as Aeson
+import Data.ByteString qualified as BS
 import Data.IORef
 import Data.Time.Clock
-import qualified Network.Socket as Socket
-import qualified Network.Socket.ByteString as Socket.BS
-import qualified Network.Socket.ByteString.Lazy as Socket.LBS
+import Network.Socket qualified as Socket
+import Network.Socket.ByteString qualified as Socket.BS
+import Network.Socket.ByteString.Lazy qualified as Socket.LBS
 import Protolude
 import System.IO.Error (isResourceVanishedError)
 

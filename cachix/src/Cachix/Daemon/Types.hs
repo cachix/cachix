@@ -1,4 +1,4 @@
-module Cachix.Client.Daemon.Types
+module Cachix.Daemon.Types
   ( -- * Daemon
     DaemonEnv (..),
     Daemon,
@@ -24,8 +24,8 @@ module Cachix.Client.Daemon.Types
   )
 where
 
-import Cachix.Client.Daemon.Types.Daemon
-import Cachix.Client.Daemon.Types.Error
-import Cachix.Client.Daemon.Types.Log
-import Cachix.Client.Daemon.Types.PushEvent as PushEvent
-import Cachix.Client.Daemon.Types.PushManager as PushManager
+import Cachix.Daemon.Types.Daemon
+import Cachix.Daemon.Types.Error
+import Cachix.Daemon.Types.Log
+import Cachix.Daemon.Types.PushEvent as PushEvent
+import Cachix.Daemon.Types.PushManager as PushManager

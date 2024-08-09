@@ -3,6 +3,7 @@
 module Cachix.Client.InstallationMode
   ( InstallationMode (..),
     NixEnv (..),
+    getNixEnv,
     getInstallationMode,
     addBinaryCache,
     removeBinaryCache,
@@ -16,18 +17,18 @@ module Cachix.Client.InstallationMode
 where
 
 import Cachix.Client.Config (Config)
-import qualified Cachix.Client.Config as Config
+import Cachix.Client.Config qualified as Config
 import Cachix.Client.Exception (CachixException (..))
-import qualified Cachix.Client.NetRc as NetRc
-import qualified Cachix.Client.NixConf as NixConf
-import qualified Cachix.Client.URI as URI
-import qualified Cachix.Types.BinaryCache as BinaryCache
-import qualified Data.Maybe
+import Cachix.Client.NetRc qualified as NetRc
+import Cachix.Client.NixConf qualified as NixConf
+import Cachix.Client.URI qualified as URI
+import Cachix.Types.BinaryCache qualified as BinaryCache
+import Data.Maybe qualified
 import Data.String.Here
-import qualified Data.Text as T
+import Data.Text qualified as T
 import Protolude hiding (toS)
 import Protolude.Conv (toS)
-import System.Directory (Permissions, createDirectoryIfMissing, getPermissions, writable)
+import System.Directory (Permissions, createDirectoryIfMissing, doesFileExist, getPermissions, writable)
 import System.Environment (lookupEnv)
 import System.FilePath (replaceFileName, (</>))
 import System.Process (readProcessWithExitCode)
@@ -76,6 +77,19 @@ toString (Install (NixConf.Custom _)) = "custom-nixconf"
 toString WriteNixOS = "nixos"
 toString UntrustedRequiresSudo = "untrusted-requires-sudo"
 toString UntrustedNixOS = "untrusted-nixos"
+
+getNixEnv :: IO NixEnv
+getNixEnv = do
+  user <- getUser
+  nc <- NixConf.read NixConf.Global
+  isTrusted <- isTrustedUser $ NixConf.readLines (catMaybes [nc]) NixConf.isTrustedUsers
+  isNixOS <- doesFileExist "/run/current-system/nixos-version"
+  return $
+    NixEnv
+      { isRoot = user == "root",
+        isTrusted = isTrusted,
+        isNixOS = isNixOS
+      }
 
 getInstallationMode :: NixEnv -> UseOptions -> InstallationMode
 getInstallationMode nixenv useOptions

@@ -1,7 +1,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE TypeApplications #-}
 
-module Cachix.Client.Daemon.Types.Daemon
+module Cachix.Daemon.Types.Daemon
   ( -- * Daemon
     DaemonEnv (..),
     Daemon,
@@ -10,24 +10,24 @@ module Cachix.Client.Daemon.Types.Daemon
 where
 
 import Cachix.Client.Config.Orphans ()
-import qualified Cachix.Client.Daemon.Log as Log
-import qualified Cachix.Client.Daemon.Protocol as Protocol
-import Cachix.Client.Daemon.ShutdownLatch (ShutdownLatch)
-import Cachix.Client.Daemon.Subscription (SubscriptionManager)
-import Cachix.Client.Daemon.Types.Error (DaemonError (DaemonUnhandledException), UnhandledException (..))
-import Cachix.Client.Daemon.Types.EventLoop (EventLoop)
-import Cachix.Client.Daemon.Types.Log (Logger)
-import Cachix.Client.Daemon.Types.PushEvent (PushEvent)
-import Cachix.Client.Daemon.Types.PushManager (PushManagerEnv (..))
-import Cachix.Client.Daemon.Types.SocketStore (SocketStore)
-import qualified Cachix.Client.Daemon.Worker as Worker
 import Cachix.Client.Env as Env
 import Cachix.Client.OptionsParser (PushOptions)
+import Cachix.Daemon.Log qualified as Log
+import Cachix.Daemon.Protocol qualified as Protocol
+import Cachix.Daemon.ShutdownLatch (ShutdownLatch)
+import Cachix.Daemon.Subscription (SubscriptionManager)
+import Cachix.Daemon.Types.Error (DaemonError (DaemonUnhandledException), UnhandledException (..))
+import Cachix.Daemon.Types.EventLoop (EventLoop)
+import Cachix.Daemon.Types.Log (Logger)
+import Cachix.Daemon.Types.PushEvent (PushEvent)
+import Cachix.Daemon.Types.PushManager (PushManagerEnv (..))
+import Cachix.Daemon.Types.SocketStore (SocketStore)
+import Cachix.Daemon.Worker qualified as Worker
 import Cachix.Types.BinaryCache (BinaryCache, BinaryCacheName)
-import qualified Control.Exception.Safe as Safe
+import Control.Exception.Safe qualified as Safe
 import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
 import Control.Monad.IO.Unlift (MonadUnliftIO)
-import qualified Katip
+import Katip qualified
 import Protolude hiding (bracketOnError)
 import System.Posix.Types (ProcessID)
 

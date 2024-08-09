@@ -1,4 +1,4 @@
-module Cachix.Client.Daemon.Log
+module Cachix.Daemon.Log
   ( new,
     withLogger,
     getKatipNamespace,
@@ -13,12 +13,12 @@ module Cachix.Client.Daemon.Log
   )
 where
 
-import Cachix.Client.Daemon.Types.Log as Log
-import qualified Control.Monad.Catch as E
+import Cachix.Daemon.Types.Log as Log
+import Control.Monad.Catch qualified as E
 import Data.Text.Lazy.Builder
 import Katip (renderSeverity)
-import qualified Katip
-import qualified Katip.Format.Time as Katip.Format
+import Katip qualified
+import Katip.Format.Time qualified as Katip.Format
 import Katip.Scribes.Handle (brackets, colorBySeverity, getKeys)
 import Protolude
 

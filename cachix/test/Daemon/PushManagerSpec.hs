@@ -1,23 +1,23 @@
 module Daemon.PushManagerSpec where
 
-import qualified Cachix.Client.Daemon.Log as Log
-import qualified Cachix.Client.Daemon.Protocol as Protocol
-import qualified Cachix.Client.Daemon.Push as Daemon.Push
-import Cachix.Client.Daemon.PushManager
-import qualified Cachix.Client.Daemon.PushManager.PushJob as PushJob
-import Cachix.Client.Daemon.Types.PushManager
-import qualified Cachix.Client.Env as Env
+import Cachix.Client.Env qualified as Env
 import Cachix.Client.OptionsParser (defaultPushOptions)
 import Cachix.Client.Push (PushSecret (PushToken))
-import qualified Cachix.Types.BinaryCache as BinaryCache
+import Cachix.Daemon.Log qualified as Log
+import Cachix.Daemon.Protocol qualified as Protocol
+import Cachix.Daemon.Push qualified as Daemon.Push
+import Cachix.Daemon.PushManager
+import Cachix.Daemon.PushManager.PushJob qualified as PushJob
+import Cachix.Daemon.Types.PushManager
+import Cachix.Types.BinaryCache qualified as BinaryCache
 import Cachix.Types.Permission (Permission (Write))
 import Control.Concurrent.Async (concurrently_)
 import Control.Concurrent.STM.TVar
 import Control.Monad (fail)
 import Control.Retry (defaultRetryStatus)
-import qualified Data.Set as Set
+import Data.Set qualified as Set
 import Data.Time (getCurrentTime)
-import qualified Hercules.CNix as CNix
+import Hercules.CNix qualified as CNix
 import Protolude
 import Servant.Auth.Client (Token (Token))
 import System.IO.Temp (withSystemTempDirectory)

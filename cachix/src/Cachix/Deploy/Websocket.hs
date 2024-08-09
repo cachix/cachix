@@ -3,38 +3,38 @@
 -- | A high-level, multiple reader, single writer interface for Websocket clients.
 module Cachix.Deploy.Websocket where
 
-import qualified Cachix.Client.Retry as Retry
-import qualified Cachix.Client.URI as URI
+import Cachix.Client.Retry qualified as Retry
+import Cachix.Client.URI qualified as URI
 import Cachix.Client.Version (versionNumber)
-import qualified Cachix.Deploy.Log as Log
-import qualified Cachix.Deploy.WebsocketPong as WebsocketPong
-import qualified Control.Concurrent.Async as Async
-import qualified Control.Concurrent.MVar as MVar
-import qualified Control.Concurrent.STM.TBMQueue as TBMQueue
-import qualified Control.Concurrent.STM.TMChan as TMChan
+import Cachix.Deploy.Log qualified as Log
+import Cachix.Deploy.WebsocketPong qualified as WebsocketPong
+import Control.Concurrent.Async qualified as Async
+import Control.Concurrent.MVar qualified as MVar
+import Control.Concurrent.STM.TBMQueue qualified as TBMQueue
+import Control.Concurrent.STM.TMChan qualified as TMChan
 import Control.Exception.Safe (Handler (..), MonadMask, isSyncException)
-import qualified Control.Exception.Safe as Safe
-import qualified Control.Retry as Retry
-import qualified Data.Aeson as Aeson
-import qualified Data.ByteString as BS
+import Control.Exception.Safe qualified as Safe
+import Control.Retry qualified as Retry
+import Data.Aeson qualified as Aeson
+import Data.ByteString qualified as BS
 import Data.Conduit ((.|))
-import qualified Data.Conduit as Conduit
-import qualified Data.Conduit.Combinators as Conduit
-import qualified Data.Conduit.TQueue as Conduit
-import qualified Data.IORef as IORef
+import Data.Conduit qualified as Conduit
+import Data.Conduit.Combinators qualified as Conduit
+import Data.Conduit.TQueue qualified as Conduit
+import Data.IORef qualified as IORef
 import Data.String (String)
 import Data.String.Here (iTrim)
-import qualified Data.Text as Text
-import qualified Data.Time.Clock as Time
-import qualified Katip as K
-import qualified Network.HTTP.Simple as HTTP
-import qualified Network.WebSockets as WS
-import qualified Network.WebSockets.Connection as WS.Connection
+import Data.Text qualified as Text
+import Data.Time.Clock qualified as Time
+import Katip qualified as K
+import Network.HTTP.Simple qualified as HTTP
+import Network.WebSockets qualified as WS
+import Network.WebSockets.Connection qualified as WS.Connection
 import Protolude hiding (Handler, toS)
 import Protolude.Conv
-import qualified System.Info
-import qualified System.Timeout as Timeout
-import qualified Wuss
+import System.Info qualified
+import System.Timeout qualified as Timeout
+import Wuss qualified
 
 -- | A reliable WebSocket connection that can be run ergonomically in a
 -- separate thread.

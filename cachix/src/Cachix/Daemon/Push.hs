@@ -1,14 +1,12 @@
-module Cachix.Client.Daemon.Push
+module Cachix.Daemon.Push
   ( newPushParams,
     getBinaryCache,
     getCompressionMethod,
   )
 where
 
-import qualified Cachix.API as API
-import Cachix.Client.Commands.Push hiding (pushStrategy)
-import qualified Cachix.Client.Daemon.PushManager as PushManager
-import Cachix.Client.Daemon.Types (PushManager)
+import Cachix.API qualified as API
+import Cachix.Client.Command.Push hiding (pushStrategy)
 import Cachix.Client.Env (Env (..))
 import Cachix.Client.OptionsParser as Client.OptionsParser
   ( PushOptions (..),
@@ -16,9 +14,11 @@ import Cachix.Client.OptionsParser as Client.OptionsParser
 import Cachix.Client.Push as Client.Push
 import Cachix.Client.Retry (retryHttp)
 import Cachix.Client.Servant
+import Cachix.Daemon.PushManager qualified as PushManager
+import Cachix.Daemon.Types (PushManager)
 import Cachix.Types.BinaryCache (BinaryCache, BinaryCacheName)
-import qualified Cachix.Types.BinaryCache as BinaryCache
-import qualified Data.Set as Set
+import Cachix.Types.BinaryCache qualified as BinaryCache
+import Data.Set qualified as Set
 import Hercules.CNix.Store (Store)
 import Protolude hiding (toS)
 import Servant.Auth ()

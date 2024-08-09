@@ -1,4 +1,4 @@
-module Cachix.Client.Daemon.Progress
+module Cachix.Daemon.Progress
   ( UploadProgress,
     new,
     complete,
@@ -8,15 +8,15 @@ module Cachix.Client.Daemon.Progress
   )
 where
 
-import Cachix.Client.Daemon.Types (PushRetryStatus (..))
 import Cachix.Client.HumanSize (humanSize)
-import qualified Control.Concurrent.Async as Async
+import Cachix.Daemon.Types (PushRetryStatus (..))
+import Control.Concurrent.Async qualified as Async
 import Control.Concurrent.MVar
 import Data.String (String)
-import qualified Data.Text as T
+import Data.Text qualified as T
 import Protolude
-import qualified System.Console.AsciiProgress as Ascii
-import qualified System.Console.AsciiProgress.Internal as Ascii.Internal
+import System.Console.AsciiProgress qualified as Ascii
+import System.Console.AsciiProgress.Internal qualified as Ascii.Internal
 import System.Console.Pretty
 import System.IO (hIsTerminalDevice)
 

@@ -1,38 +1,38 @@
 module Cachix.Deploy.ActivateCommand where
 
-import qualified Cachix.API.Deploy.V1 as API.V1
-import qualified Cachix.API.Deploy.V2 as API.V2
+import Cachix.API.Deploy.V1 qualified as API.V1
+import Cachix.API.Deploy.V2 qualified as API.V2
 import Cachix.API.Error (escalate)
-import qualified Cachix.API.WebSocketSubprotocol as WSS
-import qualified Cachix.Client.Config as Config
-import qualified Cachix.Client.Env as Env
-import qualified Cachix.Client.Retry as Retry
+import Cachix.API.WebSocketSubprotocol qualified as WSS
+import Cachix.Client.Config qualified as Config
+import Cachix.Client.Env qualified as Env
+import Cachix.Client.Retry qualified as Retry
 import Cachix.Client.Servant (deployClientV1, deployClientV2)
-import qualified Cachix.Client.URI as URI
+import Cachix.Client.URI qualified as URI
 import Cachix.Client.Version (versionNumber)
-import qualified Cachix.Deploy.OptionsParser as DeployOptions
-import qualified Cachix.Deploy.Websocket as WebSocket
+import Cachix.Deploy.OptionsParser qualified as DeployOptions
+import Cachix.Deploy.Websocket qualified as WebSocket
 import Cachix.Types.Deploy (Deploy)
-import qualified Cachix.Types.Deploy as Types
-import qualified Cachix.Types.DeployResponse as DeployResponse
-import qualified Cachix.Types.Deployment as Deployment
-import qualified Control.Concurrent.Async as Async
-import qualified Data.Aeson as Aeson
+import Cachix.Types.Deploy qualified as Types
+import Cachix.Types.DeployResponse qualified as DeployResponse
+import Cachix.Types.Deployment qualified as Deployment
+import Control.Concurrent.Async qualified as Async
+import Data.Aeson qualified as Aeson
 import Data.HashMap.Strict (filterWithKey)
-import qualified Data.HashMap.Strict as HM
-import qualified Data.Text as Text
-import qualified Data.Text.IO as Text
+import Data.HashMap.Strict qualified as HM
+import Data.Text qualified as Text
+import Data.Text.IO qualified as Text
 import Data.UUID (UUID)
-import qualified Data.UUID as UUID
-import qualified Network.WebSockets as WS
+import Data.UUID qualified as UUID
+import Network.WebSockets qualified as WS
 import Protolude hiding (toS)
 import Protolude.Conv
 import Servant.Auth.Client (Token (..))
 import Servant.Client.Streaming (ClientEnv, runClientM)
 import Servant.Conduit ()
 import System.Environment (getEnv)
-import qualified Text.Megaparsec as Parse
-import qualified Text.Megaparsec.Char as Parse
+import Text.Megaparsec qualified as Parse
+import Text.Megaparsec.Char qualified as Parse
 
 run :: Env.Env -> DeployOptions.ActivateOptions -> IO ()
 run env DeployOptions.ActivateOptions {DeployOptions.payloadPath, DeployOptions.agents, DeployOptions.deployAsync} = do

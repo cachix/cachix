@@ -6,27 +6,27 @@ module Main
 where
 
 import Cachix.API.Error (escalateAs)
-import qualified Cachix.API.WebSocketSubprotocol as AgentInformation (AgentInformation (..))
-import qualified Cachix.API.WebSocketSubprotocol as DeploymentDetails (DeploymentDetails (..))
-import qualified Cachix.API.WebSocketSubprotocol as WSS
-import qualified Cachix.Client.URI as URI
-import qualified Cachix.Deploy.Activate as Activate
-import qualified Cachix.Deploy.Agent as Agent
+import Cachix.API.WebSocketSubprotocol qualified as AgentInformation (AgentInformation (..))
+import Cachix.API.WebSocketSubprotocol qualified as DeploymentDetails (DeploymentDetails (..))
+import Cachix.API.WebSocketSubprotocol qualified as WSS
+import Cachix.Client.URI qualified as URI
+import Cachix.Deploy.Activate qualified as Activate
+import Cachix.Deploy.Agent qualified as Agent
 import Cachix.Deploy.Deployment (Deployment (..))
-import qualified Cachix.Deploy.Lock as Lock
-import qualified Cachix.Deploy.Log as Log
-import qualified Cachix.Deploy.Websocket as WebSocket
-import qualified Control.Concurrent.Async as Async
-import qualified Control.Concurrent.STM.TMQueue as TMQueue
-import qualified Control.Exception.Safe as Safe
-import qualified Data.Aeson as Aeson
-import qualified Data.Conduit.TQueue as Conduit
+import Cachix.Deploy.Lock qualified as Lock
+import Cachix.Deploy.Log qualified as Log
+import Cachix.Deploy.Websocket qualified as WebSocket
+import Control.Concurrent.Async qualified as Async
+import Control.Concurrent.STM.TMQueue qualified as TMQueue
+import Control.Exception.Safe qualified as Safe
+import Data.Aeson qualified as Aeson
+import Data.Conduit.TQueue qualified as Conduit
 import Data.Time.Clock (getCurrentTime)
-import qualified Data.UUID as UUID
-import qualified Data.UUID.V4 as UUID
+import Data.UUID qualified as UUID
+import Data.UUID.V4 qualified as UUID
 import GHC.IO.Encoding
-import qualified Katip as K
-import qualified Network.WebSockets as WS
+import Katip qualified as K
+import Network.WebSockets qualified as WS
 import Protolude hiding (toS)
 import Protolude.Conv
 import System.IO (BufferMode (..), hSetBuffering)

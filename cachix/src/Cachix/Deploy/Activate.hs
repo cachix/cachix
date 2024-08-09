@@ -3,27 +3,27 @@
 
 module Cachix.Deploy.Activate where
 
-import qualified Cachix.API.WebSocketSubprotocol as WSS
-import qualified Cachix.Client.InstallationMode as InstallationMode
-import qualified Cachix.Client.NetRc as NetRc
+import Cachix.API.WebSocketSubprotocol qualified as WSS
+import Cachix.Client.InstallationMode qualified as InstallationMode
+import Cachix.Client.NetRc qualified as NetRc
 import Cachix.Client.URI (URI)
-import qualified Cachix.Client.URI as URI
-import qualified Cachix.Deploy.Log as Log
-import qualified Cachix.Types.BinaryCache as BinaryCache
+import Cachix.Client.URI qualified as URI
+import Cachix.Deploy.Log qualified as Log
+import Cachix.Types.BinaryCache qualified as BinaryCache
 import Cachix.Types.Permission (Permission (..))
-import qualified Data.Aeson as Aeson
+import Data.Aeson qualified as Aeson
 #if MIN_VERSION_aeson(2,0,0)
 import qualified Data.Aeson.KeyMap as HM
 #else
 import qualified Data.HashMap.Strict as HM
 #endif
-import qualified Data.Conduit.Combinators as Conduit
-import qualified Data.Conduit.Process as Conduit
-import qualified Data.Vector as Vector
+import Data.Conduit.Combinators qualified as Conduit
+import Data.Conduit.Process qualified as Conduit
+import Data.Vector qualified as Vector
 import Protolude hiding (log, toS)
 import Protolude.Conv (toS)
 import Servant.Auth.Client (Token (..))
-import qualified System.Directory as Directory
+import System.Directory qualified as Directory
 import System.FilePath ((</>))
 import System.IO.Temp (withSystemTempDirectory)
 import System.Process

@@ -1,7 +1,7 @@
 module Main where
 
 import Protolude
-import qualified Spec
+import Spec qualified
 import Test.Hspec.Runner
 
 main :: IO ()

@@ -1,11 +1,11 @@
-module Cachix.Client.Daemon.Types.Error
+module Cachix.Daemon.Types.Error
   ( DaemonError (..),
     UnhandledException (..),
     HasExitCode (..),
   )
 where
 
-import Cachix.Client.Daemon.Types.EventLoop (EventLoopError (..))
+import Cachix.Daemon.Types.EventLoop (EventLoopError (..))
 import Protolude
 
 -- | An error that can occur in the daemon.

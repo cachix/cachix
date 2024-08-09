@@ -1,4 +1,4 @@
-module Cachix.Client.Daemon
+module Cachix.Daemon
   ( Types.Daemon,
     Types.runDaemon,
     new,
@@ -10,42 +10,42 @@ module Cachix.Client.Daemon
   )
 where
 
-import qualified Cachix.Client.Commands.Push as Commands.Push
-import qualified Cachix.Client.Config as Config
+import Cachix.Client.Command.Push qualified as Command.Push
+import Cachix.Client.Config qualified as Config
 import Cachix.Client.Config.Orphans ()
-import qualified Cachix.Client.Daemon.EventLoop as EventLoop
-import Cachix.Client.Daemon.Listen as Daemon
-import qualified Cachix.Client.Daemon.Log as Log
-import Cachix.Client.Daemon.Protocol as Protocol
-import Cachix.Client.Daemon.Push as Push
-import qualified Cachix.Client.Daemon.PushManager as PushManager
-import Cachix.Client.Daemon.ShutdownLatch
-import qualified Cachix.Client.Daemon.SocketStore as SocketStore
-import Cachix.Client.Daemon.Subscription as Subscription
-import Cachix.Client.Daemon.Types as Types
-import Cachix.Client.Daemon.Types.EventLoop (DaemonEvent (ShutdownGracefully))
-import qualified Cachix.Client.Daemon.Types.PushManager as PushManager
-import qualified Cachix.Client.Daemon.Worker as Worker
 import Cachix.Client.Env as Env
 import Cachix.Client.OptionsParser (DaemonOptions, PushOptions)
-import qualified Cachix.Client.OptionsParser as Options
+import Cachix.Client.OptionsParser qualified as Options
 import Cachix.Client.Push
+import Cachix.Daemon.EventLoop qualified as EventLoop
+import Cachix.Daemon.Listen as Daemon
+import Cachix.Daemon.Log qualified as Log
+import Cachix.Daemon.Protocol as Protocol
+import Cachix.Daemon.Push as Push
+import Cachix.Daemon.PushManager qualified as PushManager
+import Cachix.Daemon.ShutdownLatch
+import Cachix.Daemon.SocketStore qualified as SocketStore
+import Cachix.Daemon.Subscription as Subscription
+import Cachix.Daemon.Types as Types
+import Cachix.Daemon.Types.EventLoop (DaemonEvent (ShutdownGracefully))
+import Cachix.Daemon.Types.PushManager qualified as PushManager
+import Cachix.Daemon.Worker qualified as Worker
 import Cachix.Types.BinaryCache (BinaryCacheName)
-import qualified Cachix.Types.BinaryCache as BinaryCache
+import Cachix.Types.BinaryCache qualified as BinaryCache
 import Control.Concurrent.STM.TMChan
 import Control.Exception.Safe (catchAny)
-import qualified Data.Text as T
+import Data.Text qualified as T
 import Hercules.CNix.Store (Store, withStore)
-import qualified Hercules.CNix.Util as CNix.Util
-import qualified Katip
-import qualified Network.Socket as Socket
-import qualified Network.Socket.ByteString as Socket.BS
+import Hercules.CNix.Util qualified as CNix.Util
+import Katip qualified
+import Network.Socket qualified as Socket
+import Network.Socket.ByteString qualified as Socket.BS
 import Protolude hiding (bracket)
 import System.IO.Error (isResourceVanishedError)
 import System.Posix.Process (getProcessID)
-import qualified System.Posix.Signals as Signal
+import System.Posix.Signals qualified as Signal
 import UnliftIO (MonadUnliftIO)
-import qualified UnliftIO.Async as Async
+import UnliftIO.Async qualified as Async
 import UnliftIO.Exception (bracket)
 
 -- | Configure a new daemon. Use 'run' to start it.
@@ -79,7 +79,7 @@ new daemonEnv nixStore daemonOptions daemonLogHandle daemonPushOptions daemonCac
   daemonSocketThread <- newEmptyMVar
   daemonClients <- SocketStore.newSocketStore
 
-  daemonPushSecret <- Commands.Push.getPushSecretRequired (config daemonEnv) daemonCacheName
+  daemonPushSecret <- Command.Push.getPushSecretRequired (config daemonEnv) daemonCacheName
   let authToken = getAuthTokenFromPushSecret daemonPushSecret
   daemonBinaryCache <- Push.getBinaryCache daemonEnv authToken daemonCacheName
 

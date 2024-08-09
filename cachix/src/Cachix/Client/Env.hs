@@ -8,8 +8,8 @@ module Cachix.Client.Env
 where
 
 import Cachix.Client.Config (Config)
-import qualified Cachix.Client.Config as Config
-import qualified Cachix.Client.OptionsParser as Options
+import Cachix.Client.Config qualified as Config
+import Cachix.Client.OptionsParser qualified as Options
 import Cachix.Client.URI (getBaseUrl)
 import Cachix.Client.Version (cachixVersion)
 import Network.HTTP.Client

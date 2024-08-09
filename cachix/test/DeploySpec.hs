@@ -1,11 +1,11 @@
 module DeploySpec where
 
-import qualified Cachix.Client.Config as Config
+import Cachix.Client.Config qualified as Config
 import Cachix.Deploy.Agent (Agent (..), mkAgent, waitForAgent)
 import Cachix.Deploy.Lock (withTryLock, withTryLockAndPid)
-import qualified Cachix.Deploy.Log as Log
-import qualified Cachix.Deploy.OptionsParser as CLI
-import qualified Control.Retry as Retry
+import Cachix.Deploy.Log qualified as Log
+import Cachix.Deploy.OptionsParser qualified as CLI
+import Control.Retry qualified as Retry
 import Protolude
 import System.IO.Temp (withSystemTempDirectory)
 import Test.Hspec

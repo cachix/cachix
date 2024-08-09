@@ -1,4 +1,4 @@
-module Cachix.Client.Daemon.SocketStore
+module Cachix.Daemon.SocketStore
   ( newSocketStore,
     addSocket,
     removeSocket,
@@ -7,14 +7,14 @@ module Cachix.Client.Daemon.SocketStore
   )
 where
 
-import Cachix.Client.Daemon.Types.SocketStore (Socket (..), SocketId, SocketStore (..))
+import Cachix.Daemon.Types.SocketStore (Socket (..), SocketId, SocketStore (..))
 import Control.Concurrent.STM.TVar
 import Control.Monad.IO.Unlift (MonadUnliftIO)
-import qualified Data.HashMap.Strict as HashMap
-import qualified Data.UUID.V4 as UUID
-import qualified Network.Socket
+import Data.HashMap.Strict qualified as HashMap
+import Data.UUID.V4 qualified as UUID
+import Network.Socket qualified
 import Protolude hiding (toList)
-import qualified UnliftIO.Async as Async
+import UnliftIO.Async qualified as Async
 
 newSocketStore :: (MonadIO m) => m SocketStore
 newSocketStore = SocketStore <$> liftIO (newTVarIO mempty)

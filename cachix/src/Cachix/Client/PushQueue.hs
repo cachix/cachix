@@ -14,18 +14,18 @@ where
 
 import Cachix.Client.CNix (filterInvalidStorePath)
 import Cachix.Client.Push (getMissingPathsForClosure)
-import qualified Cachix.Client.Push as Push
+import Cachix.Client.Push qualified as Push
 import Cachix.Client.Retry (retryAll)
 import Control.Concurrent.Async
 import Control.Concurrent.Extra (once)
 import Control.Concurrent.STM (TVar, modifyTVar', newTVarIO, readTVar)
-import qualified Control.Concurrent.STM.Lock as Lock
-import qualified Control.Concurrent.STM.TBQueue as TBQueue
-import qualified Data.Set as S
+import Control.Concurrent.STM.Lock qualified as Lock
+import Control.Concurrent.STM.TBQueue qualified as TBQueue
+import Data.Set qualified as S
 import Hercules.CNix.Store (StorePath)
 import Protolude
-import qualified System.Posix.Signals as Signals
-import qualified System.Systemd.Daemon as Systemd
+import System.Posix.Signals qualified as Signals
+import System.Systemd.Daemon qualified as Systemd
 
 type Queue = TBQueue.TBQueue StorePath
 

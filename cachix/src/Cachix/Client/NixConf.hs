@@ -33,10 +33,10 @@ module Cachix.Client.NixConf
   )
 where
 
-import qualified Cachix.Client.URI as URI
-import qualified Cachix.Types.BinaryCache as BinaryCache
+import Cachix.Client.URI qualified as URI
+import Cachix.Types.BinaryCache qualified as BinaryCache
 import Data.List (nub)
-import qualified Data.Text as T
+import Data.Text qualified as T
 import Protolude hiding (toS)
 import Protolude.Conv (toS)
 import System.Directory
@@ -46,7 +46,7 @@ import System.Directory
     getXdgDirectory,
   )
 import System.FilePath.Posix (takeDirectory)
-import qualified Text.Megaparsec as Mega
+import Text.Megaparsec qualified as Mega
 import Text.Megaparsec.Char
 
 data NixConfLine

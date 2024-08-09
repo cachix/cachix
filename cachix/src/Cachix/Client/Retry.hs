@@ -9,7 +9,7 @@ module Cachix.Client.Retry
 where
 
 import Cachix.Client.Exception (CachixException (..))
-import qualified Control.Concurrent.Async as Async
+import Control.Concurrent.Async qualified as Async
 import Control.Exception.Safe (Handler (..))
 import Control.Monad.Catch (MonadCatch, MonadMask, handleJust, throwM)
 import Control.Retry
@@ -24,13 +24,13 @@ import Data.Time
     rfc822DateFormat,
   )
 import GHC.Read (Read (readPrec))
-import qualified Network.HTTP.Client as HTTP
+import Network.HTTP.Client qualified as HTTP
 import Network.HTTP.Types.Header (hRetryAfter)
-import qualified Network.HTTP.Types.Status as HTTP
+import Network.HTTP.Types.Status qualified as HTTP
 import Protolude hiding (Handler (..), handleJust)
 import Servant.Client (ClientError (..))
-import qualified Servant.Client as Servant
-import qualified Text.ParserCombinators.ReadPrec as ReadPrec (lift)
+import Servant.Client qualified as Servant
+import Text.ParserCombinators.ReadPrec qualified as ReadPrec (lift)
 
 defaultRetryPolicy :: RetryPolicy
 defaultRetryPolicy =

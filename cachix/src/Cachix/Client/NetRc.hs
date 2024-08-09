@@ -6,10 +6,10 @@ where
 
 import Cachix.API.Error (escalateAs)
 import Cachix.Client.Exception (CachixException (NetRcParseError))
-import qualified Cachix.Types.BinaryCache as BinaryCache
-import qualified Data.ByteString as BS
+import Cachix.Types.BinaryCache qualified as BinaryCache
+import Data.ByteString qualified as BS
 import Data.List (nubBy)
-import qualified Data.Text as T
+import Data.Text qualified as T
 import Network.NetRc
 import Protolude hiding (toS)
 import Protolude.Conv

@@ -43,40 +43,40 @@ module Cachix.Client.Push
   )
 where
 
-import qualified Cachix.API as API
+import Cachix.API qualified as API
 import Cachix.API.Error
 import Cachix.API.Signing (fingerprint, passthroughHashSink, passthroughHashSinkB16, passthroughSizeSink)
 import Cachix.Client.Exception (CachixException (..))
-import qualified Cachix.Client.Push.S3 as Push.S3
+import Cachix.Client.Push.S3 qualified as Push.S3
 import Cachix.Client.Retry (retryAll, retryHttp)
 import Cachix.Client.Secrets
 import Cachix.Client.Servant
-import qualified Cachix.Types.BinaryCache as BinaryCache
-import qualified Cachix.Types.MultipartUpload as Multipart
-import qualified Cachix.Types.NarInfoCreate as Api
-import qualified Cachix.Types.NarInfoHash as NarInfoHash
+import Cachix.Types.BinaryCache qualified as BinaryCache
+import Cachix.Types.MultipartUpload qualified as Multipart
+import Cachix.Types.NarInfoCreate qualified as Api
+import Cachix.Types.NarInfoHash qualified as NarInfoHash
 import Conduit (MonadUnliftIO)
 import Control.Concurrent.Async (mapConcurrently)
-import qualified Control.Concurrent.QSem as QSem
+import Control.Concurrent.QSem qualified as QSem
 import Control.Exception.Safe (MonadCatch, MonadMask, throwM)
 import Control.Monad.Trans.Resource (ResourceT)
 import Control.Retry (RetryStatus)
 import Crypto.Sign.Ed25519
-import qualified Data.ByteString.Base64 as B64
+import Data.ByteString.Base64 qualified as B64
 import Data.Conduit
 import Data.Conduit.ByteString (ChunkSize)
-import qualified Data.Conduit.Lzma as Lzma (compress)
-import qualified Data.Conduit.Zstd as Zstd (compress)
+import Data.Conduit.Lzma qualified as Lzma (compress)
+import Data.Conduit.Zstd qualified as Zstd (compress)
 import Data.IORef
-import qualified Data.Set as Set
+import Data.Set qualified as Set
 import Data.String.Here (iTrim)
-import qualified Data.Text as T
+import Data.Text qualified as T
 import Hercules.CNix (StorePath)
-import qualified Hercules.CNix.Std.Set as Std.Set
+import Hercules.CNix.Std.Set qualified as Std.Set
 import Hercules.CNix.Store (Store)
-import qualified Hercules.CNix.Store as Store
+import Hercules.CNix.Store qualified as Store
 import Network.HTTP.Types (status401, status404)
-import qualified Nix.NarInfo as NarInfo
+import Nix.NarInfo qualified as NarInfo
 import Protolude hiding (toS)
 import Protolude.Conv
 import Servant.API
@@ -84,7 +84,7 @@ import Servant.Auth ()
 import Servant.Auth.Client
 import Servant.Client.Streaming
 import Servant.Conduit ()
-import qualified System.Nix.Base32
+import System.Nix.Base32 qualified
 import System.Nix.Nar
 
 -- | A secret for authenticating with a cache.

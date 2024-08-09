@@ -4,9 +4,9 @@ module Cachix.Daemon.PushManager.PushJob
   )
 where
 
-import qualified Cachix.Daemon.Protocol as Protocol
+import Cachix.Daemon.Protocol qualified as Protocol
 import Cachix.Daemon.Types.PushManager as Types
-import qualified Data.Set as Set
+import Data.Set qualified as Set
 import Data.Time (NominalDiffTime, UTCTime, diffUTCTime, getCurrentTime)
 import Protolude
 

@@ -1,7 +1,7 @@
 module Data.Conduit.ByteString where
 
 import Conduit (MonadUnliftIO)
-import qualified Data.ByteString as BS
+import Data.ByteString qualified as BS
 import Data.ByteString.Internal (ByteString (PS), mallocByteString)
 import Data.ByteString.Unsafe (unsafeIndex)
 import Data.Conduit (ConduitT, await, yield, (.|))

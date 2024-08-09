@@ -5,13 +5,13 @@ where
 
 import Cachix.Client.CNix (filterInvalidStorePath)
 import Cachix.Client.Push
-import qualified Cachix.Client.PushQueue as PushQueue
-import qualified Control.Concurrent.STM.TBQueue as TBQueue
+import Cachix.Client.PushQueue qualified as PushQueue
+import Control.Concurrent.STM.TBQueue qualified as TBQueue
 import Hercules.CNix.Store (Store)
-import qualified Hercules.CNix.Store as Store
+import Hercules.CNix.Store qualified as Store
 import Protolude
 import System.FSNotify
-import qualified System.Systemd.Daemon as Systemd
+import System.Systemd.Daemon qualified as Systemd
 
 startWorkers :: Store -> Int -> PushParams IO () -> IO ()
 startWorkers store numWorkers pushParams = do

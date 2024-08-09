@@ -6,7 +6,7 @@ module Cachix.Daemon.Types.PushEvent
   )
 where
 
-import qualified Cachix.Daemon.Protocol as Protocol
+import Cachix.Daemon.Protocol qualified as Protocol
 import Control.Retry (RetryStatus (..))
 import Data.Aeson (FromJSON, ToJSON)
 import Data.Time (UTCTime)

@@ -5,8 +5,8 @@ import Control.Concurrent.STM.TMChan
 import Control.Concurrent.STM.TVar
 import Data.Aeson as Aeson (ToJSON)
 import Data.HashMap.Strict (HashMap)
-import qualified Data.HashMap.Strict as HashMap
-import qualified Network.Socket as Socket
+import Data.HashMap.Strict qualified as HashMap
+import Network.Socket qualified as Socket
 import Protolude
 
 data SubscriptionManager k v = SubscriptionManager

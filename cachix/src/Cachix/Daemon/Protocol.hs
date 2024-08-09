@@ -12,11 +12,11 @@ module Cachix.Daemon.Protocol
   )
 where
 
-import qualified Data.Aeson as Aeson
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as LBS
+import Data.Aeson qualified as Aeson
+import Data.ByteString qualified as BS
+import Data.ByteString.Lazy qualified as LBS
 import Data.UUID (UUID)
-import qualified Data.UUID.V4 as UUID
+import Data.UUID.V4 qualified as UUID
 import Protolude
 
 -- | JSON messages that the client can send to the daemon

@@ -46,34 +46,34 @@ import Cachix.Client.OptionsParser as Client.OptionsParser
   )
 import Cachix.Client.Push as Client.Push
 import Cachix.Client.Retry (retryAll)
-import qualified Cachix.Daemon.Protocol as Protocol
-import qualified Cachix.Daemon.PushManager.PushJob as PushJob
+import Cachix.Daemon.Protocol qualified as Protocol
+import Cachix.Daemon.PushManager.PushJob qualified as PushJob
 import Cachix.Daemon.Types.Log (Logger)
 import Cachix.Daemon.Types.PushEvent
 import Cachix.Daemon.Types.PushManager
-import qualified Cachix.Types.BinaryCache as BinaryCache
-import qualified Conduit as C
-import qualified Control.Concurrent.Async as Async
+import Cachix.Types.BinaryCache qualified as BinaryCache
+import Conduit qualified as C
+import Control.Concurrent.Async qualified as Async
 import Control.Concurrent.STM.TBMQueue
 import Control.Concurrent.STM.TVar
-import qualified Control.Monad.Catch as E
+import Control.Monad.Catch qualified as E
 import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
 import Control.Retry (RetryStatus)
-import qualified Data.ByteString as BS
-import qualified Data.HashMap.Strict as HashMap
+import Data.ByteString qualified as BS
+import Data.HashMap.Strict qualified as HashMap
 import Data.IORef
-import qualified Data.Set as Set
-import qualified Data.Text as T
+import Data.Set qualified as Set
+import Data.Text qualified as T
 import Data.Time (UTCTime, diffUTCTime, getCurrentTime, secondsToNominalDiffTime)
 import Hercules.CNix (StorePath)
 import Hercules.CNix.Store (Store, parseStorePath, storePathToPath)
-import qualified Katip
+import Katip qualified
 import Protolude hiding (toS)
 import Protolude.Conv (toS)
 import Servant.Auth ()
 import Servant.Auth.Client
 import Servant.Conduit ()
-import qualified UnliftIO.QSem as QSem
+import UnliftIO.QSem qualified as QSem
 
 newPushManagerEnv :: (MonadIO m) => PushOptions -> PushParams PushManager () -> OnPushEvent -> Logger -> m PushManagerEnv
 newPushManagerEnv pushOptions pmPushParams onPushEvent pmLogger = liftIO $ do

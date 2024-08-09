@@ -10,8 +10,8 @@ where
 
 -- TODO: * Auth token
 import Crypto.Sign.Ed25519
-import qualified Data.ByteString.Base64 as B64
-import qualified Data.ByteString.Char8 as BC
+import Data.ByteString.Base64 qualified as B64
+import Data.ByteString.Char8 qualified as BC
 import Protolude hiding (toS)
 import Protolude.Conv
 

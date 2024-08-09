@@ -3,8 +3,8 @@ module Cachix.Client
   )
 where
 
-import qualified Cachix.Client.Command as Command
-import qualified Cachix.Client.Config as Config
+import Cachix.Client.Command qualified as Command
+import Cachix.Client.Config qualified as Config
 import Cachix.Client.Env (cachixoptions, mkEnv)
 import Cachix.Client.Exception (CachixException (DeprecatedCommand))
 import Cachix.Client.OptionsParser
@@ -14,16 +14,16 @@ import Cachix.Client.OptionsParser
     getOpts,
   )
 import Cachix.Client.Version (cachixVersion)
-import qualified Cachix.Daemon as Daemon
-import qualified Cachix.Daemon.Client as Daemon.Client
+import Cachix.Daemon qualified as Daemon
+import Cachix.Daemon.Client qualified as Daemon.Client
 import Cachix.Deploy.ActivateCommand as ActivateCommand
-import qualified Cachix.Deploy.Agent as AgentCommand
-import qualified Cachix.Deploy.OptionsParser as DeployOptions
-import qualified Hercules.CNix as CNix
-import qualified Hercules.CNix.Util as CNix.Util
+import Cachix.Deploy.Agent qualified as AgentCommand
+import Cachix.Deploy.OptionsParser qualified as DeployOptions
+import Hercules.CNix qualified as CNix
+import Hercules.CNix.Util qualified as CNix.Util
 import Protolude
 import System.Console.AsciiProgress (displayConsoleRegions)
-import qualified System.Posix.Signals as Signal
+import System.Posix.Signals qualified as Signal
 
 main :: IO ()
 main = displayConsoleRegions $ do

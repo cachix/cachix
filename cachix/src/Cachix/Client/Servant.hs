@@ -10,15 +10,15 @@ module Cachix.Client.Servant
   )
 where
 
-import qualified Cachix.API as API
-import qualified Cachix.API.Deploy.V1 as API.Deploy.V1
-import qualified Cachix.API.Deploy.V2 as API.Deploy.V2
+import Cachix.API qualified as API
+import Cachix.API.Deploy.V1 qualified as API.Deploy.V1
+import Cachix.API.Deploy.V2 qualified as API.Deploy.V2
 import Cachix.Types.ContentTypes ()
 import Network.HTTP.Types (Status)
 import Protolude
 import Servant.API.Generic
 import Servant.Auth.Client ()
-import qualified Servant.Client
+import Servant.Client qualified
 import Servant.Client.Streaming
 import Servant.Conduit ()
 

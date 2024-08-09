@@ -10,9 +10,9 @@ module Cachix.Deploy.Lock
   )
 where
 
-import qualified Lukko as Lock
+import Lukko qualified as Lock
 import Protolude hiding ((<.>))
-import qualified System.Directory as Directory
+import System.Directory qualified as Directory
 import System.FilePath ((<.>), (</>))
 import System.Posix (getProcessID)
 import System.Posix.Types (CPid (..))

@@ -3,39 +3,39 @@
 
 module Cachix.Deploy.Agent where
 
-import qualified Cachix.API.WebSocketSubprotocol as WSS
-import qualified Cachix.Client.Config as Config
+import Cachix.API.WebSocketSubprotocol qualified as WSS
+import Cachix.Client.Config qualified as Config
 import Cachix.Client.URI (URI)
-import qualified Cachix.Client.URI as URI
+import Cachix.Client.URI qualified as URI
 import Cachix.Client.Version (versionNumber)
-import qualified Cachix.Deploy.Deployment as Deployment
-import qualified Cachix.Deploy.Lock as Lock
-import qualified Cachix.Deploy.Log as Log
-import qualified Cachix.Deploy.OptionsParser as CLI
-import qualified Cachix.Deploy.StdinProcess as StdinProcess
-import qualified Cachix.Deploy.Websocket as WebSocket
-import qualified Control.Concurrent.Async as Async
+import Cachix.Deploy.Deployment qualified as Deployment
+import Cachix.Deploy.Lock qualified as Lock
+import Cachix.Deploy.Log qualified as Log
+import Cachix.Deploy.OptionsParser qualified as CLI
+import Cachix.Deploy.StdinProcess qualified as StdinProcess
+import Cachix.Deploy.Websocket qualified as WebSocket
+import Control.Concurrent.Async qualified as Async
 import Control.Concurrent.Extra (once)
-import qualified Control.Concurrent.MVar as MVar
+import Control.Concurrent.MVar qualified as MVar
 import Control.Exception.Safe (onException)
-import qualified Control.Exception.Safe as Safe
-import qualified Control.Retry as Retry
-import qualified Data.Aeson as Aeson
+import Control.Exception.Safe qualified as Safe
+import Control.Retry qualified as Retry
+import Data.Aeson qualified as Aeson
 import Data.IORef
 import Data.String (String)
-import qualified Katip as K
+import Katip qualified as K
 import Paths_cachix (getBinDir)
 import Protolude hiding (onException, toS, (<.>))
 import Protolude.Conv
-import qualified System.Directory as Directory
+import System.Directory qualified as Directory
 import System.Environment (getEnv, lookupEnv)
 import System.FilePath ((<.>), (</>))
-import qualified System.Posix.Files as Posix.Files
-import qualified System.Posix.Process as Posix
-import qualified System.Posix.Signals as Signals
-import qualified System.Posix.Types as Posix
-import qualified System.Posix.User as Posix.User
-import qualified System.Timeout as Timeout
+import System.Posix.Files qualified as Posix.Files
+import System.Posix.Process qualified as Posix
+import System.Posix.Signals qualified as Signals
+import System.Posix.Types qualified as Posix
+import System.Posix.User qualified as Posix.User
+import System.Timeout qualified as Timeout
 
 type ServiceWebSocket = WebSocket.WebSocket (WSS.Message WSS.AgentCommand) (WSS.Message WSS.BackendCommand)
 

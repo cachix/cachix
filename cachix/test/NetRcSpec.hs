@@ -1,6 +1,6 @@
 module NetRcSpec where
 
-import qualified Cachix.Client.NetRc as NetRc
+import Cachix.Client.NetRc qualified as NetRc
 import Cachix.Types.BinaryCache (BinaryCache (..), CompressionMethod (..))
 import Cachix.Types.Permission (Permission (..))
 import Protolude

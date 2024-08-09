@@ -4,7 +4,7 @@ module Cachix.Daemon.Types.Log
   )
 where
 
-import qualified Katip
+import Katip qualified
 import Protolude
 
 -- | The log level to use for logging

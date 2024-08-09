@@ -17,15 +17,15 @@ module Cachix.Client.InstallationMode
 where
 
 import Cachix.Client.Config (Config)
-import qualified Cachix.Client.Config as Config
+import Cachix.Client.Config qualified as Config
 import Cachix.Client.Exception (CachixException (..))
-import qualified Cachix.Client.NetRc as NetRc
-import qualified Cachix.Client.NixConf as NixConf
-import qualified Cachix.Client.URI as URI
-import qualified Cachix.Types.BinaryCache as BinaryCache
-import qualified Data.Maybe
+import Cachix.Client.NetRc qualified as NetRc
+import Cachix.Client.NixConf qualified as NixConf
+import Cachix.Client.URI qualified as URI
+import Cachix.Types.BinaryCache qualified as BinaryCache
+import Data.Maybe qualified
 import Data.String.Here
-import qualified Data.Text as T
+import Data.Text qualified as T
 import Protolude hiding (toS)
 import Protolude.Conv (toS)
 import System.Directory (Permissions, createDirectoryIfMissing, doesFileExist, getPermissions, writable)

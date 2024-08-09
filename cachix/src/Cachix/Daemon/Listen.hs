@@ -9,20 +9,20 @@ module Cachix.Daemon.Listen
 where
 
 import Cachix.Client.Config.Orphans ()
-import qualified Cachix.Daemon.EventLoop as EventLoop
+import Cachix.Daemon.EventLoop qualified as EventLoop
 import Cachix.Daemon.Protocol as Protocol
 import Cachix.Daemon.Types (DaemonError, toExitCodeInt)
 import Cachix.Daemon.Types.EventLoop (EventLoop)
 import Cachix.Daemon.Types.SocketStore (SocketId)
 import Control.Exception.Safe (catchAny)
-import qualified Control.Monad.Catch as E
-import qualified Data.Aeson as Aeson
-import qualified Data.ByteString as BS
-import qualified Katip
+import Control.Monad.Catch qualified as E
+import Data.Aeson qualified as Aeson
+import Data.ByteString qualified as BS
+import Katip qualified
 import Network.Socket (Socket)
-import qualified Network.Socket as Socket
-import qualified Network.Socket.ByteString as Socket.BS
-import qualified Network.Socket.ByteString.Lazy as Socket.LBS
+import Network.Socket qualified as Socket
+import Network.Socket.ByteString qualified as Socket.BS
+import Network.Socket.ByteString.Lazy qualified as Socket.LBS
 import Protolude
 import System.Directory
   ( XdgDirectory (..),
@@ -30,7 +30,7 @@ import System.Directory
     getXdgDirectory,
     removeFile,
   )
-import qualified System.Environment as System
+import System.Environment qualified as System
 import System.FilePath ((</>))
 import System.IO.Error (isDoesNotExistError, isResourceVanishedError)
 

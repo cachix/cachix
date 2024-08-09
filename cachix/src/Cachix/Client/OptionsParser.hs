@@ -26,20 +26,20 @@ module Cachix.Client.OptionsParser
   )
 where
 
-import qualified Cachix.Client.Config as Config
-import qualified Cachix.Client.InstallationMode as InstallationMode
+import Cachix.Client.Config qualified as Config
+import Cachix.Client.InstallationMode qualified as InstallationMode
 import Cachix.Client.URI (URI)
-import qualified Cachix.Client.URI as URI
-import qualified Cachix.Deploy.OptionsParser as DeployOptions
+import Cachix.Client.URI qualified as URI
+import Cachix.Deploy.OptionsParser qualified as DeployOptions
 import Cachix.Types.BinaryCache (BinaryCacheName)
-import qualified Cachix.Types.BinaryCache as BinaryCache
+import Cachix.Types.BinaryCache qualified as BinaryCache
 import Cachix.Types.PinCreate (Keep (..))
 import Data.Conduit.ByteString (ChunkSize)
-import qualified Data.Text as T
+import Data.Text qualified as T
 import Options.Applicative
 import Protolude hiding (toS)
 import Protolude.Conv
-import qualified Prelude
+import Prelude qualified
 
 data Flags = Flags
   { configPath :: Config.ConfigPath,

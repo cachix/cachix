@@ -1,13 +1,13 @@
 module URISpec where
 
-import qualified Cachix.Client.URI as URI
-import qualified Data.Aeson as Aeson
-import qualified Data.ByteString.Lazy as BL
+import Cachix.Client.URI qualified as URI
+import Data.Aeson qualified as Aeson
+import Data.ByteString.Lazy qualified as BL
 import Data.Either.Extra
-import qualified Dhall
-import qualified Dhall.Core
+import Dhall qualified
+import Dhall.Core qualified
 import Protolude
-import qualified Servant.Client.Core as Servant
+import Servant.Client.Core qualified as Servant
 import Test.Hspec
 
 secureScheme :: ByteString

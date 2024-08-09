@@ -1,9 +1,9 @@
 module Cachix.Deploy.Deployment where
 
-import qualified Cachix.API.WebSocketSubprotocol as WSS
+import Cachix.API.WebSocketSubprotocol qualified as WSS
 import Cachix.Client.URI as Cachix
-import qualified Cachix.Deploy.Log as Log
-import qualified Data.Aeson as Aeson
+import Cachix.Deploy.Log qualified as Log
+import Data.Aeson qualified as Aeson
 import Protolude
 
 -- | Everything required for the standalone deployment binary to complete a

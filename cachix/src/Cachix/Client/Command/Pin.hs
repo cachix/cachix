@@ -1,16 +1,16 @@
 module Cachix.Client.Command.Pin (pin) where
 
-import qualified Cachix.API as API
+import Cachix.API qualified as API
 import Cachix.API.Error
 import Cachix.Client.CNix (followLinksToStorePath)
-import qualified Cachix.Client.Config as Config
+import Cachix.Client.Config qualified as Config
 import Cachix.Client.Env (Env (..))
 import Cachix.Client.Exception (CachixException (..))
 import Cachix.Client.OptionsParser (PinOptions (..))
 import Cachix.Client.Retry (retryHttp)
 import Cachix.Client.Servant
-import qualified Cachix.Types.PinCreate as PinCreate
-import qualified Data.Text as T
+import Cachix.Types.PinCreate qualified as PinCreate
+import Data.Text qualified as T
 import Hercules.CNix.Store (storePathToPath, withStore)
 import Protolude hiding (toS)
 import Protolude.Conv

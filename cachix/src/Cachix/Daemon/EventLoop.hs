@@ -17,7 +17,7 @@ import Control.Concurrent.STM.TBMQueue
     tryWriteTBMQueue,
   )
 import Data.Text.Lazy.Builder (toLazyText)
-import qualified Katip
+import Katip qualified
 import Protolude
 
 new :: (MonadIO m) => m (EventLoop a)

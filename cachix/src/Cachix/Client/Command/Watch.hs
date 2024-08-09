@@ -8,22 +8,22 @@ where
 
 import Cachix.Client.Command.Push
 import Cachix.Client.Env (Env (..))
-import qualified Cachix.Client.InstallationMode as InstallationMode
+import Cachix.Client.InstallationMode qualified as InstallationMode
 import Cachix.Client.OptionsParser
   ( DaemonOptions (..),
     PushOptions (..),
   )
 import Cachix.Client.Push
-import qualified Cachix.Client.WatchStore as WatchStore
-import qualified Cachix.Daemon as Daemon
-import qualified Cachix.Daemon.PostBuildHook as Daemon.PostBuildHook
-import qualified Cachix.Daemon.Progress as Daemon.Progress
+import Cachix.Client.WatchStore qualified as WatchStore
+import Cachix.Daemon qualified as Daemon
+import Cachix.Daemon.PostBuildHook qualified as Daemon.PostBuildHook
+import Cachix.Daemon.Progress qualified as Daemon.Progress
 import Cachix.Daemon.Types
 import Cachix.Types.BinaryCache (BinaryCacheName)
 import Conduit
-import qualified Control.Concurrent.Async as Async
-import qualified Data.Conduit.Combinators as C
-import qualified Data.Conduit.TMChan as C
+import Control.Concurrent.Async qualified as Async
+import Data.Conduit.Combinators qualified as C
+import Data.Conduit.TMChan qualified as C
 import Data.Generics.Labels ()
 import Data.HashMap.Strict as HashMap
 import Data.IORef
@@ -37,8 +37,8 @@ import System.Console.Pretty
 import System.Environment (getEnvironment)
 import System.IO.Error (isEOFError)
 import System.IO.Temp (withTempFile)
-import qualified System.Posix.Signals as Signals
-import qualified System.Process
+import System.Posix.Signals qualified as Signals
+import System.Process qualified
 
 watchStore :: Env -> PushOptions -> Text -> IO ()
 watchStore env opts name = do

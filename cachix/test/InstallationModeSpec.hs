@@ -1,7 +1,7 @@
 module InstallationModeSpec where
 
 import Cachix.Client.InstallationMode
-import qualified Cachix.Client.NixConf as NixConf
+import Cachix.Client.NixConf qualified as NixConf
 import Protolude
 import Test.Hspec
 

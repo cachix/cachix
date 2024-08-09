@@ -3,10 +3,10 @@
 
 module Cachix.Client.Command.Import where
 
-import qualified Amazonka
+import Amazonka qualified
 import Amazonka.Data.Body (ResponseBody (..))
-import qualified Amazonka.Data.Text
-import qualified Amazonka.S3
+import Amazonka.Data.Text qualified
+import Amazonka.S3 qualified
 import Amazonka.S3.GetObject (getObjectResponse_body)
 import Amazonka.S3.ListObjectsV2 (listObjectsV2Response_contents)
 import Amazonka.S3.Types.Object (object_key)
@@ -20,24 +20,24 @@ import Cachix.Client.OptionsParser
 import Cachix.Client.Push
 import Cachix.Client.Servant
 import Cachix.Client.URI (URI)
-import qualified Cachix.Client.URI as URI
+import Cachix.Client.URI qualified as URI
 import Conduit
 import Control.Retry (defaultRetryStatus)
-import qualified Data.Attoparsec.Text
-import qualified Data.Conduit.Combinators as C
+import Data.Attoparsec.Text qualified
+import Data.Conduit.Combinators qualified as C
 import Data.Conduit.ConcurrentMap (concurrentMapM_)
-import qualified Data.Conduit.List as CL
+import Data.Conduit.List qualified as CL
 import Data.Generics.Labels ()
-import qualified Data.Text as T
+import Data.Text qualified as T
 import Hercules.CNix.Store (parseStorePath)
 import Lens.Micro
-import qualified Network.HTTP.Client as HTTP
+import Network.HTTP.Client qualified as HTTP
 import Network.HTTP.Types (status404)
-import qualified Nix.NarInfo as NarInfo
+import Nix.NarInfo qualified as NarInfo
 import Protolude hiding (toS)
 import Protolude.Conv
 import Servant.API (NoContent (..))
-import qualified URI.ByteString as UBS
+import URI.ByteString qualified as UBS
 
 discoverAwsEnv :: Maybe ByteString -> Maybe ByteString -> IO Amazonka.Env
 discoverAwsEnv maybeEndpoint maybeRegion = do

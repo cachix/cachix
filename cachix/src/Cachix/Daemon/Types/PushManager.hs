@@ -17,8 +17,8 @@ module Cachix.Daemon.Types.PushManager
 where
 
 import Cachix.Client.Push (PushParams)
-import qualified Cachix.Daemon.Log as Log
-import qualified Cachix.Daemon.Protocol as Protocol
+import Cachix.Daemon.Log qualified as Log
+import Cachix.Daemon.Protocol qualified as Protocol
 import Cachix.Daemon.Types.Log (Logger)
 import Cachix.Daemon.Types.PushEvent (PushEvent (..))
 import Control.Concurrent.STM.TBMQueue
@@ -27,7 +27,7 @@ import Control.Monad.Catch
 import Control.Monad.IO.Unlift (MonadUnliftIO)
 import Data.HashMap.Strict (HashMap)
 import Data.Time (UTCTime)
-import qualified Katip
+import Katip qualified
 import Protolude
 
 data Task

@@ -1,7 +1,7 @@
 module Cachix.Client.CNix where
 
 import Hercules.CNix.Store (Store, StorePath)
-import qualified Hercules.CNix.Store as Store
+import Hercules.CNix.Store qualified as Store
 import Language.C.Inline.Cpp.Exception
 import Protolude
 import System.Console.Pretty (Color (..), Style (..), color, style)

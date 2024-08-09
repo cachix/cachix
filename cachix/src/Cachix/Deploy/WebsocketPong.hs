@@ -3,9 +3,9 @@
 module Cachix.Deploy.WebsocketPong where
 
 import Data.IORef (IORef)
-import qualified Data.IORef as IORef
+import Data.IORef qualified as IORef
 import Data.Time.Clock (UTCTime, diffUTCTime, getCurrentTime, nominalDiffTimeToSeconds)
-import qualified Network.WebSockets as WS
+import Network.WebSockets qualified as WS
 import Protolude
 
 type LastPongState = IORef UTCTime

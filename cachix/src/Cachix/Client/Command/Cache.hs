@@ -1,12 +1,12 @@
 module Cachix.Client.Command.Cache (use, remove) where
 
-import qualified Cachix.API as API
+import Cachix.API qualified as API
 import Cachix.API.Error
-import qualified Cachix.Client.Command.Push as Push
-import qualified Cachix.Client.Config as Config
+import Cachix.Client.Command.Push qualified as Push
+import Cachix.Client.Config qualified as Config
 import Cachix.Client.Env (Env (..))
 import Cachix.Client.Exception (CachixException (..))
-import qualified Cachix.Client.InstallationMode as InstallationMode
+import Cachix.Client.InstallationMode qualified as InstallationMode
 import Cachix.Client.NixVersion (assertNixVersion)
 import Cachix.Client.Retry (retryHttp)
 import Cachix.Client.Servant

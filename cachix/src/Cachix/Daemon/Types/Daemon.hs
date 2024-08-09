@@ -12,8 +12,8 @@ where
 import Cachix.Client.Config.Orphans ()
 import Cachix.Client.Env as Env
 import Cachix.Client.OptionsParser (PushOptions)
-import qualified Cachix.Daemon.Log as Log
-import qualified Cachix.Daemon.Protocol as Protocol
+import Cachix.Daemon.Log qualified as Log
+import Cachix.Daemon.Protocol qualified as Protocol
 import Cachix.Daemon.ShutdownLatch (ShutdownLatch)
 import Cachix.Daemon.Subscription (SubscriptionManager)
 import Cachix.Daemon.Types.Error (DaemonError (DaemonUnhandledException), UnhandledException (..))
@@ -22,12 +22,12 @@ import Cachix.Daemon.Types.Log (Logger)
 import Cachix.Daemon.Types.PushEvent (PushEvent)
 import Cachix.Daemon.Types.PushManager (PushManagerEnv (..))
 import Cachix.Daemon.Types.SocketStore (SocketStore)
-import qualified Cachix.Daemon.Worker as Worker
+import Cachix.Daemon.Worker qualified as Worker
 import Cachix.Types.BinaryCache (BinaryCache, BinaryCacheName)
-import qualified Control.Exception.Safe as Safe
+import Control.Exception.Safe qualified as Safe
 import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
 import Control.Monad.IO.Unlift (MonadUnliftIO)
-import qualified Katip
+import Katip qualified
 import Protolude hiding (bracketOnError)
 import System.Posix.Types (ProcessID)
 

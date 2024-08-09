@@ -11,9 +11,9 @@ module Cachix.Client.Command.Push
   )
 where
 
-import qualified Cachix.API as API
+import Cachix.API qualified as API
 import Cachix.Client.CNix (filterInvalidStorePath, followLinksToStorePath)
-import qualified Cachix.Client.Config as Config
+import Cachix.Client.Config qualified as Config
 import Cachix.Client.Env (Env (..))
 import Cachix.Client.Exception (CachixException (..))
 import Cachix.Client.HumanSize (humanSize)
@@ -24,14 +24,14 @@ import Cachix.Client.Retry (retryHttp)
 import Cachix.Client.Secrets
 import Cachix.Client.Servant
 import Cachix.Types.BinaryCache (BinaryCacheName)
-import qualified Cachix.Types.BinaryCache as BinaryCache
+import Cachix.Types.BinaryCache qualified as BinaryCache
 import Control.Exception.Safe (throwM)
 import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
 import Control.Retry (RetryStatus (rsIterNumber))
-import qualified Data.ByteString as BS
-import qualified Data.Conduit as Conduit
+import Data.ByteString qualified as BS
+import Data.Conduit qualified as Conduit
 import Data.String.Here
-import qualified Data.Text as T
+import Data.Text qualified as T
 import Hercules.CNix (StorePath)
 import Hercules.CNix.Store (Store, storePathToPath, withStore)
 import Network.HTTP.Types (status401, status404)

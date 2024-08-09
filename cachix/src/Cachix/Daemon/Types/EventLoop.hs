@@ -6,7 +6,7 @@ module Cachix.Daemon.Types.EventLoop
   )
 where
 
-import qualified Cachix.Daemon.Protocol as Protocol
+import Cachix.Daemon.Protocol qualified as Protocol
 import Cachix.Daemon.Types.SocketStore (SocketId)
 import Control.Concurrent.STM.TBMQueue (TBMQueue)
 import Network.Socket (Socket)

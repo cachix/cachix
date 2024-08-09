@@ -9,30 +9,30 @@ module Cachix.Client.Push.S3
   )
 where
 
-import qualified Cachix.API as API
+import Cachix.API qualified as API
 import Cachix.API.Error
 import Cachix.Client.Retry (retryHttp)
 import Cachix.Client.Servant (cachixClient)
 import Cachix.Types.BinaryCache
-import qualified Cachix.Types.MultipartUpload as Multipart
+import Cachix.Types.MultipartUpload qualified as Multipart
 import Conduit (MonadResource, MonadUnliftIO)
 import Control.DeepSeq (rwhnf)
 import Crypto.Hash (Digest, MD5)
-import qualified Crypto.Hash as Crypto
+import Crypto.Hash qualified as Crypto
 import Data.ByteArray.Encoding (Base (..), convertToBase)
 import Data.Conduit (ConduitT, handleC, (.|))
 import Data.Conduit.ByteString (ChunkSize, chunkStream)
-import qualified Data.Conduit.Combinators as CC
+import Data.Conduit.Combinators qualified as CC
 import Data.Conduit.ConcurrentMap (concurrentMapM_)
 import Data.List (lookup)
-import qualified Data.List.NonEmpty as NonEmpty
+import Data.List.NonEmpty qualified as NonEmpty
 import Data.UUID (UUID)
 import Network.HTTP.Client as HTTP
-import qualified Network.HTTP.Types.Header as HTTP
+import Network.HTTP.Types.Header qualified as HTTP
 import Protolude
 import Servant.Auth ()
 import Servant.Auth.Client
-import qualified Servant.Client as Client
+import Servant.Client qualified as Client
 import Servant.Client.Streaming
 import Servant.Conduit ()
 

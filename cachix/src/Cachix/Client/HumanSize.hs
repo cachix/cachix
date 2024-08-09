@@ -2,7 +2,7 @@ module Cachix.Client.HumanSize where
 
 import Protolude
 import Text.Printf (printf)
-import qualified Prelude
+import Prelude qualified
 
 humanSize :: Double -> Text
 humanSize size

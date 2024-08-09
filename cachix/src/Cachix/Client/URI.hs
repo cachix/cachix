@@ -25,20 +25,20 @@ module Cachix.Client.URI
 where
 
 import Control.Monad (fail)
-import qualified Data.Aeson as Aeson
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Char8 as Char8
+import Data.Aeson qualified as Aeson
+import Data.ByteString qualified as BS
+import Data.ByteString.Char8 qualified as Char8
 import Data.Either.Validation (Validation (Failure, Success))
-import qualified Data.Map.Strict as Map
+import Data.Map.Strict qualified as Map
 import Data.Maybe (fromJust)
 import Data.String
-import qualified Dhall
-import qualified Dhall.Core
+import Dhall qualified
+import Dhall.Core qualified
 import Protolude hiding (toS)
 import Protolude.Conv
 import Servant.Client
-import qualified URI.ByteString as UBS
-import qualified URI.ByteString.QQ as UBS
+import URI.ByteString qualified as UBS
+import URI.ByteString.QQ qualified as UBS
 
 -- Default URIs
 

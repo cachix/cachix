@@ -3,9 +3,9 @@
 
 module Cachix.Client.Command.Config where
 
-import qualified Cachix.API as API
+import Cachix.API qualified as API
 import Cachix.API.Error
-import qualified Cachix.Client.Config as Config
+import Cachix.Client.Config qualified as Config
 import Cachix.Client.Env (Env (..))
 import Cachix.Client.Retry (retryHttp)
 import Cachix.Client.Secrets
@@ -13,12 +13,12 @@ import Cachix.Client.Secrets
     exportSigningKey,
   )
 import Cachix.Client.Servant
-import qualified Cachix.Types.SigningKeyCreate as SigningKeyCreate
+import Cachix.Types.SigningKeyCreate qualified as SigningKeyCreate
 import Crypto.Sign.Ed25519 (PublicKey (PublicKey), createKeypair)
-import qualified Data.ByteString.Base64 as B64
+import Data.ByteString.Base64 qualified as B64
 import Data.String.Here
-import qualified Data.Text as T
-import qualified Data.Text.IO as T.IO
+import Data.Text qualified as T
+import Data.Text.IO qualified as T.IO
 import Protolude hiding (toS)
 import Protolude.Conv
 import Servant.API (NoContent (..))

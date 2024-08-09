@@ -1,0 +1,186 @@
+module Cachix.Client.Command.Watch
+  ( watchExec,
+    watchStore,
+    watchExecDaemon,
+    watchExecStore,
+  )
+where
+
+import Cachix.Client.Command.Push
+import qualified Cachix.Client.Daemon as Daemon
+import qualified Cachix.Client.Daemon.PostBuildHook as Daemon.PostBuildHook
+import qualified Cachix.Client.Daemon.Progress as Daemon.Progress
+import Cachix.Client.Daemon.Types
+import Cachix.Client.Env (Env (..))
+import qualified Cachix.Client.InstallationMode as InstallationMode
+import Cachix.Client.OptionsParser
+  ( DaemonOptions (..),
+    PushOptions (..),
+  )
+import Cachix.Client.Push
+import qualified Cachix.Client.WatchStore as WatchStore
+import Cachix.Types.BinaryCache (BinaryCacheName)
+import Conduit
+import qualified Control.Concurrent.Async as Async
+import qualified Data.Conduit.Combinators as C
+import qualified Data.Conduit.TMChan as C
+import Data.Generics.Labels ()
+import Data.HashMap.Strict as HashMap
+import Data.IORef
+import Data.Text.IO (hGetLine)
+import GHC.IO.Handle (hDuplicate, hDuplicateTo)
+import Hercules.CNix.Store (withStore)
+import Protolude hiding (toS)
+import Protolude.Conv
+import Servant.Conduit ()
+import System.Console.Pretty
+import System.Environment (getEnvironment)
+import System.IO.Error (isEOFError)
+import System.IO.Temp (withTempFile)
+import qualified System.Posix.Signals as Signals
+import qualified System.Process
+
+watchStore :: Env -> PushOptions -> Text -> IO ()
+watchStore env opts name = do
+  withPushParams env opts name $ \pushParams ->
+    WatchStore.startWorkers (pushParamsStore pushParams) (numJobs opts) pushParams
+
+-- | Run a command and upload any new paths to the binary cache.
+--
+-- Registers a post-build hook if the user is trusted.
+-- Otherwise, falls back to watching the entire Nix store.
+watchExec :: Env -> PushOptions -> BinaryCacheName -> Text -> [Text] -> IO ()
+watchExec env pushOptions cacheName cmd args = do
+  nixEnv <- InstallationMode.getNixEnv
+
+  if InstallationMode.isTrusted nixEnv
+    then watchExecDaemon env pushOptions cacheName cmd args
+    else do
+      putErrText fallbackWarning
+      watchExecStore env pushOptions cacheName cmd args
+  where
+    fallbackWarning =
+      color Yellow "WARNING: " <> "failed to register a post-build hook for this command because you're not a trusted user. Falling back to watching the entire Nix store for new paths."
+
+-- | Run a command and push any new paths to the binary cache.
+--
+-- Requires the user to be a trusted user in a multi-user installation.
+watchExecDaemon :: Env -> PushOptions -> BinaryCacheName -> Text -> [Text] -> IO ()
+watchExecDaemon env pushOpts cacheName cmd args =
+  Daemon.PostBuildHook.withSetup Nothing $ \hookEnv ->
+    withTempFile (Daemon.PostBuildHook.tempDir hookEnv) "daemon-log-capture" $ \_ logHandle ->
+      withStore $ \store -> do
+        let daemonOptions = DaemonOptions {daemonSocketPath = Just (Daemon.PostBuildHook.daemonSock hookEnv)}
+        daemon <- Daemon.new env store daemonOptions (Just logHandle) pushOpts cacheName
+
+        exitCode <-
+          bracket (startDaemonThread daemon) (shutdownDaemonThread daemon logHandle) $ \_ -> do
+            processEnv <- getEnvironment
+            let newProcessEnv = Daemon.PostBuildHook.modifyEnv (Daemon.PostBuildHook.envVar hookEnv) processEnv
+            let process =
+                  (System.Process.proc (toS cmd) (toS <$> args))
+                    { System.Process.std_out = System.Process.Inherit,
+                      System.Process.env = Just newProcessEnv,
+                      System.Process.delegate_ctlc = True
+                    }
+            System.Process.withCreateProcess process $ \_ _ _ processHandle ->
+              System.Process.waitForProcess processHandle
+
+        exitWith exitCode
+  where
+    -- Launch the daemon in the background and subscribe to all push events
+    startDaemonThread daemon = do
+      daemonThread <- Async.async $ Daemon.run daemon
+      daemonChan <- Daemon.subscribe daemon
+      return (daemonThread, daemonChan)
+
+    shutdownDaemonThread daemon logHandle (daemonThread, daemonChan) = do
+      -- TODO: process and fold events into a state during command execution
+      daemonRes <- Async.withAsync (postWatchExec daemonChan) $ \_ -> do
+        Daemon.stopIO daemon
+        Async.wait daemonThread
+
+      -- Print the daemon log in case there was an internal error
+      case toExitCode daemonRes of
+        ExitFailure _ -> printLog logHandle
+        ExitSuccess -> return ()
+
+    postWatchExec chan = do
+      statsRef <- newIORef HashMap.empty
+      runConduit $
+        C.sourceTMChan chan
+          .| C.mapM_ (displayPushEvent statsRef)
+
+    -- Deduplicate events by path and retry status
+    displayPushEvent statsRef PushEvent {eventMessage} = liftIO $ do
+      stats <- readIORef statsRef
+      case eventMessage of
+        PushStorePathAttempt path pathSize retryStatus -> do
+          case HashMap.lookup path stats of
+            Just (progress, prevRetryStatus)
+              | prevRetryStatus == retryStatus -> return ()
+              | otherwise -> do
+                  newProgress <- Daemon.Progress.update progress retryStatus
+                  writeIORef statsRef $ HashMap.insert path (newProgress, retryStatus) stats
+            Nothing -> do
+              progress <- Daemon.Progress.new stderr (toS path) pathSize retryStatus
+              writeIORef statsRef $ HashMap.insert path (progress, retryStatus) stats
+        PushStorePathProgress path _ newBytes -> do
+          case HashMap.lookup path stats of
+            Nothing -> return ()
+            Just (progress, _) -> Daemon.Progress.tick progress newBytes
+        PushStorePathDone path -> do
+          mapM_ (Daemon.Progress.complete . fst) (HashMap.lookup path stats)
+        PushStorePathFailed path _ -> do
+          mapM_ (Daemon.Progress.fail . fst) (HashMap.lookup path stats)
+        _ -> return ()
+
+    printLog h = getLineLoop
+      where
+        getLineLoop = do
+          eline <- try $ hGetLine h
+          case eline of
+            Left e
+              | isEOFError e -> return ()
+              | otherwise -> putErrText $ "Error reading daemon log: " <> show e
+            Right line -> do
+              hPutStr stderr line
+              getLineLoop
+
+-- | Runs a command while watching the entire Nix store and pushing any new paths.
+--
+-- Prefer to use the more granular 'watchExecDaemon' whenever possible.
+watchExecStore :: Env -> PushOptions -> BinaryCacheName -> Text -> [Text] -> IO ()
+watchExecStore env pushOpts name cmd args =
+  withPushParams env pushOpts name $ \pushParams -> do
+    stdoutOriginal <- hDuplicate stdout
+    let process =
+          (System.Process.proc (toS cmd) (toS <$> args))
+            { System.Process.std_out = System.Process.UseHandle stdoutOriginal
+            }
+        watch = do
+          hDuplicateTo stderr stdout -- redirect all stdout to stderr
+          WatchStore.startWorkers (pushParamsStore pushParams) (numJobs pushOpts) pushParams
+
+    (_, exitCode) <-
+      Async.concurrently watch $ do
+        exitCode <-
+          bracketOnError
+            (getProcessHandle <$> System.Process.createProcess process)
+            ( \processHandle -> do
+                -- Terminate the process
+                uninterruptibleMask_ (System.Process.terminateProcess processHandle)
+                -- Wait for the process to clean up and exit
+                _ <- System.Process.waitForProcess processHandle
+                -- Stop watching the store and wait for all paths to be pushed
+                Signals.raiseSignal Signals.sigINT
+            )
+            System.Process.waitForProcess
+
+        -- Stop watching the store and wait for all paths to be pushed
+        Signals.raiseSignal Signals.sigINT
+        return exitCode
+
+    exitWith exitCode
+  where
+    getProcessHandle (_, _, _, processHandle) = processHandle

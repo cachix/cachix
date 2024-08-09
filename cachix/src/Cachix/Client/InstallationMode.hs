@@ -3,6 +3,7 @@
 module Cachix.Client.InstallationMode
   ( InstallationMode (..),
     NixEnv (..),
+    getNixEnv,
     getInstallationMode,
     addBinaryCache,
     removeBinaryCache,
@@ -27,7 +28,7 @@ import Data.String.Here
 import qualified Data.Text as T
 import Protolude hiding (toS)
 import Protolude.Conv (toS)
-import System.Directory (Permissions, createDirectoryIfMissing, getPermissions, writable)
+import System.Directory (Permissions, createDirectoryIfMissing, doesFileExist, getPermissions, writable)
 import System.Environment (lookupEnv)
 import System.FilePath (replaceFileName, (</>))
 import System.Process (readProcessWithExitCode)
@@ -76,6 +77,19 @@ toString (Install (NixConf.Custom _)) = "custom-nixconf"
 toString WriteNixOS = "nixos"
 toString UntrustedRequiresSudo = "untrusted-requires-sudo"
 toString UntrustedNixOS = "untrusted-nixos"
+
+getNixEnv :: IO NixEnv
+getNixEnv = do
+  user <- getUser
+  nc <- NixConf.read NixConf.Global
+  isTrusted <- isTrustedUser $ NixConf.readLines (catMaybes [nc]) NixConf.isTrustedUsers
+  isNixOS <- doesFileExist "/run/current-system/nixos-version"
+  return $
+    NixEnv
+      { isRoot = user == "root",
+        isTrusted = isTrusted,
+        isNixOS = isNixOS
+      }
 
 getInstallationMode :: NixEnv -> UseOptions -> InstallationMode
 getInstallationMode nixenv useOptions

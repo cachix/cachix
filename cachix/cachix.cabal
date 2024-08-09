@@ -66,8 +66,13 @@ library
   exposed-modules:
     Cachix.Client
     Cachix.Client.CNix
-    Cachix.Client.Commands
-    Cachix.Client.Commands.Push
+    Cachix.Client.Command
+    Cachix.Client.Command.Cache
+    Cachix.Client.Command.Config
+    Cachix.Client.Command.Import
+    Cachix.Client.Command.Pin
+    Cachix.Client.Command.Push
+    Cachix.Client.Command.Watch
     Cachix.Client.Config
     Cachix.Client.Config.Orphans
     Cachix.Client.Daemon

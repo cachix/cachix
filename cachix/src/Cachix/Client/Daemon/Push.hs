@@ -6,7 +6,7 @@ module Cachix.Client.Daemon.Push
 where
 
 import qualified Cachix.API as API
-import Cachix.Client.Commands.Push hiding (pushStrategy)
+import Cachix.Client.Command.Push hiding (pushStrategy)
 import qualified Cachix.Client.Daemon.PushManager as PushManager
 import Cachix.Client.Daemon.Types (PushManager)
 import Cachix.Client.Env (Env (..))

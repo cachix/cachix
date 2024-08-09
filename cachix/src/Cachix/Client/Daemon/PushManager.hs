@@ -40,7 +40,7 @@ module Cachix.Client.Daemon.PushManager
 where
 
 import Cachix.Client.CNix (filterInvalidStorePath, followLinksToStorePath)
-import Cachix.Client.Commands.Push hiding (pushStrategy)
+import Cachix.Client.Command.Push hiding (pushStrategy)
 import qualified Cachix.Client.Daemon.Protocol as Protocol
 import qualified Cachix.Client.Daemon.PushManager.PushJob as PushJob
 import Cachix.Client.Daemon.Types.Log (Logger)

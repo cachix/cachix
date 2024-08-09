@@ -1,7 +1,8 @@
 {-# LANGUAGE QuasiQuotes #-}
 
-module Cachix.Client.Commands.Push
-  ( pushStrategy,
+module Cachix.Client.Command.Push
+  ( push,
+    pushStrategy,
     withPushParams,
     withPushParams',
     handleCacheResponse,
@@ -11,10 +12,15 @@ module Cachix.Client.Commands.Push
 where
 
 import qualified Cachix.API as API
+import Cachix.Client.CNix (filterInvalidStorePath, followLinksToStorePath)
 import qualified Cachix.Client.Config as Config
 import Cachix.Client.Env (Env (..))
 import Cachix.Client.Exception (CachixException (..))
 import Cachix.Client.HumanSize (humanSize)
+import Cachix.Client.OptionsParser
+  ( PushArguments (..),
+    PushOptions (..),
+  )
 import Cachix.Client.OptionsParser as Options
   ( PushOptions (..),
   )
@@ -25,6 +31,7 @@ import Cachix.Client.Servant
 import Cachix.Types.BinaryCache (BinaryCacheName)
 import qualified Cachix.Types.BinaryCache as BinaryCache
 import Control.Exception.Safe (throwM)
+import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
 import Control.Retry (RetryStatus (rsIterNumber))
 import qualified Data.ByteString as BS
 import qualified Data.Conduit as Conduit
@@ -43,6 +50,38 @@ import System.Console.AsciiProgress
 import System.Console.Pretty
 import System.Environment (lookupEnv)
 import System.IO (hIsTerminalDevice)
+
+push :: Env -> PushArguments -> IO ()
+push env (PushPaths opts name cliPaths) = do
+  hasStdin <- not <$> hIsTerminalDevice stdin
+  inputStorePaths <-
+    case (hasStdin, cliPaths) of
+      (False, []) -> throwIO $ NoInput "You need to specify store paths either as stdin or as an command argument"
+      (True, []) -> T.words <$> getContents
+      -- If we get both stdin and cli args, prefer cli args.
+      -- This avoids hangs in cases where stdin is non-interactive but unused by caller
+      -- some programming environments always create a (non-interactive) stdin
+      -- that may or may not be written to by the caller.
+      -- This is somewhat like the behavior of `cat` for example.
+      (_, paths) -> return paths
+  withPushParams env opts name $ \pushParams -> do
+    normalized <- liftIO $
+      for inputStorePaths $ \path ->
+        runMaybeT $ do
+          storePath <- MaybeT $ followLinksToStorePath (pushParamsStore pushParams) (encodeUtf8 path)
+          MaybeT $ filterInvalidStorePath (pushParamsStore pushParams) storePath
+    pushedPaths <-
+      pushClosure
+        (mapConcurrentlyBounded (numJobs opts))
+        pushParams
+        (catMaybes normalized)
+    case (length normalized, length pushedPaths) of
+      (0, _) -> putErrText "Nothing to push."
+      (_, 0) -> putErrText "Nothing to push - all store paths are already on Cachix."
+      _ -> putErrText "\nAll done."
+push _ (PushWatchStore _ _) =
+  throwIO $
+    DeprecatedCommand "DEPRECATED: cachix watch-store has replaced cachix push --watch-store."
 
 pushStrategy :: Store -> Maybe Token -> PushOptions -> Text -> BinaryCache.CompressionMethod -> StorePath -> PushStrategy IO ()
 pushStrategy store authToken opts name compressionMethod storePath =

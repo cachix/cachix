@@ -10,7 +10,7 @@ module Cachix.Client.Daemon
   )
 where
 
-import qualified Cachix.Client.Commands.Push as Commands.Push
+import qualified Cachix.Client.Command.Push as Command.Push
 import qualified Cachix.Client.Config as Config
 import Cachix.Client.Config.Orphans ()
 import qualified Cachix.Client.Daemon.EventLoop as EventLoop
@@ -79,7 +79,7 @@ new daemonEnv nixStore daemonOptions daemonLogHandle daemonPushOptions daemonCac
   daemonSocketThread <- newEmptyMVar
   daemonClients <- SocketStore.newSocketStore
 
-  daemonPushSecret <- Commands.Push.getPushSecretRequired (config daemonEnv) daemonCacheName
+  daemonPushSecret <- Command.Push.getPushSecretRequired (config daemonEnv) daemonCacheName
   let authToken = getAuthTokenFromPushSecret daemonPushSecret
   daemonBinaryCache <- Push.getBinaryCache daemonEnv authToken daemonCacheName
 

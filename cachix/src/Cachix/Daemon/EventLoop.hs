@@ -1,4 +1,4 @@
-module Cachix.Client.Daemon.EventLoop
+module Cachix.Daemon.EventLoop
   ( new,
     send,
     sendIO,
@@ -9,7 +9,7 @@ module Cachix.Client.Daemon.EventLoop
   )
 where
 
-import Cachix.Client.Daemon.Types.EventLoop (DaemonEvent (..), EventLoop (..), EventLoopError (..))
+import Cachix.Daemon.Types.EventLoop (DaemonEvent (..), EventLoop (..), EventLoopError (..))
 import Control.Concurrent.STM.TBMQueue
   ( isFullTBMQueue,
     newTBMQueueIO,

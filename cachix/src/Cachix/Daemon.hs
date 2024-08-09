@@ -1,4 +1,4 @@
-module Cachix.Client.Daemon
+module Cachix.Daemon
   ( Types.Daemon,
     Types.runDaemon,
     new,
@@ -13,23 +13,23 @@ where
 import qualified Cachix.Client.Command.Push as Command.Push
 import qualified Cachix.Client.Config as Config
 import Cachix.Client.Config.Orphans ()
-import qualified Cachix.Client.Daemon.EventLoop as EventLoop
-import Cachix.Client.Daemon.Listen as Daemon
-import qualified Cachix.Client.Daemon.Log as Log
-import Cachix.Client.Daemon.Protocol as Protocol
-import Cachix.Client.Daemon.Push as Push
-import qualified Cachix.Client.Daemon.PushManager as PushManager
-import Cachix.Client.Daemon.ShutdownLatch
-import qualified Cachix.Client.Daemon.SocketStore as SocketStore
-import Cachix.Client.Daemon.Subscription as Subscription
-import Cachix.Client.Daemon.Types as Types
-import Cachix.Client.Daemon.Types.EventLoop (DaemonEvent (ShutdownGracefully))
-import qualified Cachix.Client.Daemon.Types.PushManager as PushManager
-import qualified Cachix.Client.Daemon.Worker as Worker
 import Cachix.Client.Env as Env
 import Cachix.Client.OptionsParser (DaemonOptions, PushOptions)
 import qualified Cachix.Client.OptionsParser as Options
 import Cachix.Client.Push
+import qualified Cachix.Daemon.EventLoop as EventLoop
+import Cachix.Daemon.Listen as Daemon
+import qualified Cachix.Daemon.Log as Log
+import Cachix.Daemon.Protocol as Protocol
+import Cachix.Daemon.Push as Push
+import qualified Cachix.Daemon.PushManager as PushManager
+import Cachix.Daemon.ShutdownLatch
+import qualified Cachix.Daemon.SocketStore as SocketStore
+import Cachix.Daemon.Subscription as Subscription
+import Cachix.Daemon.Types as Types
+import Cachix.Daemon.Types.EventLoop (DaemonEvent (ShutdownGracefully))
+import qualified Cachix.Daemon.Types.PushManager as PushManager
+import qualified Cachix.Daemon.Worker as Worker
 import Cachix.Types.BinaryCache (BinaryCacheName)
 import qualified Cachix.Types.BinaryCache as BinaryCache
 import Control.Concurrent.STM.TMChan

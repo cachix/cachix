@@ -1,14 +1,14 @@
 module Daemon.PushManagerSpec where
 
-import qualified Cachix.Client.Daemon.Log as Log
-import qualified Cachix.Client.Daemon.Protocol as Protocol
-import qualified Cachix.Client.Daemon.Push as Daemon.Push
-import Cachix.Client.Daemon.PushManager
-import qualified Cachix.Client.Daemon.PushManager.PushJob as PushJob
-import Cachix.Client.Daemon.Types.PushManager
 import qualified Cachix.Client.Env as Env
 import Cachix.Client.OptionsParser (defaultPushOptions)
 import Cachix.Client.Push (PushSecret (PushToken))
+import qualified Cachix.Daemon.Log as Log
+import qualified Cachix.Daemon.Protocol as Protocol
+import qualified Cachix.Daemon.Push as Daemon.Push
+import Cachix.Daemon.PushManager
+import qualified Cachix.Daemon.PushManager.PushJob as PushJob
+import Cachix.Daemon.Types.PushManager
 import qualified Cachix.Types.BinaryCache as BinaryCache
 import Cachix.Types.Permission (Permission (Write))
 import Control.Concurrent.Async (concurrently_)

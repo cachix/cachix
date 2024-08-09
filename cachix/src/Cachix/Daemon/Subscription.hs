@@ -1,4 +1,4 @@
-module Cachix.Client.Daemon.Subscription where
+module Cachix.Daemon.Subscription where
 
 import Control.Concurrent.STM.TBMQueue
 import Control.Concurrent.STM.TMChan

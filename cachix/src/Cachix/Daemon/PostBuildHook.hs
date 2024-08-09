@@ -1,7 +1,7 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE TypeApplications #-}
 
-module Cachix.Client.Daemon.PostBuildHook
+module Cachix.Daemon.PostBuildHook
   ( -- * Post-build hook setup
     PostBuildHookEnv (..),
     withSetup,

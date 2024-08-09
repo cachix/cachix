@@ -1,4 +1,4 @@
-module Cachix.Client.Daemon.PushManager
+module Cachix.Daemon.PushManager
   ( newPushManagerEnv,
     runPushManager,
     stopPushManager,
@@ -41,16 +41,16 @@ where
 
 import Cachix.Client.CNix (filterInvalidStorePath, followLinksToStorePath)
 import Cachix.Client.Command.Push hiding (pushStrategy)
-import qualified Cachix.Client.Daemon.Protocol as Protocol
-import qualified Cachix.Client.Daemon.PushManager.PushJob as PushJob
-import Cachix.Client.Daemon.Types.Log (Logger)
-import Cachix.Client.Daemon.Types.PushEvent
-import Cachix.Client.Daemon.Types.PushManager
 import Cachix.Client.OptionsParser as Client.OptionsParser
   ( PushOptions (..),
   )
 import Cachix.Client.Push as Client.Push
 import Cachix.Client.Retry (retryAll)
+import qualified Cachix.Daemon.Protocol as Protocol
+import qualified Cachix.Daemon.PushManager.PushJob as PushJob
+import Cachix.Daemon.Types.Log (Logger)
+import Cachix.Daemon.Types.PushEvent
+import Cachix.Daemon.Types.PushManager
 import qualified Cachix.Types.BinaryCache as BinaryCache
 import qualified Conduit as C
 import qualified Control.Concurrent.Async as Async

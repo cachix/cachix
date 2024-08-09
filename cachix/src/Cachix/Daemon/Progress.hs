@@ -1,4 +1,4 @@
-module Cachix.Client.Daemon.Progress
+module Cachix.Daemon.Progress
   ( UploadProgress,
     new,
     complete,
@@ -8,8 +8,8 @@ module Cachix.Client.Daemon.Progress
   )
 where
 
-import Cachix.Client.Daemon.Types (PushRetryStatus (..))
 import Cachix.Client.HumanSize (humanSize)
+import Cachix.Daemon.Types (PushRetryStatus (..))
 import qualified Control.Concurrent.Async as Async
 import Control.Concurrent.MVar
 import Data.String (String)

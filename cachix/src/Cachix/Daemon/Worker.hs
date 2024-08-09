@@ -1,4 +1,4 @@
-module Cachix.Client.Daemon.Worker
+module Cachix.Daemon.Worker
   ( startWorkers,
     stopWorkers,
     startWorker,

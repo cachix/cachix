@@ -5,8 +5,6 @@ where
 
 import qualified Cachix.Client.Command as Command
 import qualified Cachix.Client.Config as Config
-import qualified Cachix.Client.Daemon as Daemon
-import qualified Cachix.Client.Daemon.Client as Daemon.Client
 import Cachix.Client.Env (cachixoptions, mkEnv)
 import Cachix.Client.Exception (CachixException (DeprecatedCommand))
 import Cachix.Client.OptionsParser
@@ -16,6 +14,8 @@ import Cachix.Client.OptionsParser
     getOpts,
   )
 import Cachix.Client.Version (cachixVersion)
+import qualified Cachix.Daemon as Daemon
+import qualified Cachix.Daemon.Client as Daemon.Client
 import Cachix.Deploy.ActivateCommand as ActivateCommand
 import qualified Cachix.Deploy.Agent as AgentCommand
 import qualified Cachix.Deploy.OptionsParser as DeployOptions

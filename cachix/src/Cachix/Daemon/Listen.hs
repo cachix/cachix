@@ -1,4 +1,4 @@
-module Cachix.Client.Daemon.Listen
+module Cachix.Daemon.Listen
   ( listen,
     handleClient,
     serverBye,
@@ -9,11 +9,11 @@ module Cachix.Client.Daemon.Listen
 where
 
 import Cachix.Client.Config.Orphans ()
-import qualified Cachix.Client.Daemon.EventLoop as EventLoop
-import Cachix.Client.Daemon.Protocol as Protocol
-import Cachix.Client.Daemon.Types (DaemonError, toExitCodeInt)
-import Cachix.Client.Daemon.Types.EventLoop (EventLoop)
-import Cachix.Client.Daemon.Types.SocketStore (SocketId)
+import qualified Cachix.Daemon.EventLoop as EventLoop
+import Cachix.Daemon.Protocol as Protocol
+import Cachix.Daemon.Types (DaemonError, toExitCodeInt)
+import Cachix.Daemon.Types.EventLoop (EventLoop)
+import Cachix.Daemon.Types.SocketStore (SocketId)
 import Control.Exception.Safe (catchAny)
 import qualified Control.Monad.Catch as E
 import qualified Data.Aeson as Aeson

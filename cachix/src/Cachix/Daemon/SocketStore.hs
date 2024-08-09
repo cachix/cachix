@@ -1,4 +1,4 @@
-module Cachix.Client.Daemon.SocketStore
+module Cachix.Daemon.SocketStore
   ( newSocketStore,
     addSocket,
     removeSocket,
@@ -7,7 +7,7 @@ module Cachix.Client.Daemon.SocketStore
   )
 where
 
-import Cachix.Client.Daemon.Types.SocketStore (Socket (..), SocketId, SocketStore (..))
+import Cachix.Daemon.Types.SocketStore (Socket (..), SocketId, SocketStore (..))
 import Control.Concurrent.STM.TVar
 import Control.Monad.IO.Unlift (MonadUnliftIO)
 import qualified Data.HashMap.Strict as HashMap

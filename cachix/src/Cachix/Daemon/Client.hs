@@ -1,10 +1,10 @@
-module Cachix.Client.Daemon.Client (push, stop) where
+module Cachix.Daemon.Client (push, stop) where
 
-import Cachix.Client.Daemon.Listen (getSocketPath)
-import Cachix.Client.Daemon.Protocol as Protocol
 import Cachix.Client.Env as Env
 import Cachix.Client.OptionsParser (DaemonOptions (..))
 import qualified Cachix.Client.Retry as Retry
+import Cachix.Daemon.Listen (getSocketPath)
+import Cachix.Daemon.Protocol as Protocol
 import qualified Control.Concurrent.Async as Async
 import Control.Concurrent.STM.TBMQueue
 import qualified Data.Aeson as Aeson

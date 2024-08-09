@@ -1,4 +1,4 @@
-module Cachix.Client.Daemon.Types.EventLoop
+module Cachix.Daemon.Types.EventLoop
   ( EventLoop (..),
     EventLoopError (..),
     ExitLatch,
@@ -6,8 +6,8 @@ module Cachix.Client.Daemon.Types.EventLoop
   )
 where
 
-import qualified Cachix.Client.Daemon.Protocol as Protocol
-import Cachix.Client.Daemon.Types.SocketStore (SocketId)
+import qualified Cachix.Daemon.Protocol as Protocol
+import Cachix.Daemon.Types.SocketStore (SocketId)
 import Control.Concurrent.STM.TBMQueue (TBMQueue)
 import Network.Socket (Socket)
 import Protolude

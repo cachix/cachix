@@ -1,4 +1,4 @@
-module Cachix.Client.Daemon.ShutdownLatch
+module Cachix.Daemon.ShutdownLatch
   ( ShutdownLatch,
     newShutdownLatch,
     waitForShutdown,

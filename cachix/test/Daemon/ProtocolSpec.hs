@@ -1,6 +1,6 @@
 module Daemon.ProtocolSpec where
 
-import Cachix.Client.Daemon.Protocol (splitMessages)
+import Cachix.Daemon.Protocol (splitMessages)
 import Protolude
 import Test.Hspec
 

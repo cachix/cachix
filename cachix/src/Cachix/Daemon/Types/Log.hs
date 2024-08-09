@@ -1,4 +1,4 @@
-module Cachix.Client.Daemon.Types.Log
+module Cachix.Daemon.Types.Log
   ( LogLevel (..),
     Logger (..),
   )

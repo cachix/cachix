@@ -7,10 +7,6 @@ module Cachix.Client.Command.Watch
 where
 
 import Cachix.Client.Command.Push
-import qualified Cachix.Client.Daemon as Daemon
-import qualified Cachix.Client.Daemon.PostBuildHook as Daemon.PostBuildHook
-import qualified Cachix.Client.Daemon.Progress as Daemon.Progress
-import Cachix.Client.Daemon.Types
 import Cachix.Client.Env (Env (..))
 import qualified Cachix.Client.InstallationMode as InstallationMode
 import Cachix.Client.OptionsParser
@@ -19,6 +15,10 @@ import Cachix.Client.OptionsParser
   )
 import Cachix.Client.Push
 import qualified Cachix.Client.WatchStore as WatchStore
+import qualified Cachix.Daemon as Daemon
+import qualified Cachix.Daemon.PostBuildHook as Daemon.PostBuildHook
+import qualified Cachix.Daemon.Progress as Daemon.Progress
+import Cachix.Daemon.Types
 import Cachix.Types.BinaryCache (BinaryCacheName)
 import Conduit
 import qualified Control.Concurrent.Async as Async

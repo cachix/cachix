@@ -8,7 +8,13 @@ import qualified Cachix.Client.Config as Config
 import qualified Cachix.Client.Daemon as Daemon
 import qualified Cachix.Client.Daemon.Client as Daemon.Client
 import Cachix.Client.Env (cachixoptions, mkEnv)
-import Cachix.Client.OptionsParser (CachixCommand (..), DaemonCommand (..), getOpts)
+import Cachix.Client.Exception (CachixException (DeprecatedCommand))
+import Cachix.Client.OptionsParser
+  ( CachixCommand (..),
+    DaemonCommand (..),
+    PushArguments (..),
+    getOpts,
+  )
 import Cachix.Client.Version (cachixVersion)
 import Cachix.Deploy.ActivateCommand as ActivateCommand
 import qualified Cachix.Deploy.Agent as AgentCommand
@@ -40,7 +46,9 @@ main = displayConsoleRegions $ do
     GenerateKeypair name -> Command.generateKeypair env name
     Import pushOptions name uri -> Command.import' env pushOptions name uri
     Pin pingArgs -> Command.pin env pingArgs
-    Push pushArgs -> Command.push env pushArgs
+    Push (PushPaths opts name cliPaths) -> Command.push env opts name cliPaths
+    Push (PushWatchStore _ _) ->
+      throwIO $ DeprecatedCommand "DEPRECATED: cachix watch-store has replaced cachix push --watch-store."
     Remove name -> Command.remove env name
     Use name useOptions -> Command.use env name useOptions
     Version -> putText cachixVersion

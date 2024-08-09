@@ -17,13 +17,8 @@ import qualified Cachix.Client.Config as Config
 import Cachix.Client.Env (Env (..))
 import Cachix.Client.Exception (CachixException (..))
 import Cachix.Client.HumanSize (humanSize)
-import Cachix.Client.OptionsParser
-  ( PushArguments (..),
-    PushOptions (..),
-  )
-import Cachix.Client.OptionsParser as Options
-  ( PushOptions (..),
-  )
+import Cachix.Client.OptionsParser (PushOptions (..))
+import Cachix.Client.OptionsParser as Options (PushOptions (..))
 import Cachix.Client.Push as Push
 import Cachix.Client.Retry (retryHttp)
 import Cachix.Client.Secrets
@@ -51,8 +46,8 @@ import System.Console.Pretty
 import System.Environment (lookupEnv)
 import System.IO (hIsTerminalDevice)
 
-push :: Env -> PushArguments -> IO ()
-push env (PushPaths opts name cliPaths) = do
+push :: Env -> PushOptions -> BinaryCacheName -> [Text] -> IO ()
+push env opts name cliPaths = do
   hasStdin <- not <$> hIsTerminalDevice stdin
   inputStorePaths <-
     case (hasStdin, cliPaths) of
@@ -79,9 +74,6 @@ push env (PushPaths opts name cliPaths) = do
       (0, _) -> putErrText "Nothing to push."
       (_, 0) -> putErrText "Nothing to push - all store paths are already on Cachix."
       _ -> putErrText "\nAll done."
-push _ (PushWatchStore _ _) =
-  throwIO $
-    DeprecatedCommand "DEPRECATED: cachix watch-store has replaced cachix push --watch-store."
 
 pushStrategy :: Store -> Maybe Token -> PushOptions -> Text -> BinaryCache.CompressionMethod -> StorePath -> PushStrategy IO ()
 pushStrategy store authToken opts name compressionMethod storePath =

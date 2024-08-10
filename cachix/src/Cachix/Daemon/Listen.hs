@@ -11,7 +11,15 @@ where
 import Cachix.Client.Config.Orphans ()
 import Cachix.Daemon.EventLoop qualified as EventLoop
 import Cachix.Daemon.Protocol as Protocol
-import Cachix.Daemon.Types (DaemonError, toExitCodeInt)
+import Cachix.Daemon.Types
+  ( DaemonError,
+    DaemonEvent
+      ( AddSocketClient,
+        ReceivedMessage,
+        RemoveSocketClient
+      ),
+    toExitCodeInt,
+  )
 import Cachix.Daemon.Types.EventLoop (EventLoop)
 import Cachix.Daemon.Types.SocketStore (SocketId)
 import Control.Exception.Safe (catchAny)
@@ -48,14 +56,14 @@ instance Exception ListenError where
 -- | Listen for incoming connections on the given socket path.
 listen ::
   (E.MonadMask m, Katip.KatipContext m) =>
-  EventLoop a ->
+  EventLoop DaemonEvent a ->
   FilePath ->
   m ()
 listen eventloop daemonSocketPath = forever $ do
   E.bracketOnError (openSocket daemonSocketPath) closeSocket $ \sock -> do
     liftIO $ Socket.listen sock Socket.maxListenQueue
     (conn, _peerAddr) <- liftIO $ Socket.accept sock
-    EventLoop.send eventloop (EventLoop.AddSocketClient conn)
+    EventLoop.send eventloop (AddSocketClient conn)
 
 -- | Handle incoming messages from a client.
 --
@@ -64,7 +72,7 @@ listen eventloop daemonSocketPath = forever $ do
 handleClient ::
   forall m a.
   (E.MonadMask m, Katip.KatipContext m) =>
-  EventLoop a ->
+  EventLoop DaemonEvent a ->
   SocketId ->
   Socket ->
   m ()
@@ -84,7 +92,7 @@ handleClient eventloop socketId conn = do
           msgs <- catMaybes <$> mapM decodeMessage rawMsgs
 
           forM_ msgs $ \msg -> do
-            EventLoop.send eventloop (EventLoop.ReceivedMessage msg)
+            EventLoop.send eventloop (ReceivedMessage msg)
             case msg of
               Protocol.ClientPing ->
                 liftIO $ Socket.LBS.sendAll conn $ Protocol.newMessage DaemonPong
@@ -92,7 +100,7 @@ handleClient eventloop socketId conn = do
 
           go newLeftovers
 
-    removeClient = EventLoop.send eventloop (EventLoop.RemoveSocketClient socketId)
+    removeClient = EventLoop.send eventloop (RemoveSocketClient socketId)
 
 decodeMessage :: (Katip.KatipContext m) => ByteString -> m (Maybe Protocol.ClientMessage)
 decodeMessage "" = return Nothing

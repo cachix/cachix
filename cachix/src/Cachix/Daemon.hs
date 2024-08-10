@@ -18,7 +18,7 @@ import Cachix.Client.OptionsParser (DaemonOptions, PushOptions)
 import Cachix.Client.OptionsParser qualified as Options
 import Cachix.Client.Push
 import Cachix.Daemon.EventLoop qualified as EventLoop
-import Cachix.Daemon.Listen as Daemon
+import Cachix.Daemon.Listen as Listen
 import Cachix.Daemon.Log qualified as Log
 import Cachix.Daemon.Protocol as Protocol
 import Cachix.Daemon.Push as Push
@@ -27,7 +27,6 @@ import Cachix.Daemon.ShutdownLatch
 import Cachix.Daemon.SocketStore qualified as SocketStore
 import Cachix.Daemon.Subscription as Subscription
 import Cachix.Daemon.Types as Types
-import Cachix.Daemon.Types.EventLoop (DaemonEvent (ShutdownGracefully))
 import Cachix.Daemon.Types.PushManager qualified as PushManager
 import Cachix.Daemon.Worker qualified as Worker
 import Cachix.Types.BinaryCache (BinaryCacheName)
@@ -121,23 +120,23 @@ run daemon = fmap join <$> runDaemon daemon $ do
     (liftIO . PushManager.runPushManager daemonPushManager . PushManager.handleTask)
     >>= (liftIO . putMVar daemonWorkerThreads)
 
-  Async.async (Daemon.listen daemonEventLoop daemonSocketPath)
+  Async.async (Listen.listen daemonEventLoop daemonSocketPath)
     >>= (liftIO . putMVar daemonSocketThread)
 
   eventLoopRes <- EventLoop.run daemonEventLoop $ \case
-    EventLoop.AddSocketClient conn ->
-      SocketStore.addSocket conn (Daemon.handleClient daemonEventLoop) daemonClients
-    EventLoop.RemoveSocketClient socketId ->
+    AddSocketClient conn ->
+      SocketStore.addSocket conn (Listen.handleClient daemonEventLoop) daemonClients
+    RemoveSocketClient socketId ->
       SocketStore.removeSocket socketId daemonClients
-    EventLoop.ReconnectSocket ->
+    ReconnectSocket ->
       -- TODO: implement reconnection logic
       EventLoop.exitLoopWith (Left DaemonSocketError) daemonEventLoop
-    EventLoop.ReceivedMessage clientMsg ->
+    ReceivedMessage clientMsg ->
       case clientMsg of
         ClientPushRequest pushRequest -> queueJob pushRequest
-        ClientStop -> EventLoop.send daemonEventLoop EventLoop.ShutdownGracefully
+        ClientStop -> EventLoop.send daemonEventLoop ShutdownGracefully
         _ -> return ()
-    EventLoop.ShutdownGracefully -> do
+    ShutdownGracefully -> do
       Katip.logFM Katip.InfoS "Shutting down daemon..."
       pushResult <- shutdownGracefully
       Katip.logFM Katip.InfoS "Daemon shut down. Exiting."
@@ -262,7 +261,7 @@ shutdownGracefully = do
       Async.cancel clientThread
 
       -- Wave goodbye to the client that requested the shutdown
-      liftIO $ Daemon.serverBye clientSock exitResult
+      liftIO $ Listen.serverBye clientSock exitResult
       liftIO $ Socket.shutdown clientSock Socket.ShutdownBoth `catchAny` (\_ -> return ())
       -- Wait for the other end to disconnect
       ebs <- liftIO $ try $ Socket.BS.recv clientSock 4096

@@ -1,5 +1,6 @@
 module Cachix.Daemon.Types
   ( -- * Daemon
+    DaemonEvent (..),
     DaemonEnv (..),
     Daemon,
     runDaemon,

@@ -5,11 +5,10 @@ module Cachix.Daemon.EventLoop
     run,
     exitLoopWith,
     EventLoop,
-    DaemonEvent (..),
   )
 where
 
-import Cachix.Daemon.Types.EventLoop (DaemonEvent (..), EventLoop (..), EventLoopError (..))
+import Cachix.Daemon.Types.EventLoop (EventLoop (..), EventLoopError (..))
 import Control.Concurrent.STM.TBMQueue
   ( isFullTBMQueue,
     newTBMQueueIO,
@@ -20,25 +19,25 @@ import Data.Text.Lazy.Builder (toLazyText)
 import Katip qualified
 import Protolude
 
-new :: (MonadIO m) => m (EventLoop a)
+new :: (MonadIO m) => m (EventLoop event a)
 new = do
   exitLatch <- liftIO newEmptyMVar
   queue <- liftIO $ newTBMQueueIO 100
   return $ EventLoop {queue, exitLatch}
 
 -- | Send an event to the event loop with logging.
-send :: (Katip.KatipContext m) => EventLoop a -> DaemonEvent -> m ()
+send :: (Katip.KatipContext m) => EventLoop event a -> event -> m ()
 send = send' Katip.logFM
 
 -- | Same as 'send', but does not require a 'Katip.KatipContext'.
-sendIO :: forall m a. (MonadIO m) => EventLoop a -> DaemonEvent -> m ()
+sendIO :: forall m event a. (MonadIO m) => EventLoop event a -> event -> m ()
 sendIO = send' logger
   where
     logger :: Katip.Severity -> Katip.LogStr -> m ()
     logger Katip.ErrorS msg = liftIO $ hPutStrLn stderr (toLazyText $ Katip.unLogStr msg)
     logger _ _ = return ()
 
-send' :: (MonadIO m) => (Katip.Severity -> Katip.LogStr -> m ()) -> EventLoop a -> DaemonEvent -> m ()
+send' :: (MonadIO m) => (Katip.Severity -> Katip.LogStr -> m ()) -> EventLoop event a -> event -> m ()
 send' logger eventloop@(EventLoop {queue}) event = do
   res <- liftIO $ atomically $ tryWriteTBMQueue queue event
   case res of
@@ -58,7 +57,7 @@ send' logger eventloop@(EventLoop {queue}) event = do
       exitLoopWithFailure EventLoopFull eventloop
 
 -- | Run the event loop until it exits with 'exitLoopWith'.
-run :: (MonadIO m) => EventLoop a -> (DaemonEvent -> m ()) -> m (Either EventLoopError a)
+run :: (MonadIO m) => EventLoop event a -> (event -> m ()) -> m (Either EventLoopError a)
 run eventloop f = do
   fix $ \loop -> do
     mevent <- liftIO $ atomically $ readTBMQueue (queue eventloop)
@@ -71,9 +70,9 @@ run eventloop f = do
       Nothing -> loop
 
 -- | Short-circuit the event loop and exit with a given return value.
-exitLoopWith :: (MonadIO m) => a -> EventLoop a -> m ()
+exitLoopWith :: (MonadIO m) => a -> EventLoop event a -> m ()
 exitLoopWith exitValue (EventLoop {exitLatch}) = void $ liftIO $ tryPutMVar exitLatch (Right exitValue)
 
 -- | Short-circuit the event loop in case of an internal error.
-exitLoopWithFailure :: (MonadIO m) => EventLoopError -> EventLoop a -> m ()
+exitLoopWithFailure :: (MonadIO m) => EventLoopError -> EventLoop event a -> m ()
 exitLoopWithFailure err (EventLoop {exitLatch}) = void $ liftIO $ tryPutMVar exitLatch (Left err)

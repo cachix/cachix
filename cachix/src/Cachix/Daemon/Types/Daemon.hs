@@ -3,6 +3,7 @@
 
 module Cachix.Daemon.Types.Daemon
   ( -- * Daemon
+    DaemonEvent (..),
     DaemonEnv (..),
     Daemon,
     runDaemon,
@@ -21,21 +22,35 @@ import Cachix.Daemon.Types.EventLoop (EventLoop)
 import Cachix.Daemon.Types.Log (Logger)
 import Cachix.Daemon.Types.PushEvent (PushEvent)
 import Cachix.Daemon.Types.PushManager (PushManagerEnv (..))
-import Cachix.Daemon.Types.SocketStore (SocketStore)
+import Cachix.Daemon.Types.SocketStore (SocketId, SocketStore)
 import Cachix.Daemon.Worker qualified as Worker
 import Cachix.Types.BinaryCache (BinaryCache, BinaryCacheName)
 import Control.Exception.Safe qualified as Safe
 import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
 import Control.Monad.IO.Unlift (MonadUnliftIO)
 import Katip qualified
+import Network.Socket (Socket)
 import Protolude hiding (bracketOnError)
 import System.Posix.Types (ProcessID)
+
+-- | Daemon events that are handled by the 'EventLoop'.
+data DaemonEvent
+  = -- | Shut down the daemon gracefully.
+    ShutdownGracefully
+  | -- | Re-establish the daemon socket
+    ReconnectSocket
+  | -- | Add a new client socket connection.
+    AddSocketClient Socket
+  | -- | Remove an existing client socket connection. For example, after it is closed.
+    RemoveSocketClient SocketId
+  | -- | Handle a new message from a client.
+    ReceivedMessage Protocol.ClientMessage
 
 data DaemonEnv = DaemonEnv
   { -- | Cachix client env
     daemonEnv :: Env,
     -- | The main event loop
-    daemonEventLoop :: EventLoop (Either DaemonError ()),
+    daemonEventLoop :: EventLoop DaemonEvent (Either DaemonError ()),
     -- | Push options, like compression settings and number of jobs
     daemonPushOptions :: PushOptions,
     -- | Path to the socket that the daemon listens on

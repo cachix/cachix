@@ -27,8 +27,6 @@ import Cachix.Daemon.ShutdownLatch
 import Cachix.Daemon.SocketStore qualified as SocketStore
 import Cachix.Daemon.Subscription as Subscription
 import Cachix.Daemon.Types as Types
-import Cachix.Daemon.Types.PushManager qualified as PushManager
-import Cachix.Daemon.Worker qualified as Worker
 import Cachix.Types.BinaryCache (BinaryCacheName)
 import Cachix.Types.BinaryCache qualified as BinaryCache
 import Control.Concurrent.STM.TMChan
@@ -88,8 +86,7 @@ new daemonEnv nixStore daemonOptions daemonLogHandle daemonPushOptions daemonCac
 
   let pushParams = Push.newPushParams nixStore (clientenv daemonEnv) daemonBinaryCache daemonPushSecret daemonPushOptions
   daemonPushManager <- PushManager.newPushManagerEnv daemonPushOptions pushParams onPushEvent daemonLogger
-
-  daemonWorkerThreads <- newEmptyMVar
+  daemonPushManagerThread <- newEmptyMVar
 
   return $ DaemonEnv {..}
 
@@ -114,11 +111,8 @@ run daemon = fmap join <$> runDaemon daemon $ do
   Async.async (runSubscriptionManager daemonSubscriptionManager)
     >>= (liftIO . putMVar daemonSubscriptionManagerThread)
 
-  Worker.startWorkers
-    (Options.numJobs daemonPushOptions)
-    (PushManager.pmTaskQueue daemonPushManager)
-    (liftIO . PushManager.runPushManager daemonPushManager . PushManager.handleTask)
-    >>= (liftIO . putMVar daemonWorkerThreads)
+  Async.async (PushManager.run daemonPushManager)
+    >>= (liftIO . putMVar daemonPushManagerThread)
 
   Async.async (Listen.listen daemonEventLoop daemonSocketPath)
     >>= (liftIO . putMVar daemonSocketThread)
@@ -212,10 +206,7 @@ shutdownGracefully = do
   initiateShutdown daemonShutdownLatch
 
   -- Stop the push manager and wait for any remaining paths to be uploaded
-  shutdownPushManager daemonPushManager
-
-  -- Stop worker threads
-  withTakeMVar daemonWorkerThreads Worker.stopWorkers
+  shutdownPushManager daemonPushManager daemonPushManagerThread
 
   -- Close all event subscriptions
   withTakeMVar daemonSubscriptionManagerThread (shutdownSubscriptions daemonSubscriptionManager)
@@ -232,7 +223,7 @@ shutdownGracefully = do
 
   return pushResult
   where
-    shutdownPushManager daemonPushManager = do
+    shutdownPushManager daemonPushManager daemonPushManagerThread = do
       queuedStorePathCount <- PushManager.runPushManager daemonPushManager PushManager.queuedStorePathCount
       when (queuedStorePathCount > 0) $
         Katip.logFM Katip.InfoS $
@@ -240,13 +231,8 @@ shutdownGracefully = do
             "Remaining store paths: " <> (show queuedStorePathCount :: Text)
 
       Katip.logFM Katip.DebugS "Waiting for push manager to clear remaining jobs..."
-      -- Finish processing remaining push jobs
-      let timeoutOptions =
-            PushManager.TimeoutOptions
-              { PushManager.toTimeout = 60.0,
-                PushManager.toPollingInterval = 1.0
-              }
-      liftIO $ PushManager.stopPushManager timeoutOptions daemonPushManager
+      PushManager.stop daemonPushManager
+      withTakeMVar daemonPushManagerThread Async.wait
       Katip.logFM Katip.DebugS "Push manager shut down."
 
     shutdownSubscriptions daemonSubscriptionManager subscriptionManagerThread = do

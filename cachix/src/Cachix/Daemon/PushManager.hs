@@ -2,6 +2,8 @@ module Cachix.Daemon.PushManager
   ( newPushManagerEnv,
     runPushManager,
     stopPushManager,
+    run,
+    stop,
 
     -- * Push strategy
     newPushStrategy,
@@ -23,9 +25,6 @@ module Cachix.Daemon.PushManager
     removeStorePath,
     queuedStorePathCount,
 
-    -- * Tasks
-    handleTask,
-
     -- * Push events
     pushStarted,
     pushFinished,
@@ -41,21 +40,24 @@ where
 
 import Cachix.Client.CNix (filterInvalidStorePath, followLinksToStorePath)
 import Cachix.Client.Command.Push hiding (pushStrategy)
-import Cachix.Client.OptionsParser as Client.OptionsParser
+import Cachix.Client.OptionsParser as Options
   ( PushOptions (..),
   )
 import Cachix.Client.Push as Client.Push
 import Cachix.Client.Retry (retryAll)
 import Cachix.Daemon.Protocol qualified as Protocol
 import Cachix.Daemon.PushManager.PushJob qualified as PushJob
+import Cachix.Daemon.ShutdownLatch
 import Cachix.Daemon.Types.Log (Logger)
 import Cachix.Daemon.Types.PushEvent
 import Cachix.Daemon.Types.PushManager
+import Cachix.Daemon.Worker qualified as Worker
 import Cachix.Types.BinaryCache qualified as BinaryCache
 import Conduit qualified as C
 import Control.Concurrent.Async qualified as Async
 import Control.Concurrent.STM.TBMQueue
 import Control.Concurrent.STM.TVar
+import Control.Monad.Catch (bracket)
 import Control.Monad.Catch qualified as E
 import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
 import Control.Retry (RetryStatus)
@@ -68,30 +70,53 @@ import Data.Time (UTCTime, diffUTCTime, getCurrentTime, secondsToNominalDiffTime
 import Hercules.CNix (StorePath)
 import Hercules.CNix.Store (Store, parseStorePath, storePathToPath)
 import Katip qualified
-import Protolude hiding (toS)
+import Protolude hiding (bracket, toS)
 import Protolude.Conv (toS)
 import Servant.Auth ()
 import Servant.Auth.Client
 import Servant.Conduit ()
-import UnliftIO.QSem qualified as QSem
 
 newPushManagerEnv :: (MonadIO m) => PushOptions -> PushParams PushManager () -> OnPushEvent -> Logger -> m PushManagerEnv
-newPushManagerEnv pushOptions pmPushParams onPushEvent pmLogger = liftIO $ do
+newPushManagerEnv pmPushOptions pmPushParams onPushEvent pmLogger = liftIO $ do
   pmPushJobs <- newTVarIO mempty
   pmPendingJobCount <- newTVarIO 0
   pmStorePathIndex <- newTVarIO mempty
   pmTaskQueue <- newTBMQueueIO 1000
-  pmTaskSemaphore <- QSem.newQSem (numJobs pushOptions)
   pmLastEventTimestamp <- newTVarIO =<< getCurrentTime
+  pmShutdownLatch <- newShutdownLatch
   let pmOnPushEvent id pushEvent = updateTimestampTVar pmLastEventTimestamp >> onPushEvent id pushEvent
 
   return $ PushManagerEnv {..}
 
+run :: (MonadIO m) => PushManagerEnv -> m ()
+run env =
+  liftIO $
+    runPushManager env $
+      bracket acquire release (const $ waitForShutdown shutdownLatch)
+  where
+    pushOptions = pmPushOptions env
+    shutdownLatch = pmShutdownLatch env
+
+    acquire =
+      Worker.startWorkers
+        (Options.numJobs pushOptions)
+        (pmTaskQueue env)
+        handleTask
+
+    release workers = do
+      -- Finish processing remaining push jobs
+      let timeoutOptions = (TimeoutOptions {toTimeout = 60.0, toPollingInterval = 1.0})
+      liftIO $ stopPushManager timeoutOptions env
+      Worker.stopWorkers workers
+
+stop :: (MonadIO m) => PushManagerEnv -> m ()
+stop = liftIO . initiateShutdown . pmShutdownLatch
+
 runPushManager :: (MonadIO m) => PushManagerEnv -> PushManager a -> m a
 runPushManager env f = liftIO $ unPushManager f `runReaderT` env
 
-stopPushManager :: TimeoutOptions -> PushManagerEnv -> IO ()
-stopPushManager timeoutOptions PushManagerEnv {..} = do
+stopPushManager :: (MonadIO m) => TimeoutOptions -> PushManagerEnv -> m ()
+stopPushManager timeoutOptions PushManagerEnv {..} = liftIO $ do
   atomicallyWithTimeout timeoutOptions pmLastEventTimestamp $ do
     pendingJobs <- readTVar pmPendingJobCount
     check (pendingJobs <= 0)
@@ -311,14 +336,12 @@ runPushStorePathTask pushParams filePath = do
       pushStorePathFailed filePath . toS . displayException
 
     pushStorePath = do
-      qs <- asks pmTaskSemaphore
-      E.bracket_ (QSem.waitQSem qs) (QSem.signalQSem qs) $ do
-        Katip.logLocM Katip.DebugS $ Katip.ls $ "Pushing store path " <> filePath
+      Katip.logLocM Katip.DebugS $ Katip.ls $ "Pushing store path " <> filePath
 
-        let store = pushParamsStore pushParams
-        storePath <- liftIO $ parseStorePath store (toS filePath)
+      let store = pushParamsStore pushParams
+      storePath <- liftIO $ parseStorePath store (toS filePath)
 
-        retryAll $ uploadStorePath pushParams storePath
+      retryAll $ uploadStorePath pushParams storePath
 
 newPushStrategy ::
   Store ->
@@ -373,10 +396,10 @@ newPushStrategy store authToken opts cacheName compressionMethod storePath =
           onUncompressedNARStream = onUncompressedNARStream,
           onDone = onDone,
           Client.Push.compressionMethod = compressionMethod,
-          Client.Push.compressionLevel = Client.OptionsParser.compressionLevel opts,
-          Client.Push.chunkSize = Client.OptionsParser.chunkSize opts,
-          Client.Push.numConcurrentChunks = Client.OptionsParser.numConcurrentChunks opts,
-          Client.Push.omitDeriver = Client.OptionsParser.omitDeriver opts
+          Client.Push.compressionLevel = Options.compressionLevel opts,
+          Client.Push.chunkSize = Options.chunkSize opts,
+          Client.Push.numConcurrentChunks = Options.numConcurrentChunks opts,
+          Client.Push.omitDeriver = Options.omitDeriver opts
         }
 
 -- Push events

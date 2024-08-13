@@ -16,9 +16,11 @@ module Cachix.Daemon.Types.PushManager
   )
 where
 
+import Cachix.Client.OptionsParser (PushOptions)
 import Cachix.Client.Push (PushParams)
 import Cachix.Daemon.Log qualified as Log
 import Cachix.Daemon.Protocol qualified as Protocol
+import Cachix.Daemon.ShutdownLatch (ShutdownLatch)
 import Cachix.Daemon.Types.Log (Logger)
 import Cachix.Daemon.Types.PushEvent (PushEvent (..))
 import Control.Concurrent.STM.TBMQueue
@@ -42,16 +44,17 @@ type StorePathIndex = TVar (HashMap FilePath [Protocol.PushRequestId])
 -- sqlite can run in-memory if we don't need persistence.
 -- If we do, then we can we get stop/resume for free.
 data PushManagerEnv = PushManagerEnv
-  { pmPushParams :: PushParams PushManager (),
+  { pmPushOptions :: PushOptions,
+    pmPushParams :: PushParams PushManager (),
     -- | A store of push jobs indexed by a PushRequestId.
     pmPushJobs :: PushJobStore,
     -- | A mapping of store paths to push requests.
     -- Used when deduplicating pushes.
     pmStorePathIndex :: StorePathIndex,
+    -- | A latch to initiate shutdown.
+    pmShutdownLatch :: ShutdownLatch,
     -- | FIFO queue of push tasks.
     pmTaskQueue :: TBMQueue Task,
-    -- | A semaphore to control task concurrency.
-    pmTaskSemaphore :: QSem,
     -- | A callback for push events.
     pmOnPushEvent :: OnPushEvent,
     -- | The timestamp of the most recent event. This is used to track activity internally.

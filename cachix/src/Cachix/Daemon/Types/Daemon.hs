@@ -23,7 +23,6 @@ import Cachix.Daemon.Types.Log (Logger)
 import Cachix.Daemon.Types.PushEvent (PushEvent)
 import Cachix.Daemon.Types.PushManager (PushManagerEnv (..))
 import Cachix.Daemon.Types.SocketStore (SocketId, SocketStore)
-import Cachix.Daemon.Worker qualified as Worker
 import Cachix.Types.BinaryCache (BinaryCache, BinaryCacheName)
 import Control.Exception.Safe qualified as Safe
 import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
@@ -63,10 +62,10 @@ data DaemonEnv = DaemonEnv
     daemonBinaryCache :: BinaryCache,
     -- | The state of active push requests
     daemonPushManager :: PushManagerEnv,
+    -- | The thread handle for the push manager
+    daemonPushManagerThread :: MVar (Async ()),
     -- | Connected clients over the socket
     daemonClients :: SocketStore,
-    -- | A pool of worker threads
-    daemonWorkerThreads :: MVar [Worker.Thread],
     -- | A multiplexer for push events
     daemonSubscriptionManager :: SubscriptionManager Protocol.PushRequestId PushEvent,
     -- | A thread handle for the subscription manager

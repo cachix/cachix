@@ -12,6 +12,7 @@ import Cachix.Client.InstallationMode qualified as InstallationMode
 import Cachix.Client.OptionsParser
   ( DaemonOptions (..),
     PushOptions (..),
+    WatchExecMode (..),
   )
 import Cachix.Client.Push
 import Cachix.Client.WatchStore qualified as WatchStore
@@ -47,17 +48,23 @@ watchStore env opts name = do
 
 -- | Run a command and upload any new paths to the binary cache.
 --
--- Registers a post-build hook if the user is trusted.
+-- In auto mode, registers a post-build hook if the user is trusted.
 -- Otherwise, falls back to watching the entire Nix store.
-watchExec :: Env -> PushOptions -> BinaryCacheName -> Text -> [Text] -> IO ()
-watchExec env pushOptions cacheName cmd args = do
-  nixEnv <- InstallationMode.getNixEnv
-
-  if InstallationMode.isTrusted nixEnv
-    then watchExecDaemon env pushOptions cacheName cmd args
-    else do
-      putErrText fallbackWarning
+watchExec :: Env -> WatchExecMode -> PushOptions -> BinaryCacheName -> Text -> [Text] -> IO ()
+watchExec env watchExecMode pushOptions cacheName cmd args = do
+  case watchExecMode of
+    PostBuildHook ->
+      watchExecDaemon env pushOptions cacheName cmd args
+    Store ->
       watchExecStore env pushOptions cacheName cmd args
+    Auto -> do
+      nixEnv <- InstallationMode.getNixEnv
+
+      if InstallationMode.isTrusted nixEnv
+        then watchExecDaemon env pushOptions cacheName cmd args
+        else do
+          putErrText fallbackWarning
+          watchExecStore env pushOptions cacheName cmd args
   where
     fallbackWarning =
       color Yellow "WARNING: " <> "failed to register a post-build hook for this command because you're not a trusted user. Falling back to watching the entire Nix store for new paths."

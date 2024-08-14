@@ -14,6 +14,9 @@ module Cachix.Client.OptionsParser
     defaultNumJobs,
     defaultOmitDeriver,
 
+    -- * Watch exec
+    WatchExecMode (..),
+
     -- * Pin options
     PinOptions (..),
 
@@ -56,7 +59,7 @@ data CachixCommand
   | Import PushOptions Text URI
   | Pin PinOptions
   | WatchStore PushOptions Text
-  | WatchExec PushOptions Text Text [Text]
+  | WatchExec WatchExecMode PushOptions Text Text [Text]
   | Use BinaryCacheName InstallationMode.UseOptions
   | Remove BinaryCacheName
   | DeployCommand DeployOptions.DeployCommand
@@ -507,10 +510,42 @@ deployCommand = DeployCommand <$> DeployOptions.parser
 watchExecCommand :: Parser CachixCommand
 watchExecCommand =
   WatchExec
-    <$> pushOptionsParser
+    <$> watchExecModeParser
+    <*> pushOptionsParser
     <*> cacheNameParser
     <*> strArgument (metavar "CMD")
     <*> many (strArgument (metavar "-- ARGS"))
+
+data WatchExecMode = Auto | Store | PostBuildHook deriving (Enum, Bounded)
+
+instance Show WatchExecMode where
+  show Auto = "auto"
+  show Store = "store"
+  show PostBuildHook = "post-build-hook"
+
+watchExecModes :: [WatchExecMode]
+watchExecModes = [minBound .. maxBound]
+
+prettyWatchExecModes :: Prelude.String
+prettyWatchExecModes = intercalate " | " (fmap show watchExecModes)
+
+watchExecModeParser :: Parser WatchExecMode
+watchExecModeParser =
+  option (eitherReader parseWatchExecMode) $
+    long "watch-mode"
+      <> value Auto
+      <> showDefault
+      <> metavar prettyWatchExecModes
+      <> help
+        "Mode in which to watch for store paths.\
+        \ \"auto\" attempts to register a post-build hook.\
+        \ This pushes just the store paths built during the execution of CMD.\
+        \ If that fails, it falls back to watching the entire store."
+
+parseWatchExecMode :: Prelude.String -> Either Prelude.String WatchExecMode
+parseWatchExecMode "store" = Right Store
+parseWatchExecMode "post-build-hook" = Right PostBuildHook
+parseWatchExecMode mode = Left $ "Unsupported mode: " <> mode <> ". Supported values: " <> prettyWatchExecModes
 
 watchStoreCommand :: Parser CachixCommand
 watchStoreCommand = WatchStore <$> pushOptionsParser <*> cacheNameParser

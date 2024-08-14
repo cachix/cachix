@@ -52,7 +52,8 @@ main = displayConsoleRegions $ do
     Remove name -> Command.remove env name
     Use name useOptions -> Command.use env name useOptions
     Version -> putText cachixVersion
-    WatchExec pushArgs name cmd args -> Command.watchExec env pushArgs name cmd args
+    WatchExec watchExecMode pushArgs name cmd args ->
+      Command.watchExec env watchExecMode pushArgs name cmd args
     WatchStore watchArgs name -> Command.watchStore env watchArgs name
 
 -- | Install client-wide signal handlers.

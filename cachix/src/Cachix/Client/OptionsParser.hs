@@ -84,7 +84,7 @@ data PushOptions = PushOptions
   { -- | The compression level to use.
     compressionLevel :: Int,
     -- | The compression method to use.
-    -- Default value taken rom the cache settings.
+    -- The default value is read from the remote binary cache settings.
     compressionMethod :: Maybe BinaryCache.CompressionMethod,
     -- | The size of each uploaded part.
     --

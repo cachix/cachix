@@ -297,7 +297,7 @@ pushOptionsParser =
     compressionLevel =
       option (auto >>= validateCompressionLevel) $
         long "compression-level"
-          <> short 'c'
+          <> short 'l'
           <> metavar "[0..16]"
           <> help
             "The compression level to use. Supported range: [0-9] for xz and [0-16] for zstd."

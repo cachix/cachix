@@ -68,6 +68,7 @@ import Data.Conduit.ByteString (ChunkSize)
 import Data.Conduit.Lzma qualified as Lzma (compress)
 import Data.Conduit.Zstd qualified as Zstd (compress)
 import Data.IORef
+import Data.List.Extra (chunksOf)
 import Data.Set qualified as Set
 import Data.String.Here (iTrim)
 import Data.Text qualified as T
@@ -517,16 +518,17 @@ queryNarInfoBulk pushParams paths = do
       hash' <- decodeUtf8With lenientDecode <$> Store.getStorePathHash path
       pure (hash', path)
   let hashes = fmap fst pathsAndHashes
-  missingHashesList <-
-    retryHttp $
-      liftIO $
-        escalate
-          =<< API.narinfoBulk
+  let processBatch hashesChunk = retryHttp $ liftIO $ do
+        result <-
+          API.narinfoBulk
             cachixClient
             (getCacheAuthToken (pushParamsSecret pushParams))
             (pushParamsName pushParams)
-            hashes
-          `runClientM` clientEnv
+            hashesChunk
+            `runClientM` clientEnv
+        escalate result
+  -- 32 bytes of each hash for 1MB limit
+  missingHashesList <- concat <$> mapM processBatch (chunksOf 32768 hashes)
 
   let missingHashes = Set.fromList missingHashesList
   let missing = map snd $ filter (\(hash', _path) -> Set.member hash' missingHashes) pathsAndHashes

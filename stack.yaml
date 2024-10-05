@@ -2,20 +2,25 @@
 resolver: lts-22.32
 system-ghc: true
 
+packages:
+- cachix
+- cachix-api
+
 allow-newer: true
 allow-newer-deps:
 - lzma-conduit
 
-packages:
-- cachix
-- cachix-api
 extra-deps:
+# not in stackage
 - hercules-ci-cnix-store-0.3.6.0
 - cabal-pkg-config-version-hook-0.1.0.1
 - nix-narinfo-0.1.1.1
-- hnix-store-core-0.6.1.0
-- algebraic-graphs-0.6.1
 - lzma-conduit-1.2.3@sha256:d33d14a1e95b134f90ecd73636328ec9b0aa14a6d2666f905443523d90bd159f,1712
+
+# hnix-store
+- hnix-store-core-0.8.0.0@sha256:c94fe476a9166b23b9bb593b583b30157cb7ab90c4f6b04a5a3a6dc075a21d9d,2950
+- hnix-store-nar-0.1.0.0@sha256:34f02a54f99b97726f264cf5335d44a56d654db4e3a676408a082a0f6e6c6a9c,2540
+- dependent-sum-template-0.2.0.1@sha256:98648074b81a100320b2206ecc132f1b962dae9f1b0f312386f0d9aaa816e79b,2169
 
 notify-if-nix-on-path: false
 nix:

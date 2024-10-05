@@ -151,7 +151,8 @@ library
     , generic-lens
     , hercules-ci-cnix-store
     , here
-    , hnix-store-core         >=0.6.1.0
+    , hnix-store-core         >=0.8
+    , hnix-store-nar
     , http-client
     , http-client-tls
     , http-conduit

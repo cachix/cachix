@@ -101,9 +101,10 @@ pushStrategy store authToken opts name compressionMethod storePath =
       let hSize = toS $ humanSize $ fromIntegral size
       path <- liftIO $ decodeUtf8With lenientDecode <$> storePathToPath store storePath
 
-      isTerminal <- liftIO $ hIsTerminalDevice stdout
+      isTerminal <- liftIO $ hIsTerminalDevice stderr
+      isCI <- liftIO $ (== Just "true") <$> lookupEnv "CI"
       onTick <-
-        if isTerminal
+        if isTerminal && not isCI
           then do
             let bar = color Blue "[:bar] " <> toS (retryText retryStatus) <> toS path <> " (:percent of " <> hSize <> ")"
                 barLength = T.length $ T.replace ":percent" "  0%" (T.replace "[:bar]" "" (toS bar))

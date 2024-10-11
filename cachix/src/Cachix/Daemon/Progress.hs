@@ -18,6 +18,7 @@ import Protolude
 import System.Console.AsciiProgress qualified as Ascii
 import System.Console.AsciiProgress.Internal qualified as Ascii.Internal
 import System.Console.Pretty
+import System.Environment (lookupEnv)
 import System.IO (hIsTerminalDevice)
 
 data UploadProgress
@@ -33,8 +34,9 @@ data UploadProgress
 
 new :: Handle -> String -> Int64 -> PushRetryStatus -> IO UploadProgress
 new hdl path size retryStatus = do
+  isCI <- liftIO $ (== Just "true") <$> lookupEnv "CI"
   isTerminal <- liftIO $ hIsTerminalDevice hdl
-  if isTerminal
+  if isTerminal && not isCI
     then do
       progressBar <- newProgressBar path size retryStatus
       return $ ProgressBar {..}

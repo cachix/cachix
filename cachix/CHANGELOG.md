@@ -5,11 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [1.7.5] - 2024-10-11
+
+### Fixed
+
+- don't assume terminal mode if `CI=true`
+- batch narinfo looksup if we have more than 1MB of hashes
+- `compression-level` can't be have a short of `-c` since it clashes with `--config`
+- improve hash mismatch error
+- don't retry all http exceptions
+
 ## [1.7.4] - 2024-05-24
 
 ### Fixed
 
-- :ignore sigPIPE on macOS after initialising nix
+- ignore sigPIPE on macOS after initialising nix
 
 ## [1.7.3] - 2024-05-17
 
@@ -103,14 +113,14 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Fixed
 
 - Reverted "Rewrite C++ bits to Haskell"
-  
+
   This reverts 15 commits related towards getting Cachix to
   built statically without C++ code in Nix.
-  
+
   Since it's not possible to interact with Nix sqlite directly
   in a reliable manner, we'll go the route of autogenerating C++
   binding without Template Haskell, at some point.
-  
+
 ## [1.4.2] - 2023-04-05
 
 ### Fixed
@@ -189,7 +199,7 @@ you have a lot of small files, there should be some significant performance impr
 
 ## [1.1] - 2022-12-16
 
-### Added 
+### Added
 
 - Use ZSTD compresion method by default and allow overriding it via `--compression-method` back to XZ. You can also change the default permanently on your binary cache settings page.
 
@@ -203,7 +213,7 @@ you have a lot of small files, there should be some significant performance impr
 
 ## [1.0.1] - 2022-09-24
 
-### Added 
+### Added
 
 - `cachix config`: allow setting hostname
 
@@ -221,7 +231,7 @@ you have a lot of small files, there should be some significant performance impr
 
 ## [0.8.1] - 2022-07-26
 
-- Cachix Deploy: retry exceptions every 1s instead of exponentially 
+- Cachix Deploy: retry exceptions every 1s instead of exponentially
 
 ### Fixed
 
@@ -241,7 +251,7 @@ you have a lot of small files, there should be some significant performance impr
 
 ## [0.7.0] - 2022-01-12
 
-### Added 
+### Added
 
 - Cachix Deploy support
 
@@ -294,14 +304,14 @@ you have a lot of small files, there should be some significant performance impr
 
 ### Fixed
 
-- Regression: use auth token when using signing key with private caches 
+- Regression: use auth token when using signing key with private caches
 - Configure netrc even if cachix config doesn't exist
 
 ## [0.5.0] - 2020-11-06
 
 ### Added
 
-- Allow specifying output directory to write nix.conf and netrc files. 
+- Allow specifying output directory to write nix.conf and netrc files.
 - Allow pushing without a Signing key using only auth token
 - Allow setting auth token via `$CACHIX_AUTH_TOKEN` shell variable
 
@@ -345,7 +355,7 @@ you have a lot of small files, there should be some significant performance impr
 
 ### Changed
 
-- Print stderr during streaming of nars    
+- Print stderr during streaming of nars
 
 ### Fixed
 
@@ -356,7 +366,7 @@ you have a lot of small files, there should be some significant performance impr
   then shelling out (slight performance improvement)
 
 - #251: Assert nar hash before creating narinfo
-    
+
   Fixes rare but annoying bug of "bad nar archive" from Nix.
   Never managed to reproduce. One theory is that the path disappears as
   its deleted by GC or nix-store --delete.
@@ -385,11 +395,11 @@ you have a lot of small files, there should be some significant performance impr
 
 ### Fixed
 
-- #240: push: prefer store paths as command arguments over stdin 
+- #240: push: prefer store paths as command arguments over stdin
 
   Some programming languages like go and nodejs always open
   stdin pipe, which confuses cachix to think there's stdin content.
-  
+
   Sadly checking stdin for contents is tricky since we get
   into the whole buffering mess.
 

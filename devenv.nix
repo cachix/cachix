@@ -1,4 +1,4 @@
-{ pkgs, lib, ghcVersion, getNix, ... }:
+{ pkgs, ghcVersion, getNix, ... }:
 
 {
   imports = [ ./git-hooks.nix ];
@@ -7,7 +7,7 @@
     pkgs.pkg-config
 
     # Dependencies
-    pkgs.lzma
+    pkgs.xz
     pkgs.zlib
     pkgs.boost
     pkgs.libsodium
@@ -17,9 +17,5 @@
     pkgs.stack
     pkgs.haskell.compiler."ghc${ghcVersion}"
     (pkgs.haskell-language-server.override { supportedGhcVersions = [ ghcVersion ]; })
-  ]
-  ++ lib.optionals pkgs.stdenv.isDarwin [
-    pkgs.darwin.apple_sdk.frameworks.Cocoa
-    pkgs.darwin.apple_sdk.frameworks.CoreServices
   ];
 }

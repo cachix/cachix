@@ -17,7 +17,7 @@
       url = "github:cachix/devenv";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.flake-compat.follows = "flake-compat";
-      inputs.pre-commit-hooks.follows = "git-hooks";
+      inputs.git-hooks.follows = "git-hooks";
     };
     flake-compat = {
       url = "github:edolstra/flake-compat";
@@ -40,7 +40,6 @@
       cachix-api = haskellPackages.callCabal2nix "cachix-api" ./cachix-api {};
       cachix = haskellPackages.callCabal2nix "cachix" ./cachix {
         inherit cachix-api;
-        fsnotify = haskellPackages.fsnotify_0_4_1_0 or haskellPackages.fsnotify;
         hnix-store-core = haskellPackages.hnix-store-core_0_8_0_0 or haskellPackages.hnix-store-core;
         nix = getNix { inherit pkgs haskellPackages; };
       };

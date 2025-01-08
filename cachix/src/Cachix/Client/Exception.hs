@@ -12,6 +12,8 @@ data CachixException
   | NoInput Text
   | NoConfig Text
   | NetRcParseError Text
+  | IncludeNotFound Text
+  | CircularInclude Text
   | NarStreamingError ExitCode Text
   | NarHashMismatch Text
   | DeprecatedCommand Text
@@ -33,6 +35,8 @@ instance Exception CachixException where
   displayException (ArtifactNotFound s) = toS s
   displayException (NoSigningKey s) = toS s
   displayException (NetRcParseError s) = toS s
+  displayException (IncludeNotFound s) = toS s
+  displayException (CircularInclude s) = toS s
   displayException (NarStreamingError _ s) = toS s
   displayException (NarHashMismatch s) = toS s
   displayException (DeprecatedCommand s) = toS s

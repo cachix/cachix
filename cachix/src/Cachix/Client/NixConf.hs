@@ -35,7 +35,8 @@ where
 
 import Cachix.Client.URI qualified as URI
 import Cachix.Types.BinaryCache qualified as BinaryCache
-import Data.List (nub)
+import Cachix.Client.Exception (CachixException(..))
+import Data.List (nub, tail, head)
 import Data.Text qualified as T
 import Protolude hiding (toS)
 import Protolude.Conv (toS)
@@ -45,15 +46,22 @@ import System.Directory
     doesFileExist,
     getXdgDirectory,
   )
-import System.FilePath.Posix (takeDirectory)
+import System.FilePath (normalise)
+import System.FilePath.Posix (takeDirectory, (</>))
 import Text.Megaparsec qualified as Mega
 import Text.Megaparsec.Char
+
+data IncludeType 
+  = RequiredInclude Text -- for "include"
+  | OptionalInclude Text -- for "!include"
+  deriving (Show, Eq)
 
 data NixConfLine
   = Substituters [Text]
   | TrustedUsers [Text]
   | TrustedPublicKeys [Text]
   | NetRcFile Text
+  | Include IncludeType
   | Other Text
   deriving (Show, Eq)
 
@@ -131,6 +139,58 @@ write ncl nc = do
   createDirectoryIfMissing True (takeDirectory filename)
   writeFile filename $ render nc
 
+resolveIncludes :: FilePath -> NixConf -> IO NixConf
+resolveIncludes sourceFile conf = resolveIncludesWithStack [normalise sourceFile] sourceFile conf
+  where
+    resolveIncludesWithStack :: [FilePath] -> FilePath -> NixConf -> IO NixConf
+    resolveIncludesWithStack stack baseFile (NixConf lines) = do
+      resolved <- traverse (resolveLine stack baseFile (takeDirectory baseFile)) lines
+      return $ NixConf (concat resolved)
+
+    resolveLine :: [FilePath] -> FilePath -> FilePath -> NixConfLine -> IO [NixConfLine]
+    resolveLine stack sourceFile dir (Include includetype) = case includetype of
+      RequiredInclude path -> do
+        let fullPath = normalise $ dir </> toS path
+        when (fullPath `elem` stack) $
+          throwIO $ CircularInclude $ "Circular include detected:\n" <>
+          T.intercalate "\n" (formatChain (reverse stack) fullPath)
+        content <- readFile fullPath
+        case parse content of
+          Left err -> throwIO $ IncludeNotFound $ toS fullPath
+          Right conf -> do
+            resolved <- resolveIncludesWithStack (fullPath:stack) sourceFile conf
+            case resolved of
+              NixConf l -> return l
+
+      OptionalInclude path -> do
+        let fullPath = dir </> toS path
+        if fullPath `elem` stack
+          then return []  -- Silently skip circular optional includes
+          else do
+            exists <- doesFileExist fullPath
+            if exists
+              then do
+                content <- readFile fullPath
+                case parse content of
+                  Left _ -> return []
+                  Right conf -> do
+                    resolved <- resolveIncludesWithStack (fullPath:stack) sourceFile conf
+                    case resolved of
+                      NixConf l -> return l
+              else return []
+
+    resolveLine _ _ _ line = return [line]
+
+    formatChain :: [FilePath] -> FilePath -> [Text]
+    formatChain chain target = 
+      case chain of
+        [] -> []
+        (p:ps) -> format p : 
+                  map (("    -> includes " <>) . format) ps ++
+                  ["    -> includes " <> format target <> " (circular reference)\n"]
+      where
+        format = toS . normalise :: FilePath -> Text
+
 read :: NixConfLoc -> IO (Maybe NixConf)
 read ncl = do
   filename <- getFilename ncl
@@ -143,8 +203,12 @@ read ncl = do
         Left err -> do
           putStrLn (Mega.errorBundlePretty err)
           panic $ toS filename <> " failed to parse, please copy the above error and contents of nix.conf and open an issue at https://github.com/cachix/cachix"
-        Right conf -> return $ Just conf
-
+        Right conf -> do
+          resolved <- try @CachixException $ resolveIncludes filename conf
+          case resolved of
+            Left err -> throwIO err
+            Right conf' -> return $ Just conf'
+  
 update :: NixConfLoc -> (Maybe NixConf -> NixConf) -> IO ()
 update ncl f = do
   nc <- f <$> read ncl
@@ -183,6 +247,15 @@ parseLine constr name = Mega.try $ do
   _ <- many spaceChar
   return $ constr (fmap toS values)
 
+parseInclude :: (Text -> IncludeType) -> Text -> Parser NixConfLine
+parseInclude constr name = Mega.try $ do
+  _ <- optional (some (char ' '))
+  _ <- string name
+  _ <- some (char ' ')
+  path <- many (Mega.satisfy (not . isSpace))
+  _ <- many spaceChar
+  return $ Include (constr (toS path))
+
 parseOther :: Parser NixConfLine
 parseOther = Mega.try $ Other . toS <$> Mega.someTill Mega.anySingle (void eol <|> Mega.eof)
 
@@ -196,6 +269,8 @@ parseAltLine =
     <|> parseLine Substituters "binary-caches"
     -- NB: assume that space in this option means space in filename
     <|> parseLine (NetRcFile . T.concat) "netrc-file"
+    <|> parseInclude RequiredInclude "include"
+    <|> parseInclude OptionalInclude "!include"
     <|> parseOther
 
 parser :: Parser NixConf

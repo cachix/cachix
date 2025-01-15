@@ -143,6 +143,7 @@ write ncl nc = do
   createDirectoryIfMissing True (takeDirectory filename)
   writeFile filename $ render nc
 
+-- | Resolves includes in the given NixConf, starting from the given source file.
 resolveIncludes :: FilePath -> NixConf -> IO [NixConf]
 resolveIncludes sourceFile conf = resolveIncludesWithStack [normalise sourceFile] sourceFile conf
 

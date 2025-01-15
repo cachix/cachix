@@ -33,6 +33,8 @@ spec = do
       property "substituters = a b c\n"
     it "handles all known keys" $
       property "substituters = a b c\ntrusted-users = him me\ntrusted-public-keys = a\n"
+    it "handles includes" $
+      property "include /etc/nix/nix.conf\n!include /etc/nix/nix.conf\n"
     it "random content" $
       property "blabla = foobar\nfoo = bar\n"
 
@@ -163,6 +165,14 @@ spec = do
     it "parses with missing endline" $
       parse "allowed-users = *"
         `shouldBe` Right (NixConf [Other "allowed-users = *"])
+
+    it "parses include" $
+      parse "include /etc/nix/nix.conf\n"
+        `shouldBe` Right (NixConf [Include (RequiredInclude "/etc/nix/nix.conf")])
+
+    it "parses !include" $
+      parse "!include /etc/nix/nix.conf\n"
+        `shouldBe` Right (NixConf [Include (OptionalInclude "/etc/nix/nix.conf")])
 
     it "parses a complex example" $
       parse realExample

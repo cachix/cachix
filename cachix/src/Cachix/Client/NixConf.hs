@@ -15,6 +15,7 @@ module Cachix.Client.NixConf
     NixConfG (..),
     NixConfLine (..),
     NixConfLoc (..),
+    IncludeType (..),
     render,
     add,
     remove,
@@ -33,10 +34,10 @@ module Cachix.Client.NixConf
   )
 where
 
+import Cachix.Client.Exception (CachixException (..))
 import Cachix.Client.URI qualified as URI
 import Cachix.Types.BinaryCache qualified as BinaryCache
-import Cachix.Client.Exception (CachixException(..))
-import Data.List (nub, tail, head)
+import Data.List (nub)
 import Data.Text qualified as T
 import Protolude hiding (toS)
 import Protolude.Conv (toS)
@@ -51,7 +52,7 @@ import System.FilePath.Posix (takeDirectory, (</>))
 import Text.Megaparsec qualified as Mega
 import Text.Megaparsec.Char
 
-data IncludeType 
+data IncludeType
   = RequiredInclude Text -- for "include"
   | OptionalInclude Text -- for "!include"
   deriving (Show, Eq)
@@ -152,20 +153,21 @@ resolveIncludes sourceFile conf = resolveIncludesWithStack [normalise sourceFile
       RequiredInclude path -> do
         let fullPath = normalise $ dir </> toS path
         when (fullPath `elem` stack) $
-          throwIO $ CircularInclude $ "Circular include detected:\n" <>
-          T.intercalate "\n" (formatChain (reverse stack) fullPath)
+          throwIO $
+            CircularInclude $
+              "Circular include detected:\n"
+                <> T.intercalate "\n" (formatChain (reverse stack) fullPath)
         content <- readFile fullPath
         case parse content of
           Left err -> throwIO $ IncludeNotFound $ toS fullPath
           Right conf -> do
-            resolved <- resolveIncludesWithStack (fullPath:stack) sourceFile conf
+            resolved <- resolveIncludesWithStack (fullPath : stack) sourceFile conf
             case resolved of
               NixConf l -> return l
-
       OptionalInclude path -> do
         let fullPath = dir </> toS path
         if fullPath `elem` stack
-          then return []  -- Silently skip circular optional includes
+          then return [] -- Silently skip circular optional includes
           else do
             exists <- doesFileExist fullPath
             if exists
@@ -174,20 +176,20 @@ resolveIncludes sourceFile conf = resolveIncludesWithStack [normalise sourceFile
                 case parse content of
                   Left _ -> return []
                   Right conf -> do
-                    resolved <- resolveIncludesWithStack (fullPath:stack) sourceFile conf
+                    resolved <- resolveIncludesWithStack (fullPath : stack) sourceFile conf
                     case resolved of
                       NixConf l -> return l
               else return []
-
     resolveLine _ _ _ line = return [line]
 
     formatChain :: [FilePath] -> FilePath -> [Text]
-    formatChain chain target = 
+    formatChain chain target =
       case chain of
         [] -> []
-        (p:ps) -> format p : 
-                  map (("    -> includes " <>) . format) ps ++
-                  ["    -> includes " <> format target <> " (circular reference)\n"]
+        (p : ps) ->
+          format p
+            : map (("    -> includes " <>) . format) ps
+            ++ ["    -> includes " <> format target <> " (circular reference)\n"]
       where
         format = toS . normalise :: FilePath -> Text
 
@@ -208,7 +210,7 @@ read ncl = do
           case resolved of
             Left err -> throwIO err
             Right conf' -> return $ Just conf'
-  
+
 update :: NixConfLoc -> (Maybe NixConf -> NixConf) -> IO ()
 update ncl f = do
   nc <- f <$> read ncl

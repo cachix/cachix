@@ -132,6 +132,8 @@ render (NixConf nixconflines) = T.unlines $ fmap go nixconflines
     go (TrustedUsers xs) = "trusted-users = " <> T.unwords xs
     go (TrustedPublicKeys xs) = "trusted-public-keys" <> " = " <> T.unwords xs
     go (NetRcFile filename) = "netrc-file = " <> filename
+    go (Include (RequiredInclude path)) = "include " <> path
+    go (Include (OptionalInclude path)) = "!include " <> path
     go (Other line) = line
 
 write :: NixConfLoc -> NixConf -> IO ()

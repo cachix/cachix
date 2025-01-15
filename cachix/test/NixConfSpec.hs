@@ -7,6 +7,8 @@ import Cachix.Types.BinaryCache (BinaryCache (..), CompressionMethod (..))
 import Cachix.Types.Permission (Permission (..))
 import Data.String.Here
 import Protolude
+import System.FilePath ((</>))
+import System.IO.Temp (withTempDirectory)
 import Test.Hspec
 
 property :: Text -> Expectation
@@ -176,18 +178,27 @@ spec = do
 
     it "parses a complex example" $
       parse realExample
-        `shouldBe` Right
-          ( NixConf
-              [ Other "",
-                Substituters ["a", "b", "c"],
-                TrustedUsers ["him", "me"],
-                TrustedPublicKeys ["a"],
-                Other "blabla =  asd",
-                Other "# comment",
-                Other "",
-                Other ""
-              ]
-          )
+        `shouldBe` Right parsedRealExample
+
+  describe "write . read" $ do
+    it "is idempotent" $ do
+      withTempDirectory "/tmp" "nixconf" $ \temp -> do
+        let confPath = temp </> "nix.conf"
+        let subConfPath = temp </> "sub.conf"
+        let confContents = "include " <> toS subConfPath <> "\n"
+        let parsedConfContents = NixConf [Include (RequiredInclude (toS subConfPath))]
+        writeFile confPath confContents
+        writeFile subConfPath realExample
+
+        Just conf <- NixConf.read (Custom temp)
+        conf `shouldBe` parsedConfContents
+        NixConf.write (Custom temp) conf
+        readFile confPath `shouldReturn` confContents
+
+        NixConf.resolveIncludes confPath conf
+          `shouldReturn` [ parsedConfContents,
+                           parsedRealExample
+                         ]
 
 realExample :: Text
 realExample =
@@ -200,3 +211,16 @@ blabla =  asd
 
 
 |]
+
+parsedRealExample :: NixConf
+parsedRealExample =
+  NixConf
+    [ Other "",
+      Substituters ["a", "b", "c"],
+      TrustedUsers ["him", "me"],
+      TrustedPublicKeys ["a"],
+      Other "blabla =  asd",
+      Other "# comment",
+      Other "",
+      Other ""
+    ]

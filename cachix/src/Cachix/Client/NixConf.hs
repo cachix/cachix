@@ -154,30 +154,31 @@ resolveIncludesWithStack stack baseFile baseConf@(NixConf l) = do
     dir = takeDirectory baseFile
 
     resolveInclude :: IncludeType -> IO [NixConf]
-    resolveInclude (RequiredInclude path) = do
-      let fullPath = normalise $ dir </> toS path
-      when (fullPath `elem` stack) $
-        throwIO $
-          CircularInclude $
-            "Circular include detected:\n"
-              <> T.intercalate "\n" (formatChain (reverse stack) fullPath)
-      content <- readFile fullPath
-      case parse content of
-        Left err -> throwIO $ IncludeNotFound $ toS fullPath
-        Right conf -> resolveIncludesWithStack (fullPath : stack) baseFile conf
-    resolveInclude (OptionalInclude path) = do
-      let fullPath = normalise $ dir </> toS path
+    resolveInclude includeType = do
+      let path = case includeType of
+            RequiredInclude p -> p
+            OptionalInclude p -> p
+          fullPath = normalise $ dir </> toS path
+
       if fullPath `elem` stack
-        then return [] -- Silently skip circular optional includes
+        then case includeType of
+          RequiredInclude _ -> throwIO $ CircularInclude (formatCircularError fullPath)
+          OptionalInclude _ -> return []
         else do
           exists <- doesFileExist fullPath
-          if exists
-            then do
+          if not exists && isRequired includeType
+            then throwIO $ IncludeNotFound $ toS fullPath
+            else do
               content <- readFile fullPath
               case parse content of
-                Left _ -> return []
+                Left _err -> return []
                 Right conf -> resolveIncludesWithStack (fullPath : stack) baseFile conf
-            else return []
+
+    isRequired (RequiredInclude _) = True
+    isRequired (OptionalInclude _) = False
+
+    formatCircularError path =
+      "Circular include detected:\n" <> T.intercalate "\n" (formatChain (reverse stack) path)
 
     formatChain :: [FilePath] -> FilePath -> [Text]
     formatChain chain target =

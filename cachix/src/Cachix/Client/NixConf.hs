@@ -1,7 +1,7 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-{- (Very limited) parser, rendered and modifier of nix.conf
+{- (Very limited) parser, renderer and modifier of nix.conf
 
 Supports subset of nix.conf given Nix 2.0 or Nix 1.0
 
@@ -31,6 +31,7 @@ module Cachix.Client.NixConf
     defaultPublicURI,
     defaultSigningKey,
     setNetRC,
+    resolveIncludes,
   )
 where
 
@@ -142,47 +143,41 @@ write ncl nc = do
   createDirectoryIfMissing True (takeDirectory filename)
   writeFile filename $ render nc
 
-resolveIncludes :: FilePath -> NixConf -> IO NixConf
+resolveIncludes :: FilePath -> NixConf -> IO [NixConf]
 resolveIncludes sourceFile conf = resolveIncludesWithStack [normalise sourceFile] sourceFile conf
-  where
-    resolveIncludesWithStack :: [FilePath] -> FilePath -> NixConf -> IO NixConf
-    resolveIncludesWithStack stack baseFile (NixConf lines) = do
-      resolved <- traverse (resolveLine stack baseFile (takeDirectory baseFile)) lines
-      return $ NixConf (concat resolved)
 
-    resolveLine :: [FilePath] -> FilePath -> FilePath -> NixConfLine -> IO [NixConfLine]
-    resolveLine stack sourceFile dir (Include includetype) = case includetype of
-      RequiredInclude path -> do
-        let fullPath = normalise $ dir </> toS path
-        when (fullPath `elem` stack) $
-          throwIO $
-            CircularInclude $
-              "Circular include detected:\n"
-                <> T.intercalate "\n" (formatChain (reverse stack) fullPath)
-        content <- readFile fullPath
-        case parse content of
-          Left err -> throwIO $ IncludeNotFound $ toS fullPath
-          Right conf -> do
-            resolved <- resolveIncludesWithStack (fullPath : stack) sourceFile conf
-            case resolved of
-              NixConf l -> return l
-      OptionalInclude path -> do
-        let fullPath = dir </> toS path
-        if fullPath `elem` stack
-          then return [] -- Silently skip circular optional includes
-          else do
-            exists <- doesFileExist fullPath
-            if exists
-              then do
-                content <- readFile fullPath
-                case parse content of
-                  Left _ -> return []
-                  Right conf -> do
-                    resolved <- resolveIncludesWithStack (fullPath : stack) sourceFile conf
-                    case resolved of
-                      NixConf l -> return l
-              else return []
-    resolveLine _ _ _ line = return [line]
+resolveIncludesWithStack :: [FilePath] -> FilePath -> NixConf -> IO [NixConf]
+resolveIncludesWithStack stack baseFile baseConf@(NixConf l) = do
+  includedConfigs <- mapM resolveInclude [f | Include f <- l]
+  return $ baseConf : concat includedConfigs
+  where
+    dir = takeDirectory baseFile
+
+    resolveInclude :: IncludeType -> IO [NixConf]
+    resolveInclude (RequiredInclude path) = do
+      let fullPath = normalise $ dir </> toS path
+      when (fullPath `elem` stack) $
+        throwIO $
+          CircularInclude $
+            "Circular include detected:\n"
+              <> T.intercalate "\n" (formatChain (reverse stack) fullPath)
+      content <- readFile fullPath
+      case parse content of
+        Left err -> throwIO $ IncludeNotFound $ toS fullPath
+        Right conf -> resolveIncludesWithStack (fullPath : stack) baseFile conf
+    resolveInclude (OptionalInclude path) = do
+      let fullPath = normalise $ dir </> toS path
+      if fullPath `elem` stack
+        then return [] -- Silently skip circular optional includes
+        else do
+          exists <- doesFileExist fullPath
+          if exists
+            then do
+              content <- readFile fullPath
+              case parse content of
+                Left _ -> return []
+                Right conf -> resolveIncludesWithStack (fullPath : stack) baseFile conf
+            else return []
 
     formatChain :: [FilePath] -> FilePath -> [Text]
     formatChain chain target =
@@ -207,11 +202,7 @@ read ncl = do
         Left err -> do
           putStrLn (Mega.errorBundlePretty err)
           panic $ toS filename <> " failed to parse, please copy the above error and contents of nix.conf and open an issue at https://github.com/cachix/cachix"
-        Right conf -> do
-          resolved <- try @CachixException $ resolveIncludes filename conf
-          case resolved of
-            Left err -> throwIO err
-            Right conf' -> return $ Just conf'
+        Right conf -> return (Just conf)
 
 update :: NixConfLoc -> (Maybe NixConf -> NixConf) -> IO ()
 update ncl f = do

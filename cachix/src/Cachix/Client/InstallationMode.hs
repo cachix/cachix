@@ -82,7 +82,9 @@ getNixEnv :: IO NixEnv
 getNixEnv = do
   user <- getUser
   nc <- NixConf.read NixConf.Global
-  isTrusted <- isTrustedUser $ NixConf.readLines (catMaybes [nc]) NixConf.isTrustedUsers
+  ncPath <- NixConf.getFilename NixConf.Global
+  ncs <- traverse (NixConf.resolveIncludes ncPath) nc
+  isTrusted <- isTrustedUser $ NixConf.readLines (fromMaybe [] ncs) NixConf.isTrustedUsers
   isNixOS <- doesFileExist "/run/current-system/nixos-version"
   return $
     NixEnv

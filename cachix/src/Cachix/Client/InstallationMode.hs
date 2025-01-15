@@ -152,7 +152,12 @@ addBinaryCache config bc _ (Install ncl) = do
 
 -- | Resolve and read the nix.conf.
 --
--- Returns a set of "inputs" confs and the "output" conf.
+-- Returns a set of "input" confs and the "output" conf.
+--
+-- The output is the parsed conf file at the location specified by the NixConfLoc.
+--
+-- Inputs are any confs included by the output conf, plus any additional external resolutions.
+-- For example, for the local Nix conf, we also return the global one.
 prepareNixConf :: NixConf.NixConfLoc -> IO ([NixConf.NixConf], NixConf.NixConf)
 prepareNixConf ncl = do
   -- TODO: might need locking one day

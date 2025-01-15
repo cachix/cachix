@@ -150,20 +150,34 @@ addBinaryCache config bc _ (Install ncl) = do
   filename <- NixConf.getFilename ncl
   putStrLn $ "Configured " <> BinaryCache.uri bc <> " binary cache in " <> toS filename
 
+-- | Resolve and read the nix.conf.
+--
+-- Returns a set of "inputs" confs and the "output" conf.
 prepareNixConf :: NixConf.NixConfLoc -> IO ([NixConf.NixConf], NixConf.NixConf)
 prepareNixConf ncl = do
   -- TODO: might need locking one day
   gnc <- NixConf.read NixConf.Global
+  gncFilePath <- NixConf.getFilename NixConf.Global
+  gncInputs <- traverse (NixConf.resolveIncludes gncFilePath) gnc
+
   (input, output) <-
     case ncl of
-      NixConf.Global -> return ([gnc], gnc)
+      NixConf.Global -> do
+        return (gncInputs, gnc)
       NixConf.Local -> do
         lnc <- NixConf.read NixConf.Local
-        return ([gnc, lnc], lnc)
-      NixConf.Custom _ -> do
+        lncFilePath <- NixConf.getFilename NixConf.Local
+        lncInputs <- traverse (NixConf.resolveIncludes lncFilePath) lnc
+        return (gncInputs <> lncInputs, lnc)
+      NixConf.Custom path -> do
         lnc <- NixConf.read ncl
-        return ([lnc], lnc)
-  return (catMaybes input, fromMaybe (NixConf.NixConf []) output)
+        lncInputs <- traverse (NixConf.resolveIncludes path) lnc
+        return (lncInputs, lnc)
+
+  return
+    ( fromMaybe [] input,
+      fromMaybe (NixConf.NixConf []) output
+    )
 
 removeBinaryCache :: URI.URI -> Text -> InstallationMode -> IO ()
 removeBinaryCache uri name (Install ncl) = do

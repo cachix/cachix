@@ -35,6 +35,7 @@ spec = do
       property "substituters = a b c\ntrusted-users = him me\ntrusted-public-keys = a\n"
     it "random content" $
       property "blabla = foobar\nfoo = bar\n"
+
   describe "add" $ do
     it "merges binary caches from both files" $
       let globalConf =
@@ -53,6 +54,7 @@ spec = do
                 TrustedPublicKeys [defaultSigningKey, "pub1", "pub2", "pub"]
               ]
        in add bc [globalConf, localConf] localConf `shouldBe` result
+
     it "is noop if binary cache exists in one file" $
       let globalConf =
             NixConf
@@ -66,6 +68,7 @@ spec = do
                 TrustedPublicKeys [defaultSigningKey, "pub"]
               ]
        in add bc [globalConf, localConf] localConf `shouldBe` result
+
     it "preserves other nixconf entries" $
       let globalConf =
             NixConf
@@ -87,6 +90,7 @@ spec = do
                 TrustedPublicKeys [defaultSigningKey, "pub1", "pub"]
               ]
        in add bc [globalConf, localConf] localConf `shouldBe` result
+
     it "removed duplicates" $
       let globalConf =
             NixConf
@@ -104,6 +108,7 @@ spec = do
                 TrustedPublicKeys [defaultSigningKey, "pub1", "pub2", "pub"]
               ]
        in add bc [globalConf, localConf] localConf `shouldBe` result
+
     it "adds binary cache and defaults if no existing entries exist" $
       let globalConf = NixConf []
           localConf = NixConf []
@@ -113,6 +118,7 @@ spec = do
                 TrustedPublicKeys [defaultSigningKey, "pub"]
               ]
        in add bc [globalConf, localConf] localConf `shouldBe` result
+
   describe "remove" $ do
     it "removes a binary cache" $
       let localConf =
@@ -126,6 +132,7 @@ spec = do
                 TrustedPublicKeys [defaultSigningKey]
               ]
        in remove "https://cachix.org" "name" [localConf] localConf `shouldBe` (result, True)
+
     it "removes nothing if the binary cache is missing" $
       let globalConf =
             NixConf
@@ -135,22 +142,28 @@ spec = do
           localConf = globalConf
           result = localConf
        in remove "https://cachix.org" "name" [globalConf, localConf] localConf `shouldBe` (result, False)
+
   describe "parse" $ do
     it "parses substituters" $
       parse "substituters = a\n"
         `shouldBe` Right (NixConf [Substituters ["a"]])
+
     it "parses long key" $
       parse "binary-caches-parallel-connections = 40\n"
         `shouldBe` Right (NixConf [Other "binary-caches-parallel-connections = 40"])
+
     it "parses substituters with multiple values" $
       parse "substituters = a b c\n"
         `shouldBe` Right (NixConf [Substituters ["a", "b", "c"]])
+
     it "parses equal sign after the first key as literal" $
       parse "substituters = a b c= d\n"
         `shouldBe` Right (NixConf [Substituters ["a", "b", "c=", "d"]])
+
     it "parses with missing endline" $
       parse "allowed-users = *"
         `shouldBe` Right (NixConf [Other "allowed-users = *"])
+
     it "parses a complex example" $
       parse realExample
         `shouldBe` Right

@@ -1,5 +1,4 @@
 {-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 {- (Very limited) parser, renderer and modifier of nix.conf
 
@@ -16,10 +15,13 @@ module Cachix.Client.NixConf
     NixConfLine (..),
     NixConfLoc (..),
     IncludeType (..),
+    new,
     render,
     add,
     remove,
     read,
+    readWithDefault,
+    resolveIncludes,
     update,
     write,
     getFilename,
@@ -31,7 +33,6 @@ module Cachix.Client.NixConf
     defaultPublicURI,
     defaultSigningKey,
     setNetRC,
-    resolveIncludes,
   )
 where
 
@@ -53,6 +54,12 @@ import System.FilePath.Posix (takeDirectory, (</>))
 import Text.Megaparsec qualified as Mega
 import Text.Megaparsec.Char
 
+defaultPublicURI :: Text
+defaultPublicURI = "https://cache.nixos.org"
+
+defaultSigningKey :: Text
+defaultSigningKey = "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+
 data IncludeType
   = RequiredInclude Text -- for "include"
   | OptionalInclude Text -- for "!include"
@@ -67,17 +74,23 @@ data NixConfLine
   | Other Text
   deriving (Show, Eq)
 
-newtype NixConfG a = NixConf a
-  deriving (Show, Eq, Functor)
+data NixConfG a = NixConf
+  { nixConfPath :: FilePath,
+    nixConfLines :: a
+  }
+  deriving stock (Show, Eq, Functor)
 
 type NixConf = NixConfG [NixConfLine]
+
+new :: FilePath -> NixConf
+new path = NixConf path []
 
 readLines :: [NixConf] -> (NixConfLine -> Maybe [Text]) -> [Text]
 readLines nixconfs predicate = concatMap f nixconfs
   where
-    f (NixConf xs) = foldl foldIt [] xs
+    f (NixConf {nixConfLines}) = foldl foldIt [] nixConfLines
     foldIt :: [Text] -> NixConfLine -> [Text]
-    foldIt prev new = prev <> fromMaybe [] (predicate new)
+    foldIt prev next = prev <> fromMaybe [] (predicate next)
 
 writeLines :: (NixConfLine -> Maybe [Text]) -> NixConfLine -> NixConf -> NixConf
 writeLines predicate addition = fmap f
@@ -119,14 +132,8 @@ remove uri name toRead toWrite =
     publicKeys = filter (not . T.isPrefixOf (toS $ URI.hostBS $ URI.getHostname fulluri)) oldpublicKeys
     fulluri = URI.appendSubdomain name uri
 
-defaultPublicURI :: Text
-defaultPublicURI = "https://cache.nixos.org"
-
-defaultSigningKey :: Text
-defaultSigningKey = "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
-
 render :: NixConf -> Text
-render (NixConf nixconflines) = T.unlines $ fmap go nixconflines
+render (NixConf {nixConfLines}) = T.unlines $ fmap go nixConfLines
   where
     go :: NixConfLine -> Text
     go (Substituters xs) = "substituters" <> " = " <> T.unwords xs
@@ -144,12 +151,12 @@ write ncl nc = do
   writeFile filename $ render nc
 
 -- | Resolves includes in the given NixConf, starting from the given source file.
-resolveIncludes :: FilePath -> NixConf -> IO [NixConf]
-resolveIncludes sourceFile conf = resolveIncludesWithStack [normalise sourceFile] sourceFile conf
+resolveIncludes :: NixConf -> IO [NixConf]
+resolveIncludes conf@NixConf {nixConfPath} = resolveIncludesWithStack [normalise nixConfPath] nixConfPath conf
 
 resolveIncludesWithStack :: [FilePath] -> FilePath -> NixConf -> IO [NixConf]
-resolveIncludesWithStack stack baseFile baseConf@(NixConf l) = do
-  includedConfigs <- mapM resolveInclude [f | Include f <- l]
+resolveIncludesWithStack stack baseFile baseConf@(NixConf {nixConfLines}) = do
+  includedConfigs <- mapM resolveInclude [f | Include f <- nixConfLines]
   return $ baseConf : concat includedConfigs
   where
     dir = takeDirectory baseFile
@@ -173,7 +180,7 @@ resolveIncludesWithStack stack baseFile baseConf@(NixConf l) = do
               content <- readFile fullPath
               case parse content of
                 Left _err -> return []
-                Right conf -> resolveIncludesWithStack (fullPath : stack) baseFile conf
+                Right conf -> resolveIncludesWithStack (fullPath : stack) baseFile (NixConf fullPath conf)
 
     isRequired (RequiredInclude _) = True
     isRequired (OptionalInclude _) = False
@@ -195,6 +202,10 @@ resolveIncludesWithStack stack baseFile baseConf@(NixConf l) = do
 read :: NixConfLoc -> IO (Maybe NixConf)
 read ncl = do
   filename <- getFilename ncl
+  read' filename
+
+read' :: FilePath -> IO (Maybe NixConf)
+read' filename = do
   doesExist <- doesFileExist filename
   if not doesExist
     then return Nothing
@@ -204,7 +215,12 @@ read ncl = do
         Left err -> do
           putStrLn (Mega.errorBundlePretty err)
           panic $ toS filename <> " failed to parse, please copy the above error and contents of nix.conf and open an issue at https://github.com/cachix/cachix"
-        Right conf -> return (Just conf)
+        Right conf -> return (Just (NixConf filename conf))
+
+readWithDefault :: NixConfLoc -> IO NixConf
+readWithDefault ncl = do
+  filename <- getFilename ncl
+  fromMaybe (new filename) <$> read' filename
 
 update :: NixConfLoc -> (Maybe NixConf -> NixConf) -> IO ()
 update ncl f = do
@@ -212,7 +228,7 @@ update ncl f = do
   write ncl nc
 
 setNetRC :: Text -> NixConf -> NixConf
-setNetRC netrc (NixConf nc) = NixConf $ filter noNetRc nc ++ [NetRcFile netrc]
+setNetRC netrc conf = conf {nixConfLines = filter noNetRc (nixConfLines conf) ++ [NetRcFile netrc]}
   where
     noNetRc (NetRcFile _) = False
     noNetRc _ = True
@@ -270,8 +286,8 @@ parseAltLine =
     <|> parseInclude OptionalInclude "!include"
     <|> parseOther
 
-parser :: Parser NixConf
-parser = NixConf <$> many parseAltLine
+parser :: Parser [NixConfLine]
+parser = many parseAltLine
 
-parse :: Text -> Either (Mega.ParseErrorBundle Text Void) NixConf
+parse :: Text -> Either (Mega.ParseErrorBundle Text Void) [NixConfLine]
 parse = Mega.parse parser "nix.conf"

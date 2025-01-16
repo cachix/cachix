@@ -81,10 +81,8 @@ toString UntrustedNixOS = "untrusted-nixos"
 getNixEnv :: IO NixEnv
 getNixEnv = do
   user <- getUser
-  nc <- NixConf.read NixConf.Global
-  ncPath <- NixConf.getFilename NixConf.Global
-  ncs <- traverse (NixConf.resolveIncludes ncPath) nc
-  isTrusted <- isTrustedUser $ NixConf.readLines (fromMaybe [] ncs) NixConf.isTrustedUsers
+  ncs <- NixConf.resolveIncludes =<< NixConf.readWithDefault NixConf.Global
+  isTrusted <- isTrustedUser $ NixConf.readLines ncs NixConf.isTrustedUsers
   isNixOS <- doesFileExist "/run/current-system/nixos-version"
   return $
     NixEnv
@@ -162,10 +160,10 @@ addBinaryCache config bc _ (Install ncl) = do
 -- For example, for the local Nix conf, we also return the global one.
 prepareNixConf :: NixConf.NixConfLoc -> IO ([NixConf.NixConf], NixConf.NixConf)
 prepareNixConf ncl = do
+  outputPath <- NixConf.getFilename ncl
   -- TODO: might need locking one day
   gnc <- NixConf.read NixConf.Global
-  gncFilePath <- NixConf.getFilename NixConf.Global
-  gncInputs <- traverse (NixConf.resolveIncludes gncFilePath) gnc
+  gncInputs <- traverse NixConf.resolveIncludes gnc
 
   (input, output) <-
     case ncl of
@@ -173,22 +171,21 @@ prepareNixConf ncl = do
         return (gncInputs, gnc)
       NixConf.Local -> do
         lnc <- NixConf.read NixConf.Local
-        lncFilePath <- NixConf.getFilename NixConf.Local
-        lncInputs <- traverse (NixConf.resolveIncludes lncFilePath) lnc
+        lncInputs <- traverse NixConf.resolveIncludes lnc
         return (gncInputs <> lncInputs, lnc)
-      NixConf.Custom path -> do
+      NixConf.Custom _ -> do
         lnc <- NixConf.read ncl
-        lncInputs <- traverse (NixConf.resolveIncludes path) lnc
+        lncInputs <- traverse NixConf.resolveIncludes lnc
         return (lncInputs, lnc)
 
   return
     ( fromMaybe [] input,
-      fromMaybe (NixConf.NixConf []) output
+      fromMaybe (NixConf.new outputPath) output
     )
 
 removeBinaryCache :: URI.URI -> Text -> InstallationMode -> IO ()
 removeBinaryCache uri name (Install ncl) = do
-  contents <- fromMaybe (NixConf.NixConf []) <$> NixConf.read ncl
+  contents <- NixConf.readWithDefault ncl
   let (final, removed) = NixConf.remove uri name [contents] contents
   NixConf.write ncl final
   filename <- NixConf.getFilename ncl

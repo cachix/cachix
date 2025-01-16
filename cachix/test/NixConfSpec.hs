@@ -191,13 +191,14 @@ spec = do
         writeFile subConfPath realExample
 
         Just conf <- NixConf.read (Custom temp)
-        conf `shouldBe` parsedConfContents
-        NixConf.write (Custom temp) conf
+        conf `shouldBe` NixConfSource confPath parsedConfContents
+
+        NixConf.write conf
         readFile confPath `shouldReturn` confContents
 
-        NixConf.resolveIncludes confPath conf
-          `shouldReturn` [ parsedConfContents,
-                           parsedRealExample
+        NixConf.resolveIncludes conf
+          `shouldReturn` [ NixConfSource confPath parsedConfContents,
+                           NixConfSource subConfPath parsedRealExample
                          ]
 
 realExample :: Text

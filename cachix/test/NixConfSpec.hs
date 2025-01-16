@@ -228,6 +228,18 @@ spec = do
               _ -> False
         NixConf.resolveIncludes conf `shouldThrow` isCircularInclude
 
+    it "detects trusted-users through includes" $ do
+      withTempDirectory "/tmp" "nixconf" $ \temp -> do
+        let confPath = temp </> "nix.conf"
+            subConfPath = temp </> "sub.conf"
+            confContents :: Text = "include " <> toS subConfPath <> "\n"
+            subConfContents :: Text = "trusted-users = @wheel"
+        writeFile confPath confContents
+        writeFile subConfPath subConfContents
+
+        ncs <- NixConf.resolveIncludes =<< NixConf.readWithDefault (NixConf.Custom temp)
+        concatMap (NixConf.readLines NixConf.isTrustedUsers) ncs `shouldBe` ["@wheel"]
+
 realExample :: Text
 realExample =
   [hereLit|

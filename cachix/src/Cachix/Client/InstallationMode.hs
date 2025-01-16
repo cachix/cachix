@@ -82,7 +82,7 @@ getNixEnv :: IO NixEnv
 getNixEnv = do
   user <- getUser
   ncs <- NixConf.resolveIncludes =<< NixConf.readWithDefault NixConf.Global
-  isTrusted <- isTrustedUser $ NixConf.readLines ncs NixConf.isTrustedUsers
+  isTrusted <- isTrustedUser $ concatMap (NixConf.readLines NixConf.isTrustedUsers) ncs
   isNixOS <- doesFileExist "/run/current-system/nixos-version"
   return $
     NixEnv
@@ -139,14 +139,14 @@ addBinaryCache config bc useOptions WriteNixOS =
 addBinaryCache config bc _ (Install ncl) = do
   (input, output) <- prepareNixConf ncl
   netrcLocMaybe <- forM (guard $ not (BinaryCache.isPublic bc)) $ const $ addPrivateBinaryCacheNetRC config bc ncl
-  let addNetRCLine :: NixConf.NixConf -> NixConf.NixConf
+  let addNetRCLine :: NixConf.NixConfSource -> NixConf.NixConfSource
       addNetRCLine = fromMaybe identity $ do
         netrcLoc <- netrcLocMaybe :: Maybe FilePath
         -- We only add the netrc line for local user configs for now.
         -- On NixOS we assume it will be picked up from the default location.
         guard (ncl == NixConf.Local)
-        pure (NixConf.setNetRC $ toS netrcLoc)
-  NixConf.write ncl $ addNetRCLine $ NixConf.add bc input output
+        pure $ setNetRC (toS netrcLoc)
+  NixConf.write $ addNetRCLine $ NixConf.add bc input output
   filename <- NixConf.getFilename ncl
   putStrLn $ "Configured " <> BinaryCache.uri bc <> " binary cache in " <> toS filename
 
@@ -158,7 +158,7 @@ addBinaryCache config bc _ (Install ncl) = do
 --
 -- Inputs are any confs included by the output conf, plus any additional external resolutions.
 -- For example, for the local Nix conf, we also return the global one.
-prepareNixConf :: NixConf.NixConfLoc -> IO ([NixConf.NixConf], NixConf.NixConf)
+prepareNixConf :: NixConf.NixConfLoc -> IO ([NixConf.NixConfSource], NixConf.NixConfSource)
 prepareNixConf ncl = do
   outputPath <- NixConf.getFilename ncl
   -- TODO: might need locking one day
@@ -187,7 +187,7 @@ removeBinaryCache :: URI.URI -> Text -> InstallationMode -> IO ()
 removeBinaryCache uri name (Install ncl) = do
   contents <- NixConf.readWithDefault ncl
   let (final, removed) = NixConf.remove uri name [contents] contents
-  NixConf.write ncl final
+  NixConf.write final
   filename <- NixConf.getFilename ncl
   if removed
     then putStrLn $ "Removed " <> host <> " binary cache in " <> toS filename
@@ -196,6 +196,12 @@ removeBinaryCache uri name (Install ncl) = do
     host = URI.toByteString (URI.appendSubdomain name uri)
 removeBinaryCache _ _ _ = do
   throwIO $ RemoveCacheUnsupported "Removing binary caches is only supported for nix.conf"
+
+setNetRC :: Text -> NixConf.NixConfSource -> NixConf.NixConfSource
+setNetRC netrc conf = (fmap . fmap) (\ls -> filter noNetRc ls ++ [NixConf.NetRcFile netrc]) conf
+  where
+    noNetRc (NixConf.NetRcFile _) = False
+    noNetRc _ = True
 
 nixosBinaryCache :: Config -> BinaryCache.BinaryCache -> UseOptions -> IO ()
 nixosBinaryCache config bc UseOptions {useNixOSFolder = baseDirectory} = do

@@ -263,6 +263,7 @@ test-suite cachix-test
     , dhall
     , directory
     , extra
+    , filepath
     , hercules-ci-cnix-store
     , here
     , hspec

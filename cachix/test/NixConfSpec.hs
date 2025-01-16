@@ -2,6 +2,7 @@
 
 module NixConfSpec where
 
+import Cachix.Client.Exception (CachixException (CircularInclude))
 import Cachix.Client.NixConf as NixConf
 import Cachix.Types.BinaryCache (BinaryCache (..), CompressionMethod (..))
 import Cachix.Types.Permission (Permission (..))
@@ -180,8 +181,8 @@ spec = do
       parse realExample
         `shouldBe` Right parsedRealExample
 
-  describe "write . read" $ do
-    it "is idempotent" $ do
+  describe "NixConfSource" $ do
+    it "write . read" $ do
       withTempDirectory "/tmp" "nixconf" $ \temp -> do
         let confPath = temp </> "nix.conf"
         let subConfPath = temp </> "sub.conf"
@@ -196,10 +197,36 @@ spec = do
         NixConf.write conf
         readFile confPath `shouldReturn` confContents
 
+    it "resolves includes" $ do
+      withTempDirectory "/tmp" "nixconf" $ \temp -> do
+        let confPath = temp </> "nix.conf"
+            subConfPath = temp </> "sub.conf"
+            confContents = "include " <> toS subConfPath <> "\n"
+            parsedConfContents = NixConf [Include (RequiredInclude (toS subConfPath))]
+        writeFile confPath confContents
+        writeFile subConfPath realExample
+
+        Just conf <- NixConf.read (Custom temp)
         NixConf.resolveIncludes conf
           `shouldReturn` [ NixConfSource confPath parsedConfContents,
                            NixConfSource subConfPath parsedRealExample
                          ]
+
+    it "detects cycles" $ do
+      withTempDirectory "/tmp" "nixconf" $ \temp -> do
+        let confPath = temp </> "nix.conf"
+            subConfPath = temp </> "sub.conf"
+            confContents :: Text = "include " <> toS subConfPath <> "\n"
+            subConfContents :: Text = "include " <> toS confPath <> "\n"
+        writeFile confPath confContents
+        writeFile subConfPath subConfContents
+
+        Just conf <- NixConf.read (Custom temp)
+
+        let isCircularInclude = \case
+              CircularInclude _ -> True
+              _ -> False
+        NixConf.resolveIncludes conf `shouldThrow` isCircularInclude
 
 realExample :: Text
 realExample =

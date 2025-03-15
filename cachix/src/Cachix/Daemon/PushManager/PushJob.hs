@@ -47,26 +47,22 @@ populateQueue ResolvedClosure {..} timestamp pushJob@PushJob {..} = do
       pushResult = pushResult {prSkippedPaths = skippedPaths}
     }
 
-addPushedPath :: FilePath -> PushResult -> PushResult
-addPushedPath storePath pushResult =
-  pushResult {prPushedPaths = Set.insert storePath (prPushedPaths pushResult)}
-
-addFailedPath :: FilePath -> PushResult -> PushResult
-addFailedPath storePath pushResult =
-  pushResult {prFailedPaths = Set.insert storePath (prFailedPaths pushResult)}
-
 markStorePathPushed :: FilePath -> PushJob -> PushJob
 markStorePathPushed storePath pushJob@(PushJob {pushQueue, pushResult}) =
   pushJob
     { pushQueue = Set.delete storePath pushQueue,
-      pushResult = addPushedPath storePath pushResult
+      pushResult =
+        pushResult
+          { prPushedPaths = Set.insert storePath (prPushedPaths pushResult),
+            prFailedPaths = Set.delete storePath (prFailedPaths pushResult)
+          }
     }
 
 markStorePathFailed :: FilePath -> PushJob -> PushJob
 markStorePathFailed storePath pushJob@(PushJob {pushQueue, pushResult}) =
   pushJob
     { pushQueue = Set.delete storePath pushQueue,
-      pushResult = addFailedPath storePath pushResult
+      pushResult = pushResult {prFailedPaths = Set.insert storePath (prFailedPaths pushResult)}
     }
 
 status :: PushJob -> JobStatus

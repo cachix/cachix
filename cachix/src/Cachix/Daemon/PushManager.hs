@@ -58,7 +58,7 @@ import Control.Concurrent.STM.TBMQueue
 import Control.Concurrent.STM.TVar
 import Control.Monad.Catch qualified as E
 import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
-import Control.Retry (RetryStatus)
+import Control.Retry (RetryStatus, rsIterNumber)
 import Data.ByteString qualified as BS
 import Data.HashMap.Strict qualified as HashMap
 import Data.IORef
@@ -338,12 +338,15 @@ newPushStrategy store authToken opts cacheName compressionMethod storePath =
         let errText = toS (displayException err)
         sp <- liftIO $ storePathToPath store storePath
         Katip.katipAddContext (Katip.sl "error" errText) $
-          Katip.logFM Katip.InfoS (Katip.ls $ "Failed " <> (toS sp :: Text))
+          Katip.logFM Katip.InfoS (Katip.ls $ "Failed to push " <> (toS sp :: Text))
         pushStorePathFailed (toS sp) errText
 
       onAttempt retryStatus size = do
         sp <- liftIO $ storePathToPath store storePath
-        Katip.logFM Katip.InfoS $ Katip.ls $ "Pushing " <> (toS sp :: Text)
+        Katip.katipAddContext (Katip.sl "retry" (rsIterNumber retryStatus)) $
+          Katip.logFM Katip.InfoS $
+            Katip.ls $
+              "Pushing " <> (toS sp :: Text)
         pushStorePathAttempt (toS sp) size retryStatus
 
       onUncompressedNARStream _ size = do

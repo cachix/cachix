@@ -88,6 +88,27 @@ spec = do
               PushJob.prSkippedPaths = mempty
             }
 
+    it "unmark paths as failed after successful retry" $
+      do
+        let request = Protocol.PushRequest {Protocol.storePaths = ["foo", "bar"]}
+            pathSet = Set.fromList ["foo", "bar"]
+            closure = PushJob.ResolvedClosure pathSet pathSet
+
+        timestamp <- getCurrentTime
+        initPushJob <- PushJob.new request
+        let pushJob =
+              initPushJob
+                & PushJob.populateQueue closure timestamp
+                & PushJob.markStorePathFailed "foo"
+                & PushJob.markStorePathPushed "foo"
+        PushJob.status pushJob `shouldBe` Running
+        PushJob.result pushJob
+          `shouldBe` PushJob.PushResult
+            { PushJob.prFailedPaths = mempty,
+              PushJob.prPushedPaths = Set.fromList ["foo"],
+              PushJob.prSkippedPaths = mempty
+            }
+
   describe "push manager" $ do
     it "queues push jobs " $ inPushManager $ do
       let request = Protocol.PushRequest {Protocol.storePaths = ["foo", "bar"]}

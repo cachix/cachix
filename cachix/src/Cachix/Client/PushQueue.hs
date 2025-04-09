@@ -60,7 +60,7 @@ startWorkers numWorkers mkProducer pushParams = do
   -- start query worker
   (newQueryQueue, newPushQueue, newLock) <-
     atomically $
-      (,,) <$> TBQueue.newTBQueue 10000 <*> TBQueue.newTBQueue 10000 <*> Lock.new
+      (,,) <$> TBQueue.newTBQueue 100_000 <*> TBQueue.newTBQueue 100_000 <*> Lock.new
   let queryWorkerState = QueryWorkerState newQueryQueue S.empty newLock
   queryWorker <- async $ queryLoop queryWorkerState newPushQueue pushParams
 

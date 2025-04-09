@@ -80,7 +80,7 @@ newPushManagerEnv pushOptions pmPushParams onPushEvent pmLogger = liftIO $ do
   pmPushJobs <- newTVarIO mempty
   pmPendingJobCount <- newTVarIO 0
   pmStorePathIndex <- newTVarIO mempty
-  pmTaskQueue <- newTBMQueueIO 1000
+  pmTaskQueue <- newTBMQueueIO 100_000
   pmTaskSemaphore <- QSem.newQSem (numJobs pushOptions)
   pmLastEventTimestamp <- newTVarIO =<< getCurrentTime
   let pmOnPushEvent id pushEvent = updateTimestampTVar pmLastEventTimestamp >> onPushEvent id pushEvent

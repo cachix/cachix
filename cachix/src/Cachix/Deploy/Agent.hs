@@ -186,11 +186,39 @@ withAgentLock agent action =
             tryToAcquireLock (attempts + 1)
 
 installSignalHandlers :: IO () -> IO ()
-installSignalHandlers shutdown =
-  for_ [Signals.sigINT, Signals.sigTERM] $ \signal ->
-    Signals.installHandler signal handler Nothing
-  where
-    handler = Signals.CatchOnce shutdown
+installSignalHandlers shutdown = do
+  mainThreadId <- myThreadId
+  sigintAttemptedRef <- newIORef False
+
+  let safeShutdown = do
+        -- Timeout after 30 seconds to ensure we don't hang
+        void $ Timeout.timeout (30 * 1000 * 1000) shutdown
+
+  -- Handle SIGTERM (systemd): always shutdown and exit immediately
+  _ <-
+    Signals.installHandler
+      Signals.sigTERM
+      ( Signals.Catch $ do
+          safeShutdown
+          throwTo mainThreadId ExitSuccess
+      )
+      Nothing
+
+  -- Handle SIGINT (interactive Ctrl+C): first attempt initiates shutdown, second exits
+  _ <-
+    Signals.installHandler
+      Signals.sigINT
+      ( Signals.Catch $ do
+          sigintAttempted <- readIORef sigintAttemptedRef
+          if sigintAttempted
+            then throwTo mainThreadId ExitSuccess
+            else do
+              atomicWriteIORef sigintAttemptedRef True
+              safeShutdown
+      )
+      Nothing
+
+  return ()
 
 registerAgent :: Agent -> WSS.AgentInformation -> IO ()
 registerAgent Agent {agentState, withLog} agentInformation = do

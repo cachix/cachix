@@ -22,7 +22,7 @@ import Protolude
 new :: (MonadIO m) => m (EventLoop event a)
 new = do
   exitLatch <- liftIO newEmptyMVar
-  queue <- liftIO $ newTBMQueueIO 100
+  queue <- liftIO $ newTBMQueueIO 100_000
   return $ EventLoop {queue, exitLatch}
 
 -- | Send an event to the event loop with logging.

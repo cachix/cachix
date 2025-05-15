@@ -188,7 +188,8 @@ withAgentLock agent action =
 installSignalHandlers :: IO () -> IO ()
 installSignalHandlers shutdown = do
   mainThreadId <- myThreadId
-  sigintAttemptedRef <- newIORef False
+  -- Track Ctrl+C attempts
+  interruptRef <- newIORef False
 
   let safeShutdown = do
         -- Timeout after 30 seconds to ensure we don't hang
@@ -209,12 +210,10 @@ installSignalHandlers shutdown = do
     Signals.installHandler
       Signals.sigINT
       ( Signals.Catch $ do
-          sigintAttempted <- readIORef sigintAttemptedRef
-          if sigintAttempted
+          isSecondInterrupt <- liftIO $ atomicModifyIORef' interruptRef (True,)
+          if isSecondInterrupt
             then throwTo mainThreadId ExitSuccess
-            else do
-              atomicWriteIORef sigintAttemptedRef True
-              safeShutdown
+            else safeShutdown
       )
       Nothing
 

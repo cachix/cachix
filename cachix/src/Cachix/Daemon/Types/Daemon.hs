@@ -73,8 +73,6 @@ data DaemonEnv = DaemonEnv
     daemonSubscriptionManagerThread :: MVar (Async ()),
     -- | Logging env
     daemonLogger :: Logger,
-    -- | Shutdown latch
-    daemonShutdownLatch :: ShutdownLatch,
     -- | The PID of the daemon process
     daemonPid :: ProcessID
   }

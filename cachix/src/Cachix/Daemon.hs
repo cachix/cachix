@@ -23,7 +23,6 @@ import Cachix.Daemon.Log qualified as Log
 import Cachix.Daemon.Protocol as Protocol
 import Cachix.Daemon.Push as Push
 import Cachix.Daemon.PushManager qualified as PushManager
-import Cachix.Daemon.ShutdownLatch
 import Cachix.Daemon.SocketStore qualified as SocketStore
 import Cachix.Daemon.Subscription as Subscription
 import Cachix.Daemon.Types as Types
@@ -33,6 +32,7 @@ import Cachix.Types.BinaryCache (BinaryCacheName)
 import Cachix.Types.BinaryCache qualified as BinaryCache
 import Control.Concurrent.STM.TMChan
 import Control.Exception.Safe (catchAny)
+import Data.IORef (IORef, atomicModifyIORef', newIORef)
 import Data.Text qualified as T
 import Hercules.CNix.Store (Store, withStore)
 import Hercules.CNix.Util qualified as CNix.Util
@@ -43,7 +43,7 @@ import Protolude hiding (bracket)
 import System.IO.Error (isResourceVanishedError)
 import System.Posix.Process (getProcessID)
 import System.Posix.Signals qualified as Signal
-import UnliftIO (MonadUnliftIO)
+import UnliftIO (MonadUnliftIO, withRunInIO)
 import UnliftIO.Async qualified as Async
 import UnliftIO.Exception (bracket)
 
@@ -71,7 +71,6 @@ new daemonEnv nixStore daemonOptions daemonLogHandle daemonPushOptions daemonCac
   daemonLogger <- Log.new "cachix.daemon" daemonLogHandle daemonLogLevel
 
   daemonEventLoop <- EventLoop.new
-  daemonShutdownLatch <- newShutdownLatch
   daemonPid <- getProcessID
 
   daemonSocketPath <- maybe getSocketPath pure (Options.daemonSocketPath daemonOptions)
@@ -99,7 +98,7 @@ start :: Env -> DaemonOptions -> PushOptions -> BinaryCacheName -> IO ()
 start daemonEnv daemonOptions daemonPushOptions daemonCacheName =
   withStore $ \store -> do
     daemon <- new daemonEnv store daemonOptions Nothing daemonPushOptions daemonCacheName
-    installSignalHandlers daemon
+    void $ runDaemon daemon installSignalHandlers
     result <- run daemon
     exitWith (toExitCode result)
 
@@ -156,14 +155,52 @@ stopIO :: DaemonEnv -> IO ()
 stopIO DaemonEnv {daemonEventLoop} =
   EventLoop.sendIO daemonEventLoop ShutdownGracefully
 
-installSignalHandlers :: DaemonEnv -> IO ()
-installSignalHandlers daemon = do
-  for_ [Signal.sigTERM, Signal.sigINT] $ \signal ->
-    Signal.installHandler signal (Signal.CatchOnce handler) Nothing
+installSignalHandlers :: Daemon ()
+installSignalHandlers = do
+  withRunInIO $ \runInIO -> do
+    mainThreadId <- myThreadId
+    -- Track Ctrl+C attempts
+    interruptRef <- newIORef False
+
+    -- Install signal handlers using runInIO to properly run Daemon actions from IO
+    _ <- Signal.installHandler Signal.sigTERM (Signal.Catch (runInIO (termHandler mainThreadId))) Nothing
+    _ <- Signal.installHandler Signal.sigINT (Signal.Catch (runInIO (intHandler mainThreadId interruptRef))) Nothing
+
+    return ()
   where
-    handler = do
-      CNix.Util.triggerInterrupt
-      stopIO daemon
+    -- SIGTERM: Trigger immediate shutdown
+    termHandler :: ThreadId -> Daemon ()
+    termHandler mainThreadId = do
+      Katip.logFM Katip.InfoS "sigTERM received. Exiting immediately..."
+      startExitTimer mainThreadId
+      liftIO CNix.Util.triggerInterrupt
+      eventLoop <- asks daemonEventLoop
+      -- Signal directly to the event loop to ensure exit even if queue is full
+      EventLoop.exitLoopWithFailure EventLoopClosed eventLoop
+
+    -- SIGINT: First try to shutdown gracefully, on second press force exit
+    intHandler :: ThreadId -> IORef Bool -> Daemon ()
+    intHandler mainThreadId interruptRef = do
+      liftIO CNix.Util.triggerInterrupt
+      isSecondInterrupt <- liftIO $ atomicModifyIORef' interruptRef (True,)
+      eventLoop <- asks daemonEventLoop
+
+      if isSecondInterrupt
+        then do
+          Katip.logFM Katip.InfoS "Exiting immediately..."
+          startExitTimer mainThreadId
+          -- Force shutdown at the event loop level to ensure exit even if queue is full
+          EventLoop.exitLoopWithFailure EventLoopClosed eventLoop
+        else do
+          Katip.logFM Katip.InfoS "Shutting down gracefully (Ctrl+C again to force exit)..."
+          EventLoop.send eventLoop ShutdownGracefully
+
+    -- Start a timer to ensure we exit even if the event loop hangs
+    startExitTimer :: ThreadId -> Daemon ()
+    startExitTimer mainThreadId = do
+      void $ liftIO $ forkIO $ do
+        threadDelay (15 * 1000 * 1000) -- 15 seconds
+        throwTo mainThreadId ExitSuccess
 
 queueJob :: Protocol.PushRequest -> Daemon ()
 queueJob pushRequest = do
@@ -207,9 +244,6 @@ showConfiguration = do
 shutdownGracefully :: Daemon (Either DaemonError ())
 shutdownGracefully = do
   DaemonEnv {..} <- ask
-
-  -- Indicate that the daemon is shutting down
-  initiateShutdown daemonShutdownLatch
 
   -- Stop the push manager and wait for any remaining paths to be uploaded
   shutdownPushManager daemonPushManager

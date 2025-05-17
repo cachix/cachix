@@ -23,6 +23,7 @@ data Deployment = Deployment
     index :: Int64,
     createdOn :: UTCTime,
     startedOn :: Maybe UTCTime,
+    finishedOn :: Maybe UTCTime,
     storePath :: Text,
     closureSize :: Maybe Int64,
     status :: Status

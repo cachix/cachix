@@ -4,11 +4,15 @@ module Cachix.Daemon.EventLoop
     sendIO,
     run,
     exitLoopWith,
+    exitLoopWithFailure,
     EventLoop,
   )
 where
 
+import Cachix.Daemon.ShutdownLatch (ShutdownLatch)
+import Cachix.Daemon.ShutdownLatch qualified as ShutdownLatch
 import Cachix.Daemon.Types.EventLoop (EventLoop (..), EventLoopError (..))
+import Control.Concurrent.STM
 import Control.Concurrent.STM.TBMQueue
   ( isFullTBMQueue,
     newTBMQueueIO,
@@ -21,9 +25,9 @@ import Protolude
 
 new :: (MonadIO m) => m (EventLoop event a)
 new = do
-  exitLatch <- liftIO newEmptyMVar
-  queue <- liftIO $ newTBMQueueIO 100
-  return $ EventLoop {queue, exitLatch}
+  shutdownLatch <- ShutdownLatch.newShutdownLatch
+  queue <- liftIO $ newTBMQueueIO 100_000
+  return $ EventLoop {queue, shutdownLatch}
 
 -- | Send an event to the event loop with logging.
 send :: (Katip.KatipContext m) => EventLoop event a -> event -> m ()
@@ -38,41 +42,67 @@ sendIO = send' logger
     logger _ _ = return ()
 
 send' :: (MonadIO m) => (Katip.Severity -> Katip.LogStr -> m ()) -> EventLoop event a -> event -> m ()
-send' logger eventloop@(EventLoop {queue}) event = do
-  res <- liftIO $ atomically $ tryWriteTBMQueue queue event
-  case res of
-    -- The queue is closed.
-    Nothing ->
-      logger Katip.DebugS "Ignored an event because the event loop is closed"
-    -- Successfully wrote to the queue
-    Just True -> return ()
-    -- Failed to write to the queue
-    Just False -> do
-      isFull <- liftIO $ atomically $ isFullTBMQueue queue
-      let message =
-            if isFull
-              then "Event loop is full"
-              else "Unknown error"
-      logger Katip.ErrorS $ "Failed to write to event loop: " <> message
-      exitLoopWithFailure EventLoopFull eventloop
+send' logger eventloop@(EventLoop {queue, shutdownLatch}) event = do
+  -- First check if shutdown has been requested
+  isExiting <- ShutdownLatch.isShuttingDown shutdownLatch
+  if isExiting
+    then logger Katip.DebugS "Ignored an event because the event loop is shutting down"
+    else do
+      res <- liftIO $ atomically $ tryWriteTBMQueue queue event
+      case res of
+        -- The queue is closed.
+        Nothing ->
+          logger Katip.DebugS "Ignored an event because the event loop is closed"
+        -- Successfully wrote to the queue
+        Just True -> return ()
+        -- Failed to write to the queue
+        Just False -> do
+          isFull <- liftIO $ atomically $ isFullTBMQueue queue
+          let message =
+                if isFull
+                  then "Event loop is full"
+                  else "Unknown error"
+          logger Katip.ErrorS $ "Failed to write to event loop: " <> message
+          exitLoopWithFailure EventLoopFull eventloop
 
 -- | Run the event loop until it exits with 'exitLoopWith'.
 run :: (MonadIO m) => EventLoop event a -> (event -> m ()) -> m (Either EventLoopError a)
-run eventloop f = do
+run eventloop@(EventLoop {queue, shutdownLatch}) f =
   fix $ \loop -> do
-    mevent <- liftIO $ atomically $ readTBMQueue (queue eventloop)
-    case mevent of
-      Just event -> f event
-      Nothing -> exitLoopWithFailure EventLoopClosed eventloop
+    -- Wait for either a shutdown signal or a message from the queue
+    eitherResult <-
+      liftIO $
+        atomically $
+          fmap Left (ShutdownLatch.waitForShutdownSTM shutdownLatch)
+            `orElse`
+            -- Try to read from queue
+            ( do
+                mevent <- readTBMQueue queue
+                case mevent of
+                  -- Got an event, return it
+                  Just event -> return $ Right event
+                  -- Queue is closed, signal shutdown
+                  Nothing -> do
+                    ShutdownLatch.initiateShutdownWithResultSTM (Left EventLoopClosed) shutdownLatch
+                    result <- ShutdownLatch.waitForShutdownSTM shutdownLatch
+                    return $ Left result
+            )
 
-    liftIO (tryReadMVar (exitLatch eventloop)) >>= \case
-      Just exitValue -> return exitValue
-      Nothing -> loop
+    -- Process the result
+    case eitherResult of
+      -- Shutdown requested, return the result
+      Left result -> return result
+      -- Got an event, process it and continue looping
+      Right event -> do
+        f event
+        loop
 
 -- | Short-circuit the event loop and exit with a given return value.
 exitLoopWith :: (MonadIO m) => a -> EventLoop event a -> m ()
-exitLoopWith exitValue (EventLoop {exitLatch}) = void $ liftIO $ tryPutMVar exitLatch (Right exitValue)
+exitLoopWith exitValue (EventLoop {shutdownLatch}) =
+  ShutdownLatch.initiateShutdown exitValue shutdownLatch
 
 -- | Short-circuit the event loop in case of an internal error.
 exitLoopWithFailure :: (MonadIO m) => EventLoopError -> EventLoop event a -> m ()
-exitLoopWithFailure err (EventLoop {exitLatch}) = void $ liftIO $ tryPutMVar exitLatch (Left err)
+exitLoopWithFailure err (EventLoop {shutdownLatch}) =
+  ShutdownLatch.initiateShutdownWithResult (Left err) shutdownLatch

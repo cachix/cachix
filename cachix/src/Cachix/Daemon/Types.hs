@@ -9,6 +9,9 @@ module Cachix.Daemon.Types
     DaemonError (..),
     HasExitCode (..),
 
+    -- * EventLoop errors
+    EventLoop.EventLoopError (..),
+
     -- * Log
     LogLevel (..),
 
@@ -27,6 +30,7 @@ where
 
 import Cachix.Daemon.Types.Daemon
 import Cachix.Daemon.Types.Error
+import Cachix.Daemon.Types.EventLoop as EventLoop
 import Cachix.Daemon.Types.Log
 import Cachix.Daemon.Types.PushEvent as PushEvent
 import Cachix.Daemon.Types.PushManager as PushManager

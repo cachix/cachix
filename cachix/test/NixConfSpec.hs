@@ -197,7 +197,8 @@ spec = do
         NixConf.write conf
         readFile confPath `shouldReturn` confContents
 
-    it "resolves includes" $ do
+    -- Test that missing optional includes do not throw errors
+    it "resolves required and optional includes" $ do
       withTempDirectory "/tmp" "nixconf" $ \temp -> do
         let confPath = temp </> "nix.conf"
             requiredConfPath = temp </> "required.conf"

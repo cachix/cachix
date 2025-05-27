@@ -52,6 +52,7 @@ import System.Directory
 import System.FilePath (normalise)
 import System.FilePath.Posix (takeDirectory, (</>))
 import System.IO.Error (isDoesNotExistError)
+import System.IO.Error qualified
 import Text.Megaparsec qualified as Mega
 import Text.Megaparsec.Char
 
@@ -89,6 +90,13 @@ data NixConfSourceG a = NixConfSource
     nixConfLines :: a
   }
   deriving stock (Show, Eq, Functor)
+
+data NixConfError
+  = -- | Error when trying to read the nix.conf file or an include
+    IOError FilePath System.IO.Error.IOError
+  | -- | Failed to parse the nix.conf file
+    ParseError FilePath Text
+  deriving (Show, Typeable)
 
 -- | Operations on nix.conf.
 -- Helps to work with both NixConf and NixConfSource.
@@ -200,22 +208,22 @@ resolveIncludesWithStack stack baseFile baseConf@(NixConfSource {nixConfLines = 
 
       if fullPath `elem` stack
         then case includeType of
-          RequiredInclude _ -> throwIO $ CircularInclude (formatCircularError fullPath)
+          RequiredInclude _ ->
+            throwIO $ CircularInclude (formatCircularError fullPath)
           OptionalInclude _ -> return []
         else do
-          Safe.tryIO (readFile fullPath) >>= \case
-            Left err
-              | isDoesNotExistError err ->
-                  if isRequired includeType
-                    then throwIO $ IncludeNotFound $ toS fullPath
-                    else return []
-            Left err -> do
-              putErrText $ "Warning: failed to read " <> toS fullPath <> ": \n" <> toS (displayException err)
-              return []
-            Right content ->
-              case parse content of
-                Left _err -> return []
-                Right conf -> resolveIncludesWithStack (fullPath : stack) baseFile (NixConfSource fullPath conf)
+          read' fullPath >>= \case
+            Left err@(IOError _ _) ->
+              if isRequired includeType
+                then do
+                  printNixConfError err
+                  throwIO $ IncludeNotFound ("Failed to read required include file: " <> toS fullPath)
+                else return []
+            Left err@(ParseError _ _) -> do
+              printNixConfError err
+              throwIO $ IncludeNotFound ("Failed to read required include file: " <> toS fullPath)
+            Right conf ->
+              resolveIncludesWithStack (fullPath : stack) baseFile conf
 
     isRequired (RequiredInclude _) = True
     isRequired (OptionalInclude _) = False
@@ -237,30 +245,39 @@ resolveIncludesWithStack stack baseFile baseConf@(NixConfSource {nixConfLines = 
 data NixConfLoc = Global | Local | Custom FilePath
   deriving stock (Show, Eq)
 
+-- | Safely read a nix.conf file from the given location.
+-- Prints errors to stderr.
 read :: NixConfLoc -> IO (Maybe NixConfSource)
 read ncl = do
   filename <- getFilename ncl
-  read' filename
-
-read' :: FilePath -> IO (Maybe NixConfSource)
-read' filename = do
-  Safe.tryIO (readFile filename) >>= \case
-    Left err
-      | isDoesNotExistError err -> return Nothing
+  read' filename >>= \case
     Left err -> do
-      putErrText $ "Warning: failed to read " <> toS filename <> ": \n" <> toS (displayException err)
+      printNixConfError err
       return Nothing
-    Right content ->
-      case parse content of
-        Left err -> do
-          putErrText $ toS $ Mega.errorBundlePretty err
-          panic $ toS filename <> " failed to parse, please copy the above error and contents of nix.conf and open an issue at https://github.com/cachix/cachix"
-        Right conf -> return (Just (NixConfSource filename conf))
+    Right conf -> return $ Just conf
 
+-- | Safely read a nix.conf file from the given location.
+-- Return an empty NixConfSource if the file does not exist or cannot be read.
+-- Prints errors to stderr.
 readWithDefault :: NixConfLoc -> IO NixConfSource
 readWithDefault ncl = do
   filename <- getFilename ncl
-  fromMaybe (new filename) <$> read' filename
+  read' filename >>= \case
+    Left err -> do
+      printNixConfError err
+      return $ new filename
+    Right conf -> return conf
+
+-- | Safely read a nix.conf file from the given file path.
+read' :: FilePath -> IO (Either NixConfError NixConfSource)
+read' filename = do
+  econtent <- Safe.tryIO (readFile filename)
+  return $ case econtent of
+    Left err -> Left $ IOError filename err
+    Right content ->
+      case parse content of
+        Left err -> Left $ ParseError filename $ toS (Mega.errorBundlePretty err)
+        Right conf -> Right $ NixConfSource filename conf
 
 getFilename :: NixConfLoc -> IO FilePath
 getFilename ncl = do
@@ -270,6 +287,29 @@ getFilename ncl = do
       Local -> getXdgDirectory XdgConfig "nix"
       Custom filepath -> return filepath
   return $ dir <> "/nix.conf"
+
+printNixConfError :: NixConfError -> IO ()
+printNixConfError (IOError path err) | isDoesNotExistError err = do
+  putErrText $
+    unlines
+      [ "No config at " <> toS path <> ":",
+        "",
+        toS (displayException err)
+      ]
+printNixConfError (IOError path err) = do
+  putErrText $
+    unlines
+      [ "Failed to read " <> toS path <> ":",
+        "",
+        toS (displayException err)
+      ]
+printNixConfError (ParseError path err) = do
+  putErrText $
+    unlines
+      [ "Failed to parse " <> toS path <> ":",
+        "",
+        err
+      ]
 
 -- nix.conf Parser
 type Parser = Mega.Parsec Void Text

@@ -39,6 +39,7 @@ where
 import Cachix.Client.Exception (CachixException (..))
 import Cachix.Client.URI qualified as URI
 import Cachix.Types.BinaryCache qualified as BinaryCache
+import Control.Exception.Safe qualified as Safe
 import Data.List (nub)
 import Data.Text qualified as T
 import Protolude hiding (toS)
@@ -46,11 +47,11 @@ import Protolude.Conv (toS)
 import System.Directory
   ( XdgDirectory (..),
     createDirectoryIfMissing,
-    doesFileExist,
     getXdgDirectory,
   )
 import System.FilePath (normalise)
 import System.FilePath.Posix (takeDirectory, (</>))
+import System.IO.Error (isDoesNotExistError)
 import Text.Megaparsec qualified as Mega
 import Text.Megaparsec.Char
 
@@ -202,11 +203,16 @@ resolveIncludesWithStack stack baseFile baseConf@(NixConfSource {nixConfLines = 
           RequiredInclude _ -> throwIO $ CircularInclude (formatCircularError fullPath)
           OptionalInclude _ -> return []
         else do
-          exists <- doesFileExist fullPath
-          if not exists && isRequired includeType
-            then throwIO $ IncludeNotFound $ toS fullPath
-            else do
-              content <- readFile fullPath
+          Safe.tryIO (readFile fullPath) >>= \case
+            Left err
+              | isDoesNotExistError err ->
+                  if isRequired includeType
+                    then throwIO $ IncludeNotFound $ toS fullPath
+                    else return []
+            Left err -> do
+              putErrText $ "Warning: failed to read " <> toS fullPath <> ": \n" <> toS (displayException err)
+              return []
+            Right content ->
               case parse content of
                 Left _err -> return []
                 Right conf -> resolveIncludesWithStack (fullPath : stack) baseFile (NixConfSource fullPath conf)
@@ -238,14 +244,16 @@ read ncl = do
 
 read' :: FilePath -> IO (Maybe NixConfSource)
 read' filename = do
-  doesExist <- doesFileExist filename
-  if not doesExist
-    then return Nothing
-    else do
-      result <- parse <$> readFile filename
-      case result of
+  Safe.tryIO (readFile filename) >>= \case
+    Left err
+      | isDoesNotExistError err -> return Nothing
+    Left err -> do
+      putErrText $ "Warning: failed to read " <> toS filename <> ": \n" <> toS (displayException err)
+      return Nothing
+    Right content ->
+      case parse content of
         Left err -> do
-          putStrLn (Mega.errorBundlePretty err)
+          putErrText $ toS $ Mega.errorBundlePretty err
           panic $ toS filename <> " failed to parse, please copy the above error and contents of nix.conf and open an issue at https://github.com/cachix/cachix"
         Right conf -> return (Just (NixConfSource filename conf))
 

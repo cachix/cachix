@@ -1,5 +1,5 @@
 {
-  pre-commit.hooks = {
+  git-hooks.hooks = {
     cabal-fmt.enable = true;
     hlint.enable = true;
     ormolu.enable = true;

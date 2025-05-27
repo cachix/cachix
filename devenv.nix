@@ -13,6 +13,15 @@
     pkgs.libsodium
     (getNix { inherit pkgs; })
 
+    # Required by nix-util
+    pkgs.libblake3
+    pkgs.brotli.dev
+    pkgs.openssl.dev
+    pkgs.curl.dev
+    pkgs.sqlite.dev
+    pkgs.libgit2
+    pkgs.pcre2
+
     # Haskell
     pkgs.stack
     pkgs.haskell.compiler."ghc${ghcVersion}"

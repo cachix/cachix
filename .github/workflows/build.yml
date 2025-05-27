@@ -10,7 +10,7 @@ jobs:
       fail-fast: false
       matrix:
         os:
-          - [self-hosted, linux, X86]
+          - [self-hosted, linux, X64]
           - [self-hosted, linux, ARM64]
           - macos-13 # x86_64
           - macos-latest # macos-14 == aarch64

@@ -11,11 +11,14 @@ jobs:
       matrix:
         os:
           - ubuntu-latest
-          - [self-hosted, linux, ARM64]
+          - ubuntu-24.04-arm
           - macos-13 # x86_64
           - macos-latest # macos-14 == aarch64
     runs-on: ${{ matrix.os }}
     steps:
+    - name: Make space
+      if: startsWith(matrix.os, 'ubuntu')
+      run: sudo rm -rf /usr/local/lib/android || true
     - uses: actions/checkout@v4
     - uses: cachix/install-nix-action@v30
     - name: Setup read-only Cachix cache

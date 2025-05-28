@@ -9,7 +9,6 @@ module Cachix.Daemon.EventLoop
   )
 where
 
-import Cachix.Daemon.ShutdownLatch (ShutdownLatch)
 import Cachix.Daemon.ShutdownLatch qualified as ShutdownLatch
 import Cachix.Daemon.Types.EventLoop (EventLoop (..), EventLoopError (..))
 import Control.Concurrent.STM
@@ -67,7 +66,7 @@ send' logger eventloop@(EventLoop {queue, shutdownLatch}) event = do
 
 -- | Run the event loop until it exits with 'exitLoopWith'.
 run :: (MonadIO m) => EventLoop event a -> (event -> m ()) -> m (Either EventLoopError a)
-run eventloop@(EventLoop {queue, shutdownLatch}) f =
+run (EventLoop {queue, shutdownLatch}) f =
   fix $ \loop -> do
     -- Wait for either a shutdown signal or a message from the queue
     eitherResult <-

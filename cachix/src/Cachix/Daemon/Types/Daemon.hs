@@ -15,7 +15,6 @@ import Cachix.Client.Env as Env
 import Cachix.Client.OptionsParser (PushOptions)
 import Cachix.Daemon.Log qualified as Log
 import Cachix.Daemon.Protocol qualified as Protocol
-import Cachix.Daemon.ShutdownLatch (ShutdownLatch)
 import Cachix.Daemon.Subscription (SubscriptionManager)
 import Cachix.Daemon.Types.Error (DaemonError (DaemonUnhandledException), UnhandledException (..))
 import Cachix.Daemon.Types.EventLoop (EventLoop)

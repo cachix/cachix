@@ -1,5 +1,5 @@
 # Match resolver with nixos-unstable haskellPackages
-resolver: lts-22.43
+resolver: lts-22.44
 system-ghc: true
 
 packages:
@@ -12,7 +12,7 @@ allow-newer-deps:
 
 extra-deps:
 # not in stackage
-- hercules-ci-cnix-store-0.3.6.1
+- hercules-ci-cnix-store-0.3.7.0
 - cabal-pkg-config-version-hook-0.1.0.1
 - nix-narinfo-0.1.1.1
 - lzma-conduit-1.2.3@sha256:d33d14a1e95b134f90ecd73636328ec9b0aa14a6d2666f905443523d90bd159f,1712

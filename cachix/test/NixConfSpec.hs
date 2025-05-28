@@ -197,19 +197,28 @@ spec = do
         NixConf.write conf
         readFile confPath `shouldReturn` confContents
 
-    it "resolves includes" $ do
+    -- Test that missing optional includes do not throw errors
+    it "resolves required and optional includes" $ do
       withTempDirectory "/tmp" "nixconf" $ \temp -> do
         let confPath = temp </> "nix.conf"
-            subConfPath = temp </> "sub.conf"
-            confContents = "include " <> toS subConfPath <> "\n"
-            parsedConfContents = NixConf [Include (RequiredInclude (toS subConfPath))]
-        writeFile confPath confContents
-        writeFile subConfPath realExample
+            requiredConfPath = temp </> "required.conf"
+            optionalConfPath = temp </> "optional.conf"
+            parsedConfContents =
+              NixConf
+                [ Include (RequiredInclude (toS requiredConfPath)),
+                  Include (OptionalInclude (toS optionalConfPath))
+                ]
+        writeFile confPath $
+          unlines
+            [ "include " <> toS requiredConfPath <> "\n",
+              "!include " <> toS optionalConfPath <> "\n"
+            ]
+        writeFile requiredConfPath realExample
 
         Just conf <- NixConf.read (Custom temp)
         NixConf.resolveIncludes conf
           `shouldReturn` [ NixConfSource confPath parsedConfContents,
-                           NixConfSource subConfPath parsedRealExample
+                           NixConfSource requiredConfPath parsedRealExample
                          ]
 
     it "detects cycles" $ do

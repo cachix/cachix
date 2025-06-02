@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [1.7.9] - 2025-06-02
+
+### Fixed
+
+- fix handling of optional `!include` nix.conf statements that would error if the file was missing
+- daemon: improve event loop responsiveness to shutdown signals
+- daemon: gracefully handle sigTERM and sigINT signals
+
+### Changed
+
+- increase event loop size to handle rapid pushing of many small paths
+- update dependencies
+
 ## [1.7.8] - 2025-04-09
 
 ### Fixed

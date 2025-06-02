@@ -26,7 +26,6 @@ Usage: cachix [-c|--config CONFIGPATH] [--host URI | --hostname URI]
 Available options:
   -h,--help                Show this help text
   -c,--config CONFIGPATH   Cachix configuration file
-                           (default: "/home/sandydoo/.config/cachix/cachix.dhall")
   --hostname URI           Host to connect to (default: https://cachix.org)
   -v,--verbose             Verbose mode
   -V,--version             Show cachix version

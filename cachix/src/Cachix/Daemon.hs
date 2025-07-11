@@ -40,6 +40,7 @@ import Katip qualified
 import Network.Socket qualified as Socket
 import Network.Socket.ByteString qualified as Socket.BS
 import Protolude hiding (bracket)
+import System.Environment (lookupEnv)
 import System.IO.Error (isResourceVanishedError)
 import System.Posix.Process (getProcessID)
 import System.Posix.Signals qualified as Signal
@@ -72,6 +73,12 @@ new daemonEnv nixStore daemonOptions daemonLogHandle daemonPushOptions daemonCac
 
   daemonEventLoop <- EventLoop.new
   daemonPid <- getProcessID
+
+  envSocketPath <- lookupEnv "CACHIX_SOCKET"
+  let cmdSocketPath = Options.daemonSocketPath daemonOptions
+  daemonSocketPath <- case envSocketPath of
+    Just path -> pure $ toS path
+    Nothing -> maybe getSocketPath pure cmdSocketPath
 
   daemonSocketPath <- maybe getSocketPath pure (Options.daemonSocketPath daemonOptions)
   daemonSocketThread <- newEmptyMVar

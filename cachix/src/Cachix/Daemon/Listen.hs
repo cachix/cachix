@@ -41,6 +41,7 @@ import System.Directory
 import System.Environment qualified as System
 import System.FilePath ((</>))
 import System.IO.Error (isDoesNotExistError, isResourceVanishedError)
+import System.Posix.Files (setFileMode)
 
 -- TODO: reconcile with Client
 data ListenError
@@ -148,7 +149,7 @@ openSocket socketFilePath = liftIO $ do
   deleteSocketFileIfExists socketFilePath
   sock <- Socket.socket Socket.AF_UNIX Socket.Stream Socket.defaultProtocol
   Socket.bind sock $ Socket.SockAddrUnix socketFilePath
-  -- setFileMode socketFilePath socketFileMode
+  setFileMode socketFilePath 0o666
   return sock
   where
     deleteSocketFileIfExists path =

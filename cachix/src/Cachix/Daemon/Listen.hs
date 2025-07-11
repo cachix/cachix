@@ -60,11 +60,13 @@ listen ::
   EventLoop DaemonEvent a ->
   FilePath ->
   m ()
-listen eventloop daemonSocketPath = forever $ do
-  E.bracketOnError (openSocket daemonSocketPath) closeSocket $ \sock -> do
-    liftIO $ Socket.listen sock Socket.maxListenQueue
-    (conn, _peerAddr) <- liftIO $ Socket.accept sock
-    EventLoop.send eventloop (AddSocketClient conn)
+listen eventloop daemonSocketPath =
+  sock <- openSocket daemonSocketPath
+  E.bracket (pure sock) closeSocket $ \sock' -> do
+    liftIO $ Socket.listen sock' Socket.maxListenQueue
+    forever $ do
+      (conn, _peerAddr) <- liftIO $ Socket.accept sock'
+      EventLoop.send eventloop (AddSocketClient conn)
 
 -- | Handle incoming messages from a client.
 --

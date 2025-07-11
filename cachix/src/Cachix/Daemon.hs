@@ -80,7 +80,6 @@ new daemonEnv nixStore daemonOptions daemonLogHandle daemonPushOptions daemonCac
     Just path -> pure $ toS path
     Nothing -> maybe getSocketPath pure cmdSocketPath
 
-  daemonSocketPath <- maybe getSocketPath pure (Options.daemonSocketPath daemonOptions)
   daemonSocketThread <- newEmptyMVar
   daemonClients <- SocketStore.newSocketStore
 

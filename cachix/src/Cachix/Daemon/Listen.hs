@@ -60,7 +60,7 @@ listen ::
   EventLoop DaemonEvent a ->
   FilePath ->
   m ()
-listen eventloop daemonSocketPath =
+listen eventloop daemonSocketPath = do
   sock <- openSocket daemonSocketPath
   E.bracket (pure sock) closeSocket $ \sock' -> do
     liftIO $ Socket.listen sock' Socket.maxListenQueue

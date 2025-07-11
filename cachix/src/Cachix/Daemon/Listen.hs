@@ -41,6 +41,7 @@ import System.Directory
 import System.Environment qualified as System
 import System.FilePath ((</>))
 import System.IO.Error (isDoesNotExistError, isResourceVanishedError)
+import System.Posix.Files (setFileMode)
 
 -- TODO: reconcile with Client
 data ListenError
@@ -59,11 +60,13 @@ listen ::
   EventLoop DaemonEvent a ->
   FilePath ->
   m ()
-listen eventloop daemonSocketPath = forever $ do
-  E.bracketOnError (openSocket daemonSocketPath) closeSocket $ \sock -> do
-    liftIO $ Socket.listen sock Socket.maxListenQueue
-    (conn, _peerAddr) <- liftIO $ Socket.accept sock
-    EventLoop.send eventloop (AddSocketClient conn)
+listen eventloop daemonSocketPath = do
+  sock <- openSocket daemonSocketPath
+  E.bracket (pure sock) closeSocket $ \sock' -> do
+    liftIO $ Socket.listen sock' Socket.maxListenQueue
+    forever $ do
+      (conn, _peerAddr) <- liftIO $ Socket.accept sock'
+      EventLoop.send eventloop (AddSocketClient conn)
 
 -- | Handle incoming messages from a client.
 --
@@ -148,7 +151,7 @@ openSocket socketFilePath = liftIO $ do
   deleteSocketFileIfExists socketFilePath
   sock <- Socket.socket Socket.AF_UNIX Socket.Stream Socket.defaultProtocol
   Socket.bind sock $ Socket.SockAddrUnix socketFilePath
-  -- setFileMode socketFilePath socketFileMode
+  setFileMode socketFilePath 0o666
   return sock
   where
     deleteSocketFileIfExists path =

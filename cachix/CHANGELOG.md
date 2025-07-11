@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2025-07-11
+
+### Added
+
+- daemon: the path to the daemon's socket can be configured with the `CACHIX_DAEMON_SOCKET` environment variable @joshuaspence
+
+### Changed
+
+- daemon: the permissions on the daemon's socket file are now set to 666 @joshuaspence
+
 ## [1.7.9] - 2025-06-02
 
 ### Fixed

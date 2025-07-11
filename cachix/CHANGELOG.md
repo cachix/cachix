@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Changed
 
 - daemon: the permissions on the daemon's socket file are now set to 666 @joshuaspence
+- deps: build with GHC 9.8
 
 ## [1.7.9] - 2025-06-02
 

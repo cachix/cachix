@@ -1,6 +1,7 @@
 module Cachix.Daemon.Client (push, stop) where
 
 import Cachix.Client.Env as Env
+import Cachix.Client.Exception (CachixException (..))
 import Cachix.Client.OptionsParser (DaemonOptions (..))
 import Cachix.Client.Retry qualified as Retry
 import Cachix.Daemon.Listen (getSocketPath)
@@ -16,6 +17,7 @@ import Network.Socket.ByteString qualified as Socket.BS
 import Network.Socket.ByteString.Lazy qualified as Socket.LBS
 import Protolude
 import System.Environment (lookupEnv)
+import System.IO (hIsTerminalDevice)
 import System.IO.Error (isResourceVanishedError)
 
 data SocketError
@@ -37,13 +39,22 @@ instance Exception SocketError where
 --
 -- TODO: wait for the daemon to respond that it has received the request
 push :: Env -> DaemonOptions -> [FilePath] -> IO ()
-push _env daemonOptions storePaths =
+push _env daemonOptions storePaths = do
+  hasStdin <- not <$> hIsTerminalDevice stdin
+  inputStorePaths <-
+    case (hasStdin, storePaths) of
+      (False, []) -> throwIO $ NoInput "You need to specify store paths either as stdin or as a command argument"
+      (True, []) -> fmap toS . lines <$> getContents
+      -- If we get both stdin and cli args, prefer cli args.
+      -- This avoids hangs in cases where stdin is non-interactive but unused by caller.
+      (_, paths) -> return paths
+
   withDaemonConn (daemonSocketPath daemonOptions) $ \sock -> do
+    let pushRequest =
+          Protocol.ClientPushRequest $
+            PushRequest {storePaths = inputStorePaths}
+
     Socket.LBS.sendAll sock $ Protocol.newMessage pushRequest
-  where
-    pushRequest =
-      Protocol.ClientPushRequest $
-        PushRequest {storePaths = storePaths}
 
 -- | Tell the daemon to stop and wait for it to gracefully exit
 stop :: Env -> DaemonOptions -> IO ()

@@ -30,7 +30,7 @@
     forAllSystems = f: builtins.listToAttrs (map (name: { inherit name; value = f name; }) systems);
 
     # Keep in sync with stack.yaml
-    ghcVersion = "96";
+    ghcVersion = "98";
 
     # Try to use the same Nix version as cnix-store, if available.
     getNix = { pkgs, haskellPackages ? pkgs.haskellPackages }:

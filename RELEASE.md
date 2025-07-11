@@ -1,7 +1,8 @@
 # Release Checklist
 
 - Edit [CHANGELOG.md](./cachix/CHANGELOG.md)
-  Compare diff: https://github.com/cachix/cachix/compare
+
+  Diff: https://github.com/cachix/cachix/compare \
   Fetch messages: `git log --ancestry-path <old_tag>..HEAD`
 - Update the [README.md](./README.md) with any `cachix --help` changes
 - Bump cachix/cachix.cabal and cachix-api/cachix-api.cabal versions and commit

@@ -15,6 +15,7 @@ import Network.Socket qualified as Socket
 import Network.Socket.ByteString qualified as Socket.BS
 import Network.Socket.ByteString.Lazy qualified as Socket.LBS
 import Protolude
+import System.Environment (lookupEnv)
 import System.IO.Error (isResourceVanishedError)
 
 data SocketError
@@ -130,7 +131,8 @@ stop _env daemonOptions =
 
 withDaemonConn :: Maybe FilePath -> (Socket.Socket -> IO a) -> IO a
 withDaemonConn optionalSocketPath f = do
-  socketPath <- maybe getSocketPath pure optionalSocketPath
+  envSocketPath <- lookupEnv "CACHIX_DAEMON_SOCKET"
+  socketPath <- maybe getSocketPath pure (envSocketPath <|> optionalSocketPath)
   bracket (open socketPath `onException` failedToConnectTo socketPath) Socket.close f
   where
     open socketPath = do

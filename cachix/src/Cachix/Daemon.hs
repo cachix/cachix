@@ -74,7 +74,7 @@ new daemonEnv nixStore daemonOptions daemonLogHandle daemonPushOptions daemonCac
   daemonEventLoop <- EventLoop.new
   daemonPid <- getProcessID
 
-  envSocketPath <- lookupEnv "CACHIX_SOCKET"
+  envSocketPath <- lookupEnv "CACHIX_DAEMON_SOCKET"
   let cmdSocketPath = Options.daemonSocketPath daemonOptions
   daemonSocketPath <- case envSocketPath of
     Just path -> pure $ toS path

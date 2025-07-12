@@ -10,11 +10,15 @@ import Control.Concurrent.Async qualified as Async
 import Control.Concurrent.STM.TBMQueue
 import Data.Aeson qualified as Aeson
 import Data.ByteString qualified as BS
+import Data.ByteString.Char8 qualified as BS8
 import Data.IORef
 import Data.Time.Clock
+import Hercules.CNix.Store (Store, withStore)
+import Hercules.CNix.Store qualified as Store
 import Network.Socket qualified as Socket
 import Network.Socket.ByteString qualified as Socket.BS
 import Network.Socket.ByteString.Lazy qualified as Socket.LBS
+--import Protolude hiding (map)  -- Hide ambiguous functions from Protolude
 import Protolude
 import System.Environment (lookupEnv)
 import System.IO (hIsTerminalDevice)
@@ -49,12 +53,16 @@ push _env daemonOptions storePaths = do
       -- This avoids hangs in cases where stdin is non-interactive but unused by caller.
       (_, paths) -> return paths
 
-  withDaemonConn (daemonSocketPath daemonOptions) $ \sock -> do
-    let pushRequest =
-          Protocol.ClientPushRequest $
-            PushRequest {storePaths = inputStorePaths}
+  withStore $ \store -> do
+    inputStorePaths' <- mapM (Store.followLinksToStorePath store . BS8.pack) inputStorePaths
+    inputStorePathsStr <- mapM (fmap (toS . BS8.unpack) . Store.storePathToPath store) inputStorePaths'
 
-    Socket.LBS.sendAll sock $ Protocol.newMessage pushRequest
+    withDaemonConn (daemonSocketPath daemonOptions) $ \sock -> do
+      let pushRequest =
+            Protocol.ClientPushRequest $
+              PushRequest {storePaths = inputStorePathsStr}
+
+      Socket.LBS.sendAll sock $ Protocol.newMessage pushRequest
 
 -- | Tell the daemon to stop and wait for it to gracefully exit
 stop :: Env -> DaemonOptions -> IO ()

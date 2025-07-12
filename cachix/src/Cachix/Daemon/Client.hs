@@ -13,12 +13,10 @@ import Data.ByteString qualified as BS
 import Data.ByteString.Char8 qualified as BS8
 import Data.IORef
 import Data.Time.Clock
-import Hercules.CNix.Store (Store, withStore)
 import Hercules.CNix.Store qualified as Store
 import Network.Socket qualified as Socket
 import Network.Socket.ByteString qualified as Socket.BS
 import Network.Socket.ByteString.Lazy qualified as Socket.LBS
---import Protolude hiding (map)  -- Hide ambiguous functions from Protolude
 import Protolude
 import System.Environment (lookupEnv)
 import System.IO (hIsTerminalDevice)
@@ -43,17 +41,17 @@ instance Exception SocketError where
 --
 -- TODO: wait for the daemon to respond that it has received the request
 push :: Env -> DaemonOptions -> [FilePath] -> IO ()
-push _env daemonOptions storePaths = do
+push _env daemonOptions cliPaths = do
   hasStdin <- not <$> hIsTerminalDevice stdin
   inputStorePaths <-
-    case (hasStdin, storePaths) of
+    case (hasStdin, cliPaths) of
       (False, []) -> throwIO $ NoInput "You need to specify store paths either as stdin or as a command argument"
       (True, []) -> fmap toS . lines <$> getContents
       -- If we get both stdin and cli args, prefer cli args.
       -- This avoids hangs in cases where stdin is non-interactive but unused by caller.
       (_, paths) -> return paths
 
-  withStore $ \store -> do
+  Store.withStore $ \store -> do
     inputStorePaths' <- mapM (Store.followLinksToStorePath store . BS8.pack) inputStorePaths
     inputStorePathsStr <- mapM (fmap (toS . BS8.unpack) . Store.storePathToPath store) inputStorePaths'
 

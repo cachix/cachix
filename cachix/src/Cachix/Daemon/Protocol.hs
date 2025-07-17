@@ -24,6 +24,7 @@ data ClientMessage
   = ClientPushRequest !PushRequest
   | ClientStop
   | ClientPing
+  | ClientSubscribed
   deriving stock (Eq, Generic, Show)
   deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)
 
@@ -31,6 +32,10 @@ data ClientMessage
 data DaemonMessage
   = DaemonPong
   | DaemonExit !DaemonExitStatus
+  | PushStarted
+  | PushCompleted
+  | PushFailed Text
+  | PushProgress FilePath Int
   deriving stock (Eq, Generic, Show)
   deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)
 

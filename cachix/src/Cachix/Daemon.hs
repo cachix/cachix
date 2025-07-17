@@ -17,6 +17,7 @@ import Cachix.Client.Env as Env
 import Cachix.Client.OptionsParser (DaemonOptions, PushOptions)
 import Cachix.Client.OptionsParser qualified as Options
 import Cachix.Client.Push
+import Cachix.Client.Retry qualified as Retry
 import Cachix.Daemon.EventLoop qualified as EventLoop
 import Cachix.Daemon.Listen as Listen
 import Cachix.Daemon.Log qualified as Log
@@ -27,14 +28,18 @@ import Cachix.Daemon.SocketStore qualified as SocketStore
 import Cachix.Daemon.Subscription as Subscription
 import Cachix.Daemon.Types as Types
 import Cachix.Daemon.Types.PushManager qualified as PushManager
+import Cachix.Daemon.Types.SocketStore qualified as SocketStore
 import Cachix.Daemon.Worker qualified as Worker
 import Cachix.Types.BinaryCache (BinaryCacheName)
 import Cachix.Types.BinaryCache qualified as BinaryCache
 import Control.Concurrent.STM.TMChan
 import Control.Exception.Safe (catchAny)
+import Data.Aeson qualified as Aeson
+import Data.ByteString qualified as BS
 import Data.IORef (IORef, atomicModifyIORef', newIORef)
 import Data.Text qualified as T
 import Hercules.CNix.Store (Store, withStore)
+import Hercules.CNix.Store qualified as Store
 import Hercules.CNix.Util qualified as CNix.Util
 import Katip qualified
 import Network.Socket qualified as Socket
@@ -47,6 +52,15 @@ import System.Posix.Signals qualified as Signal
 import UnliftIO (MonadUnliftIO, withRunInIO)
 import UnliftIO.Async qualified as Async
 import UnliftIO.Exception (bracket)
+import Control.Concurrent.STM.TBMQueue (readTBMQueue, writeTBMQueue, newTBMQueue)
+import Cachix.Daemon.Client (SocketError(..))
+import Data.Time.Clock (addUTCTime, getCurrentTime, UTCTime)
+import Data.IORef (IORef, readIORef, writeIORef, atomicModifyIORef', newIORef)
+import qualified Data.Text as T
+import Network.Socket.ByteString qualified as Socket.BS
+import Data.Text.Encoding (encodeUtf8)
+import qualified Data.ByteString.Lazy as BSL
+import Cachix.Daemon.Types.PushEvent
 
 -- | Configure a new daemon. Use 'run' to start it.
 new ::
@@ -134,11 +148,14 @@ run daemon = fmap join <$> runDaemon daemon $ do
     ReconnectSocket ->
       -- TODO: implement reconnection logic
       EventLoop.exitLoopWith (Left DaemonSocketError) daemonEventLoop
-    ReceivedMessage clientMsg ->
+    ReceivedMessage socketId clientMsg ->
       case clientMsg of
         ClientPushRequest pushRequest -> queueJob pushRequest
         ClientStop -> EventLoop.send daemonEventLoop ShutdownGracefully
-        _ -> return ()
+        ClientSubscribed -> do
+          chan <- liftIO . subscribe =<< ask
+          void $ liftIO $ Async.async $ relayMessagesBackToClient socketId chan daemonClients
+        _ -> print (T.pack ("Received unmatched message: " <> show clientMsg))
     ShutdownGracefully -> do
       Katip.logFM Katip.InfoS "Shutting down daemon..."
       pushResult <- shutdownGracefully
@@ -209,11 +226,23 @@ installSignalHandlers = do
 queueJob :: Protocol.PushRequest -> Daemon ()
 queueJob pushRequest = do
   daemonPushManager <- asks daemonPushManager
-  -- TODO: subscribe the socket to updates if available
 
   -- Queue the job
-  void $
-    PushManager.runPushManager daemonPushManager (PushManager.addPushJob pushRequest)
+  void $ PushManager.runPushManager daemonPushManager (PushManager.addPushJob pushRequest)
+
+  -- Subscribe to push events
+  chan <- liftIO . subscribe =<< ask
+
+  -- Optionally, handle the subscription channel (e.g., log events)
+  void $ liftIO $ Async.async $ monitorSubscription chan
+
+-- Example function to handle events from the subscription channel
+monitorSubscription :: TMChan PushEvent -> IO ()
+monitorSubscription chan = forever $ do
+  event <- atomically $ readTMChan chan
+  case event of
+    Just pushEvent -> print (T.pack ("Received push event: " <> show pushEvent))
+    Nothing -> print ("Subscription channel closed" :: Text)
 
 subscribe :: DaemonEnv -> IO (TMChan PushEvent)
 subscribe DaemonEnv {..} = do
@@ -319,3 +348,23 @@ withTakeMVar mvar f = do
 
     wrapper Nothing = pure ()
     wrapper (Just x) = f x
+
+relayMessagesBackToClient :: SocketStore.SocketId -> TMChan PushEvent -> SocketStore.SocketStore -> IO ()
+relayMessagesBackToClient socketId chan socketStore = forever $ do
+  event <- atomically $ readTMChan chan
+  case event of
+    Just pushEvent -> do
+      let msg = case eventMessage pushEvent of
+            Types.PushFinished ->
+              Just $ Protocol.newMessage Protocol.PushCompleted
+            Types.PushStorePathProgress path progress total ->
+              Just $ Protocol.newMessage (Protocol.PushProgress path (fromIntegral progress))
+            Types.PushStorePathFailed path reason ->
+              Just $ Protocol.newMessage (Protocol.PushFailed reason)
+            Types.PushStarted ->
+              Just $ Protocol.newMessage Protocol.PushStarted
+            _ -> Nothing
+      case msg of
+        Just m -> SocketStore.sendAll socketId m socketStore
+        Nothing -> return ()
+    Nothing -> return ()

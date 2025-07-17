@@ -17,6 +17,7 @@ module Cachix.Daemon.PushManager
     -- * Query
     filterPushJobs,
     getFailedPushJobs,
+    getPushJobs,
 
     -- * Store paths
     queueStorePaths,
@@ -141,6 +142,9 @@ filterPushJobs :: (PushJob -> Bool) -> PushManager [PushJob]
 filterPushJobs f = do
   pushJobs <- asks pmPushJobs
   liftIO $ filter f . HashMap.elems <$> readTVarIO pushJobs
+
+getPushJobs :: PushManager [PushJob]
+getPushJobs = filterPushJobs (\a -> True)
 
 getFailedPushJobs :: PushManager [PushJob]
 getFailedPushJobs = filterPushJobs PushJob.isFailed

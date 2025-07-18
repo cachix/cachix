@@ -1,7 +1,7 @@
-module Cachix.Daemon.Client (push, stop, SocketError(..)) where
+module Cachix.Daemon.Client (push, stop) where
 
 import Cachix.Client.Env as Env
-import Cachix.Client.Exception (CachixException (..))
+-- import Cachix.Client.Exception (CachixException (..))
 import Cachix.Client.OptionsParser (DaemonOptions (..))
 import Cachix.Client.Retry qualified as Retry
 import Cachix.Daemon.Listen (getSocketPath)
@@ -13,13 +13,11 @@ import Data.ByteString qualified as BS
 import Data.ByteString.Char8 qualified as BS8
 import Data.IORef
 import Data.Time.Clock
-import Hercules.CNix.Store qualified as Store
 import Network.Socket qualified as Socket
 import Network.Socket.ByteString qualified as Socket.BS
 import Network.Socket.ByteString.Lazy qualified as Socket.LBS
 import Protolude
 import System.Environment (lookupEnv)
-import System.IO (hIsTerminalDevice)
 import System.IO.Error (isResourceVanishedError)
 
 data SocketError
@@ -39,58 +37,45 @@ instance Exception SocketError where
 
 -- | Queue up push requests with the daemon and wait for completion
 push :: Env -> DaemonOptions -> [FilePath] -> IO ()
-push _env daemonOptions cliPaths = do
-  hasStdin <- not <$> hIsTerminalDevice stdin
-  inputStorePaths <-
-    case (hasStdin, cliPaths) of
-      (False, []) -> throwIO $ NoInput "You need to specify store paths either as stdin or as a command argument"
-      (True, []) -> fmap toS . lines <$> getContents
-      -- If we get both stdin and cli args, prefer cli args.
-      -- This avoids hangs in cases where stdin is non-interactive but unused by caller.
-      (_, paths) -> return paths
+push _env daemonOptions storePaths = do
+  withDaemonConn (daemonSocketPath daemonOptions) $ \sock -> do
+    let pushRequest =
+          Protocol.ClientPushRequest $
+            PushRequest {storePaths = storePaths}
 
-  Store.withStore $ \store -> do
-    inputStorePaths' <- mapM (Store.followLinksToStorePath store . BS8.pack) inputStorePaths
-    inputStorePathsStr <- mapM (fmap (toS . BS8.unpack) . Store.storePathToPath store) inputStorePaths'
+    Socket.LBS.sendAll sock $ Protocol.newMessage pushRequest
 
-    withDaemonConn (daemonSocketPath daemonOptions) $ \sock -> do
-      let pushRequest =
-            Protocol.ClientPushRequest $
-              PushRequest {storePaths = inputStorePathsStr}
+    -- Listen for updates and wait for completion
+    let size = 100
+    (rx, tx) <- atomically $ (,) <$> newTBMQueue size <*> newTBMQueue size
 
-      Socket.LBS.sendAll sock $ Protocol.newMessage pushRequest
+    rxThread <- Async.async (handleIncoming rx sock)
+    txThread <- Async.async (handleOutgoing tx sock)
 
-      -- Listen for updates and wait for completion
-      let size = 100
-      (rx, tx) <- atomically $ (,) <$> newTBMQueue size <*> newTBMQueue size
+    lastPongRef <- newIORef =<< getCurrentTime
+    pingThread <- Async.async (runPingThread lastPongRef rx tx)
 
-      rxThread <- Async.async (handleIncoming rx sock)
-      txThread <- Async.async (handleOutgoing tx sock)
+    mapM_ Async.link [rxThread, txThread, pingThread]
 
-      lastPongRef <- newIORef =<< getCurrentTime
-      pingThread <- Async.async (runPingThread lastPongRef rx tx)
+    -- Subscribe to updates
+    atomically $ writeTBMQueue tx Protocol.ClientSubscribed
 
-      mapM_ Async.link [rxThread, txThread, pingThread]
-
-      -- Subscribe to updates
-      atomically $ writeTBMQueue tx Protocol.ClientSubscribed
-
-      fix $ \loop -> do
-        mmsg <- atomically (readTBMQueue rx)
-        case mmsg of
-          Nothing -> return ()
-          Just (Left err) -> do
-            putErrText $ toS $ displayException err
-            exitFailure
-          Just (Right msg) -> do
-            let logMsg :: ByteString = BS8.pack "Received message: " <> BS8.pack (show msg)
-            putStrLn logMsg
-            case msg of
-              Protocol.DaemonPong -> do
-                writeIORef lastPongRef =<< getCurrentTime
-                loop
-              Protocol.PushCompleted -> exitSuccess
-              _ -> loop
+    fix $ \loop -> do
+      mmsg <- atomically (readTBMQueue rx)
+      case mmsg of
+        Nothing -> return ()
+        Just (Left err) -> do
+          putErrText $ toS $ displayException err
+          exitFailure
+        Just (Right msg) -> do
+          let logMsg :: ByteString = BS8.pack "Received message: " <> BS8.pack (show msg)
+          putStrLn logMsg
+          case msg of
+            Protocol.DaemonPong -> do
+              writeIORef lastPongRef =<< getCurrentTime
+              loop
+            Protocol.PushCompleted -> exitSuccess
+            _ -> loop
   where
     runPingThread lastPongRef rx tx = go
       where

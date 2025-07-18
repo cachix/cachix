@@ -74,7 +74,6 @@ import Servant.Auth ()
 import Servant.Auth.Client
 import Servant.Conduit ()
 import UnliftIO.QSem qualified as QSem
-import qualified Data.Text as T
 
 newPushManagerEnv :: (MonadIO m) => PushOptions -> PushParams PushManager () -> OnPushEvent -> Logger -> m PushManagerEnv
 newPushManagerEnv pushOptions pmPushParams onPushEvent pmLogger = liftIO $ do
@@ -214,20 +213,16 @@ checkPushJobCompleted :: Protocol.PushRequestId -> PushManager ()
 checkPushJobCompleted pushId = do
   PushManagerEnv {..} <- ask
   mpushJob <- lookupPushJob pushId
-  for_ mpushJob $ \pushJob -> do
-    if not (Set.null $ pushQueue pushJob)
-      then liftIO $ do
-        print (("Push job " :: Text) <> T.pack (show pushId) <> " is not complete because the push queue is not empty.")
-        print (("Push queue contents: " :: Text) <> T.pack (show (Set.toList $ pushQueue pushJob)))
-      else do
-        timestamp <- liftIO getCurrentTime
-        liftIO $ atomically $ do
-          _ <- modifyPushJobSTM pmPushJobs pushId $ \pushJob' ->
-            if PushJob.hasFailedPaths(pushJob')
-              then PushJob.fail timestamp pushJob'
-              else PushJob.complete timestamp pushJob'
-          decrementTVar pmPendingJobCount
-        pushFinished pushJob
+  for_ mpushJob $ \pushJob ->
+    when (Set.null $ pushQueue pushJob) $ do
+      timestamp <- liftIO getCurrentTime
+      liftIO $ atomically $ do
+        _ <- modifyPushJobSTM pmPushJobs pushId $ \pushJob' ->
+          if PushJob.hasFailedPaths pushJob'
+            then PushJob.fail timestamp pushJob'
+            else PushJob.complete timestamp pushJob'
+        decrementTVar pmPendingJobCount
+      pushFinished pushJob
 
 queuedStorePathCount :: PushManager Integer
 queuedStorePathCount = do
@@ -401,8 +396,11 @@ pushStarted pushJob@PushJob {pushId} = do
 
 pushFinished :: PushJob -> PushManager ()
 pushFinished pushJob@PushJob {pushId} = void $ runMaybeT $ do
-  pushDuration <- MaybeT $ pure $ PushJob.duration pushJob
-  completedAt <- MaybeT $ pure $ PushJob.completedAt pushJob
+  let defaultDuration = 0
+  pushDuration <- MaybeT $ pure $ Just (fromMaybe defaultDuration $ PushJob.duration pushJob)
+
+  defaultCompletedAt <- liftIO getCurrentTime
+  completedAt <- MaybeT $ pure $ Just (fromMaybe defaultCompletedAt $ PushJob.completedAt pushJob)
 
   Katip.logLocM Katip.InfoS $
     Katip.ls $
@@ -444,22 +442,20 @@ pushStorePathDone storePath = do
   pushIds <- lookupStorePathIndex storePath
   modifyPushJobs pushIds (PushJob.markStorePathPushed storePath)
 
-  sendStorePathEvent pushIds (PushStorePathDone storePath)
-
-  mapM_ checkPushJobCompleted pushIds
-
   removeStorePath storePath
+  mapM_ checkPushJobCompleted pushIds
+  sendStorePathEvent pushIds (PushStorePathDone storePath)
 
 pushStorePathFailed :: FilePath -> Text -> PushManager ()
 pushStorePathFailed storePath errMsg = do
   pushIds <- lookupStorePathIndex storePath
   modifyPushJobs pushIds (PushJob.markStorePathFailed storePath)
 
-  sendStorePathEvent pushIds (PushStorePathFailed storePath errMsg)
-
-  mapM_ checkPushJobCompleted pushIds
-
   removeStorePath storePath
+
+  sendStorePathEvent pushIds (PushStorePathFailed storePath errMsg)
+  
+  mapM_ checkPushJobCompleted pushIds
 
 -- Helpers
 

@@ -17,7 +17,6 @@ import Cachix.Client.Env as Env
 import Cachix.Client.OptionsParser (DaemonOptions, PushOptions)
 import Cachix.Client.OptionsParser qualified as Options
 import Cachix.Client.Push
-import Cachix.Client.Retry qualified as Retry
 import Cachix.Daemon.EventLoop qualified as EventLoop
 import Cachix.Daemon.Listen as Listen
 import Cachix.Daemon.Log qualified as Log
@@ -57,8 +56,6 @@ import Cachix.Daemon.Client (SocketError(..))
 import Data.Time.Clock (addUTCTime, getCurrentTime, UTCTime)
 import Data.IORef (IORef, readIORef, writeIORef, atomicModifyIORef', newIORef)
 import qualified Data.Text as T
-import Network.Socket.ByteString qualified as Socket.BS
-import Data.Text.Encoding (encodeUtf8)
 import qualified Data.ByteString.Lazy as BSL
 import Cachix.Daemon.Types.PushEvent
 

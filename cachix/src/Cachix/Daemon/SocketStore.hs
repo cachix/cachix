@@ -16,7 +16,6 @@ import Data.UUID.V4 qualified as UUID
 import Network.Socket qualified
 import Protolude hiding (toList)
 import UnliftIO.Async qualified as Async
-import Network.Socket.ByteString qualified as Socket.BS
 import Network.Socket.ByteString.Lazy qualified as Socket.LBS
 import qualified Data.ByteString.Lazy as LBS
 

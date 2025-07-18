@@ -43,6 +43,7 @@ import System.FilePath ((</>))
 import System.IO.Error (isDoesNotExistError, isResourceVanishedError)
 import System.Posix.Files (setFileMode)
 
+-- TODO: reconcile with Client
 data ListenError
   = SocketError SomeException
   | DecodingError Text
@@ -96,8 +97,8 @@ handleClient eventloop socketId conn = do
           forM_ msgs $ \msg -> do
             EventLoop.send eventloop (ReceivedMessage socketId msg)
             case msg of
-              Protocol.ClientPing -> liftIO $ Socket.LBS.sendAll conn $ Protocol.newMessage DaemonPong
-              -- Protocol.ClientSubscribed -> EventLoop.send eventloop (SubscribeClient socketId)
+              Protocol.ClientPing ->
+                liftIO $ Socket.LBS.sendAll conn $ Protocol.newMessage DaemonPong
               _ -> return ()
 
           go newLeftovers

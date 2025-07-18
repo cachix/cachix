@@ -1,7 +1,6 @@
 module Cachix.Daemon.Client (push, stop) where
 
 import Cachix.Client.Env as Env
--- import Cachix.Client.Exception (CachixException (..))
 import Cachix.Client.OptionsParser (DaemonOptions (..))
 import Cachix.Client.Retry qualified as Retry
 import Cachix.Daemon.Listen (getSocketPath)

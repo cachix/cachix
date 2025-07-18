@@ -50,4 +50,4 @@ sendAll socketId msg (SocketStore stvar) = do
   mSocket <- liftIO $ readTVarIO stvar
   case HashMap.lookup socketId mSocket of
     Just (Socket {..}) -> liftIO $ Socket.LBS.sendAll socket msg
-    Nothing -> return () -- or handle the error appropriately
+    Nothing -> return ()

@@ -12,6 +12,7 @@ import Data.Aeson qualified as Aeson
 import Data.ByteString qualified as BS
 import Data.ByteString.Char8 qualified as BS8
 import Data.IORef
+import Data.Text qualified as T
 import Data.Time.Clock
 import Hercules.CNix.Store qualified as Store
 import Network.Socket qualified as Socket
@@ -46,7 +47,7 @@ push _env daemonOptions cliPaths = do
   inputStorePaths <-
     case (hasStdin, cliPaths) of
       (False, []) -> throwIO $ NoInput "You need to specify store paths either as stdin or as a command argument"
-      (True, []) -> fmap toS . lines <$> getContents
+      (True, []) -> map T.unpack . T.words <$> getContents
       -- If we get both stdin and cli args, prefer cli args.
       -- This avoids hangs in cases where stdin is non-interactive but unused by caller.
       (_, paths) -> return paths

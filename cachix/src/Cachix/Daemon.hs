@@ -33,12 +33,9 @@ import Cachix.Types.BinaryCache (BinaryCacheName)
 import Cachix.Types.BinaryCache qualified as BinaryCache
 import Control.Concurrent.STM.TMChan
 import Control.Exception.Safe (catchAny)
-import Data.Aeson qualified as Aeson
-import Data.ByteString qualified as BS
 import Data.IORef (IORef, atomicModifyIORef', newIORef)
 import Data.Text qualified as T
 import Hercules.CNix.Store (Store, withStore)
-import Hercules.CNix.Store qualified as Store
 import Hercules.CNix.Util qualified as CNix.Util
 import Katip qualified
 import Network.Socket qualified as Socket
@@ -51,13 +48,6 @@ import System.Posix.Signals qualified as Signal
 import UnliftIO (MonadUnliftIO, withRunInIO)
 import UnliftIO.Async qualified as Async
 import UnliftIO.Exception (bracket)
-import Control.Concurrent.STM.TBMQueue (readTBMQueue, writeTBMQueue, newTBMQueue)
-import Cachix.Daemon.Client (SocketError(..))
-import Data.Time.Clock (addUTCTime, getCurrentTime, UTCTime)
-import Data.IORef (IORef, readIORef, writeIORef, atomicModifyIORef', newIORef)
-import qualified Data.Text as T
-import qualified Data.ByteString.Lazy as BSL
-import Cachix.Daemon.Types.PushEvent
 
 -- | Configure a new daemon. Use 'run' to start it.
 new ::

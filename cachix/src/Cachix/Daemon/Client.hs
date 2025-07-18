@@ -21,7 +21,6 @@ import Protolude
 import System.Environment (lookupEnv)
 import System.IO (hIsTerminalDevice)
 import System.IO.Error (isResourceVanishedError)
-import Control.Concurrent.STM.TBMQueue (writeTBMQueue)
 
 data SocketError
   = -- | The socket has been closed
@@ -85,7 +84,7 @@ push _env daemonOptions cliPaths = do
             exitFailure
           Just (Right msg) -> do
             let logMsg :: ByteString = BS8.pack "Received message: " <> BS8.pack (show msg)
-            putStrLn logMsg -- Log the received message
+            putStrLn logMsg
             case msg of
               Protocol.DaemonPong -> do
                 writeIORef lastPongRef =<< getCurrentTime
@@ -175,7 +174,6 @@ stop _env daemonOptions =
               case exitCode exitStatus of
                 0 -> exitSuccess
                 code -> exitWith (ExitFailure code)
- 
   where
     runPingThread lastPongRef rx tx = go
       where

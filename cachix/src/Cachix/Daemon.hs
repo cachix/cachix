@@ -223,23 +223,9 @@ installSignalHandlers = do
 queueJob :: Protocol.PushRequest -> Daemon ()
 queueJob pushRequest = do
   daemonPushManager <- asks daemonPushManager
-
-  -- Subscribe to push events
-  chan <- liftIO . subscribe =<< ask
-
-  -- Optionally, handle the subscription channel (e.g., log events)
-  void $ liftIO $ Async.async $ monitorSubscription chan
-
   -- Queue the job
-  void $ PushManager.runPushManager daemonPushManager (PushManager.addPushJob pushRequest)
-
--- Example function to handle events from the subscription channel
-monitorSubscription :: TMChan PushEvent -> IO ()
-monitorSubscription chan = forever $ do
-  event <- atomically $ readTMChan chan
-  case event of
-    Just pushEvent -> print (T.pack ("Received push event: " <> show pushEvent))
-    Nothing -> print ("Subscription channel closed" :: Text)
+  void $
+    PushManager.runPushManager daemonPushManager (PushManager.addPushJob pushRequest)
 
 subscribe :: DaemonEnv -> IO (TMChan PushEvent)
 subscribe DaemonEnv {..} = do

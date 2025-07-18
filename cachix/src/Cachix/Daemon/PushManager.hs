@@ -442,20 +442,22 @@ pushStorePathDone storePath = do
   pushIds <- lookupStorePathIndex storePath
   modifyPushJobs pushIds (PushJob.markStorePathPushed storePath)
 
-  removeStorePath storePath
-  mapM_ checkPushJobCompleted pushIds
   sendStorePathEvent pushIds (PushStorePathDone storePath)
+
+  mapM_ checkPushJobCompleted pushIds
+
+  removeStorePath storePath
 
 pushStorePathFailed :: FilePath -> Text -> PushManager ()
 pushStorePathFailed storePath errMsg = do
   pushIds <- lookupStorePathIndex storePath
   modifyPushJobs pushIds (PushJob.markStorePathFailed storePath)
 
-  removeStorePath storePath
-
   sendStorePathEvent pushIds (PushStorePathFailed storePath errMsg)
-  
+
   mapM_ checkPushJobCompleted pushIds
+
+  removeStorePath storePath
 
 -- Helpers
 

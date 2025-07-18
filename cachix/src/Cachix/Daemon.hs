@@ -152,7 +152,7 @@ run daemon = fmap join <$> runDaemon daemon $ do
         ClientSubscribed -> do
           chan <- liftIO . subscribe =<< ask
           void $ liftIO $ Async.async $ relayMessagesBackToClient socketId chan daemonClients
-        _ -> print (T.pack ("Received unmatched message: " <> show clientMsg))
+        _ -> return ()
     ShutdownGracefully -> do
       Katip.logFM Katip.InfoS "Shutting down daemon..."
       pushResult <- shutdownGracefully

@@ -175,10 +175,7 @@ stop _env daemonOptions =
               case exitCode exitStatus of
                 0 -> exitSuccess
                 code -> exitWith (ExitFailure code)
-            _ -> do
-              putErrText "Received an unknown message"
-              loop  -- Continue the loop
-
+ 
   where
     runPingThread lastPongRef rx tx = go
       where

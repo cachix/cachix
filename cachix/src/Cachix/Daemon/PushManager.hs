@@ -17,7 +17,6 @@ module Cachix.Daemon.PushManager
     -- * Query
     filterPushJobs,
     getFailedPushJobs,
-    getPushJobs,
 
     -- * Store paths
     queueStorePaths,
@@ -75,6 +74,7 @@ import Servant.Auth ()
 import Servant.Auth.Client
 import Servant.Conduit ()
 import UnliftIO.QSem qualified as QSem
+import qualified Data.Text as T
 
 newPushManagerEnv :: (MonadIO m) => PushOptions -> PushParams PushManager () -> OnPushEvent -> Logger -> m PushManagerEnv
 newPushManagerEnv pushOptions pmPushParams onPushEvent pmLogger = liftIO $ do
@@ -142,9 +142,6 @@ filterPushJobs :: (PushJob -> Bool) -> PushManager [PushJob]
 filterPushJobs f = do
   pushJobs <- asks pmPushJobs
   liftIO $ filter f . HashMap.elems <$> readTVarIO pushJobs
-
-getPushJobs :: PushManager [PushJob]
-getPushJobs = filterPushJobs (\a -> True)
 
 getFailedPushJobs :: PushManager [PushJob]
 getFailedPushJobs = filterPushJobs PushJob.isFailed
@@ -217,16 +214,20 @@ checkPushJobCompleted :: Protocol.PushRequestId -> PushManager ()
 checkPushJobCompleted pushId = do
   PushManagerEnv {..} <- ask
   mpushJob <- lookupPushJob pushId
-  for_ mpushJob $ \pushJob ->
-    when (Set.null $ pushQueue pushJob) $ do
-      timestamp <- liftIO getCurrentTime
-      liftIO $ atomically $ do
-        _ <- modifyPushJobSTM pmPushJobs pushId $ \pushJob' ->
-          if PushJob.hasFailedPaths pushJob'
-            then PushJob.fail timestamp pushJob'
-            else PushJob.complete timestamp pushJob'
-        decrementTVar pmPendingJobCount
-      pushFinished pushJob
+  for_ mpushJob $ \pushJob -> do
+    if not (Set.null $ pushQueue pushJob)
+      then liftIO $ do
+        print (("Push job " :: Text) <> T.pack (show pushId) <> " is not complete because the push queue is not empty.")
+        print (("Push queue contents: " :: Text) <> T.pack (show (Set.toList $ pushQueue pushJob)))
+      else do
+        timestamp <- liftIO getCurrentTime
+        liftIO $ atomically $ do
+          _ <- modifyPushJobSTM pmPushJobs pushId $ \pushJob' ->
+            if PushJob.hasFailedPaths(pushJob')
+              then PushJob.fail timestamp pushJob'
+              else PushJob.complete timestamp pushJob'
+          decrementTVar pmPendingJobCount
+        pushFinished pushJob
 
 queuedStorePathCount :: PushManager Integer
 queuedStorePathCount = do

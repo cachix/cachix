@@ -53,7 +53,12 @@ instance Exception ListenError where
     SocketError err -> "Failed to read from the daemon socket: " <> show err
     DecodingError err -> "Failed to decode request:\n" <> toS err
 
-listen ::(E.MonadMask m, Katip.KatipContext m) => EventLoop DaemonEvent a -> FilePath -> m ()
+-- | Listen for incoming connections on the given socket path.
+listen ::
+  (E.MonadMask m, Katip.KatipContext m) =>
+  EventLoop DaemonEvent a ->
+  FilePath ->
+  m ()
 listen eventloop daemonSocketPath = do
   sock <- openSocket daemonSocketPath
   E.bracket (pure sock) closeSocket $ \sock' -> do
@@ -62,7 +67,17 @@ listen eventloop daemonSocketPath = do
       (conn, _peerAddr) <- liftIO $ Socket.accept sock'
       EventLoop.send eventloop (AddSocketClient conn)
 
-handleClient ::(E.MonadMask m, Katip.KatipContext m) => EventLoop DaemonEvent a -> SocketId -> Socket -> m ()
+-- | Handle incoming messages from a client.
+--
+-- Automatically responds to pings.
+-- Requests the daemon to remove the client socket once the loop exits.
+handleClient ::
+  forall m a.
+  (E.MonadMask m, Katip.KatipContext m) =>
+  EventLoop DaemonEvent a ->
+  SocketId ->
+  Socket ->
+  m ()
 handleClient eventloop socketId conn = do
   go BS.empty `E.finally` removeClient
   where
@@ -72,6 +87,7 @@ handleClient eventloop socketId conn = do
       case ebs of
         Left err | isResourceVanishedError err -> return ()
         Left _ -> return ()
+        -- If the socket returns 0 bytes, then it is closed
         Right bs | BS.null bs -> return ()
         Right bs -> do
           let (rawMsgs, newLeftovers) = Protocol.splitMessages (BS.append leftovers bs)
@@ -98,13 +114,15 @@ decodeMessage bs =
     Right msg -> return (Just msg)
 
 serverBye :: Socket.Socket -> Either DaemonError () -> IO ()
-serverBye sock exitResult = Socket.LBS.sendAll sock (Protocol.newMessage (DaemonExit exitStatus)) `catchAny` (\_ -> return ())
+serverBye sock exitResult =
+  Socket.LBS.sendAll sock (Protocol.newMessage (DaemonExit exitStatus)) `catchAny` (\_ -> return ())
   where
     exitStatus = DaemonExitStatus {exitCode, exitMessage}
     exitCode = toExitCodeInt exitResult
-    exitMessage = case exitResult of
-      Left err -> Just (toS $ displayException err)
-      Right _ -> Nothing
+    exitMessage =
+      case exitResult of
+        Left err -> Just (toS $ displayException err)
+        Right _ -> Nothing
 
 getSocketPath :: IO FilePath
 getSocketPath = do
@@ -118,12 +136,15 @@ getSocketDir = do
   createDirectoryIfMissing True socketDir
   return socketDir
 
+-- On systems with systemd: /run/user/$UID
+-- Otherwise, fall back to XDG_CACHE_HOME
 getXdgRuntimeDir :: IO FilePath
 getXdgRuntimeDir = do
   xdgRuntimeDir <- System.lookupEnv "XDG_RUNTIME_DIR"
   cacheFallback <- getXdgDirectory XdgCache ""
   return $ fromMaybe cacheFallback xdgRuntimeDir
 
+-- TODO: lock the socket
 openSocket :: (MonadIO m) => FilePath -> m Socket.Socket
 openSocket socketFilePath = liftIO $ do
   deleteSocketFileIfExists socketFilePath
@@ -132,9 +153,12 @@ openSocket socketFilePath = liftIO $ do
   setFileMode socketFilePath 0o666
   return sock
   where
-    deleteSocketFileIfExists path = removeFile path `catch` handleDoesNotExist
-    handleDoesNotExist e | isDoesNotExistError e = return ()
-                         | otherwise = throwIO e
+    deleteSocketFileIfExists path =
+      removeFile path `catch` handleDoesNotExist
+
+    handleDoesNotExist e
+      | isDoesNotExistError e = return ()
+      | otherwise = throwIO e
 
 closeSocket :: (MonadIO m) => Socket.Socket -> m ()
 closeSocket = liftIO . Socket.close

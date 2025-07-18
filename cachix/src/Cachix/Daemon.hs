@@ -227,14 +227,14 @@ queueJob :: Protocol.PushRequest -> Daemon ()
 queueJob pushRequest = do
   daemonPushManager <- asks daemonPushManager
 
-  -- Queue the job
-  void $ PushManager.runPushManager daemonPushManager (PushManager.addPushJob pushRequest)
-
   -- Subscribe to push events
   chan <- liftIO . subscribe =<< ask
 
   -- Optionally, handle the subscription channel (e.g., log events)
   void $ liftIO $ Async.async $ monitorSubscription chan
+
+  -- Queue the job
+  void $ PushManager.runPushManager daemonPushManager (PushManager.addPushJob pushRequest)
 
 -- Example function to handle events from the subscription channel
 monitorSubscription :: TMChan PushEvent -> IO ()

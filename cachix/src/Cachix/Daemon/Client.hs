@@ -42,17 +42,22 @@ instance Exception SocketError where
 push :: Env -> DaemonOptions -> [FilePath] -> IO ()
 push _env daemonOptions cliPaths = do
   hasStdin <- not <$> hIsTerminalDevice stdin
-  inputStorePaths <- case (hasStdin, cliPaths) of
-    (False, []) -> throwIO $ NoInput "You need to specify store paths either as stdin or as a command argument"
-    (True, []) -> fmap toS . lines <$> getContents
-    (_, paths) -> return paths
+  inputStorePaths <-
+    case (hasStdin, cliPaths) of
+      (False, []) -> throwIO $ NoInput "You need to specify store paths either as stdin or as a command argument"
+      (True, []) -> fmap toS . lines <$> getContents
+      -- If we get both stdin and cli args, prefer cli args.
+      -- This avoids hangs in cases where stdin is non-interactive but unused by caller.
+      (_, paths) -> return paths
 
   Store.withStore $ \store -> do
     inputStorePaths' <- mapM (Store.followLinksToStorePath store . BS8.pack) inputStorePaths
     inputStorePathsStr <- mapM (fmap (toS . BS8.unpack) . Store.storePathToPath store) inputStorePaths'
 
     withDaemonConn (daemonSocketPath daemonOptions) $ \sock -> do
-      let pushRequest = Protocol.ClientPushRequest $ PushRequest {storePaths = inputStorePathsStr}
+      let pushRequest =
+            Protocol.ClientPushRequest $
+              PushRequest {storePaths = inputStorePathsStr}
 
       Socket.LBS.sendAll sock $ Protocol.newMessage pushRequest
 

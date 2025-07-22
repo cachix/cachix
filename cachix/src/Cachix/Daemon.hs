@@ -228,9 +228,10 @@ subscribeAll DaemonEnv {..} = do
 
 subscribe :: DaemonEnv -> PushRequestId -> IO (TMChan PushEvent)
 subscribe daemonEnv pushId = do
-  chan <- newBroadcastTMChanIO
-  atomically $ subscribeToSTM (daemonSubscriptionManager daemonEnv) pushId (SubChannel chan)
-  return chan
+  chan <- liftIO newBroadcastTMChanIO
+  liftIO $ atomically $ do
+    subscribeToSTM (daemonSubscriptionManager daemonEnv) pushId (SubChannel chan)
+    dupTMChan chan
 
 -- | Print the daemon configuration to the log.
 printConfiguration :: Daemon ()

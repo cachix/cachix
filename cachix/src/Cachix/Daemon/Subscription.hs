@@ -16,6 +16,7 @@ import Control.Concurrent.STM (STM, atomically)
 import Control.Concurrent.STM.TBMQueue (writeTBMQueue)
 import Control.Concurrent.STM.TMChan (writeTMChan)
 import Control.Exception (catch, SomeException)
+import Data.ByteString.Char8 qualified as BS8
 
 data SubscriptionManager k v = SubscriptionManager
   { managerSubscriptions :: TVar (HashMap k [Subscription v]),
@@ -69,8 +70,10 @@ getSubscriptionsForSTM manager key = do
 
 -- Events
 
-pushEvent :: (MonadIO m) => SubscriptionManager k v -> k -> v -> m ()
-pushEvent manager key event =
+pushEvent :: (MonadIO m, Show k, Show v) => SubscriptionManager k v -> k -> v -> m ()
+pushEvent manager key event = do
+  let logMsg :: ByteString = BS8.pack "pushEvent: " <> show key <> " => " <> show event
+  putStrLn logMsg
   liftIO $ atomically $ pushEventSTM manager key event
 
 pushEventSTM :: SubscriptionManager k v -> k -> v -> STM ()

@@ -7,6 +7,7 @@ module Cachix.Daemon
     stop,
     stopIO,
     subscribe,
+    subscribeAll,
   )
 where
 
@@ -135,13 +136,16 @@ run daemon = fmap join <$> runDaemon daemon $ do
     ReconnectSocket ->
       -- TODO: implement reconnection logic
       EventLoop.exitLoopWith (Left DaemonSocketError) daemonEventLoop
-    ReceivedMessage socketId clientMsg ->
+    ReceivedMessage clientMsg ->
       case clientMsg of
-        ClientPushRequest pushRequest -> queueJob pushRequest
+        ClientPushRequest pushRequest shouldSubscribe -> do
+          maybePushId <- queueJob pushRequest
+          case maybePushId of
+            Just pushId -> when shouldSubscribe $ do
+              chan <- liftIO $ subscribe daemon pushId
+              liftIO $ atomically $ subscribeToSTM daemonSubscriptionManager pushId (SubChannel chan)
+            Nothing -> Katip.logFM Katip.ErrorS "Failed to queue push request"
         ClientStop -> EventLoop.send daemonEventLoop ShutdownGracefully
-        ClientSubscribed -> do
-          chan <- liftIO . subscribe =<< ask
-          void $ liftIO $ Async.async $ relayMessagesBackToClient socketId chan daemonClients
         _ -> return ()
     ShutdownGracefully -> do
       Katip.logFM Katip.InfoS "Shutting down daemon..."
@@ -210,19 +214,23 @@ installSignalHandlers = do
         threadDelay (15 * 1000 * 1000) -- 15 seconds
         throwTo mainThreadId ExitSuccess
 
-queueJob :: Protocol.PushRequest -> Daemon ()
+queueJob :: Protocol.PushRequest -> Daemon (Maybe PushRequestId)
 queueJob pushRequest = do
-  daemonPushManager <- asks daemonPushManager
-  -- Queue the job
-  void $
-    PushManager.runPushManager daemonPushManager (PushManager.addPushJob pushRequest)
+  DaemonEnv {daemonPushManager} <- ask
+  liftIO $ PushManager.runPushManager daemonPushManager (PushManager.addPushJob pushRequest)
 
-subscribe :: DaemonEnv -> IO (TMChan PushEvent)
-subscribe DaemonEnv {..} = do
+subscribeAll :: DaemonEnv -> IO (TMChan PushEvent)
+subscribeAll DaemonEnv {..} = do
   chan <- liftIO newBroadcastTMChanIO
   liftIO $ atomically $ do
     subscribeToAllSTM daemonSubscriptionManager (SubChannel chan)
     dupTMChan chan
+
+subscribe :: DaemonEnv -> PushRequestId -> IO (TMChan PushEvent)
+subscribe daemonEnv pushId = do
+  chan <- newBroadcastTMChanIO
+  atomically $ subscribeToSTM (daemonSubscriptionManager daemonEnv) pushId (SubChannel chan)
+  return chan
 
 -- | Print the daemon configuration to the log.
 printConfiguration :: Daemon ()

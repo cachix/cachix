@@ -98,7 +98,7 @@ watchExecDaemon env pushOpts cacheName cmd args =
     -- Launch the daemon in the background and subscribe to all push events
     startDaemonThread daemon = do
       daemonThread <- Async.async $ Daemon.run daemon
-      daemonChan <- Daemon.subscribe daemon
+      daemonChan <- Daemon.subscribeAll daemon
       return (daemonThread, daemonChan)
 
     shutdownDaemonThread daemon logHandle (daemonThread, daemonChan) = do

@@ -70,8 +70,7 @@ pushEventSTM manager key event =
   writeTBMQueue (managerEvents manager) (key, event)
 
 sendEventToSub :: Subscription v -> v -> STM ()
--- TODO: implement socket subscriptions.
-sendEventToSub (SubSocket _queue _) _ = pure () -- writeTBMQueue queue
+sendEventToSub (SubSocket queue _) event = writeTBMQueue queue event
 sendEventToSub (SubChannel chan) event = writeTMChan chan event
 
 runSubscriptionManager :: (Show k, Show v, Hashable k, ToJSON v, MonadIO m) => SubscriptionManager k v -> m ()

@@ -18,6 +18,8 @@ import Network.Socket.ByteString.Lazy qualified as Socket.LBS
 import Protolude
 import System.Environment (lookupEnv)
 import System.IO.Error (isResourceVanishedError)
+import Control.Concurrent.STM.TMChan
+import Cachix.Daemon.Types.PushEvent
 
 data SocketError
   = -- | The socket has been closed
@@ -35,94 +37,27 @@ instance Exception SocketError where
     SocketDecodingError err -> "Failed to decode the message from socket: " <> toS err
 
 -- | Queue up push requests with the daemon and wait for completion
-push :: Env -> DaemonOptions -> [FilePath] -> IO ()
-push _env daemonOptions storePaths = do
+push :: Env -> DaemonOptions -> [FilePath] -> Bool -> IO ()
+push _env daemonOptions storePaths shouldSubscribe =
   withDaemonConn (daemonSocketPath daemonOptions) $ \sock -> do
-    let pushRequest =
-          Protocol.ClientPushRequest $
-            PushRequest {storePaths = storePaths}
-
     Socket.LBS.sendAll sock $ Protocol.newMessage pushRequest
-
-    -- Listen for updates and wait for completion
-    let size = 100
-    (rx, tx) <- atomically $ (,) <$> newTBMQueue size <*> newTBMQueue size
-
-    rxThread <- Async.async (handleIncoming rx sock)
-    txThread <- Async.async (handleOutgoing tx sock)
-
-    lastPongRef <- newIORef =<< getCurrentTime
-    pingThread <- Async.async (runPingThread lastPongRef rx tx)
-
-    mapM_ Async.link [rxThread, txThread, pingThread]
-
-    -- Subscribe to updates
-    atomically $ writeTBMQueue tx Protocol.ClientSubscribed
-
-    fix $ \loop -> do
-      mmsg <- atomically (readTBMQueue rx)
-      case mmsg of
-        Nothing -> return ()
-        Just (Left err) -> do
-          putErrText $ toS $ displayException err
-          exitFailure
-        Just (Right msg) -> do
-          let logMsg :: ByteString = BS8.pack "Received message: " <> BS8.pack (show msg)
-          putStrLn logMsg
-          case msg of
-            Protocol.DaemonPong -> do
-              writeIORef lastPongRef =<< getCurrentTime
-              loop
-            Protocol.PushCompleted -> exitSuccess
-            _ -> loop
+    when shouldSubscribe $ do
+      chan <- newTMChanIO
+      handlePushEvents sock chan
   where
-    runPingThread lastPongRef rx tx = go
-      where
-        go = do
-          timestamp <- getCurrentTime
-          lastPong <- readIORef lastPongRef
+    pushRequest = Protocol.ClientPushRequest (PushRequest {storePaths = storePaths}) shouldSubscribe
 
-          if timestamp >= addUTCTime 20 lastPong
-            then atomically $ writeTBMQueue rx (Left SocketStalled)
-            else do
-              atomically $ writeTBMQueue tx Protocol.ClientPing
-              threadDelay (2 * 1000 * 1000)
-              go
+handlePushEvents :: Socket.Socket -> TMChan PushEvent -> IO ()
+handlePushEvents sock chan = do
+  -- Implement the logic to receive push events from the server
+  -- and write them to the `chan`
+  forever $ do
+    msg <- Socket.BS.recv sock 4096
+    -- Decode the message and write it to the `chan`
+    case Aeson.eitherDecodeStrict msg of
+      Left err -> putErrText $ "Failed to decode message: " <> toS err
+      Right event -> atomically $ writeTMChan chan event
 
-    handleOutgoing tx sock = go
-      where
-        go = do
-          mmsg <- atomically $ readTBMQueue tx
-          case mmsg of
-            Nothing -> return ()
-            Just msg -> do
-              Retry.retryAll $ const $ Socket.BS.sendAll sock $ BS.toStrict $ Protocol.newMessage msg
-              go
-
-    handleIncoming rx sock = go BS.empty
-      where
-        socketClosed = atomically $ writeTBMQueue rx (Left SocketClosed)
-
-        go leftovers = do
-          ebs <- liftIO $ try $ Socket.BS.recv sock 4096
-
-          case ebs of
-            Left err | isResourceVanishedError err -> socketClosed
-            Left _err -> socketClosed
-            Right bs | BS.null bs -> socketClosed
-            Right bs -> do
-              let (rawMsgs, newLeftovers) = Protocol.splitMessages (BS.append leftovers bs)
-
-              forM_ (map Aeson.eitherDecodeStrict rawMsgs) $ \emsg -> do
-                case emsg of
-                  Left err -> do
-                    let terr = toS err
-                    putErrText terr
-                    atomically $ writeTBMQueue rx (Left (SocketDecodingError terr))
-                  Right msg -> do
-                    atomically $ writeTBMQueue rx (Right msg)
-
-              go newLeftovers
 
 -- | Tell the daemon to stop and wait for it to gracefully exit
 stop :: Env -> DaemonOptions -> IO ()

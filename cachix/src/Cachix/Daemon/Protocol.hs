@@ -21,7 +21,7 @@ import Protolude
 
 -- | JSON messages that the client can send to the daemon
 data ClientMessage
-  = ClientPushRequest !PushRequest
+  = ClientPushRequest !PushRequest !Bool
   | ClientStop
   | ClientPing
   | ClientSubscribed

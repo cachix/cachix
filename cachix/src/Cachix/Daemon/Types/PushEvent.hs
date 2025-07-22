@@ -3,19 +3,23 @@ module Cachix.Daemon.Types.PushEvent
     PushEventMessage (..),
     PushRetryStatus (..),
     newPushRetryStatus,
+    PushRequestId,
+    newPushRequestId,
   )
 where
 
-import Cachix.Daemon.Protocol qualified as Protocol
 import Control.Retry (RetryStatus (..))
 import Data.Aeson (FromJSON, ToJSON)
 import Data.Time (UTCTime)
 import Protolude
+import Data.UUID (UUID)
+import Data.UUID.V4 qualified as UUID
+import Data.Aeson qualified as Aeson
 
 data PushEvent = PushEvent
   { -- TODO: newtype a monotonic clock
     eventTimestamp :: UTCTime,
-    eventPushId :: Protocol.PushRequestId,
+    eventPushId :: PushRequestId,
     eventMessage :: PushEventMessage
   }
   deriving stock (Eq, Generic, Show)
@@ -40,3 +44,10 @@ data PushRetryStatus = PushRetryStatus {retryCount :: Int}
 
 newPushRetryStatus :: RetryStatus -> PushRetryStatus
 newPushRetryStatus RetryStatus {..} = PushRetryStatus {retryCount = rsIterNumber}
+
+newtype PushRequestId = PushRequestId UUID
+  deriving stock (Generic)
+  deriving newtype (Eq, Ord, Show, Aeson.FromJSON, Aeson.ToJSON, Hashable)
+
+newPushRequestId :: (MonadIO m) => m PushRequestId
+newPushRequestId = liftIO $ PushRequestId <$> UUID.nextRandom

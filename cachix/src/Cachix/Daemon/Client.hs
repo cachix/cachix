@@ -48,16 +48,12 @@ push _env daemonOptions storePaths shouldSubscribe =
     pushRequest = Protocol.ClientPushRequest (PushRequest {storePaths = storePaths}) shouldSubscribe
 
 handlePushEvents :: Socket.Socket -> TMChan PushEvent -> IO ()
-handlePushEvents sock chan = do
-  -- Implement the logic to receive push events from the server
-  -- and write them to the `chan`
-  forever $ do
-    msg <- Socket.BS.recv sock 4096
-    -- Decode the message and write it to the `chan`
-    case Aeson.eitherDecodeStrict msg of
-      Left err -> putErrText $ "Failed to decode message: " <> toS err
-      Right event -> atomically $ writeTMChan chan event
-
+handlePushEvents sock chan = forever $ do
+  msg <- Socket.BS.recv sock 4096
+  case Aeson.eitherDecodeStrict msg of
+    Left err -> putErrText $ "Failed to decode message: " <> toS err
+    Right (Protocol.DaemonPushEvent event) -> atomically $ writeTMChan chan event
+    Right _ -> return ()  -- Ignore other messages
 
 -- | Tell the daemon to stop and wait for it to gracefully exit
 stop :: Env -> DaemonOptions -> IO ()

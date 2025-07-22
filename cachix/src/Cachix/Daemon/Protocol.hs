@@ -4,20 +4,19 @@ module Cachix.Daemon.Protocol
   ( ClientMessage (..),
     DaemonMessage (..),
     DaemonExitStatus (..),
-    PushRequestId,
-    newPushRequestId,
     PushRequest (..),
     newMessage,
     splitMessages,
+    PushRequestId,
+    newPushRequestId,
   )
 where
 
 import Data.Aeson qualified as Aeson
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
-import Data.UUID (UUID)
-import Data.UUID.V4 qualified as UUID
 import Protolude
+import Cachix.Daemon.Types.PushEvent (PushEvent, PushRequestId, newPushRequestId)
 
 -- | JSON messages that the client can send to the daemon
 data ClientMessage
@@ -32,10 +31,7 @@ data ClientMessage
 data DaemonMessage
   = DaemonPong
   | DaemonExit !DaemonExitStatus
-  | PushStarted
-  | PushCompleted
-  | PushFailed Text
-  | PushProgress FilePath Int
+  | DaemonPushEvent PushEvent
   deriving stock (Eq, Generic, Show)
   deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)
 
@@ -45,13 +41,6 @@ data DaemonExitStatus = DaemonExitStatus
   }
   deriving stock (Eq, Generic, Show)
   deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)
-
-newtype PushRequestId = PushRequestId UUID
-  deriving stock (Generic)
-  deriving newtype (Eq, Ord, Show, Aeson.FromJSON, Aeson.ToJSON, Hashable)
-
-newPushRequestId :: (MonadIO m) => m PushRequestId
-newPushRequestId = liftIO $ PushRequestId <$> UUID.nextRandom
 
 -- | A request for the daemon to push store paths to a binary cache
 data PushRequest = PushRequest

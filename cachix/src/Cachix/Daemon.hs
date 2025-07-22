@@ -329,23 +329,3 @@ withTakeMVar mvar f = do
 
     wrapper Nothing = pure ()
     wrapper (Just x) = f x
-
-relayMessagesBackToClient :: SocketStore.SocketId -> TMChan PushEvent -> SocketStore.SocketStore -> IO ()
-relayMessagesBackToClient socketId chan socketStore = forever $ do
-  event <- atomically $ readTMChan chan
-  case event of
-    Just pushEvent -> do
-      let msg = case eventMessage pushEvent of
-            Types.PushFinished ->
-              Just $ Protocol.newMessage Protocol.PushCompleted
-            Types.PushStorePathProgress path progress total ->
-              Just $ Protocol.newMessage (Protocol.PushProgress path (fromIntegral progress))
-            Types.PushStorePathFailed path reason ->
-              Just $ Protocol.newMessage (Protocol.PushFailed reason)
-            Types.PushStarted ->
-              Just $ Protocol.newMessage Protocol.PushStarted
-            _ -> Nothing
-      case msg of
-        Just m -> SocketStore.sendAll socketId m socketStore
-        Nothing -> return ()
-    Nothing -> return ()

@@ -49,6 +49,8 @@ import System.Posix.Signals qualified as Signal
 import UnliftIO (MonadUnliftIO, withRunInIO)
 import UnliftIO.Async qualified as Async
 import UnliftIO.Exception (bracket)
+import Network.Socket.ByteString.Lazy qualified as Socket.LBS
+import Cachix.Daemon.Types.SocketStore (SocketId)
 
 -- | Configure a new daemon. Use 'run' to start it.
 new ::
@@ -125,24 +127,25 @@ run daemon = fmap join <$> runDaemon daemon $ do
     (liftIO . PushManager.runPushManager daemonPushManager . PushManager.handleTask)
     >>= (liftIO . putMVar daemonWorkerThreads)
 
-  Async.async (Listen.listen daemonEventLoop daemonSocketPath)
+  Async.async (Listen.listen daemonEventLoop daemonSocketPath daemonClients)
     >>= (liftIO . putMVar daemonSocketThread)
 
   eventLoopRes <- EventLoop.run daemonEventLoop $ \case
-    AddSocketClient conn ->
-      SocketStore.addSocket conn (Listen.handleClient daemonEventLoop) daemonClients
+    AddSocketClient conn socketId ->
+      return ()
     RemoveSocketClient socketId ->
       SocketStore.removeSocket socketId daemonClients
     ReconnectSocket ->
       -- TODO: implement reconnection logic
       EventLoop.exitLoopWith (Left DaemonSocketError) daemonEventLoop
-    ReceivedMessage clientMsg ->
+    ReceivedMessage clientMsg socketId ->
       case clientMsg of
         ClientPushRequest pushRequest shouldSubscribe -> do
           maybePushId <- queueJob pushRequest
           case maybePushId of
             Just pushId -> when shouldSubscribe $ do
               chan <- liftIO $ subscribe daemon pushId
+              liftIO $ Async.async $ publishToClient socketId chan daemon
               liftIO $ atomically $ subscribeToSTM daemonSubscriptionManager pushId (SubChannel chan)
             Nothing -> Katip.logFM Katip.ErrorS "Failed to queue push request"
         ClientStop -> EventLoop.send daemonEventLoop ShutdownGracefully
@@ -157,6 +160,17 @@ run daemon = fmap join <$> runDaemon daemon $ do
     Left err -> Left (DaemonEventLoopError err)
     Right (Left err) -> Left err
     Right (Right ()) -> Right ()
+
+-- Publish messages from the channel to the client over the socket
+publishToClient :: SocketId -> TMChan PushEvent -> DaemonEnv -> IO ()
+publishToClient socketId chan daemonEnv = do
+  forever $ do
+    msg <- atomically $ readTMChan chan
+    case msg of
+      Nothing -> return ()
+      Just pushEvent -> do
+        let daemonMsg = DaemonPushEvent pushEvent
+        SocketStore.sendAll socketId (Protocol.newMessage daemonMsg) (daemonClients daemonEnv)
 
 stop :: Daemon ()
 stop = do

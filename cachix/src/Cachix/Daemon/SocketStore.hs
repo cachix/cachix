@@ -25,11 +25,12 @@ newSocketStore = SocketStore <$> liftIO (newTVarIO mempty)
 newSocketId :: (MonadIO m) => m SocketId
 newSocketId = liftIO UUID.nextRandom
 
-addSocket :: (MonadUnliftIO m) => Network.Socket.Socket -> (SocketId -> Network.Socket.Socket -> m ()) -> SocketStore -> m ()
+addSocket :: (MonadUnliftIO m) => Network.Socket.Socket -> (SocketId -> Network.Socket.Socket -> m ()) -> SocketStore -> m SocketId
 addSocket socket handler (SocketStore st) = do
   socketId <- newSocketId
   handlerThread <- Async.async (handler socketId socket)
   liftIO $ atomically $ modifyTVar' st $ HashMap.insert socketId (Socket {..})
+  return socketId
 
 removeSocket :: (MonadIO m) => SocketId -> SocketStore -> m ()
 removeSocket socketId (SocketStore stvar) = do

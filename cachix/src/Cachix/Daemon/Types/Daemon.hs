@@ -39,11 +39,11 @@ data DaemonEvent
   | -- | Re-establish the daemon socket
     ReconnectSocket
   | -- | Add a new client socket connection.
-    AddSocketClient Socket
+    AddSocketClient Socket SocketId
   | -- | Remove an existing client socket connection. For example, after it is closed.
     RemoveSocketClient SocketId
   | -- | Handle a new message from a client.
-    ReceivedMessage Protocol.ClientMessage
+    ReceivedMessage Protocol.ClientMessage SocketId
 
 data DaemonEnv = DaemonEnv
   { -- | Cachix client env

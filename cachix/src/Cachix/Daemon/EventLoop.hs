@@ -21,6 +21,7 @@ import Control.Concurrent.STM.TBMQueue
 import Data.Text.Lazy.Builder (toLazyText)
 import Katip qualified
 import Protolude
+import Cachix.Daemon.Types.Daemon (DaemonEvent)
 
 new :: (MonadIO m) => m (EventLoop event a)
 new = do
@@ -28,19 +29,17 @@ new = do
   queue <- liftIO $ newTBMQueueIO 100_000
   return $ EventLoop {queue, shutdownLatch}
 
--- | Send an event to the event loop with logging.
-send :: (Katip.KatipContext m) => EventLoop event a -> event -> m ()
+send :: (Katip.KatipContext m) => EventLoop DaemonEvent a -> DaemonEvent -> m ()
 send = send' Katip.logFM
 
--- | Same as 'send', but does not require a 'Katip.KatipContext'.
-sendIO :: forall m event a. (MonadIO m) => EventLoop event a -> event -> m ()
+sendIO :: (MonadIO m) => EventLoop DaemonEvent a -> DaemonEvent -> m ()
 sendIO = send' logger
   where
-    logger :: Katip.Severity -> Katip.LogStr -> m ()
+    logger :: MonadIO m => Katip.Severity -> Katip.LogStr -> m ()
     logger Katip.ErrorS msg = liftIO $ hPutStrLn stderr (toLazyText $ Katip.unLogStr msg)
     logger _ _ = return ()
 
-send' :: (MonadIO m) => (Katip.Severity -> Katip.LogStr -> m ()) -> EventLoop event a -> event -> m ()
+send' :: (MonadIO m) => (Katip.Severity -> Katip.LogStr -> m ()) -> EventLoop DaemonEvent a -> DaemonEvent -> m ()
 send' logger eventloop@(EventLoop {queue, shutdownLatch}) event = do
   -- First check if shutdown has been requested
   isExiting <- ShutdownLatch.isShuttingDown shutdownLatch
@@ -50,17 +49,13 @@ send' logger eventloop@(EventLoop {queue, shutdownLatch}) event = do
       res <- liftIO $ atomically $ tryWriteTBMQueue queue event
       case res of
         -- The queue is closed.
-        Nothing ->
-          logger Katip.DebugS "Ignored an event because the event loop is closed"
+        Nothing -> logger Katip.DebugS "Ignored an event because the event loop is closed"
         -- Successfully wrote to the queue
         Just True -> return ()
         -- Failed to write to the queue
         Just False -> do
           isFull <- liftIO $ atomically $ isFullTBMQueue queue
-          let message =
-                if isFull
-                  then "Event loop is full"
-                  else "Unknown error"
+          let message = if isFull then "Event loop is full" else "Unknown error"
           logger Katip.ErrorS $ "Failed to write to event loop: " <> message
           exitLoopWithFailure EventLoopFull eventloop
 

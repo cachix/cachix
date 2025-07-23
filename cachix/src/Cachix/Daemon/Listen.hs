@@ -42,6 +42,9 @@ import System.Environment qualified as System
 import System.FilePath ((</>))
 import System.IO.Error (isDoesNotExistError, isResourceVanishedError)
 import System.Posix.Files (setFileMode)
+import Cachix.Daemon.Types.SocketStore (SocketId, SocketStore(..))
+import Control.Monad.IO.Unlift (MonadUnliftIO)
+import Cachix.Daemon.SocketStore (addSocket, removeSocket)
 
 -- TODO: reconcile with Client
 data ListenError
@@ -55,36 +58,26 @@ instance Exception ListenError where
     DecodingError err -> "Failed to decode request:\n" <> toS err
 
 -- | Listen for incoming connections on the given socket path.
-listen ::
-  (E.MonadMask m, Katip.KatipContext m) =>
-  EventLoop DaemonEvent a ->
-  FilePath ->
-  m ()
-listen eventloop daemonSocketPath = do
+listen :: (E.MonadMask m, Katip.KatipContext m, MonadUnliftIO m) => EventLoop DaemonEvent a -> FilePath -> SocketStore -> m ()
+listen eventloop daemonSocketPath socketStore = do
   sock <- openSocket daemonSocketPath
   E.bracket (pure sock) closeSocket $ \sock' -> do
     liftIO $ Socket.listen sock' Socket.maxListenQueue
     forever $ do
       (conn, _peerAddr) <- liftIO $ Socket.accept sock'
-      EventLoop.send eventloop (AddSocketClient conn)
+      socketId <- addSocket conn (handleClient eventloop) socketStore
+      EventLoop.send eventloop (AddSocketClient conn socketId)
 
 -- | Handle incoming messages from a client.
 --
 -- Automatically responds to pings.
 -- Requests the daemon to remove the client socket once the loop exits.
-handleClient ::
-  forall m a.
-  (E.MonadMask m, Katip.KatipContext m) =>
-  EventLoop DaemonEvent a ->
-  SocketId ->
-  Socket ->
-  m ()
+handleClient :: (E.MonadMask m, Katip.KatipContext m) => EventLoop DaemonEvent a -> SocketId -> Socket -> m ()
 handleClient eventloop socketId conn = do
   go BS.empty `E.finally` removeClient
   where
     go leftovers = do
       ebs <- liftIO $ try $ Socket.BS.recv conn 8192
-
       case ebs of
         Left err | isResourceVanishedError err -> return ()
         Left _ -> return ()
@@ -93,14 +86,11 @@ handleClient eventloop socketId conn = do
         Right bs -> do
           let (rawMsgs, newLeftovers) = Protocol.splitMessages (BS.append leftovers bs)
           msgs <- catMaybes <$> mapM decodeMessage rawMsgs
-
           forM_ msgs $ \msg -> do
-            EventLoop.send eventloop (ReceivedMessage msg)
+            EventLoop.send eventloop (ReceivedMessage msg socketId)
             case msg of
-              Protocol.ClientPing ->
-                liftIO $ Socket.LBS.sendAll conn $ Protocol.newMessage DaemonPong
+              Protocol.ClientPing -> liftIO $ Socket.LBS.sendAll conn $ Protocol.newMessage DaemonPong
               _ -> return ()
-
           go newLeftovers
 
     removeClient = EventLoop.send eventloop (RemoveSocketClient socketId)

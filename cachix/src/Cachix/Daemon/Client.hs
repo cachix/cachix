@@ -5,6 +5,7 @@ import Cachix.Client.OptionsParser (DaemonOptions (..))
 import Cachix.Client.Retry qualified as Retry
 import Cachix.Daemon.Listen (getSocketPath)
 import Cachix.Daemon.Protocol as Protocol
+import Cachix.Daemon.Types.PushEvent ( PushEvent, PushEvent (..), PushEventMessage(..) )
 import Control.Concurrent.Async qualified as Async
 import Control.Concurrent.STM.TBMQueue
 import Data.Aeson qualified as Aeson
@@ -72,7 +73,7 @@ push _env daemonOptions storePaths shouldSubscribe =
             Protocol.DaemonPong -> do
               writeIORef lastPongRef =<< getCurrentTime
               loop
-            -- Protocol.PushCompleted -> exitSuccess
+            Protocol.DaemonPushEvent (PushEvent {eventMessage = PushFinished}) -> exitSuccess
             _ -> loop
   where
     runPingThread lastPongRef rx tx = go

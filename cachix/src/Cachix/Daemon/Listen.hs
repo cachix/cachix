@@ -58,7 +58,12 @@ instance Exception ListenError where
     DecodingError err -> "Failed to decode request:\n" <> toS err
 
 -- | Listen for incoming connections on the given socket path.
-listen :: (E.MonadMask m, Katip.KatipContext m, MonadUnliftIO m) => EventLoop DaemonEvent a -> FilePath -> SocketStore -> m ()
+listen ::
+  (E.MonadMask m, Katip.KatipContext m, MonadUnliftIO m) =>
+  EventLoop DaemonEvent a ->
+  FilePath ->
+  SocketStore ->
+  m ()
 listen eventloop daemonSocketPath socketStore = do
   sock <- openSocket daemonSocketPath
   E.bracket (pure sock) closeSocket $ \sock' -> do
@@ -78,6 +83,7 @@ handleClient eventloop socketId conn = do
   where
     go leftovers = do
       ebs <- liftIO $ try $ Socket.BS.recv conn 8192
+
       case ebs of
         Left err | isResourceVanishedError err -> return ()
         Left _ -> return ()
@@ -86,11 +92,14 @@ handleClient eventloop socketId conn = do
         Right bs -> do
           let (rawMsgs, newLeftovers) = Protocol.splitMessages (BS.append leftovers bs)
           msgs <- catMaybes <$> mapM decodeMessage rawMsgs
+
           forM_ msgs $ \msg -> do
             EventLoop.send eventloop (ReceivedMessage msg socketId)
             case msg of
-              Protocol.ClientPing -> liftIO $ Socket.LBS.sendAll conn $ Protocol.newMessage DaemonPong
+              Protocol.ClientPing ->
+                liftIO $ Socket.LBS.sendAll conn $ Protocol.newMessage DaemonPong
               _ -> return ()
+
           go newLeftovers
 
     removeClient = EventLoop.send eventloop (RemoveSocketClient socketId)

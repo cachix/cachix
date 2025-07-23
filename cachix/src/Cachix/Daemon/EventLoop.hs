@@ -29,9 +29,11 @@ new = do
   queue <- liftIO $ newTBMQueueIO 100_000
   return $ EventLoop {queue, shutdownLatch}
 
+-- | Send an event to the event loop with logging.
 send :: (Katip.KatipContext m) => EventLoop DaemonEvent a -> DaemonEvent -> m ()
 send = send' Katip.logFM
 
+-- | Same as 'send', but does not require a 'Katip.KatipContext'.
 sendIO :: (MonadIO m) => EventLoop DaemonEvent a -> DaemonEvent -> m ()
 sendIO = send' logger
   where
@@ -49,13 +51,17 @@ send' logger eventloop@(EventLoop {queue, shutdownLatch}) event = do
       res <- liftIO $ atomically $ tryWriteTBMQueue queue event
       case res of
         -- The queue is closed.
-        Nothing -> logger Katip.DebugS "Ignored an event because the event loop is closed"
+        Nothing ->
+          logger Katip.DebugS "Ignored an event because the event loop is closed"
         -- Successfully wrote to the queue
         Just True -> return ()
         -- Failed to write to the queue
         Just False -> do
           isFull <- liftIO $ atomically $ isFullTBMQueue queue
-          let message = if isFull then "Event loop is full" else "Unknown error"
+          let message =
+                if isFull
+                  then "Event loop is full"
+                  else "Unknown error"
           logger Katip.ErrorS $ "Failed to write to event loop: " <> message
           exitLoopWithFailure EventLoopFull eventloop
 

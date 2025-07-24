@@ -1,5 +1,3 @@
--- TODO
-
 module Cachix.Daemon
   ( Types.Daemon,
     Types.runDaemon,
@@ -30,6 +28,7 @@ import Cachix.Daemon.SocketStore qualified as SocketStore
 import Cachix.Daemon.Subscription as Subscription
 import Cachix.Daemon.Types as Types
 import Cachix.Daemon.Types.PushManager qualified as PushManager
+import Cachix.Daemon.Types.SocketStore (SocketId)
 import Cachix.Daemon.Worker qualified as Worker
 import Cachix.Types.BinaryCache (BinaryCacheName)
 import Cachix.Types.BinaryCache qualified as BinaryCache
@@ -50,7 +49,6 @@ import System.Posix.Signals qualified as Signal
 import UnliftIO (MonadUnliftIO, withRunInIO)
 import UnliftIO.Async qualified as Async
 import UnliftIO.Exception (bracket)
-import Cachix.Daemon.Types.SocketStore (SocketId)
 
 -- | Configure a new daemon. Use 'run' to start it.
 new ::
@@ -160,17 +158,6 @@ run daemon = fmap join <$> runDaemon daemon $ do
     Right (Left err) -> Left err
     Right (Right ()) -> Right ()
 
--- Publish messages from the channel to the client over the socket
-publishToClient :: SocketId -> TMChan PushEvent -> DaemonEnv -> IO ()
-publishToClient socketId chan daemonEnv = do
-  forever $ do
-    msg <- atomically $ readTMChan chan
-    case msg of
-      Nothing -> return ()
-      Just evt -> do
-        let daemonMsg = DaemonPushEvent evt
-        SocketStore.sendAll socketId (Protocol.newMessage daemonMsg) (daemonClients daemonEnv)
-
 stop :: Daemon ()
 stop = do
   eventloop <- asks daemonEventLoop
@@ -242,6 +229,17 @@ subscribe daemonEnv maybePushId = do
 
 subscribeAll :: DaemonEnv -> IO (TMChan PushEvent)
 subscribeAll daemonEnv = subscribe daemonEnv Nothing
+
+-- Publish messages from the channel to the client over the socket
+publishToClient :: SocketId -> TMChan PushEvent -> DaemonEnv -> IO ()
+publishToClient socketId chan daemonEnv = do
+  forever $ do
+    msg <- atomically $ readTMChan chan
+    case msg of
+      Nothing -> return ()
+      Just evt -> do
+        let daemonMsg = DaemonPushEvent evt
+        SocketStore.sendAll socketId (Protocol.newMessage daemonMsg) (daemonClients daemonEnv)
 
 -- | Print the daemon configuration to the log.
 printConfiguration :: Daemon ()

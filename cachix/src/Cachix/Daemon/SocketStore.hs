@@ -1,5 +1,3 @@
--- TODO
-
 module Cachix.Daemon.SocketStore
   ( newSocketStore,
     addSocket,
@@ -13,13 +11,13 @@ where
 import Cachix.Daemon.Types.SocketStore (Socket (..), SocketId, SocketStore (..))
 import Control.Concurrent.STM.TVar
 import Control.Monad.IO.Unlift (MonadUnliftIO)
+import Data.ByteString.Lazy qualified as LBS
 import Data.HashMap.Strict qualified as HashMap
 import Data.UUID.V4 qualified as UUID
 import Network.Socket qualified
+import Network.Socket.ByteString.Lazy qualified as Socket.LBS
 import Protolude hiding (toList)
 import UnliftIO.Async qualified as Async
-import Network.Socket.ByteString.Lazy qualified as Socket.LBS
-import qualified Data.ByteString.Lazy as LBS
 
 newSocketStore :: (MonadIO m) => m SocketStore
 newSocketStore = SocketStore <$> liftIO (newTVarIO mempty)

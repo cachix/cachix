@@ -502,12 +502,14 @@ daemonWatchExec =
     <*> many (strArgument (metavar "-- ARGS"))
 
 daemonOptionsParser :: Parser DaemonOptions
-daemonOptionsParser = DaemonOptions
-  <$> optional (strOption
-        ( long "socket"
-       <> metavar "SOCKET"
-       <> help "Path to the daemon socket"
-        ))
+daemonOptionsParser =
+  DaemonOptions <$> socketOption
+  where
+    socketOption =
+      optional . strOption $
+        long "socket"
+          <> short 's'
+          <> metavar "SOCKET"
 
 daemonPushOptionsParser :: Parser DaemonPushOptions
 daemonPushOptionsParser = DaemonPushOptions

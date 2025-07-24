@@ -1,5 +1,3 @@
--- TODO
-
 module Cachix.Daemon.Client (push, stop) where
 
 import Cachix.Client.Env as Env
@@ -8,7 +6,7 @@ import Cachix.Client.OptionsParser qualified as Options
 import Cachix.Client.Retry qualified as Retry
 import Cachix.Daemon.Listen (getSocketPath)
 import Cachix.Daemon.Protocol as Protocol
-import Cachix.Daemon.Types.PushEvent ( PushEvent (..), PushEventMessage (..) )
+import Cachix.Daemon.Types.PushEvent (PushEvent (..), PushEventMessage (..))
 import Control.Concurrent.Async qualified as Async
 import Control.Concurrent.STM.TBMQueue
 import Data.Aeson qualified as Aeson

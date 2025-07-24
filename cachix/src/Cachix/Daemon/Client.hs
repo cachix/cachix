@@ -3,7 +3,8 @@
 module Cachix.Daemon.Client (push, stop) where
 
 import Cachix.Client.Env as Env
-import Cachix.Client.OptionsParser (DaemonOptions (..))
+import Cachix.Client.OptionsParser (DaemonOptions (..), DaemonPushOptions (..))
+import Cachix.Client.OptionsParser qualified as Options
 import Cachix.Client.Retry qualified as Retry
 import Cachix.Daemon.Listen (getSocketPath)
 import Cachix.Daemon.Protocol as Protocol
@@ -38,13 +39,14 @@ instance Exception SocketError where
     SocketDecodingError err -> "Failed to decode the message from socket: " <> toS err
 
 -- | Queue up push requests with the daemon and wait for completion
-push :: Env -> DaemonOptions -> [FilePath] -> Bool -> IO ()
-push _env daemonOptions storePaths shouldSubscribe =
+push :: Env -> DaemonOptions -> DaemonPushOptions -> [FilePath] -> IO ()
+push _env daemonOptions daemonPushOptions storePaths =
   withDaemonConn (daemonSocketPath daemonOptions) $ \sock -> do
-    let pushRequest =
-          Protocol.ClientPushRequest (PushRequest {storePaths = storePaths}) shouldSubscribe
+    let shouldWait = Options.shouldWait daemonPushOptions
+    let pushRequest = Protocol.ClientPushRequest (PushRequest {storePaths = storePaths}) shouldWait
 
     Socket.LBS.sendAll sock $ Protocol.newMessage pushRequest
+    unless shouldWait exitSuccess
 
     -- Listen for updates and wait for completion
     let size = 100

@@ -129,9 +129,8 @@ run daemon = fmap join <$> runDaemon daemon $ do
     >>= (liftIO . putMVar daemonSocketThread)
 
   eventLoopRes <- EventLoop.run daemonEventLoop $ \case
-    AddSocketClient conn -> do
-      socketId <- SocketStore.addSocket conn (Listen.handleClient daemonEventLoop) daemonClients
-      return ()
+    AddSocketClient conn ->
+      SocketStore.addSocket conn (Listen.handleClient daemonEventLoop) daemonClients
     RemoveSocketClient socketId ->
       SocketStore.removeSocket socketId daemonClients
     ReconnectSocket ->

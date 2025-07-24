@@ -21,7 +21,7 @@ import Cachix.Daemon.Types
     toExitCodeInt,
   )
 import Cachix.Daemon.Types.EventLoop (EventLoop)
-import Cachix.Daemon.Types.SocketStore (SocketId, SocketStore(..))
+import Cachix.Daemon.Types.SocketStore (SocketId)
 import Control.Exception.Safe (catchAny)
 import Control.Monad.Catch qualified as E
 import Data.Aeson qualified as Aeson
@@ -42,8 +42,6 @@ import System.Environment qualified as System
 import System.FilePath ((</>))
 import System.IO.Error (isDoesNotExistError, isResourceVanishedError)
 import System.Posix.Files (setFileMode)
-import Control.Monad.IO.Unlift (MonadUnliftIO)
-import Cachix.Daemon.SocketStore (addSocket)
 
 -- TODO: reconcile with Client
 data ListenError

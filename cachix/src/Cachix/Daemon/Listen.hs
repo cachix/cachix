@@ -1,5 +1,3 @@
--- TODO
-
 module Cachix.Daemon.Listen
   ( listen,
     handleClient,
@@ -97,7 +95,7 @@ handleClient eventloop socketId conn = do
           msgs <- catMaybes <$> mapM decodeMessage rawMsgs
 
           forM_ msgs $ \msg -> do
-            EventLoop.send eventloop (ReceivedMessage msg socketId)
+            EventLoop.send eventloop (ReceivedMessage socketId msg)
             case msg of
               Protocol.ClientPing ->
                 liftIO $ Socket.LBS.sendAll conn $ Protocol.newMessage DaemonPong

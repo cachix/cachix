@@ -138,7 +138,7 @@ run daemon = fmap join <$> runDaemon daemon $ do
     ReconnectSocket ->
       -- TODO: implement reconnection logic
       EventLoop.exitLoopWith (Left DaemonSocketError) daemonEventLoop
-    ReceivedMessage clientMsg socketId ->
+    ReceivedMessage socketId clientMsg ->
       case clientMsg of
         ClientPushRequest pushRequest shouldSubscribe -> do
           maybePushId <- queueJob pushRequest

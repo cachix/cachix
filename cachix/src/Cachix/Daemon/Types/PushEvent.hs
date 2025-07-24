@@ -11,9 +11,9 @@ where
 import Control.Retry (RetryStatus (..))
 import Data.Aeson (FromJSON, ToJSON)
 import Data.Time (UTCTime)
-import Protolude
 import Data.UUID (UUID)
 import Data.UUID.V4 qualified as UUID
+import Protolude
 
 data PushEvent = PushEvent
   { -- TODO: newtype a monotonic clock

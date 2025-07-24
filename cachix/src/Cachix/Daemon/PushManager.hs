@@ -1,5 +1,3 @@
--- TODO
-
 module Cachix.Daemon.PushManager
   ( newPushManagerEnv,
     runPushManager,

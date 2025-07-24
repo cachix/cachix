@@ -58,12 +58,11 @@ instance Exception ListenError where
 
 -- | Listen for incoming connections on the given socket path.
 listen ::
-  (E.MonadMask m, Katip.KatipContext m, MonadUnliftIO m) =>
+  (E.MonadMask m, Katip.KatipContext m) =>
   EventLoop DaemonEvent a ->
   FilePath ->
-  SocketStore ->
   m ()
-listen eventloop daemonSocketPath socketStore = do
+listen eventloop daemonSocketPath = do
   sock <- openSocket daemonSocketPath
   E.bracket (pure sock) closeSocket $ \sock' -> do
     liftIO $ Socket.listen sock' Socket.maxListenQueue

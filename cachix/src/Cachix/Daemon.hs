@@ -125,7 +125,7 @@ run daemon = fmap join <$> runDaemon daemon $ do
     (liftIO . PushManager.runPushManager daemonPushManager . PushManager.handleTask)
     >>= (liftIO . putMVar daemonWorkerThreads)
 
-  Async.async (Listen.listen daemonEventLoop daemonSocketPath daemonClients)
+  Async.async (Listen.listen daemonEventLoop daemonSocketPath)
     >>= (liftIO . putMVar daemonSocketThread)
 
   eventLoopRes <- EventLoop.run daemonEventLoop $ \case

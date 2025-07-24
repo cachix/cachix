@@ -69,14 +69,19 @@ listen eventloop daemonSocketPath socketStore = do
     liftIO $ Socket.listen sock' Socket.maxListenQueue
     forever $ do
       (conn, _peerAddr) <- liftIO $ Socket.accept sock'
-      socketId <- addSocket conn (handleClient eventloop) socketStore
-      EventLoop.send eventloop (AddSocketClient conn socketId)
+      EventLoop.send eventloop (AddSocketClient conn)
 
 -- | Handle incoming messages from a client.
 --
 -- Automatically responds to pings.
 -- Requests the daemon to remove the client socket once the loop exits.
-handleClient :: (E.MonadMask m, Katip.KatipContext m) => EventLoop DaemonEvent a -> SocketId -> Socket -> m ()
+handleClient ::
+  forall m a.
+  (E.MonadMask m, Katip.KatipContext m) =>
+  EventLoop DaemonEvent a ->
+  SocketId ->
+  Socket ->
+  m ()
 handleClient eventloop socketId conn = do
   go BS.empty `E.finally` removeClient
   where

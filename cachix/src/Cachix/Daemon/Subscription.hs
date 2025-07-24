@@ -3,7 +3,7 @@ module Cachix.Daemon.Subscription where
 import Control.Concurrent.STM.TBMQueue
 import Control.Concurrent.STM.TMChan
 import Control.Concurrent.STM.TVar
-import Data.Aeson as Aeson (ToJSON, encode)
+import Data.Aeson as Aeson (encode)
 import Data.HashMap.Strict (HashMap)
 import Data.HashMap.Strict qualified as HashMap
 import Network.Socket qualified as Socket
@@ -11,11 +11,6 @@ import Protolude
 import Network.Socket.ByteString.Lazy qualified as Socket.LBS
 import Cachix.Daemon.Protocol as Protocol
 import Cachix.Daemon.Types.PushEvent
-import Cachix.Daemon.Protocol (DaemonMessage(..))
-import Control.Concurrent.STM (STM, atomically)
-import Control.Concurrent.STM.TBMQueue (writeTBMQueue)
-import Control.Concurrent.STM.TMChan (writeTMChan)
-import Control.Exception (catch, SomeException)
 import Data.ByteString.Char8 qualified as BS8
 
 data SubscriptionManager k v = SubscriptionManager
@@ -94,7 +89,7 @@ sendEventToSubIO (SubSocket _ sock) event = do
   Socket.LBS.sendAll sock (encode msg) `catch` (\(_ :: SomeException) -> return ())
 sendEventToSubIO (SubChannel _) _ = return ()
 
-runSubscriptionManager :: (Show k, Hashable k, MonadIO m) => SubscriptionManager k PushEvent -> m ()
+runSubscriptionManager :: (Hashable k, MonadIO m) => SubscriptionManager k PushEvent -> m ()
 runSubscriptionManager manager = go
   where
     go = do

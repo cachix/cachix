@@ -28,7 +28,6 @@ import Cachix.Daemon.SocketStore qualified as SocketStore
 import Cachix.Daemon.Subscription as Subscription
 import Cachix.Daemon.Types as Types
 import Cachix.Daemon.Types.PushManager qualified as PushManager
-import Cachix.Daemon.Types.SocketStore qualified as SocketStore
 import Cachix.Daemon.Worker qualified as Worker
 import Cachix.Types.BinaryCache (BinaryCacheName)
 import Cachix.Types.BinaryCache qualified as BinaryCache
@@ -49,7 +48,6 @@ import System.Posix.Signals qualified as Signal
 import UnliftIO (MonadUnliftIO, withRunInIO)
 import UnliftIO.Async qualified as Async
 import UnliftIO.Exception (bracket)
-import Network.Socket.ByteString.Lazy qualified as Socket.LBS
 import Cachix.Daemon.Types.SocketStore (SocketId)
 
 -- | Configure a new daemon. Use 'run' to start it.
@@ -131,7 +129,7 @@ run daemon = fmap join <$> runDaemon daemon $ do
     >>= (liftIO . putMVar daemonSocketThread)
 
   eventLoopRes <- EventLoop.run daemonEventLoop $ \case
-    AddSocketClient conn socketId ->
+    AddSocketClient _ _ ->
       return ()
     RemoveSocketClient socketId ->
       SocketStore.removeSocket socketId daemonClients

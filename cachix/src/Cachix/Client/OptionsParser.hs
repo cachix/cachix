@@ -512,11 +512,12 @@ daemonOptionsParser =
           <> metavar "SOCKET"
 
 daemonPushOptionsParser :: Parser DaemonPushOptions
-daemonPushOptionsParser = DaemonPushOptions
-  <$> switch
-        ( long "wait"
-       <> help "Wait for the push operation to complete"
-        )
+daemonPushOptionsParser =
+  DaemonPushOptions
+    <$> switch
+      ( long "wait"
+          <> help "Wait for the push operation to complete"
+      )
 
 deployCommand :: Parser CachixCommand
 deployCommand = DeployCommand <$> DeployOptions.parser

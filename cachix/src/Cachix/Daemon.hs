@@ -224,7 +224,7 @@ subscribe daemonEnv maybePushId = do
   chan <- liftIO newBroadcastTMChanIO
   liftIO $ atomically $ case maybePushId of
     Just pushId -> subscribeToSTM (daemonSubscriptionManager daemonEnv) pushId (SubChannel chan)
-    Nothing     -> subscribeToAllSTM (daemonSubscriptionManager daemonEnv) (SubChannel chan)
+    Nothing -> subscribeToAllSTM (daemonSubscriptionManager daemonEnv) (SubChannel chan)
   liftIO $ atomically $ dupTMChan chan
 
 subscribeAll :: DaemonEnv -> IO (TMChan PushEvent)

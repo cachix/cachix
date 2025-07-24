@@ -21,7 +21,6 @@ import Control.Concurrent.STM.TBMQueue
 import Data.Text.Lazy.Builder (toLazyText)
 import Katip qualified
 import Protolude
-import Cachix.Daemon.Types.Daemon (DaemonEvent)
 
 new :: (MonadIO m) => m (EventLoop event a)
 new = do
@@ -30,18 +29,18 @@ new = do
   return $ EventLoop {queue, shutdownLatch}
 
 -- | Send an event to the event loop with logging.
-send :: (Katip.KatipContext m) => EventLoop DaemonEvent a -> DaemonEvent -> m ()
+send :: (Katip.KatipContext m) => EventLoop event a -> event -> m ()
 send = send' Katip.logFM
 
 -- | Same as 'send', but does not require a 'Katip.KatipContext'.
-sendIO :: (MonadIO m) => EventLoop DaemonEvent a -> DaemonEvent -> m ()
+sendIO :: forall m event a. (MonadIO m) => EventLoop event a -> event -> m ()
 sendIO = send' logger
   where
-    logger :: MonadIO m => Katip.Severity -> Katip.LogStr -> m ()
+    logger :: Katip.Severity -> Katip.LogStr -> m ()
     logger Katip.ErrorS msg = liftIO $ hPutStrLn stderr (toLazyText $ Katip.unLogStr msg)
     logger _ _ = return ()
 
-send' :: (MonadIO m) => (Katip.Severity -> Katip.LogStr -> m ()) -> EventLoop DaemonEvent a -> DaemonEvent -> m ()
+send' :: (MonadIO m) => (Katip.Severity -> Katip.LogStr -> m ()) -> EventLoop event a -> event -> m ()
 send' logger eventloop@(EventLoop {queue, shutdownLatch}) event = do
   -- First check if shutdown has been requested
   isExiting <- ShutdownLatch.isShuttingDown shutdownLatch

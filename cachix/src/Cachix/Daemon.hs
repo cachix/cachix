@@ -7,7 +7,7 @@ module Cachix.Daemon
     stop,
     stopIO,
     subscribe,
-    subscribeAll
+    subscribeAll,
   )
 where
 

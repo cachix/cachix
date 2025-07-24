@@ -43,7 +43,7 @@ data DaemonEvent
   | -- | Remove an existing client socket connection. For example, after it is closed.
     RemoveSocketClient SocketId
   | -- | Handle a new message from a client.
-    ReceivedMessage Protocol.ClientMessage SocketId
+    ReceivedMessage SocketId Protocol.ClientMessage
 
 data DaemonEnv = DaemonEnv
   { -- | Cachix client env

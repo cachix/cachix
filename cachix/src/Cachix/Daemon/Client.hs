@@ -56,9 +56,6 @@ push _env daemonOptions storePaths shouldSubscribe =
 
     mapM_ Async.link [rxThread, txThread, pingThread]
 
-    -- Subscribe to updates
-    atomically $ writeTBMQueue tx Protocol.ClientSubscribed
-
     fix $ \loop -> do
       mmsg <- atomically (readTBMQueue rx)
       case mmsg of

@@ -23,7 +23,6 @@ data ClientMessage
   = ClientPushRequest !PushRequest !Bool
   | ClientStop
   | ClientPing
-  | ClientSubscribed
   deriving stock (Eq, Generic, Show)
   deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)
 

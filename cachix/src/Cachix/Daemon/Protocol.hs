@@ -1,24 +1,22 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
--- TODO
-
 module Cachix.Daemon.Protocol
   ( ClientMessage (..),
     DaemonMessage (..),
     DaemonExitStatus (..),
+    PushRequestId,
+    newPushRequestId,
     PushRequest (..),
     newMessage,
     splitMessages,
-    PushRequestId,
-    newPushRequestId,
   )
 where
 
+import Cachix.Daemon.Types.PushEvent (PushEvent, PushRequestId, newPushRequestId)
 import Data.Aeson qualified as Aeson
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
 import Protolude
-import Cachix.Daemon.Types.PushEvent (PushEvent, PushRequestId, newPushRequestId)
 
 -- | JSON messages that the client can send to the daemon
 data ClientMessage

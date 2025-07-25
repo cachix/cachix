@@ -6,13 +6,16 @@ import Cachix.Client.OptionsParser (DaemonOptions (..), DaemonPushOptions (..))
 import Cachix.Client.OptionsParser qualified as Options
 import Cachix.Client.Retry qualified as Retry
 import Cachix.Daemon.Listen (getSocketPath)
+import Cachix.Daemon.Progress qualified as Daemon.Progress
 import Cachix.Daemon.Protocol as Protocol
+import Cachix.Daemon.Types (PushRetryStatus (..))
 import Cachix.Daemon.Types.PushEvent (PushEvent (..), PushEventMessage (..))
 import Control.Concurrent.Async qualified as Async
 import Control.Concurrent.STM.TBMQueue
 import Data.Aeson qualified as Aeson
 import Data.ByteString qualified as BS
 import Data.ByteString.Char8 qualified as BS8
+import Data.HashMap.Strict qualified as HashMap
 import Data.IORef
 import Data.Text qualified as T
 import Data.Time.Clock
@@ -73,6 +76,9 @@ push _env daemonOptions daemonPushOptions cliPaths = do
     lastPongRef <- newIORef =<< getCurrentTime
     pingThread <- Async.async (runPingThread lastPongRef rx tx)
 
+    -- Progress bar state management
+    statsRef <- newIORef (HashMap.empty :: HashMap.HashMap FilePath (Daemon.Progress.UploadProgress, PushRetryStatus))
+
     mapM_ Async.link [rxThread, txThread, pingThread]
 
     fix $ \loop -> do
@@ -83,15 +89,40 @@ push _env daemonOptions daemonPushOptions cliPaths = do
           putErrText $ toS $ displayException err
           exitFailure
         Just (Right msg) -> do
-          let logMsg :: ByteString = BS8.pack "Received message: " <> BS8.pack (show msg)
-          putStrLn logMsg
           case msg of
             Protocol.DaemonPong -> do
               writeIORef lastPongRef =<< getCurrentTime
               loop
-            Protocol.DaemonPushEvent (PushEvent {eventMessage = PushFinished}) -> exitSuccess
+            Protocol.DaemonPushEvent pushEvent -> do
+              displayPushEvent statsRef pushEvent
+              case eventMessage pushEvent of
+                PushFinished -> exitSuccess
+                _ -> loop
             _ -> loop
   where
+    displayPushEvent statsRef PushEvent {eventMessage} = liftIO $ do
+      stats <- readIORef statsRef
+      case eventMessage of
+        PushStorePathAttempt path pathSize retryStatus -> do
+          case HashMap.lookup path stats of
+            Just (progress, prevRetryStatus)
+              | prevRetryStatus == retryStatus -> return ()
+              | otherwise -> do
+                  newProgress <- Daemon.Progress.update progress retryStatus
+                  writeIORef statsRef $ HashMap.insert path (newProgress, retryStatus) stats
+            Nothing -> do
+              progress <- Daemon.Progress.new stderr (toS path) pathSize retryStatus
+              writeIORef statsRef $ HashMap.insert path (progress, retryStatus) stats
+        PushStorePathProgress path _ newBytes -> do
+          case HashMap.lookup path stats of
+            Nothing -> return ()
+            Just (progress, _) -> Daemon.Progress.tick progress newBytes
+        PushStorePathDone path -> do
+          mapM_ (Daemon.Progress.complete . fst) (HashMap.lookup path stats)
+        PushStorePathFailed path _ -> do
+          mapM_ (Daemon.Progress.fail . fst) (HashMap.lookup path stats)
+        _ -> return ()
+
     runPingThread lastPongRef rx tx = go
       where
         go = do

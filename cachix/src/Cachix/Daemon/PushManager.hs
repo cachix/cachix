@@ -343,7 +343,11 @@ newPushStrategy store authToken opts cacheName compressionMethod storePath =
 
       onAttempt retryStatus size = do
         sp <- liftIO $ storePathToPath store storePath
-        Katip.katipAddContext (Katip.sl "retry" (rsIterNumber retryStatus)) $
+        let retryContext =
+              if rsIterNumber retryStatus > 0
+                then Katip.katipAddContext (Katip.sl "retry" (rsIterNumber retryStatus))
+                else identity
+        retryContext $
           Katip.logFM Katip.InfoS $
             Katip.ls $
               "Pushing " <> (toS sp :: Text)

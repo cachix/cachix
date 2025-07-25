@@ -1,17 +1,23 @@
 module Cachix.Daemon.Progress
   ( UploadProgress,
+    ProgressState,
     new,
     complete,
     fail,
     tick,
     update,
+    newProgressState,
+    displayPushEvent,
   )
 where
 
 import Cachix.Client.HumanSize (humanSize)
 import Cachix.Daemon.Types (PushRetryStatus (..))
+import Cachix.Daemon.Types.PushEvent (PushEvent (..), PushEventMessage (..))
 import Control.Concurrent.Async qualified as Async
 import Control.Concurrent.MVar
+import Data.HashMap.Strict qualified as HashMap
+import Data.IORef
 import Data.String (String)
 import Data.Text qualified as T
 import Protolude
@@ -31,6 +37,13 @@ data UploadProgress
       { path :: String,
         size :: Int64
       }
+
+-- | State for tracking multiple progress bars
+type ProgressState = IORef (HashMap.HashMap FilePath (UploadProgress, PushRetryStatus))
+
+-- | Create a new progress state for tracking multiple progress bars
+newProgressState :: IO ProgressState
+newProgressState = newIORef HashMap.empty
 
 new :: Handle -> String -> Int64 -> PushRetryStatus -> IO UploadProgress
 new hdl path size retryStatus = do
@@ -166,3 +179,28 @@ clearAsciiWith :: Ascii.ProgressBar -> String -> IO ()
 clearAsciiWith pg@(Ascii.ProgressBar _ _ region) str = do
   cancelUpdates pg
   Ascii.setConsoleRegion region str
+
+-- | Display push events as progress bars, deduplicating by path and retry status
+displayPushEvent :: ProgressState -> PushEvent -> IO ()
+displayPushEvent statsRef PushEvent {eventMessage} = do
+  stats <- readIORef statsRef
+  case eventMessage of
+    PushStorePathAttempt path pathSize retryStatus -> do
+      case HashMap.lookup path stats of
+        Just (progress, prevRetryStatus)
+          | prevRetryStatus == retryStatus -> return ()
+          | otherwise -> do
+              newProgress <- update progress retryStatus
+              writeIORef statsRef $ HashMap.insert path (newProgress, retryStatus) stats
+        Nothing -> do
+          progress <- new stderr (toS path) pathSize retryStatus
+          writeIORef statsRef $ HashMap.insert path (progress, retryStatus) stats
+    PushStorePathProgress path _ newBytes -> do
+      case HashMap.lookup path stats of
+        Nothing -> return ()
+        Just (progress, _) -> tick progress newBytes
+    PushStorePathDone path -> do
+      mapM_ (complete . fst) (HashMap.lookup path stats)
+    PushStorePathFailed path _ -> do
+      mapM_ (fail . fst) (HashMap.lookup path stats)
+    _ -> return ()

@@ -49,5 +49,5 @@ sendAll :: (MonadIO m) => SocketId -> LBS.ByteString -> SocketStore -> m ()
 sendAll socketId msg (SocketStore stvar) = do
   mSocket <- liftIO $ readTVarIO stvar
   case HashMap.lookup socketId mSocket of
-    Just (Socket {..}) -> liftIO $ Socket.LBS.sendAll socket msg
+    Just (Socket {socket}) -> liftIO $ Socket.LBS.sendAll socket msg
     Nothing -> return ()

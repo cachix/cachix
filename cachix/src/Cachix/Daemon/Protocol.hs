@@ -1,5 +1,3 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-
 module Cachix.Daemon.Protocol
   ( ClientMessage (..),
     DaemonMessage (..),

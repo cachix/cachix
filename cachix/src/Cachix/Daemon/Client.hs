@@ -180,6 +180,7 @@ stop _env daemonOptions =
               case exitCode exitStatus of
                 0 -> exitSuccess
                 code -> exitWith (ExitFailure code)
+            _ -> loop
   where
     runPingThread lastPongRef rx tx = go
       where

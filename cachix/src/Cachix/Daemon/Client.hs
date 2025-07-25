@@ -1,6 +1,7 @@
 module Cachix.Daemon.Client (push, stop) where
 
 import Cachix.Client.Env as Env
+import Cachix.Client.Exception (CachixException (..))
 import Cachix.Client.OptionsParser (DaemonOptions (..), DaemonPushOptions (..))
 import Cachix.Client.OptionsParser qualified as Options
 import Cachix.Client.Retry qualified as Retry
@@ -13,12 +14,15 @@ import Data.Aeson qualified as Aeson
 import Data.ByteString qualified as BS
 import Data.ByteString.Char8 qualified as BS8
 import Data.IORef
+import Data.Text qualified as T
 import Data.Time.Clock
+import Hercules.CNix.Store qualified as Store
 import Network.Socket qualified as Socket
 import Network.Socket.ByteString qualified as Socket.BS
 import Network.Socket.ByteString.Lazy qualified as Socket.LBS
 import Protolude
 import System.Environment (lookupEnv)
+import System.IO (hIsTerminalDevice)
 import System.IO.Error (isResourceVanishedError)
 
 data SocketError
@@ -38,7 +42,20 @@ instance Exception SocketError where
 
 -- | Queue up push requests with the daemon and wait for completion
 push :: Env -> DaemonOptions -> DaemonPushOptions -> [FilePath] -> IO ()
-push _env daemonOptions daemonPushOptions storePaths =
+push _env daemonOptions daemonPushOptions cliPaths = do
+  hasStdin <- not <$> hIsTerminalDevice stdin
+  inputStorePaths <-
+    case (hasStdin, cliPaths) of
+      (False, []) -> throwIO $ NoInput "You need to specify store paths either as stdin or as a command argument"
+      (True, []) -> map T.unpack . T.words <$> getContents
+      -- If we get both stdin and cli args, prefer cli args.
+      -- This avoids hangs in cases where stdin is non-interactive but unused by caller.
+      (_, paths) -> return paths
+
+  storePaths <- Store.withStore $ \store -> do
+    inputStorePaths' <- mapM (Store.followLinksToStorePath store . BS8.pack) inputStorePaths
+    mapM (fmap (toS . BS8.unpack) . Store.storePathToPath store) inputStorePaths'
+
   withDaemonConn (daemonSocketPath daemonOptions) $ \sock -> do
     let shouldWait = Options.shouldWait daemonPushOptions
     let pushRequest = Protocol.ClientPushRequest (PushRequest {storePaths = storePaths}) shouldWait

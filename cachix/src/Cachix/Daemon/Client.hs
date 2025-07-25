@@ -1,6 +1,7 @@
 module Cachix.Daemon.Client (push, stop) where
 
 import Cachix.Client.Env as Env
+import Cachix.Client.Exception (CachixException (..))
 import Cachix.Client.OptionsParser (DaemonOptions (..))
 import Cachix.Client.Retry qualified as Retry
 import Cachix.Daemon.Listen (getSocketPath)
@@ -9,13 +10,17 @@ import Control.Concurrent.Async qualified as Async
 import Control.Concurrent.STM.TBMQueue
 import Data.Aeson qualified as Aeson
 import Data.ByteString qualified as BS
+import Data.ByteString.Char8 qualified as BS8
 import Data.IORef
+import Data.Text qualified as T
 import Data.Time.Clock
+import Hercules.CNix.Store qualified as Store
 import Network.Socket qualified as Socket
 import Network.Socket.ByteString qualified as Socket.BS
 import Network.Socket.ByteString.Lazy qualified as Socket.LBS
 import Protolude
 import System.Environment (lookupEnv)
+import System.IO (hIsTerminalDevice)
 import System.IO.Error (isResourceVanishedError)
 
 data SocketError
@@ -37,13 +42,26 @@ instance Exception SocketError where
 --
 -- TODO: wait for the daemon to respond that it has received the request
 push :: Env -> DaemonOptions -> [FilePath] -> IO ()
-push _env daemonOptions storePaths =
-  withDaemonConn (daemonSocketPath daemonOptions) $ \sock -> do
-    Socket.LBS.sendAll sock $ Protocol.newMessage pushRequest
-  where
-    pushRequest =
-      Protocol.ClientPushRequest $
-        PushRequest {storePaths = storePaths}
+push _env daemonOptions cliPaths = do
+  hasStdin <- not <$> hIsTerminalDevice stdin
+  inputStorePaths <-
+    case (hasStdin, cliPaths) of
+      (False, []) -> throwIO $ NoInput "You need to specify store paths either as stdin or as a command argument"
+      (True, []) -> map T.unpack . T.words <$> getContents
+      -- If we get both stdin and cli args, prefer cli args.
+      -- This avoids hangs in cases where stdin is non-interactive but unused by caller.
+      (_, paths) -> return paths
+
+  Store.withStore $ \store -> do
+    inputStorePaths' <- mapM (Store.followLinksToStorePath store . BS8.pack) inputStorePaths
+    inputStorePathsStr <- mapM (fmap (toS . BS8.unpack) . Store.storePathToPath store) inputStorePaths'
+
+    withDaemonConn (daemonSocketPath daemonOptions) $ \sock -> do
+      let pushRequest =
+            Protocol.ClientPushRequest $
+              PushRequest {storePaths = inputStorePathsStr}
+
+      Socket.LBS.sendAll sock $ Protocol.newMessage pushRequest
 
 -- | Tell the daemon to stop and wait for it to gracefully exit
 stop :: Env -> DaemonOptions -> IO ()

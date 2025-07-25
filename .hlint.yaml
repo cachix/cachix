@@ -1,3 +1,4 @@
 - ignore: { name: Use newtype instead of data }
 - ignore: { name: Redundant do }
 - ignore: { name: "Eta reduce" }
+- ignore: { name: 'Unused LANGUAGE pragma' }

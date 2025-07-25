@@ -26,8 +26,6 @@ import Control.Concurrent.Async qualified as Async
 import Data.Conduit.Combinators qualified as C
 import Data.Conduit.TMChan qualified as C
 import Data.Generics.Labels ()
-import Data.HashMap.Strict as HashMap
-import Data.IORef
 import Data.Text.IO (hGetLine)
 import GHC.IO.Handle (hDuplicate, hDuplicateTo)
 import Hercules.CNix.Store (withStore)
@@ -113,34 +111,10 @@ watchExecDaemon env pushOpts cacheName cmd args =
         ExitSuccess -> return ()
 
     postWatchExec chan = do
-      statsRef <- newIORef HashMap.empty
+      progressState <- Daemon.Progress.newProgressState
       runConduit $
         C.sourceTMChan chan
-          .| C.mapM_ (displayPushEvent statsRef)
-
-    -- Deduplicate events by path and retry status
-    displayPushEvent statsRef PushEvent {eventMessage} = liftIO $ do
-      stats <- readIORef statsRef
-      case eventMessage of
-        PushStorePathAttempt path pathSize retryStatus -> do
-          case HashMap.lookup path stats of
-            Just (progress, prevRetryStatus)
-              | prevRetryStatus == retryStatus -> return ()
-              | otherwise -> do
-                  newProgress <- Daemon.Progress.update progress retryStatus
-                  writeIORef statsRef $ HashMap.insert path (newProgress, retryStatus) stats
-            Nothing -> do
-              progress <- Daemon.Progress.new stderr (toS path) pathSize retryStatus
-              writeIORef statsRef $ HashMap.insert path (progress, retryStatus) stats
-        PushStorePathProgress path _ newBytes -> do
-          case HashMap.lookup path stats of
-            Nothing -> return ()
-            Just (progress, _) -> Daemon.Progress.tick progress newBytes
-        PushStorePathDone path -> do
-          mapM_ (Daemon.Progress.complete . fst) (HashMap.lookup path stats)
-        PushStorePathFailed path _ -> do
-          mapM_ (Daemon.Progress.fail . fst) (HashMap.lookup path stats)
-        _ -> return ()
+          .| C.mapM_ (liftIO . Daemon.Progress.displayPushEvent progressState)
 
     printLog h = getLineLoop
       where

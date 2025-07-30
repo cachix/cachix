@@ -5,6 +5,7 @@ module Cachix.Daemon.Protocol
     PushRequestId,
     newPushRequestId,
     PushRequest (..),
+    PushRequestOptions (..),
     newMessage,
     splitMessages,
   )
@@ -18,7 +19,7 @@ import Protolude
 
 -- | JSON messages that the client can send to the daemon
 data ClientMessage
-  = ClientPushRequest !PushRequest !Bool
+  = ClientPushRequest !PushRequest !PushRequestOptions
   | ClientStop
   | ClientPing
   deriving stock (Eq, Generic, Show)
@@ -35,6 +36,13 @@ data DaemonMessage
 data DaemonExitStatus = DaemonExitStatus
   { exitCode :: !Int,
     exitMessage :: !(Maybe Text)
+  }
+  deriving stock (Eq, Generic, Show)
+  deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)
+
+-- | Options for push requests
+data PushRequestOptions = PushRequestOptions
+  { subscribeToUpdates :: Bool
   }
   deriving stock (Eq, Generic, Show)
   deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)

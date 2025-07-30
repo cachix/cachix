@@ -71,22 +71,22 @@ withSocketComm sock action = do
               threadDelay (2 * 1000 * 1000)
               go
 
-    handleOutgoing tx sock = go
+    handleOutgoing tx sock' = go
       where
         go = do
           mmsg <- atomically $ readTBMQueue tx
           case mmsg of
             Nothing -> return ()
             Just msg -> do
-              Retry.retryAll $ const $ Socket.LBS.sendAll sock $ Protocol.newMessage msg
+              Retry.retryAll $ const $ Socket.LBS.sendAll sock' $ Protocol.newMessage msg
               go
 
-    handleIncoming lastPongRef rx sock = go BS.empty
+    handleIncoming lastPongRef rx sock' = go BS.empty
       where
         socketClosed = atomically $ writeTBMQueue rx (Left SocketClosed)
 
         go leftovers = do
-          ebs <- liftIO $ try $ Socket.BS.recv sock 4096
+          ebs <- liftIO $ try $ Socket.BS.recv sock' 4096
 
           case ebs of
             Left err | isResourceVanishedError err -> socketClosed
@@ -133,7 +133,7 @@ push _env daemonOptions daemonPushOptions cliPaths = do
     Socket.LBS.sendAll sock $ Protocol.newMessage pushRequest
     unless shouldWait exitSuccess
 
-    withSocketComm sock $ \receive send -> do
+    withSocketComm sock $ \receive _send -> do
       progressState <- Daemon.Progress.newProgressState
       failureRef <- newIORef False
 

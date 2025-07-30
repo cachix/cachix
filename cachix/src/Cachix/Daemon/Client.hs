@@ -2,10 +2,14 @@ module Cachix.Daemon.Client (push, stop) where
 
 import Cachix.Client.Env as Env
 import Cachix.Client.Exception (CachixException (..))
-import Cachix.Client.OptionsParser (DaemonOptions (..))
+import Cachix.Client.OptionsParser (DaemonOptions (..), DaemonPushOptions (..))
+import Cachix.Client.OptionsParser qualified as Options
 import Cachix.Client.Retry qualified as Retry
 import Cachix.Daemon.Listen (getSocketPath)
+import Cachix.Daemon.Progress qualified as Daemon.Progress
 import Cachix.Daemon.Protocol as Protocol
+import Cachix.Daemon.Types.Error (DaemonError (..), HasExitCode (..))
+import Cachix.Daemon.Types.PushEvent (PushEvent (..), PushEventMessage (..))
 import Control.Concurrent.Async qualified as Async
 import Control.Concurrent.STM.TBMQueue
 import Data.Aeson qualified as Aeson
@@ -38,65 +42,21 @@ instance Exception SocketError where
     SocketStalled -> "The socket has stopped responding to pings"
     SocketDecodingError err -> "Failed to decode the message from socket: " <> toS err
 
--- | Queue up push requests with the daemon
---
--- TODO: wait for the daemon to respond that it has received the request
-push :: Env -> DaemonOptions -> [FilePath] -> IO ()
-push _env daemonOptions cliPaths = do
-  hasStdin <- not <$> hIsTerminalDevice stdin
-  inputStorePaths <-
-    case (hasStdin, cliPaths) of
-      (False, []) -> throwIO $ NoInput "You need to specify store paths either as stdin or as a command argument"
-      (True, []) -> map T.unpack . T.words <$> getContents
-      -- If we get both stdin and cli args, prefer cli args.
-      -- This avoids hangs in cases where stdin is non-interactive but unused by caller.
-      (_, paths) -> return paths
+-- | Run socket communication with ping/pong handling
+withSocketComm :: Socket.Socket -> (STM (Maybe (Either SocketError Protocol.DaemonMessage)) -> (Protocol.ClientMessage -> STM ()) -> IO a) -> IO a
+withSocketComm sock action = do
+  let size = 1000
+  (rx, tx) <- atomically $ (,) <$> newTBMQueue size <*> newTBMQueue size
 
-  Store.withStore $ \store -> do
-    inputStorePaths' <- mapM (Store.followLinksToStorePath store . BS8.pack) inputStorePaths
-    inputStorePathsStr <- mapM (fmap (toS . BS8.unpack) . Store.storePathToPath store) inputStorePaths'
+  lastPongRef <- newIORef =<< getCurrentTime
+  rxThread <- Async.async (handleIncoming lastPongRef rx sock)
+  txThread <- Async.async (handleOutgoing tx sock)
+  pingThread <- Async.async (runPingThread lastPongRef rx tx)
 
-    withDaemonConn (daemonSocketPath daemonOptions) $ \sock -> do
-      let pushRequest =
-            Protocol.ClientPushRequest $
-              PushRequest {storePaths = inputStorePathsStr}
+  let threads = [rxThread, txThread, pingThread]
+  mapM_ Async.link threads
 
-      Socket.LBS.sendAll sock $ Protocol.newMessage pushRequest
-
--- | Tell the daemon to stop and wait for it to gracefully exit
-stop :: Env -> DaemonOptions -> IO ()
-stop _env daemonOptions =
-  withDaemonConn (daemonSocketPath daemonOptions) $ \sock -> do
-    let size = 100
-    (rx, tx) <- atomically $ (,) <$> newTBMQueue size <*> newTBMQueue size
-
-    rxThread <- Async.async (handleIncoming rx sock)
-    txThread <- Async.async (handleOutgoing tx sock)
-
-    lastPongRef <- newIORef =<< getCurrentTime
-    pingThread <- Async.async (runPingThread lastPongRef rx tx)
-
-    mapM_ Async.link [rxThread, txThread, pingThread]
-
-    -- Request the daemon to stop
-    atomically $ writeTBMQueue tx Protocol.ClientStop
-
-    fix $ \loop -> do
-      mmsg <- atomically (readTBMQueue rx)
-      case mmsg of
-        Nothing -> return ()
-        Just (Left err) -> do
-          putErrText $ toS $ displayException err
-          exitFailure
-        Just (Right msg) ->
-          case msg of
-            Protocol.DaemonPong -> do
-              writeIORef lastPongRef =<< getCurrentTime
-              loop
-            Protocol.DaemonExit exitStatus ->
-              case exitCode exitStatus of
-                0 -> exitSuccess
-                code -> exitWith (ExitFailure code)
+  finally (action (readTBMQueue rx) (writeTBMQueue tx)) (mapM_ Async.cancel threads)
   where
     runPingThread lastPongRef rx tx = go
       where
@@ -111,27 +71,26 @@ stop _env daemonOptions =
               threadDelay (2 * 1000 * 1000)
               go
 
-    handleOutgoing tx sock = go
+    handleOutgoing tx sock' = go
       where
         go = do
           mmsg <- atomically $ readTBMQueue tx
           case mmsg of
             Nothing -> return ()
             Just msg -> do
-              Retry.retryAll $ const $ Socket.LBS.sendAll sock $ Protocol.newMessage msg
+              Retry.retryAll $ const $ Socket.LBS.sendAll sock' $ Protocol.newMessage msg
               go
 
-    handleIncoming rx sock = go BS.empty
+    handleIncoming lastPongRef rx sock' = go BS.empty
       where
         socketClosed = atomically $ writeTBMQueue rx (Left SocketClosed)
 
         go leftovers = do
-          ebs <- liftIO $ try $ Socket.BS.recv sock 4096
+          ebs <- liftIO $ try $ Socket.BS.recv sock' 4096
 
           case ebs of
             Left err | isResourceVanishedError err -> socketClosed
             Left _err -> socketClosed
-            -- If the socket returns 0 bytes, then it is closed
             Right bs | BS.null bs -> socketClosed
             Right bs -> do
               let (rawMsgs, newLeftovers) = Protocol.splitMessages (BS.append leftovers bs)
@@ -143,9 +102,87 @@ stop _env daemonOptions =
                     putErrText terr
                     atomically $ writeTBMQueue rx (Left (SocketDecodingError terr))
                   Right msg -> do
-                    atomically $ writeTBMQueue rx (Right msg)
+                    case msg of
+                      Protocol.DaemonPong -> do
+                        writeIORef lastPongRef =<< getCurrentTime
+                        atomically $ writeTBMQueue rx (Right msg)
+                      _ -> atomically $ writeTBMQueue rx (Right msg)
 
               go newLeftovers
+
+-- | Queue up push requests with the daemon and wait for completion
+push :: Env -> DaemonOptions -> DaemonPushOptions -> [FilePath] -> IO ()
+push _env daemonOptions daemonPushOptions cliPaths = do
+  hasStdin <- not <$> hIsTerminalDevice stdin
+  inputStorePaths <-
+    case (hasStdin, cliPaths) of
+      (False, []) -> throwIO $ NoInput "You need to specify store paths either as stdin or as a command argument"
+      (True, []) -> map T.unpack . T.words <$> getContents
+      -- If we get both stdin and cli args, prefer cli args.
+      -- This avoids hangs in cases where stdin is non-interactive but unused by caller.
+      (_, paths) -> return paths
+
+  storePaths <- Store.withStore $ \store -> do
+    inputStorePaths' <- mapM (Store.followLinksToStorePath store . BS8.pack) inputStorePaths
+    mapM (fmap (toS . BS8.unpack) . Store.storePathToPath store) inputStorePaths'
+
+  withDaemonConn (daemonSocketPath daemonOptions) $ \sock -> do
+    let shouldWait = Options.shouldWait daemonPushOptions
+    let pushRequest = Protocol.ClientPushRequest (PushRequest {storePaths = storePaths, subscribeToUpdates = shouldWait})
+
+    Socket.LBS.sendAll sock $ Protocol.newMessage pushRequest
+    unless shouldWait exitSuccess
+
+    withSocketComm sock $ \receive _send -> do
+      progressState <- Daemon.Progress.newProgressState
+      failureRef <- newIORef False
+
+      fix $ \loop -> do
+        mmsg <- atomically receive
+        case mmsg of
+          Nothing -> return ()
+          Just (Left err) -> do
+            putErrText $ toS $ displayException err
+            exitFailure
+          Just (Right msg) -> do
+            case msg of
+              Protocol.DaemonPong -> loop
+              Protocol.DaemonPushEvent pushEvent -> do
+                Daemon.Progress.displayPushEvent progressState pushEvent
+                case eventMessage pushEvent of
+                  PushStorePathFailed _ _ -> do
+                    writeIORef failureRef True
+                    loop
+                  PushFinished -> do
+                    hasFailures <- readIORef failureRef
+                    if hasFailures
+                      then exitWith (toExitCode DaemonPushFailure)
+                      else exitSuccess
+                  _ -> loop
+              _ -> loop
+
+-- | Tell the daemon to stop and wait for it to gracefully exit
+stop :: Env -> DaemonOptions -> IO ()
+stop _env daemonOptions =
+  withDaemonConn (daemonSocketPath daemonOptions) $ \sock -> do
+    withSocketComm sock $ \receive send -> do
+      atomically $ send Protocol.ClientStop
+
+      fix $ \loop -> do
+        mmsg <- atomically receive
+        case mmsg of
+          Nothing -> return ()
+          Just (Left err) -> do
+            putErrText $ toS $ displayException err
+            exitFailure
+          Just (Right msg) ->
+            case msg of
+              Protocol.DaemonPong -> loop
+              Protocol.DaemonExit exitStatus ->
+                case exitCode exitStatus of
+                  0 -> exitSuccess
+                  code -> exitWith (ExitFailure code)
+              _ -> loop
 
 withDaemonConn :: Maybe FilePath -> (Socket.Socket -> IO a) -> IO a
 withDaemonConn optionalSocketPath f = do

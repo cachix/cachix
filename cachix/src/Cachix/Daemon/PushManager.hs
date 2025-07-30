@@ -400,8 +400,11 @@ pushStarted pushJob@PushJob {pushId} = do
 
 pushFinished :: PushJob -> PushManager ()
 pushFinished pushJob@PushJob {pushId} = void $ runMaybeT $ do
-  pushDuration <- MaybeT $ pure $ PushJob.duration pushJob
-  completedAt <- MaybeT $ pure $ PushJob.completedAt pushJob
+  let defaultDuration = 0
+  pushDuration <- MaybeT $ pure $ Just (fromMaybe defaultDuration $ PushJob.duration pushJob)
+
+  defaultCompletedAt <- liftIO getCurrentTime
+  completedAt <- MaybeT $ pure $ Just (fromMaybe defaultCompletedAt $ PushJob.completedAt pushJob)
 
   Katip.logLocM Katip.InfoS $
     Katip.ls $

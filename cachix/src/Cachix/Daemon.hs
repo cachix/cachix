@@ -7,6 +7,7 @@ module Cachix.Daemon
     stop,
     stopIO,
     subscribe,
+    subscribeAll,
   )
 where
 
@@ -27,6 +28,7 @@ import Cachix.Daemon.SocketStore qualified as SocketStore
 import Cachix.Daemon.Subscription as Subscription
 import Cachix.Daemon.Types as Types
 import Cachix.Daemon.Types.PushManager qualified as PushManager
+import Cachix.Daemon.Types.SocketStore (SocketId)
 import Cachix.Daemon.Worker qualified as Worker
 import Cachix.Types.BinaryCache (BinaryCacheName)
 import Cachix.Types.BinaryCache qualified as BinaryCache
@@ -134,9 +136,15 @@ run daemon = fmap join <$> runDaemon daemon $ do
     ReconnectSocket ->
       -- TODO: implement reconnection logic
       EventLoop.exitLoopWith (Left DaemonSocketError) daemonEventLoop
-    ReceivedMessage clientMsg ->
+    ReceivedMessage socketId clientMsg ->
       case clientMsg of
-        ClientPushRequest pushRequest -> queueJob pushRequest
+        ClientPushRequest pushRequest -> do
+          maybePushId <- queueJob pushRequest
+          case maybePushId of
+            Just pushId -> when (Protocol.subscribeToUpdates pushRequest) $ do
+              chan <- liftIO $ subscribe daemon (Just pushId)
+              void $ liftIO $ Async.async $ publishToClient socketId chan daemon
+            Nothing -> Katip.logFM Katip.ErrorS "Failed to queue push request"
         ClientStop -> EventLoop.send daemonEventLoop ShutdownGracefully
         _ -> return ()
     ShutdownGracefully -> do
@@ -206,21 +214,32 @@ installSignalHandlers = do
         threadDelay (15 * 1000 * 1000) -- 15 seconds
         throwTo mainThreadId ExitSuccess
 
-queueJob :: Protocol.PushRequest -> Daemon ()
+queueJob :: Protocol.PushRequest -> Daemon (Maybe PushRequestId)
 queueJob pushRequest = do
-  daemonPushManager <- asks daemonPushManager
-  -- TODO: subscribe the socket to updates if available
+  DaemonEnv {daemonPushManager} <- ask
+  liftIO $ PushManager.runPushManager daemonPushManager (PushManager.addPushJob pushRequest)
 
-  -- Queue the job
-  void $
-    PushManager.runPushManager daemonPushManager (PushManager.addPushJob pushRequest)
-
-subscribe :: DaemonEnv -> IO (TMChan PushEvent)
-subscribe DaemonEnv {..} = do
+subscribe :: DaemonEnv -> Maybe PushRequestId -> IO (TMChan PushEvent)
+subscribe daemonEnv maybePushId = do
   chan <- liftIO newBroadcastTMChanIO
-  liftIO $ atomically $ do
-    subscribeToAllSTM daemonSubscriptionManager (SubChannel chan)
-    dupTMChan chan
+  liftIO $ atomically $ case maybePushId of
+    Just pushId -> subscribeToSTM (daemonSubscriptionManager daemonEnv) pushId (SubChannel chan)
+    Nothing -> subscribeToAllSTM (daemonSubscriptionManager daemonEnv) (SubChannel chan)
+  liftIO $ atomically $ dupTMChan chan
+
+subscribeAll :: DaemonEnv -> IO (TMChan PushEvent)
+subscribeAll daemonEnv = subscribe daemonEnv Nothing
+
+-- Publish messages from the channel to the client over the socket
+publishToClient :: SocketId -> TMChan PushEvent -> DaemonEnv -> IO ()
+publishToClient socketId chan daemonEnv = do
+  forever $ do
+    msg <- atomically $ readTMChan chan
+    case msg of
+      Nothing -> return ()
+      Just evt -> do
+        let daemonMsg = DaemonPushEvent evt
+        SocketStore.sendAll socketId (Protocol.newMessage daemonMsg) (daemonClients daemonEnv)
 
 -- | Print the daemon configuration to the log.
 printConfiguration :: Daemon ()

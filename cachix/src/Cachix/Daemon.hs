@@ -138,10 +138,10 @@ run daemon = fmap join <$> runDaemon daemon $ do
       EventLoop.exitLoopWith (Left DaemonSocketError) daemonEventLoop
     ReceivedMessage socketId clientMsg ->
       case clientMsg of
-        ClientPushRequest pushRequest pushRequestOptions -> do
+        ClientPushRequest pushRequest -> do
           maybePushId <- queueJob pushRequest
           case maybePushId of
-            Just pushId -> when (Protocol.subscribeToUpdates pushRequestOptions) $ do
+            Just pushId -> when (Protocol.subscribeToUpdates pushRequest) $ do
               chan <- liftIO $ subscribe daemon (Just pushId)
               void $ liftIO $ Async.async $ publishToClient socketId chan daemon
             Nothing -> Katip.logFM Katip.ErrorS "Failed to queue push request"

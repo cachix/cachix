@@ -127,8 +127,7 @@ push _env daemonOptions daemonPushOptions cliPaths = do
 
   withDaemonConn (daemonSocketPath daemonOptions) $ \sock -> do
     let shouldWait = Options.shouldWait daemonPushOptions
-    let pushRequestOptions = Protocol.PushRequestOptions {Protocol.subscribeToUpdates = shouldWait}
-    let pushRequest = Protocol.ClientPushRequest (PushRequest {storePaths = storePaths}) pushRequestOptions
+    let pushRequest = Protocol.ClientPushRequest (PushRequest {storePaths = storePaths, subscribeToUpdates = shouldWait})
 
     Socket.LBS.sendAll sock $ Protocol.newMessage pushRequest
     unless shouldWait exitSuccess

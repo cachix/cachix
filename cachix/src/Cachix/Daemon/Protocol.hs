@@ -5,7 +5,6 @@ module Cachix.Daemon.Protocol
     PushRequestId,
     newPushRequestId,
     PushRequest (..),
-    PushRequestOptions (..),
     newMessage,
     splitMessages,
   )
@@ -19,7 +18,7 @@ import Protolude
 
 -- | JSON messages that the client can send to the daemon
 data ClientMessage
-  = ClientPushRequest !PushRequest !PushRequestOptions
+  = ClientPushRequest !PushRequest
   | ClientStop
   | ClientPing
   deriving stock (Eq, Generic, Show)
@@ -40,16 +39,10 @@ data DaemonExitStatus = DaemonExitStatus
   deriving stock (Eq, Generic, Show)
   deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)
 
--- | Options for push requests
-data PushRequestOptions = PushRequestOptions
-  { subscribeToUpdates :: Bool
-  }
-  deriving stock (Eq, Generic, Show)
-  deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)
-
 -- | A request for the daemon to push store paths to a binary cache
 data PushRequest = PushRequest
-  { storePaths :: [FilePath]
+  { storePaths :: [FilePath],
+    subscribeToUpdates :: Bool
   }
   deriving stock (Eq, Generic, Show)
   deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)

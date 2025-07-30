@@ -8,6 +8,7 @@ import Cachix.Client.Retry qualified as Retry
 import Cachix.Daemon.Listen (getSocketPath)
 import Cachix.Daemon.Progress qualified as Daemon.Progress
 import Cachix.Daemon.Protocol as Protocol
+import Cachix.Daemon.Types.Error (DaemonError (..), HasExitCode (..))
 import Cachix.Daemon.Types.PushEvent (PushEvent (..), PushEventMessage (..))
 import Control.Concurrent.Async qualified as Async
 import Control.Concurrent.STM.TBMQueue
@@ -134,6 +135,7 @@ push _env daemonOptions daemonPushOptions cliPaths = do
 
     withSocketComm sock $ \receive send -> do
       progressState <- Daemon.Progress.newProgressState
+      failureRef <- newIORef False
 
       fix $ \loop -> do
         mmsg <- atomically receive
@@ -148,7 +150,14 @@ push _env daemonOptions daemonPushOptions cliPaths = do
               Protocol.DaemonPushEvent pushEvent -> do
                 Daemon.Progress.displayPushEvent progressState pushEvent
                 case eventMessage pushEvent of
-                  PushFinished -> exitSuccess
+                  PushStorePathFailed _ _ -> do
+                    writeIORef failureRef True
+                    loop
+                  PushFinished -> do
+                    hasFailures <- readIORef failureRef
+                    if hasFailures
+                      then exitWith (toExitCode DaemonPushFailure)
+                      else exitSuccess
                   _ -> loop
               _ -> loop
 

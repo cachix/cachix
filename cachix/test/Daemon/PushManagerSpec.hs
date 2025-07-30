@@ -30,12 +30,12 @@ spec :: Spec
 spec = do
   describe "push job" $ do
     it "starts in the queued state" $ do
-      let request = Protocol.PushRequest {Protocol.storePaths = ["foo", "bar"]}
+      let request = Protocol.PushRequest {Protocol.storePaths = ["foo", "bar"], Protocol.subscribeToUpdates = False}
       pushJob <- PushJob.new request
       PushJob.status pushJob `shouldBe` Queued
 
     it "can be resolved" $ do
-      let request = Protocol.PushRequest {Protocol.storePaths = ["foo", "bar"]}
+      let request = Protocol.PushRequest {Protocol.storePaths = ["foo", "bar"], Protocol.subscribeToUpdates = False}
           pathSet = Set.fromList ["foo", "bar"]
           closure = PushJob.ResolvedClosure pathSet pathSet
       initPushJob <- PushJob.new request
@@ -47,7 +47,7 @@ spec = do
 
     it "marks paths as pushed" $
       do
-        let request = Protocol.PushRequest {Protocol.storePaths = ["foo", "bar"]}
+        let request = Protocol.PushRequest {Protocol.storePaths = ["foo", "bar"], Protocol.subscribeToUpdates = False}
             pathSet = Set.fromList ["foo", "bar"]
             closure = PushJob.ResolvedClosure pathSet pathSet
         timestamp <- getCurrentTime
@@ -69,7 +69,7 @@ spec = do
 
     it "marks paths as failed" $
       do
-        let request = Protocol.PushRequest {Protocol.storePaths = ["foo", "bar"]}
+        let request = Protocol.PushRequest {Protocol.storePaths = ["foo", "bar"], Protocol.subscribeToUpdates = False}
             pathSet = Set.fromList ["foo", "bar"]
             closure = PushJob.ResolvedClosure pathSet pathSet
 
@@ -90,7 +90,7 @@ spec = do
 
     it "unmark paths as failed after successful retry" $
       do
-        let request = Protocol.PushRequest {Protocol.storePaths = ["foo", "bar"]}
+        let request = Protocol.PushRequest {Protocol.storePaths = ["foo", "bar"], Protocol.subscribeToUpdates = False}
             pathSet = Set.fromList ["foo", "bar"]
             closure = PushJob.ResolvedClosure pathSet pathSet
 
@@ -111,7 +111,7 @@ spec = do
 
   describe "push manager" $ do
     it "queues push jobs " $ inPushManager $ do
-      let request = Protocol.PushRequest {Protocol.storePaths = ["foo", "bar"]}
+      let request = Protocol.PushRequest {Protocol.storePaths = ["foo", "bar"], Protocol.subscribeToUpdates = False}
       Just pushId <- addPushJob request
       Just pushJob <- lookupPushJob pushId
       liftIO $ do
@@ -121,7 +121,7 @@ spec = do
     it "manages the lifecycle of a push job" $ inPushManager $ do
       let paths = ["bar", "foo"]
 
-      let pushRequest = Protocol.PushRequest {Protocol.storePaths = paths}
+      let pushRequest = Protocol.PushRequest {Protocol.storePaths = paths, Protocol.subscribeToUpdates = False}
       Just pushId <- addPushJob pushRequest
 
       let pathSet = Set.fromList paths
@@ -156,7 +156,7 @@ spec = do
         let longTimeoutOptions = TimeoutOptions {toTimeout = 10.0, toPollingInterval = 0.1}
 
         _ <- runPushManager pm $ do
-          let request = Protocol.PushRequest {Protocol.storePaths = paths}
+          let request = Protocol.PushRequest {Protocol.storePaths = paths, Protocol.subscribeToUpdates = False}
           addPushJob request
 
         concurrently_ (stopPushManager longTimeoutOptions pm) $
@@ -166,7 +166,7 @@ spec = do
       it "shuts down on job stall" $
         withPushManager $ \pm -> do
           _ <- runPushManager pm $ do
-            let request = Protocol.PushRequest {Protocol.storePaths = ["foo"]}
+            let request = Protocol.PushRequest {Protocol.storePaths = ["foo"], Protocol.subscribeToUpdates = False}
             addPushJob request
 
           stopPushManager timeoutOptions pm

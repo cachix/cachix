@@ -39,7 +39,7 @@ main = displayConsoleRegions $ do
     Config configCommand -> Config.run cachixOptions configCommand
     Daemon (DaemonRun daemonOptions pushOptions mcacheName) -> Daemon.start env daemonOptions pushOptions mcacheName
     Daemon (DaemonStop daemonOptions) -> Daemon.Client.stop env daemonOptions
-    Daemon (DaemonPushPaths daemonOptions storePaths) -> Daemon.Client.push env daemonOptions storePaths
+    Daemon (DaemonPushPaths daemonOptions daemonPushOptions storePaths) -> Daemon.Client.push env daemonOptions daemonPushOptions storePaths
     Daemon (DaemonWatchExec pushOptions cacheName cmd args) -> Command.watchExecDaemon env pushOptions cacheName cmd args
     DeployCommand (DeployOptions.Agent opts) -> AgentCommand.run cachixOptions opts
     DeployCommand (DeployOptions.Activate opts) -> ActivateCommand.run env opts

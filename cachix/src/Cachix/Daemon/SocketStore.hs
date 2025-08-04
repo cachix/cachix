@@ -4,15 +4,18 @@ module Cachix.Daemon.SocketStore
     removeSocket,
     toList,
     Socket (..),
+    sendAll,
   )
 where
 
 import Cachix.Daemon.Types.SocketStore (Socket (..), SocketId, SocketStore (..))
 import Control.Concurrent.STM.TVar
 import Control.Monad.IO.Unlift (MonadUnliftIO)
+import Data.ByteString.Lazy qualified as LBS
 import Data.HashMap.Strict qualified as HashMap
 import Data.UUID.V4 qualified as UUID
 import Network.Socket qualified
+import Network.Socket.ByteString.Lazy qualified as Socket.LBS
 import Protolude hiding (toList)
 import UnliftIO.Async qualified as Async
 
@@ -41,3 +44,10 @@ toList :: (MonadIO m) => SocketStore -> m [Socket]
 toList (SocketStore st) = do
   hm <- liftIO $ readTVarIO st
   return $ HashMap.elems hm
+
+sendAll :: (MonadIO m) => SocketId -> LBS.ByteString -> SocketStore -> m ()
+sendAll socketId msg (SocketStore stvar) = do
+  mSocket <- liftIO $ readTVarIO stvar
+  case HashMap.lookup socketId mSocket of
+    Just (Socket {socket}) -> liftIO $ Socket.LBS.sendAll socket msg
+    Nothing -> return ()

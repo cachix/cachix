@@ -2,6 +2,7 @@ module Cachix.Client.OptionsParser
   ( CachixCommand (..),
     DaemonCommand (..),
     DaemonOptions (..),
+    DaemonPushOptions (..),
     PushArguments (..),
 
     -- * Push options
@@ -139,7 +140,7 @@ defaultPushOptions =
     }
 
 data DaemonCommand
-  = DaemonPushPaths DaemonOptions [FilePath]
+  = DaemonPushPaths DaemonOptions DaemonPushOptions [FilePath]
   | DaemonRun DaemonOptions PushOptions BinaryCacheName
   | DaemonStop DaemonOptions
   | DaemonWatchExec PushOptions BinaryCacheName Text [Text]
@@ -147,6 +148,11 @@ data DaemonCommand
 
 data DaemonOptions = DaemonOptions
   { daemonSocketPath :: Maybe FilePath
+  }
+  deriving (Show)
+
+data DaemonPushOptions = DaemonPushOptions
+  { shouldWait :: Bool
   }
   deriving (Show)
 
@@ -474,6 +480,7 @@ daemonPush :: Parser DaemonCommand
 daemonPush =
   DaemonPushPaths
     <$> daemonOptionsParser
+    <*> daemonPushOptionsParser
     <*> many (strArgument (metavar "PATHS..."))
 
 daemonRun :: Parser DaemonCommand
@@ -503,6 +510,14 @@ daemonOptionsParser =
         long "socket"
           <> short 's'
           <> metavar "SOCKET"
+
+daemonPushOptionsParser :: Parser DaemonPushOptions
+daemonPushOptionsParser =
+  DaemonPushOptions
+    <$> switch
+      ( long "wait"
+          <> help "Wait for the push operation to complete"
+      )
 
 deployCommand :: Parser CachixCommand
 deployCommand = DeployCommand <$> DeployOptions.parser

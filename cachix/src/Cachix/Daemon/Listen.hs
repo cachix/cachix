@@ -95,7 +95,7 @@ handleClient eventloop socketId conn = do
           msgs <- catMaybes <$> mapM decodeMessage rawMsgs
 
           forM_ msgs $ \msg -> do
-            EventLoop.send eventloop (ReceivedMessage msg)
+            EventLoop.send eventloop (ReceivedMessage socketId msg)
             case msg of
               Protocol.ClientPing ->
                 liftIO $ Socket.LBS.sendAll conn $ Protocol.newMessage DaemonPong

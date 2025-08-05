@@ -80,25 +80,10 @@ import Protolude.Conv (toS)
 import Servant.Auth ()
 import Servant.Auth.Client
 import Servant.Conduit ()
-import System.Environment (lookupEnv)
-import Text.Read qualified as Read
 import UnliftIO.QSem qualified as QSem
 
--- | Get batch configuration from environment variables
-getBatchConfig :: IO NarinfoBatch.BatchConfig
-getBatchConfig = do
-  batchSize <- maybe 100 (fromMaybe 100 . Read.readMaybe . toS) <$> lookupEnv "CACHIX_NARINFO_BATCH_SIZE"
-  waitTime <- maybe 2.0 (fromMaybe 2.0 . Read.readMaybe . toS) <$> lookupEnv "CACHIX_NARINFO_BATCH_WAIT_TIME"
-  enabled <- maybe True (== "true") <$> lookupEnv "CACHIX_NARINFO_BATCH_ENABLED"
-  return $
-    NarinfoBatch.BatchConfig
-      { NarinfoBatch.bcMaxBatchSize = batchSize,
-        NarinfoBatch.bcMaxWaitTime = realToFrac waitTime,
-        NarinfoBatch.bcEnabled = enabled
-      }
-
-newPushManagerEnv :: (MonadIO m) => PushOptions -> PushParams PushManager () -> OnPushEvent -> Logger -> m PushManagerEnv
-newPushManagerEnv pushOptions pmPushParams onPushEvent pmLogger = liftIO $ do
+newPushManagerEnv :: (MonadIO m) => PushOptions -> PushParams PushManager () -> OnPushEvent -> Logger -> NarinfoBatch.BatchConfig -> m PushManagerEnv
+newPushManagerEnv pushOptions pmPushParams onPushEvent pmLogger batchConfig = liftIO $ do
   pmPushJobs <- newTVarIO mempty
   pmPendingJobCount <- newTVarIO 0
   pmStorePathIndex <- newTVarIO mempty
@@ -108,7 +93,6 @@ newPushManagerEnv pushOptions pmPushParams onPushEvent pmLogger = liftIO $ do
   let pmOnPushEvent id pushEvent = updateTimestampTVar pmLastEventTimestamp >> onPushEvent id pushEvent
 
   -- Create batch manager with callback that queues ProcessBatchResponse tasks
-  batchConfig <- getBatchConfig
   let batchCallback requestId response = do
         atomically $ do
           result <- tryWriteTBMQueue pmTaskQueue $ ProcessBatchResponse requestId response

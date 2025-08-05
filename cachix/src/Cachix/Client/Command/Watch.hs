@@ -78,9 +78,9 @@ watchExecDaemon env pushOpts batchOptions cacheName cmd args =
       withStore $ \store -> do
         let daemonOptions =
               DaemonOptions
-                { daemonSocketPath = Just (Daemon.PostBuildHook.daemonSock hookEnv),
+                { daemonAllowRemoteStop = False,
                   daemonNarinfoBatchOptions = batchOptions,
-                  allowRemoteStop = False
+                  daemonSocketPath = Just (Daemon.PostBuildHook.daemonSock hookEnv)
                 }
         daemon <- Daemon.new env store daemonOptions (Just logHandle) pushOpts cacheName
 

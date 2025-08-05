@@ -171,9 +171,9 @@ data DaemonCommand
   deriving (Show)
 
 data DaemonOptions = DaemonOptions
-  { daemonSocketPath :: Maybe FilePath,
+  { daemonAllowRemoteStop :: Bool,
     daemonNarinfoBatchOptions :: NarinfoBatchOptions,
-    allowRemoteStop :: Bool
+    daemonSocketPath :: Maybe FilePath
   }
   deriving (Show)
 
@@ -531,9 +531,9 @@ daemonWatchExec =
 daemonOptionsParser :: Parser DaemonOptions
 daemonOptionsParser =
   DaemonOptions
-    <$> socketOption
+    <$> remoteStopOption
     <*> batchConfigParser
-    <*> remoteStopOption
+    <*> socketOption
   where
     socketOption =
       optional . strOption $

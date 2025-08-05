@@ -34,6 +34,10 @@ module Cachix.Daemon.PushManager
     pushStorePathDone,
     pushStorePathFailed,
 
+    -- * Batch processor
+    startBatchProcessor,
+    stopBatchProcessor,
+
     -- * Helpers
     atomicallyWithTimeout,
     processBatchedNarinfo,
@@ -47,12 +51,11 @@ import Cachix.Client.OptionsParser as Client.OptionsParser
   )
 import Cachix.Client.Push as Client.Push
 import Cachix.Client.Retry (retryAll)
-import Cachix.Daemon.NarinfoBatch (NarinfoBatchManager)
 import Cachix.Daemon.NarinfoBatch qualified as NarinfoBatch
 import Cachix.Daemon.Protocol qualified as Protocol
 import Cachix.Daemon.PushManager.PushJob qualified as PushJob
 import Cachix.Daemon.Types.Log (Logger)
-import Cachix.Daemon.Types.PushEvent
+import Cachix.Daemon.Types.PushEvent (PushEvent (..), PushEventMessage (..), newPushRetryStatus)
 import Cachix.Daemon.Types.PushManager
 import Cachix.Types.BinaryCache qualified as BinaryCache
 import Conduit qualified as C
@@ -60,6 +63,7 @@ import Control.Concurrent.Async qualified as Async
 import Control.Concurrent.STM.TBMQueue
 import Control.Concurrent.STM.TVar
 import Control.Monad.Catch qualified as E
+import Control.Monad.IO.Unlift (MonadUnliftIO)
 import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
 import Control.Retry (RetryStatus, rsIterNumber)
 import Data.ByteString qualified as BS
@@ -76,10 +80,25 @@ import Protolude.Conv (toS)
 import Servant.Auth ()
 import Servant.Auth.Client
 import Servant.Conduit ()
+import System.Environment (lookupEnv)
+import Text.Read qualified as Read
 import UnliftIO.QSem qualified as QSem
 
-newPushManagerEnv :: (MonadIO m) => PushOptions -> PushParams PushManager () -> OnPushEvent -> NarinfoBatchManager -> Logger -> m PushManagerEnv
-newPushManagerEnv pushOptions pmPushParams onPushEvent pmNarinfoBatchManager pmLogger = liftIO $ do
+-- | Get batch configuration from environment variables
+getBatchConfig :: IO NarinfoBatch.BatchConfig
+getBatchConfig = do
+  batchSize <- maybe 100 (fromMaybe 100 . Read.readMaybe . toS) <$> lookupEnv "CACHIX_NARINFO_BATCH_SIZE"
+  waitTime <- maybe 2.0 (fromMaybe 2.0 . Read.readMaybe . toS) <$> lookupEnv "CACHIX_NARINFO_BATCH_WAIT_TIME"
+  enabled <- maybe True (== "true") <$> lookupEnv "CACHIX_NARINFO_BATCH_ENABLED"
+  return $
+    NarinfoBatch.BatchConfig
+      { NarinfoBatch.bcMaxBatchSize = batchSize,
+        NarinfoBatch.bcMaxWaitTime = realToFrac waitTime,
+        NarinfoBatch.bcEnabled = enabled
+      }
+
+newPushManagerEnv :: (MonadIO m) => PushOptions -> PushParams PushManager () -> OnPushEvent -> Logger -> m PushManagerEnv
+newPushManagerEnv pushOptions pmPushParams onPushEvent pmLogger = liftIO $ do
   pmPushJobs <- newTVarIO mempty
   pmPendingJobCount <- newTVarIO 0
   pmStorePathIndex <- newTVarIO mempty
@@ -87,6 +106,16 @@ newPushManagerEnv pushOptions pmPushParams onPushEvent pmNarinfoBatchManager pmL
   pmTaskSemaphore <- QSem.newQSem (numJobs pushOptions)
   pmLastEventTimestamp <- newTVarIO =<< getCurrentTime
   let pmOnPushEvent id pushEvent = updateTimestampTVar pmLastEventTimestamp >> onPushEvent id pushEvent
+
+  -- Create batch manager with callback that queues ProcessBatchResponse tasks
+  batchConfig <- getBatchConfig
+  let batchCallback requestId response = do
+        atomically $ do
+          result <- tryWriteTBMQueue pmTaskQueue $ ProcessBatchResponse requestId response
+          case result of
+            Just True -> return ()
+            _ -> retry -- Queue is full, keep trying
+  pmNarinfoBatchManager <- NarinfoBatch.newNarinfoBatchManager batchConfig batchCallback
 
   return $ PushManagerEnv {..}
 
@@ -99,6 +128,17 @@ stopPushManager timeoutOptions PushManagerEnv {..} = do
     pendingJobs <- readTVar pmPendingJobCount
     check (pendingJobs <= 0)
   atomically $ closeTBMQueue pmTaskQueue
+
+-- | Start the batch processor for narinfo queries
+startBatchProcessor :: (MonadUnliftIO m, E.MonadMask m, Katip.KatipContext m) => PushManagerEnv -> m ()
+startBatchProcessor env@PushManagerEnv {pmNarinfoBatchManager} = do
+  NarinfoBatch.startBatchProcessor pmNarinfoBatchManager $ \paths ->
+    runPushManager env (processBatchedNarinfo paths)
+
+-- | Stop the batch processor
+stopBatchProcessor :: (MonadIO m) => PushManagerEnv -> m ()
+stopBatchProcessor PushManagerEnv {pmNarinfoBatchManager} = do
+  NarinfoBatch.stopBatchProcessor pmNarinfoBatchManager
 
 -- Manage push jobs
 
@@ -269,6 +309,8 @@ handleTask task = do
   case task of
     ResolveClosure pushId ->
       runResolveClosureTask pushParams pushId
+    ProcessBatchResponse pushId batchResponse ->
+      runProcessBatchResponseTask pushParams pushId batchResponse
     PushStorePath filePath ->
       runPushStorePathTask pushParams filePath
 
@@ -294,25 +336,42 @@ runResolveClosureTask pushParams pushId =
         normalized <- mapM (normalizeStorePath store) sps
         let validPaths = catMaybes normalized
 
-        -- Use batch manager for narinfo queries
+        -- Use async batch manager for narinfo queries (non-blocking)
         batchManager <- asks pmNarinfoBatchManager
-        batchResponse <- liftIO $ NarinfoBatch.submitBatchRequest batchManager (show pushId) validPaths
+        NarinfoBatch.submitBatchRequest batchManager pushId validPaths
 
-        let allStorePaths = NarinfoBatch.brAllPaths batchResponse
-            missingStorePaths = NarinfoBatch.brMissingPaths batchResponse
+runProcessBatchResponseTask :: PushParams PushManager () -> Protocol.PushRequestId -> NarinfoBatch.BatchResponse -> PushManager ()
+runProcessBatchResponseTask pushParams pushId batchResponse =
+  processBatchResponse `withException` failJob
+  where
+    failJob :: SomeException -> PushManager ()
+    failJob err = do
+      failPushJob pushId
 
-        storePathsToPush <- pushOnClosureAttempt pushParams allStorePaths missingStorePaths
+      Katip.katipAddContext (Katip.sl "error" (displayException err)) $
+        Katip.logLocM Katip.ErrorS $
+          Katip.ls $
+            "Failed to process batch response for push job " <> (show pushId :: Text)
 
-        resolvedClosure <- do
-          allPaths <- liftIO $ mapM (storeToFilePath store) allStorePaths
-          pathsToPush <- liftIO $ mapM (storeToFilePath store) storePathsToPush
-          return $
-            PushJob.ResolvedClosure
-              { rcAllPaths = Set.fromList allPaths,
-                rcMissingPaths = Set.fromList pathsToPush
-              }
+    processBatchResponse = do
+      Katip.logLocM Katip.DebugS $ Katip.ls $ "Processing batch response for push job " <> (show pushId :: Text)
 
-        resolvePushJob pushId resolvedClosure
+      let allStorePaths = NarinfoBatch.brAllPaths batchResponse
+          missingStorePaths = NarinfoBatch.brMissingPaths batchResponse
+          store = pushParamsStore pushParams
+
+      storePathsToPush <- pushOnClosureAttempt pushParams allStorePaths missingStorePaths
+
+      resolvedClosure <- do
+        allPaths <- liftIO $ mapM (storeToFilePath store) allStorePaths
+        pathsToPush <- liftIO $ mapM (storeToFilePath store) storePathsToPush
+        return $
+          PushJob.ResolvedClosure
+            { rcAllPaths = Set.fromList allPaths,
+              rcMissingPaths = Set.fromList pathsToPush
+            }
+
+      resolvePushJob pushId resolvedClosure
 
 runPushStorePathTask :: PushParams PushManager () -> FilePath -> PushManager ()
 runPushStorePathTask pushParams filePath = do

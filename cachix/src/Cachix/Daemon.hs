@@ -52,20 +52,6 @@ import UnliftIO (MonadUnliftIO, withRunInIO)
 import UnliftIO.Async qualified as Async
 import UnliftIO.Exception (bracket)
 
--- | Get batch configuration from environment variables
-getBatchConfig :: IO NarinfoBatch.BatchConfig
-getBatchConfig = do
-  batchSize <- maybe 100 (fromMaybe 100 . Text.Read.readMaybe . toS) <$> lookupEnv "CACHIX_NARINFO_BATCH_SIZE"
-  waitTime <- maybe 2.0 (fromMaybe 2.0 . Text.Read.readMaybe . toS) <$> lookupEnv "CACHIX_NARINFO_BATCH_WAIT_TIME"
-  enabled <- maybe True (== "true") <$> lookupEnv "CACHIX_NARINFO_BATCH_ENABLED"
-
-  return $
-    NarinfoBatch.BatchConfig
-      { NarinfoBatch.bcMaxBatchSize = batchSize,
-        NarinfoBatch.bcMaxWaitTime = realToFrac waitTime,
-        NarinfoBatch.bcEnabled = enabled
-      }
-
 -- | Configure a new daemon. Use 'run' to start it.
 new ::
   -- | The Cachix environment.
@@ -107,12 +93,8 @@ new daemonEnv nixStore daemonOptions daemonLogHandle daemonPushOptions daemonCac
   daemonSubscriptionManager <- Subscription.newSubscriptionManager
   let onPushEvent = Subscription.pushEvent daemonSubscriptionManager
 
-  -- Create narinfo batch manager with config from env vars
-  batchConfig <- getBatchConfig
-  daemonNarinfoBatchManager <- NarinfoBatch.newNarinfoBatchManager batchConfig
-
   let pushParams = Push.newPushParams nixStore (clientenv daemonEnv) daemonBinaryCache daemonPushSecret daemonPushOptions
-  daemonPushManager <- PushManager.newPushManagerEnv daemonPushOptions pushParams onPushEvent daemonNarinfoBatchManager daemonLogger
+  daemonPushManager <- PushManager.newPushManagerEnv daemonPushOptions pushParams onPushEvent daemonLogger
 
   daemonWorkerThreads <- newEmptyMVar
 
@@ -140,8 +122,7 @@ run daemon = fmap join <$> runDaemon daemon $ do
     >>= (liftIO . putMVar daemonSubscriptionManagerThread)
 
   -- Start the narinfo batch processor
-  NarinfoBatch.startBatchProcessor daemonNarinfoBatchManager $
-    \paths -> PushManager.runPushManager daemonPushManager (PushManager.processBatchedNarinfo paths)
+  PushManager.startBatchProcessor daemonPushManager
 
   Worker.startWorkers
     (Options.numJobs daemonPushOptions)
@@ -302,7 +283,7 @@ shutdownGracefully = do
   shutdownPushManager daemonPushManager
 
   -- Stop the narinfo batch processor
-  liftIO $ NarinfoBatch.stopBatchProcessor daemonNarinfoBatchManager
+  liftIO $ PushManager.stopBatchProcessor daemonPushManager
 
   -- Stop worker threads
   withTakeMVar daemonWorkerThreads Worker.stopWorkers

@@ -82,7 +82,7 @@ import Servant.Auth.Client
 import Servant.Conduit ()
 import UnliftIO.QSem qualified as QSem
 
-newPushManagerEnv :: (MonadIO m) => PushOptions -> PushParams PushManager () -> OnPushEvent -> Logger -> NarinfoBatch.BatchConfig -> m PushManagerEnv
+newPushManagerEnv :: (MonadIO m) => PushOptions -> PushParams PushManager () -> OnPushEvent -> Logger -> NarinfoBatch.NarinfoBatchOptions -> m PushManagerEnv
 newPushManagerEnv pushOptions pmPushParams onPushEvent pmLogger batchConfig = liftIO $ do
   pmPushJobs <- newTVarIO mempty
   pmPendingJobCount <- newTVarIO 0

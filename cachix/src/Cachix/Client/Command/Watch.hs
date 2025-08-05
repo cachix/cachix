@@ -17,6 +17,7 @@ import Cachix.Client.OptionsParser
 import Cachix.Client.Push
 import Cachix.Client.WatchStore qualified as WatchStore
 import Cachix.Daemon qualified as Daemon
+import Cachix.Daemon.NarinfoBatch qualified as NarinfoBatch
 import Cachix.Daemon.PostBuildHook qualified as Daemon.PostBuildHook
 import Cachix.Daemon.Progress qualified as Daemon.Progress
 import Cachix.Daemon.Types
@@ -78,10 +79,8 @@ watchExecDaemon env pushOpts cacheName cmd args =
         let daemonOptions =
               DaemonOptions
                 { daemonSocketPath = Just (Daemon.PostBuildHook.daemonSock hookEnv),
-                  allowRemoteStop = False,
-                  narinfoBatchEnable = Nothing,
-                  narinfoBatchSize = Nothing,
-                  narinfoBatchTimeout = Nothing
+                  daemonNarinfoBatchOptions = NarinfoBatch.defaultNarinfoBatchOptions,
+                  allowRemoteStop = False
                 }
         daemon <- Daemon.new env store daemonOptions (Just logHandle) pushOpts cacheName
 

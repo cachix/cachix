@@ -25,7 +25,6 @@ module Cachix.Client.OptionsParser
     Flags (..),
 
     -- * Daemon options
-    daemonOptionsToBatchConfig,
 
     -- * Misc
     BinaryCacheName,
@@ -37,6 +36,7 @@ import Cachix.Client.Config qualified as Config
 import Cachix.Client.InstallationMode qualified as InstallationMode
 import Cachix.Client.URI (URI)
 import Cachix.Client.URI qualified as URI
+import Cachix.Daemon.NarinfoBatch (NarinfoBatchOptions (..))
 import Cachix.Daemon.NarinfoBatch qualified as NarinfoBatch
 import Cachix.Deploy.OptionsParser qualified as DeployOptions
 import Cachix.Types.BinaryCache (BinaryCacheName)
@@ -172,10 +172,8 @@ data DaemonCommand
 
 data DaemonOptions = DaemonOptions
   { daemonSocketPath :: Maybe FilePath,
-    allowRemoteStop :: Bool,
-    narinfoBatchEnable :: Maybe Bool,
-    narinfoBatchSize :: Maybe Int,
-    narinfoBatchTimeout :: Maybe Double
+    daemonNarinfoBatchOptions :: NarinfoBatchOptions,
+    allowRemoteStop :: Bool
   }
   deriving (Show)
 
@@ -533,10 +531,8 @@ daemonOptionsParser :: Parser DaemonOptions
 daemonOptionsParser =
   DaemonOptions
     <$> socketOption
+    <*> batchConfigParser
     <*> remoteStopOption
-    <*> narinfoBatchEnableOption
-    <*> narinfoBatchSizeOption
-    <*> narinfoBatchTimeoutOption
   where
     socketOption =
       optional . strOption $
@@ -548,22 +544,31 @@ daemonOptionsParser =
     remoteStopOption =
       enableDisableFlag True "remote-stop" "the remote stop command which allows clients to remotely shut down the daemon. Remote stop should be disabled in environments where the lifecycle of the daemon is handled by a service manager, like systemd."
 
+batchConfigParser :: Parser NarinfoBatchOptions
+batchConfigParser =
+  NarinfoBatchOptions
+    <$> narinfoBatchSizeOption
+    <*> narinfoBatchTimeoutOption
+    <*> narinfoBatchEnableOption
+  where
     narinfoBatchEnableOption =
-      optional $
-        flag' True (long "narinfo-batch" <> help "Enable narinfo batching (default: enabled)")
-          <|> flag' False (long "no-narinfo-batch" <> help "Disable narinfo batching")
+      enableDisableFlag (NarinfoBatch.nboEnabled NarinfoBatch.defaultNarinfoBatchOptions) "narinfo-batch" "batching of narinfo requests (default: enabled)"
 
     narinfoBatchSizeOption =
-      optional . option auto $
+      option auto $
         long "narinfo-batch-size"
           <> metavar "INT"
           <> help "Maximum number of paths to batch together (default: 100)"
+          <> value (NarinfoBatch.nboMaxBatchSize NarinfoBatch.defaultNarinfoBatchOptions)
+          <> showDefault
 
     narinfoBatchTimeoutOption =
-      optional . option auto $
+      option auto $
         long "narinfo-batch-timeout"
           <> metavar "SECONDS"
           <> help "Maximum time to wait before processing a batch in seconds (default: 2.0)"
+          <> value (realToFrac (NarinfoBatch.nboMaxWaitTime NarinfoBatch.defaultNarinfoBatchOptions))
+          <> showDefault
 
 daemonPushOptionsParser :: Parser DaemonPushOptions
 daemonPushOptionsParser =
@@ -656,15 +661,6 @@ versionParser =
     long "version"
       <> short 'V'
       <> help "Show cachix version"
-
--- | Convert daemon options to narinfo batch configuration
-daemonOptionsToBatchConfig :: DaemonOptions -> NarinfoBatch.BatchConfig
-daemonOptionsToBatchConfig DaemonOptions {narinfoBatchEnable, narinfoBatchSize, narinfoBatchTimeout} =
-  NarinfoBatch.BatchConfig
-    { NarinfoBatch.bcMaxBatchSize = fromMaybe 100 narinfoBatchSize,
-      NarinfoBatch.bcMaxWaitTime = realToFrac (fromMaybe 2.0 narinfoBatchTimeout),
-      NarinfoBatch.bcEnabled = fromMaybe True narinfoBatchEnable
-    }
 
 -- TODO: usage footer
 infoH :: Parser a -> InfoMod a -> ParserInfo a

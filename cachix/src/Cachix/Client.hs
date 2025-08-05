@@ -11,6 +11,7 @@ import Cachix.Client.OptionsParser
   ( CachixCommand (..),
     DaemonCommand (..),
     PushArguments (..),
+    daemonNarinfoBatchOptions,
     getOpts,
   )
 import Cachix.Client.Version (cachixVersion)
@@ -40,7 +41,7 @@ main = displayConsoleRegions $ do
     Daemon (DaemonRun daemonOptions pushOptions mcacheName) -> Daemon.start env daemonOptions pushOptions mcacheName
     Daemon (DaemonStop daemonOptions) -> Daemon.Client.stop env daemonOptions
     Daemon (DaemonPushPaths daemonOptions daemonPushOptions storePaths) -> Daemon.Client.push env daemonOptions daemonPushOptions storePaths
-    Daemon (DaemonWatchExec pushOptions cacheName cmd args) -> Command.watchExecDaemon env pushOptions cacheName cmd args
+    Daemon (DaemonWatchExec daemonOptions pushOptions cacheName cmd args) -> Command.watchExecDaemon env pushOptions (daemonNarinfoBatchOptions daemonOptions) cacheName cmd args
     DeployCommand (DeployOptions.Agent opts) -> AgentCommand.run cachixOptions opts
     DeployCommand (DeployOptions.Activate opts) -> ActivateCommand.run env opts
     GenerateKeypair name -> Command.generateKeypair env name
@@ -52,8 +53,8 @@ main = displayConsoleRegions $ do
     Remove name -> Command.remove env name
     Use name useOptions -> Command.use env name useOptions
     Version -> putText cachixVersion
-    WatchExec watchExecMode pushArgs name cmd args ->
-      Command.watchExec env watchExecMode pushArgs name cmd args
+    WatchExec watchExecMode pushArgs batchOptions name cmd args ->
+      Command.watchExec env watchExecMode pushArgs batchOptions name cmd args
     WatchStore watchArgs name -> Command.watchStore env watchArgs name
 
 -- | Install client-wide signal handlers.

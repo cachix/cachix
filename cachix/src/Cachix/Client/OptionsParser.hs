@@ -84,7 +84,7 @@ data CachixCommand
   | Import PushOptions Text URI
   | Pin PinOptions
   | WatchStore PushOptions Text
-  | WatchExec WatchExecMode PushOptions Text Text [Text]
+  | WatchExec WatchExecMode PushOptions NarinfoBatchOptions Text Text [Text]
   | Use BinaryCacheName InstallationMode.UseOptions
   | Remove BinaryCacheName
   | DeployCommand DeployOptions.DeployCommand
@@ -167,7 +167,7 @@ data DaemonCommand
   = DaemonPushPaths DaemonOptions DaemonPushOptions [FilePath]
   | DaemonRun DaemonOptions PushOptions BinaryCacheName
   | DaemonStop DaemonOptions
-  | DaemonWatchExec PushOptions BinaryCacheName Text [Text]
+  | DaemonWatchExec DaemonOptions PushOptions BinaryCacheName Text [Text]
   deriving (Show)
 
 data DaemonOptions = DaemonOptions
@@ -522,7 +522,8 @@ daemonStop = DaemonStop <$> daemonOptionsParser
 daemonWatchExec :: Parser DaemonCommand
 daemonWatchExec =
   DaemonWatchExec
-    <$> pushOptionsParser
+    <$> daemonOptionsParser
+    <*> pushOptionsParser
     <*> cacheNameParser
     <*> strArgument (metavar "CMD")
     <*> many (strArgument (metavar "-- ARGS"))
@@ -586,6 +587,7 @@ watchExecCommand =
   WatchExec
     <$> watchExecModeParser
     <*> pushOptionsParser
+    <*> batchConfigParser
     <*> cacheNameParser
     <*> strArgument (metavar "CMD")
     <*> many (strArgument (metavar "-- ARGS"))

@@ -72,6 +72,8 @@ data BatchState requestId = BatchState
     bsAccumulatedPaths :: !(Set StorePath),
     -- | Time when the first request in this batch was added
     bsBatchStartTime :: !(Maybe UTCTime),
+    -- | Current timeout TVar (Nothing if no timeout active)
+    bsTimeoutVar :: !(Maybe (TVar Bool)),
     -- | Whether the processor should continue running
     bsRunning :: !Bool
   }
@@ -82,8 +84,6 @@ data NarinfoBatchManager requestId = NarinfoBatchManager
     nbmConfig :: !NarinfoBatchOptions,
     -- | Internal state
     nbmState :: !(TVar (BatchState requestId)),
-    -- | Condition variable to signal new work
-    nbmWorkAvailable :: !(TMVar ()),
     -- | Handle to the processor thread
     nbmProcessorThread :: !(MVar (Async ())),
     -- | Callback to handle batch responses
@@ -94,7 +94,6 @@ data NarinfoBatchManager requestId = NarinfoBatchManager
 newNarinfoBatchManager :: (MonadIO m) => NarinfoBatchOptions -> (requestId -> BatchResponse -> IO ()) -> m (NarinfoBatchManager requestId)
 newNarinfoBatchManager nbmConfig nbmCallback = liftIO $ do
   nbmState <- newTVarIO initialState
-  nbmWorkAvailable <- newEmptyTMVarIO
   nbmProcessorThread <- newEmptyMVar
   return NarinfoBatchManager {..}
   where
@@ -103,6 +102,7 @@ newNarinfoBatchManager nbmConfig nbmCallback = liftIO $ do
         { bsPendingRequests = [],
           bsAccumulatedPaths = Set.empty,
           bsBatchStartTime = Nothing,
+          bsTimeoutVar = Nothing,
           bsRunning = True
         }
 
@@ -113,29 +113,37 @@ submitBatchRequest ::
   requestId ->
   [StorePath] ->
   m ()
-submitBatchRequest NarinfoBatchManager {nbmConfig, nbmState, nbmWorkAvailable, nbmCallback} requestId storePaths = liftIO $ do
+submitBatchRequest NarinfoBatchManager {nbmConfig, nbmState, nbmCallback} requestId storePaths = liftIO $ do
   if not (nboEnabled nbmConfig)
     then -- Batching disabled, call callback immediately
       nbmCallback requestId $ BatchResponse storePaths []
     else do
       -- Add request to pending queue
       now <- getCurrentTime
-      atomically $ do
-        modifyTVar' nbmState $ \batchState ->
-          let newPaths = Set.fromList storePaths
-              updatedPaths = bsAccumulatedPaths batchState <> newPaths
-              newRequest = BatchRequest requestId storePaths
-              newStartTime = case bsBatchStartTime batchState of
-                Nothing -> Just now
-                justTime -> justTime
-           in batchState
-                { bsPendingRequests = newRequest : bsPendingRequests batchState,
-                  bsAccumulatedPaths = updatedPaths,
-                  bsBatchStartTime = newStartTime
-                }
 
-        -- Signal that work is available
-        void $ tryPutTMVar nbmWorkAvailable ()
+      -- Check if we need to set up a timeout
+      batchState <- readTVarIO nbmState
+      let isFirstRequest = null (bsPendingRequests batchState)
+
+      updatedBatchState <-
+        if isFirstRequest && isNothing (bsTimeoutVar batchState)
+          then setBatchTimeout (nboMaxWaitTime nbmConfig) batchState
+          else return batchState
+
+      atomically $ do
+        let newPaths = Set.fromList storePaths
+            updatedPaths = bsAccumulatedPaths updatedBatchState <> newPaths
+            newRequest = BatchRequest requestId storePaths
+            newStartTime = case bsBatchStartTime updatedBatchState of
+              Nothing -> Just now
+              justTime -> justTime
+
+        writeTVar nbmState $
+          updatedBatchState
+            { bsPendingRequests = newRequest : bsPendingRequests updatedBatchState,
+              bsAccumulatedPaths = updatedPaths,
+              bsBatchStartTime = newStartTime
+            }
 
 -- | Start the batch processor thread
 startBatchProcessor ::
@@ -151,15 +159,88 @@ startBatchProcessor manager@NarinfoBatchManager {nbmProcessorThread} processBatc
 
 -- | Stop the batch processor
 stopBatchProcessor :: (MonadIO m) => NarinfoBatchManager requestId -> m ()
-stopBatchProcessor NarinfoBatchManager {nbmState, nbmWorkAvailable, nbmProcessorThread} = liftIO $ do
+stopBatchProcessor NarinfoBatchManager {nbmState, nbmProcessorThread} = liftIO $ do
   -- Signal shutdown
-  atomically $ do
-    modifyTVar' nbmState $ \batchState -> batchState {bsRunning = False}
-    void $ tryPutTMVar nbmWorkAvailable ()
+  atomically $ modifyTVar' nbmState $ \batchState -> batchState {bsRunning = False}
 
   -- Wait for processor thread to finish
   thread <- tryTakeMVar nbmProcessorThread
   for_ thread Async.wait
+
+-- | Start a timeout for the current batch
+startBatchTimeout :: NominalDiffTime -> IO (TVar Bool)
+startBatchTimeout delay = do
+  let delayMicros = ceiling (delay * 1000000) -- Convert to microseconds
+  registerDelay delayMicros
+
+-- | Update batch state to start tracking a timeout
+setBatchTimeout :: NominalDiffTime -> BatchState requestId -> IO (BatchState requestId)
+setBatchTimeout delay batchState = do
+  timeoutVar <- startBatchTimeout delay
+  return batchState {bsTimeoutVar = Just timeoutVar}
+
+-- | Check if the current batch has timed out
+isBatchTimedOut :: BatchState requestId -> STM Bool
+isBatchTimedOut batchState =
+  case bsTimeoutVar batchState of
+    Nothing -> return False
+    Just timeoutVar -> readTVar timeoutVar
+
+-- | Data representing a batch ready for processing
+data ReadyBatch requestId = ReadyBatch
+  { rbRequests :: ![BatchRequest requestId],
+    rbAllPaths :: ![StorePath],
+    rbBatchStartTime :: !(Maybe UTCTime)
+  }
+
+-- | Wait for a batch to be ready for processing or shutdown
+-- Returns Nothing if shutdown requested, Just batch if ready to process
+waitForBatchOrShutdown ::
+  NarinfoBatchOptions ->
+  TVar (BatchState requestId) ->
+  STM (Maybe (ReadyBatch requestId))
+waitForBatchOrShutdown config stateVar = do
+  batchState <- readTVar stateVar
+
+  -- Check for shutdown first
+  if not (bsRunning batchState)
+    then return Nothing
+    else do
+      -- Check if we have any pending requests
+      if null (bsPendingRequests batchState)
+        then retry -- No work, wait for requests
+        else do
+          -- We have requests, check if batch is ready
+          let pathCount = Set.size (bsAccumulatedPaths batchState)
+              sizeReady = pathCount >= nboMaxBatchSize config
+
+          -- Check timeout condition
+          timeoutReady <- isBatchTimedOut batchState
+
+          if sizeReady || timeoutReady
+            then do
+              -- Batch is ready, extract data and clear state
+              let requests = reverse (bsPendingRequests batchState)
+                  allPaths = Set.toList (bsAccumulatedPaths batchState)
+                  startTime = bsBatchStartTime batchState
+
+              -- Clear the batch state
+              writeTVar stateVar $
+                batchState
+                  { bsPendingRequests = [],
+                    bsAccumulatedPaths = Set.empty,
+                    bsBatchStartTime = Nothing,
+                    bsTimeoutVar = Nothing
+                  }
+
+              return $
+                Just
+                  ReadyBatch
+                    { rbRequests = requests,
+                      rbAllPaths = allPaths,
+                      rbBatchStartTime = startTime
+                    }
+            else retry -- Not ready yet, wait for timeout or more requests
 
 -- | Main batch processor loop
 runBatchProcessor ::
@@ -167,84 +248,36 @@ runBatchProcessor ::
   NarinfoBatchManager requestId ->
   ([StorePath] -> m ([StorePath], [StorePath])) ->
   m ()
-runBatchProcessor manager@NarinfoBatchManager {nbmConfig, nbmState, nbmWorkAvailable} processBatch = do
+runBatchProcessor manager@NarinfoBatchManager {nbmConfig, nbmState} processBatch = do
   loop
   where
     loop = do
-      -- Wait for work or timeout
-      shouldProcess <- liftIO $ atomically $ do
-        batchState <- readTVar nbmState
-        if not (bsRunning batchState)
-          then return Nothing -- Shutdown requested
-          else
-            if null (bsPendingRequests batchState)
-              then do
-                -- No work, wait for signal
-                takeTMVar nbmWorkAvailable
-                return $ Just False -- Check again
-              else do
-                -- We have work, check if we should process
-                return $ Just True
+      -- Wait for a batch to be ready or shutdown
+      maybeReady <- liftIO $ atomically $ waitForBatchOrShutdown nbmConfig nbmState
 
-      case shouldProcess of
-        Nothing -> return () -- Shutdown
-        Just False -> loop -- Check again
-        Just True -> do
-          -- Check if batch is ready
-          now <- liftIO getCurrentTime
-          ready <- liftIO $ atomically $ do
-            batchState <- readTVar nbmState
-            let pathCount = Set.size (bsAccumulatedPaths batchState)
-                timeElapsed = case bsBatchStartTime batchState of
-                  Nothing -> 0
-                  Just startTime -> now `diffUTCTime` startTime
+      case maybeReady of
+        Nothing -> return () -- Shutdown requested
+        Just readyBatch -> do
+          -- Process the ready batch
+          processReadyBatch manager processBatch readyBatch
+          loop
 
-            return $
-              pathCount >= nboMaxBatchSize nbmConfig
-                || timeElapsed >= nboMaxWaitTime nbmConfig
-
-          if ready
-            then do
-              -- Process the batch
-              processPendingBatch manager processBatch
-              loop
-            else do
-              -- Not ready yet, wait a bit
-              liftIO $ threadDelay 100000 -- 100ms
-              loop
-
--- | Process all pending requests as a single batch
-processPendingBatch ::
+-- | Process a ready batch
+processReadyBatch ::
   (MonadUnliftIO m, Katip.KatipContext m) =>
   NarinfoBatchManager requestId ->
   ([StorePath] -> m ([StorePath], [StorePath])) ->
+  ReadyBatch requestId ->
   m ()
-processPendingBatch NarinfoBatchManager {nbmState, nbmCallback} processBatch = do
-  -- Extract pending requests
-  (requests, allPaths, batchStartTime) <- liftIO $ atomically $ do
-    batchState <- readTVar nbmState
-    let requests = reverse (bsPendingRequests batchState) -- Process in FIFO order
-        allPaths = Set.toList (bsAccumulatedPaths batchState)
-        startTime = bsBatchStartTime batchState
-
-    -- Clear the state
-    writeTVar nbmState $
-      batchState
-        { bsPendingRequests = [],
-          bsAccumulatedPaths = Set.empty,
-          bsBatchStartTime = Nothing
-        }
-
-    return (requests, allPaths, startTime)
-
+processReadyBatch NarinfoBatchManager {nbmCallback} processBatch ReadyBatch {rbRequests, rbAllPaths, rbBatchStartTime} = do
   -- Process the batch if we have paths
-  unless (null allPaths) $ do
+  unless (null rbAllPaths) $ do
     processingStartTime <- liftIO getCurrentTime
 
     -- Log batch statistics
-    let requestCount = length requests
-        pathCount = length allPaths
-        waitTime = case batchStartTime of
+    let requestCount = length rbRequests
+        pathCount = length rbAllPaths
+        waitTime = case rbBatchStartTime of
           Nothing -> 0
           Just startTime -> processingStartTime `diffUTCTime` startTime
 
@@ -262,7 +295,7 @@ processPendingBatch NarinfoBatchManager {nbmState, nbmCallback} processBatch = d
           ]
 
     -- Query narinfo for all paths at once
-    (allPathsInClosure, missingPaths) <- processBatch allPaths
+    (allPathsInClosure, missingPaths) <- processBatch rbAllPaths
 
     processingEndTime <- liftIO getCurrentTime
     let processingTime = processingEndTime `diffUTCTime` processingStartTime
@@ -286,7 +319,7 @@ processPendingBatch NarinfoBatchManager {nbmState, nbmCallback} processBatch = d
         missingPathsSet = Set.fromList missingPaths
 
     -- Respond to each request using the manager's callback
-    liftIO $ forM_ requests $ \BatchRequest {brRequestId, brStorePaths} -> do
+    liftIO $ forM_ rbRequests $ \BatchRequest {brRequestId, brStorePaths} -> do
       -- Filter paths relevant to this request
       let requestPaths = filter (`Set.member` allPathsSet) brStorePaths
           requestMissing = filter (`Set.member` missingPathsSet) brStorePaths

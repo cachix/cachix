@@ -170,6 +170,7 @@ library
     , network
     , nix-narinfo
     , optparse-applicative
+    , pqueue
     , pretty-terminal
     , prettyprinter
     , process

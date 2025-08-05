@@ -550,6 +550,8 @@ batchConfigParser =
   NarinfoBatchOptions
     <$> narinfoBatchSizeOption
     <*> narinfoBatchTimeoutOption
+    <*> narinfoCacheTTLOption
+    <*> narinfoMaxCacheSizeOption
   where
     narinfoBatchSizeOption =
       option auto $
@@ -565,6 +567,21 @@ batchConfigParser =
           <> metavar "SECONDS"
           <> help "Maximum time to wait before processing a batch in seconds. Use 0 for immediate processing (no batching). (default: 2.0)"
           <> value (realToFrac (NarinfoBatch.nboMaxWaitTime NarinfoBatch.defaultNarinfoBatchOptions))
+
+    narinfoCacheTTLOption =
+      option auto $
+        long "narinfo-cache-ttl"
+          <> metavar "SECONDS"
+          <> help "Time-to-live for cached narinfo results in seconds. Use 0 to disable caching (default: 300.0)"
+          <> value (realToFrac (NarinfoBatch.nboCacheTTL NarinfoBatch.defaultNarinfoBatchOptions))
+          <> showDefault
+
+    narinfoMaxCacheSizeOption =
+      option auto $
+        long "narinfo-max-cache-size"
+          <> metavar "INT"
+          <> help "Maximum number of entries in the narinfo cache. Use 0 for unlimited (default: 0)"
+          <> value (NarinfoBatch.nboMaxCacheSize NarinfoBatch.defaultNarinfoBatchOptions)
           <> showDefault
 
 daemonPushOptionsParser :: Parser DaemonPushOptions

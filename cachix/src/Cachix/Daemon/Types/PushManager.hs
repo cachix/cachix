@@ -18,6 +18,7 @@ where
 
 import Cachix.Client.Push (PushParams)
 import Cachix.Daemon.Log qualified as Log
+import Cachix.Daemon.NarinfoBatch (NarinfoBatchManager)
 import Cachix.Daemon.Protocol qualified as Protocol
 import Cachix.Daemon.Types.Log (Logger)
 import Cachix.Daemon.Types.PushEvent (PushEvent (..))
@@ -58,6 +59,8 @@ data PushManagerEnv = PushManagerEnv
     pmLastEventTimestamp :: TVar UTCTime,
     -- | The number of pending (uncompleted) jobs.
     pmPendingJobCount :: TVar Int,
+    -- | Manager for batching narinfo queries
+    pmNarinfoBatchManager :: NarinfoBatchManager,
     pmLogger :: Logger
   }
 

@@ -51,13 +51,11 @@ defaultBatchConfig =
     }
 
 -- | A request to check narinfo for store paths
-data BatchRequest = BatchRequest
+data BatchRequest requestId = BatchRequest
   { -- | Unique identifier for this request
-    brRequestId :: !Text,
+    brRequestId :: !requestId,
     -- | Store paths to check
-    brStorePaths :: ![StorePath],
-    -- | Response channel for this request
-    brResponseChan :: !(TMVar BatchResponse)
+    brStorePaths :: ![StorePath]
   }
 
 -- | Response to a batch request
@@ -70,9 +68,9 @@ data BatchResponse = BatchResponse
   deriving stock (Eq, Show)
 
 -- | Internal state of the batch manager
-data BatchState = BatchState
+data BatchState requestId = BatchState
   { -- | Accumulated requests waiting to be processed
-    bsPendingRequests :: ![BatchRequest],
+    bsPendingRequests :: ![BatchRequest requestId],
     -- | All unique paths from pending requests
     bsAccumulatedPaths :: !(Set StorePath),
     -- | Time when the first request in this batch was added
@@ -82,20 +80,22 @@ data BatchState = BatchState
   }
 
 -- | Manager for batching narinfo queries
-data NarinfoBatchManager = NarinfoBatchManager
+data NarinfoBatchManager requestId = NarinfoBatchManager
   { -- | Configuration
     nbmConfig :: !BatchConfig,
     -- | Internal state
-    nbmState :: !(TVar BatchState),
+    nbmState :: !(TVar (BatchState requestId)),
     -- | Condition variable to signal new work
     nbmWorkAvailable :: !(TMVar ()),
     -- | Handle to the processor thread
-    nbmProcessorThread :: !(MVar (Async ()))
+    nbmProcessorThread :: !(MVar (Async ())),
+    -- | Callback to handle batch responses
+    nbmCallback :: !(requestId -> BatchResponse -> IO ())
   }
 
 -- | Create a new narinfo batch manager
-newNarinfoBatchManager :: (MonadIO m) => BatchConfig -> m NarinfoBatchManager
-newNarinfoBatchManager nbmConfig = liftIO $ do
+newNarinfoBatchManager :: (MonadIO m) => BatchConfig -> (requestId -> BatchResponse -> IO ()) -> m (NarinfoBatchManager requestId)
+newNarinfoBatchManager nbmConfig nbmCallback = liftIO $ do
   nbmState <- newTVarIO initialState
   nbmWorkAvailable <- newEmptyTMVarIO
   nbmProcessorThread <- newEmptyMVar
@@ -112,25 +112,22 @@ newNarinfoBatchManager nbmConfig = liftIO $ do
 -- | Submit a request to the batch manager
 submitBatchRequest ::
   (MonadIO m) =>
-  NarinfoBatchManager ->
-  Text ->
+  NarinfoBatchManager requestId ->
+  requestId ->
   [StorePath] ->
-  m BatchResponse
-submitBatchRequest NarinfoBatchManager {nbmConfig, nbmState, nbmWorkAvailable} requestId storePaths = liftIO $ do
+  m ()
+submitBatchRequest NarinfoBatchManager {nbmConfig, nbmState, nbmWorkAvailable, nbmCallback} requestId storePaths = liftIO $ do
   if not (bcEnabled nbmConfig)
-    then -- Batching disabled, return empty response
-      return $ BatchResponse storePaths []
+    then -- Batching disabled, call callback immediately
+      nbmCallback requestId $ BatchResponse storePaths []
     else do
-      -- Create response channel
-      responseChan <- newEmptyTMVarIO
-
       -- Add request to pending queue
       now <- getCurrentTime
       atomically $ do
         modifyTVar' nbmState $ \state ->
           let newPaths = Set.fromList storePaths
               updatedPaths = bsAccumulatedPaths state <> newPaths
-              newRequest = BatchRequest requestId storePaths responseChan
+              newRequest = BatchRequest requestId storePaths
               newStartTime = case bsBatchStartTime state of
                 Nothing -> Just now
                 justTime -> justTime
@@ -143,13 +140,10 @@ submitBatchRequest NarinfoBatchManager {nbmConfig, nbmState, nbmWorkAvailable} r
         -- Signal that work is available
         void $ tryPutTMVar nbmWorkAvailable ()
 
-      -- Wait for response
-      atomically $ readTMVar responseChan
-
 -- | Start the batch processor thread
 startBatchProcessor ::
   (MonadUnliftIO m, MonadMask m, Katip.KatipContext m) =>
-  NarinfoBatchManager ->
+  NarinfoBatchManager requestId ->
   -- | Function to process a batch of paths
   ([StorePath] -> m ([StorePath], [StorePath])) ->
   m ()
@@ -159,7 +153,7 @@ startBatchProcessor manager@NarinfoBatchManager {nbmProcessorThread} processBatc
   liftIO $ putMVar nbmProcessorThread thread
 
 -- | Stop the batch processor
-stopBatchProcessor :: (MonadIO m) => NarinfoBatchManager -> m ()
+stopBatchProcessor :: (MonadIO m) => NarinfoBatchManager requestId -> m ()
 stopBatchProcessor NarinfoBatchManager {nbmState, nbmWorkAvailable, nbmProcessorThread} = liftIO $ do
   -- Signal shutdown
   atomically $ do
@@ -173,7 +167,7 @@ stopBatchProcessor NarinfoBatchManager {nbmState, nbmWorkAvailable, nbmProcessor
 -- | Main batch processor loop
 runBatchProcessor ::
   (MonadUnliftIO m, MonadMask m, Katip.KatipContext m) =>
-  NarinfoBatchManager ->
+  NarinfoBatchManager requestId ->
   ([StorePath] -> m ([StorePath], [StorePath])) ->
   m ()
 runBatchProcessor manager@NarinfoBatchManager {nbmConfig, nbmState, nbmWorkAvailable} processBatch = do
@@ -225,10 +219,10 @@ runBatchProcessor manager@NarinfoBatchManager {nbmConfig, nbmState, nbmWorkAvail
 -- | Process all pending requests as a single batch
 processPendingBatch ::
   (MonadUnliftIO m, MonadMask m, Katip.KatipContext m) =>
-  NarinfoBatchManager ->
+  NarinfoBatchManager requestId ->
   ([StorePath] -> m ([StorePath], [StorePath])) ->
   m ()
-processPendingBatch NarinfoBatchManager {nbmState} processBatch = do
+processPendingBatch NarinfoBatchManager {nbmState, nbmCallback} processBatch = do
   -- Extract pending requests
   (requests, allPaths, batchStartTime) <- liftIO $ atomically $ do
     state <- readTVar nbmState
@@ -294,11 +288,12 @@ processPendingBatch NarinfoBatchManager {nbmState} processBatch = do
     let allPathsSet = Set.fromList allPathsInClosure
         missingPathsSet = Set.fromList missingPaths
 
-    -- Respond to each request
-    liftIO $ forM_ requests $ \BatchRequest {brStorePaths, brResponseChan} -> do
+    -- Respond to each request using the manager's callback
+    liftIO $ forM_ requests $ \BatchRequest {brRequestId, brStorePaths} -> do
       -- Filter paths relevant to this request
       let requestPaths = filter (`Set.member` allPathsSet) brStorePaths
           requestMissing = filter (`Set.member` missingPathsSet) brStorePaths
           response = BatchResponse requestPaths requestMissing
 
-      atomically $ putTMVar brResponseChan response
+      -- Call the manager's callback with request ID and response
+      nbmCallback brRequestId response

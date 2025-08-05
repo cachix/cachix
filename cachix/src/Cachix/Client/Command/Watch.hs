@@ -17,7 +17,7 @@ import Cachix.Client.OptionsParser
 import Cachix.Client.Push
 import Cachix.Client.WatchStore qualified as WatchStore
 import Cachix.Daemon qualified as Daemon
-import Cachix.Daemon.NarinfoBatch qualified as NarinfoBatch
+import Cachix.Daemon.NarinfoBatch (NarinfoBatchOptions)
 import Cachix.Daemon.PostBuildHook qualified as Daemon.PostBuildHook
 import Cachix.Daemon.Progress qualified as Daemon.Progress
 import Cachix.Daemon.Types
@@ -49,18 +49,18 @@ watchStore env opts name = do
 --
 -- In auto mode, registers a post-build hook if the user is trusted.
 -- Otherwise, falls back to watching the entire Nix store.
-watchExec :: Env -> WatchExecMode -> PushOptions -> BinaryCacheName -> Text -> [Text] -> IO ()
-watchExec env watchExecMode pushOptions cacheName cmd args = do
+watchExec :: Env -> WatchExecMode -> PushOptions -> NarinfoBatchOptions -> BinaryCacheName -> Text -> [Text] -> IO ()
+watchExec env watchExecMode pushOptions batchOptions cacheName cmd args = do
   case watchExecMode of
     PostBuildHook ->
-      watchExecDaemon env pushOptions cacheName cmd args
+      watchExecDaemon env pushOptions batchOptions cacheName cmd args
     Store ->
       watchExecStore env pushOptions cacheName cmd args
     Auto -> do
       nixEnv <- InstallationMode.getNixEnv
 
       if InstallationMode.isTrusted nixEnv
-        then watchExecDaemon env pushOptions cacheName cmd args
+        then watchExecDaemon env pushOptions batchOptions cacheName cmd args
         else do
           putErrText fallbackWarning
           watchExecStore env pushOptions cacheName cmd args
@@ -71,15 +71,15 @@ watchExec env watchExecMode pushOptions cacheName cmd args = do
 -- | Run a command and push any new paths to the binary cache.
 --
 -- Requires the user to be a trusted user in a multi-user installation.
-watchExecDaemon :: Env -> PushOptions -> BinaryCacheName -> Text -> [Text] -> IO ()
-watchExecDaemon env pushOpts cacheName cmd args =
+watchExecDaemon :: Env -> PushOptions -> NarinfoBatchOptions -> BinaryCacheName -> Text -> [Text] -> IO ()
+watchExecDaemon env pushOpts batchOptions cacheName cmd args =
   Daemon.PostBuildHook.withSetup Nothing $ \hookEnv ->
     withTempFile (Daemon.PostBuildHook.tempDir hookEnv) "daemon-log-capture" $ \_ logHandle ->
       withStore $ \store -> do
         let daemonOptions =
               DaemonOptions
                 { daemonSocketPath = Just (Daemon.PostBuildHook.daemonSock hookEnv),
-                  daemonNarinfoBatchOptions = NarinfoBatch.defaultNarinfoBatchOptions,
+                  daemonNarinfoBatchOptions = batchOptions,
                   allowRemoteStop = False
                 }
         daemon <- Daemon.new env store daemonOptions (Just logHandle) pushOpts cacheName

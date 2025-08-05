@@ -36,6 +36,7 @@ module Cachix.Daemon.PushManager
 
     -- * Helpers
     atomicallyWithTimeout,
+    processBatchedNarinfo,
   )
 where
 
@@ -46,6 +47,8 @@ import Cachix.Client.OptionsParser as Client.OptionsParser
   )
 import Cachix.Client.Push as Client.Push
 import Cachix.Client.Retry (retryAll)
+import Cachix.Daemon.NarinfoBatch (NarinfoBatchManager)
+import Cachix.Daemon.NarinfoBatch qualified as NarinfoBatch
 import Cachix.Daemon.Protocol qualified as Protocol
 import Cachix.Daemon.PushManager.PushJob qualified as PushJob
 import Cachix.Daemon.Types.Log (Logger)
@@ -75,8 +78,8 @@ import Servant.Auth.Client
 import Servant.Conduit ()
 import UnliftIO.QSem qualified as QSem
 
-newPushManagerEnv :: (MonadIO m) => PushOptions -> PushParams PushManager () -> OnPushEvent -> Logger -> m PushManagerEnv
-newPushManagerEnv pushOptions pmPushParams onPushEvent pmLogger = liftIO $ do
+newPushManagerEnv :: (MonadIO m) => PushOptions -> PushParams PushManager () -> OnPushEvent -> NarinfoBatchManager -> Logger -> m PushManagerEnv
+newPushManagerEnv pushOptions pmPushParams onPushEvent pmNarinfoBatchManager pmLogger = liftIO $ do
   pmPushJobs <- newTVarIO mempty
   pmPendingJobCount <- newTVarIO 0
   pmStorePathIndex <- newTVarIO mempty
@@ -289,7 +292,15 @@ runResolveClosureTask pushParams pushId =
         let sps = Protocol.storePaths (pushRequest pushJob)
             store = pushParamsStore pushParams
         normalized <- mapM (normalizeStorePath store) sps
-        (allStorePaths, missingStorePaths) <- getMissingPathsForClosure pushParams (catMaybes normalized)
+        let validPaths = catMaybes normalized
+
+        -- Use batch manager for narinfo queries
+        batchManager <- asks pmNarinfoBatchManager
+        batchResponse <- liftIO $ NarinfoBatch.submitBatchRequest batchManager (show pushId) validPaths
+
+        let allStorePaths = NarinfoBatch.brAllPaths batchResponse
+            missingStorePaths = NarinfoBatch.brMissingPaths batchResponse
+
         storePathsToPush <- pushOnClosureAttempt pushParams allStorePaths missingStorePaths
 
         resolvedClosure <- do
@@ -469,6 +480,12 @@ storeToFilePath :: (MonadIO m) => Store -> StorePath -> m FilePath
 storeToFilePath store storePath = do
   fp <- liftIO $ storePathToPath store storePath
   pure $ toS fp
+
+-- | Process a batch of store paths for narinfo queries
+processBatchedNarinfo :: [StorePath] -> PushManager ([StorePath], [StorePath])
+processBatchedNarinfo storePaths = do
+  pushParams <- asks pmPushParams
+  getMissingPathsForClosure pushParams storePaths
 
 -- | Canonicalize and validate a store path
 normalizeStorePath :: (MonadIO m) => Store -> FilePath -> m (Maybe StorePath)

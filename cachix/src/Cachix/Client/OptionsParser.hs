@@ -45,6 +45,26 @@ import Protolude hiding (toS)
 import Protolude.Conv
 import Prelude qualified
 
+-- | Create enable/disable flags with --[no-] syntax
+enableDisableFlag ::
+  -- | Default value when no flag is provided
+  Bool ->
+  -- | Flag name (without -- prefix)
+  Prelude.String ->
+  -- | Help text describing what the flag does
+  Prelude.String ->
+  Parser Bool
+enableDisableFlag defaultValue flagName helpText =
+  Prelude.last
+    <$> some
+      ( flag' True (hidden <> internal <> long flagName <> help ("Enable " <> helpText))
+          <|> flag' False (hidden <> internal <> long ("no-" <> flagName) <> help ("Disable " <> helpText))
+          <|> flag' True (long ("[no-]" <> flagName) <> help ("Enable/disable " <> helpText <> " (default: " <> defaultText <> ")"))
+      )
+    <|> pure defaultValue
+  where
+    defaultText = if defaultValue then "enabled" else "disabled"
+
 data Flags = Flags
   { configPath :: Config.ConfigPath,
     hostname :: Maybe URI,
@@ -147,7 +167,8 @@ data DaemonCommand
   deriving (Show)
 
 data DaemonOptions = DaemonOptions
-  { daemonSocketPath :: Maybe FilePath
+  { daemonSocketPath :: Maybe FilePath,
+    allowRemoteStop :: Bool
   }
   deriving (Show)
 
@@ -503,13 +524,15 @@ daemonWatchExec =
 
 daemonOptionsParser :: Parser DaemonOptions
 daemonOptionsParser =
-  DaemonOptions <$> socketOption
+  DaemonOptions <$> socketOption <*> remoteStopOption
   where
     socketOption =
       optional . strOption $
         long "socket"
           <> short 's'
           <> metavar "SOCKET"
+    remoteStopOption =
+      enableDisableFlag True "remote-stop" "the remote stop command which allows clients to remotely shut down the daemon. Remote stop should be disabled in environments where the lifecycle of the daemon is handled by a service manager, like systemd."
 
 daemonPushOptionsParser :: Parser DaemonPushOptions
 daemonPushOptionsParser =

@@ -75,7 +75,7 @@ watchExecDaemon env pushOpts cacheName cmd args =
   Daemon.PostBuildHook.withSetup Nothing $ \hookEnv ->
     withTempFile (Daemon.PostBuildHook.tempDir hookEnv) "daemon-log-capture" $ \_ logHandle ->
       withStore $ \store -> do
-        let daemonOptions = DaemonOptions {daemonSocketPath = Just (Daemon.PostBuildHook.daemonSock hookEnv)}
+        let daemonOptions = DaemonOptions {daemonSocketPath = Just (Daemon.PostBuildHook.daemonSock hookEnv), allowRemoteStop = False}
         daemon <- Daemon.new env store daemonOptions (Just logHandle) pushOpts cacheName
 
         exitCode <-

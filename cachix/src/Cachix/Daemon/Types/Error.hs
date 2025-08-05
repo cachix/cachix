@@ -20,6 +20,8 @@ data DaemonError
     DaemonSocketError
   | -- | Failed to push some store paths
     DaemonPushFailure
+  | -- | A command is not supported by the daemon configuration
+    DaemonUnsupportedCommand Text
   deriving stock (Show, Eq)
 
 instance Exception DaemonError where
@@ -31,6 +33,7 @@ instance Exception DaemonError where
         unlines ["The daemon encountered an internal event loop error:", "", toS (displayException eventLoopError)]
       DaemonSocketError -> "There was an error with the socket"
       DaemonPushFailure -> "Failed to push some store paths"
+      DaemonUnsupportedCommand msg -> toS msg
 
 -- | A wrapper for SomeException that implements equality.
 newtype UnhandledException
@@ -54,6 +57,7 @@ class HasExitCode a where
 instance HasExitCode DaemonError where
   toExitCode err = ExitFailure $ case err of
     DaemonPushFailure -> 3
+    DaemonUnsupportedCommand _ -> 2
     _remainingErrors -> 1
 
 instance (HasExitCode a) => HasExitCode (Maybe a) where

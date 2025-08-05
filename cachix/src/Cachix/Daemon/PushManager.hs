@@ -82,8 +82,8 @@ import Servant.Auth.Client
 import Servant.Conduit ()
 import UnliftIO.QSem qualified as QSem
 
-newPushManagerEnv :: (MonadIO m) => PushOptions -> PushParams PushManager () -> OnPushEvent -> Logger -> NarinfoBatch.NarinfoBatchOptions -> m PushManagerEnv
-newPushManagerEnv pushOptions pmPushParams onPushEvent pmLogger batchConfig = liftIO $ do
+newPushManagerEnv :: (MonadIO m) => PushOptions -> NarinfoBatch.NarinfoBatchOptions -> PushParams PushManager () -> OnPushEvent -> Logger -> m PushManagerEnv
+newPushManagerEnv pushOptions batchOptions pmPushParams onPushEvent pmLogger = liftIO $ do
   pmPushJobs <- newTVarIO mempty
   pmPendingJobCount <- newTVarIO 0
   pmStorePathIndex <- newTVarIO mempty
@@ -99,7 +99,7 @@ newPushManagerEnv pushOptions pmPushParams onPushEvent pmLogger batchConfig = li
           case result of
             Just True -> return ()
             _ -> retry -- Queue is full, keep trying
-  pmNarinfoBatchManager <- NarinfoBatch.newNarinfoBatchManager batchConfig batchCallback
+  pmNarinfoBatchManager <- NarinfoBatch.newNarinfoBatchManager batchOptions batchCallback
 
   return $ PushManagerEnv {..}
 

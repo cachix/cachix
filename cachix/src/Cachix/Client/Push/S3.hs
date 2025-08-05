@@ -23,7 +23,7 @@ import Data.ByteArray.Encoding (Base (..), convertToBase)
 import Data.Conduit (ConduitT, handleC, (.|))
 import Data.Conduit.ByteString (ChunkSize, chunkStream)
 import Data.Conduit.Combinators qualified as CC
-import Data.Conduit.ConcurrentMap (concurrentMapM)
+import Data.Conduit.ConcurrentMap (concurrentMapM_)
 import Data.List (lookup)
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.UUID (UUID)
@@ -67,7 +67,7 @@ uploadMultipart env authToken cacheName options = do
     Right (Multipart.CreateMultipartUploadResponse {narId, uploadId}) -> do
       handleC (abortMultipartUpload narId uploadId) $
         chunkStream (Just (chunkSize options))
-          .| concurrentMapM (numConcurrentChunks options) outputBufferSize (uploadPart narId uploadId)
+          .| concurrentMapM_ (numConcurrentChunks options) outputBufferSize (uploadPart narId uploadId)
           .| completeMultipartUpload narId uploadId
   where
     -- The size of the temporary output buffer.

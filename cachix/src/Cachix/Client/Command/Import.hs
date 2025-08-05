@@ -25,7 +25,7 @@ import Conduit
 import Control.Retry (defaultRetryStatus)
 import Data.Attoparsec.Text qualified
 import Data.Conduit.Combinators qualified as C
-import Data.Conduit.ConcurrentMap (concurrentMapM)
+import Data.Conduit.ConcurrentMap (concurrentMapM_)
 import Data.Conduit.List qualified as CL
 import Data.Generics.Labels ()
 import Data.Text qualified as T
@@ -74,7 +74,7 @@ import' env pushOptions name s3uri = do
         .| CL.concat
         .| CL.map (^. object_key)
         .| CL.filter (T.isSuffixOf ".narinfo" . Amazonka.Data.Text.toText)
-        .| concurrentMapM (numJobs pushOptions) (numJobs pushOptions * 2) (uploadNarinfo awsEnv)
+        .| concurrentMapM_ (numJobs pushOptions) (numJobs pushOptions * 2) (uploadNarinfo awsEnv)
         .| CL.sinkNull
   putErrText "All done."
   where

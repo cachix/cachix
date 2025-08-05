@@ -32,9 +32,8 @@ data NarinfoBatchOptions = NarinfoBatchOptions
   { -- | Maximum number of paths to accumulate before triggering a batch
     nboMaxBatchSize :: !Int,
     -- | Maximum time to wait before triggering a batch (in seconds)
-    nboMaxWaitTime :: !NominalDiffTime,
-    -- | Whether the batch processor is enabled
-    nboEnabled :: !Bool
+    -- Use 0 for immediate processing (no batching)
+    nboMaxWaitTime :: !NominalDiffTime
   }
   deriving stock (Eq, Show)
 
@@ -43,8 +42,7 @@ defaultNarinfoBatchOptions :: NarinfoBatchOptions
 defaultNarinfoBatchOptions =
   NarinfoBatchOptions
     { nboMaxBatchSize = 100,
-      nboMaxWaitTime = 2.0, -- 2 seconds
-      nboEnabled = True
+      nboMaxWaitTime = 2.0 -- 2 seconds
     }
 
 -- | A request to check narinfo for store paths
@@ -113,37 +111,33 @@ submitBatchRequest ::
   requestId ->
   [StorePath] ->
   m ()
-submitBatchRequest NarinfoBatchManager {nbmConfig, nbmState, nbmCallback} requestId storePaths = liftIO $ do
-  if not (nboEnabled nbmConfig)
-    then -- Batching disabled, call callback immediately
-      nbmCallback requestId $ BatchResponse storePaths []
-    else do
-      -- Add request to pending queue
-      now <- getCurrentTime
+submitBatchRequest NarinfoBatchManager {nbmConfig, nbmState} requestId storePaths = liftIO $ do
+  -- Add request to pending queue
+  now <- getCurrentTime
 
-      -- Check if we need to set up a timeout
-      batchState <- readTVarIO nbmState
-      let isFirstRequest = null (bsPendingRequests batchState)
+  -- Check if we need to set up a timeout
+  batchState <- readTVarIO nbmState
+  let isFirstRequest = null (bsPendingRequests batchState)
 
-      updatedBatchState <-
-        if isFirstRequest && isNothing (bsTimeoutVar batchState)
-          then setBatchTimeout (nboMaxWaitTime nbmConfig) batchState
-          else return batchState
+  updatedBatchState <-
+    if isFirstRequest && isNothing (bsTimeoutVar batchState) && nboMaxWaitTime nbmConfig > 0
+      then setBatchTimeout (nboMaxWaitTime nbmConfig) batchState
+      else return batchState
 
-      atomically $ do
-        let newPaths = Set.fromList storePaths
-            updatedPaths = bsAccumulatedPaths updatedBatchState <> newPaths
-            newRequest = BatchRequest requestId storePaths
-            newStartTime = case bsBatchStartTime updatedBatchState of
-              Nothing -> Just now
-              justTime -> justTime
+  atomically $ do
+    let newPaths = Set.fromList storePaths
+        updatedPaths = bsAccumulatedPaths updatedBatchState <> newPaths
+        newRequest = BatchRequest requestId storePaths
+        newStartTime = case bsBatchStartTime updatedBatchState of
+          Nothing -> Just now
+          justTime -> justTime
 
-        writeTVar nbmState $
-          updatedBatchState
-            { bsPendingRequests = newRequest : bsPendingRequests updatedBatchState,
-              bsAccumulatedPaths = updatedPaths,
-              bsBatchStartTime = newStartTime
-            }
+    writeTVar nbmState $
+      updatedBatchState
+        { bsPendingRequests = newRequest : bsPendingRequests updatedBatchState,
+          bsAccumulatedPaths = updatedPaths,
+          bsBatchStartTime = newStartTime
+        }
 
 -- | Start the batch processor thread
 startBatchProcessor ::
@@ -213,11 +207,13 @@ waitForBatchOrShutdown config stateVar = do
           -- We have requests, check if batch is ready
           let pathCount = Set.size (bsAccumulatedPaths batchState)
               sizeReady = pathCount >= nboMaxBatchSize config
+              -- If timeout is 0, process immediately
+              immediateMode = nboMaxWaitTime config <= 0
 
           -- Check timeout condition
           timeoutReady <- isBatchTimedOut batchState
 
-          if sizeReady || timeoutReady
+          if sizeReady || timeoutReady || immediateMode
             then do
               -- Batch is ready, extract data and clear state
               let requests = reverse (bsPendingRequests batchState)

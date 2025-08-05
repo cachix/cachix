@@ -182,6 +182,11 @@ stop _env daemonOptions =
                 case exitCode exitStatus of
                   0 -> exitSuccess
                   code -> exitWith (ExitFailure code)
+              Protocol.DaemonError errorMsg -> do
+                case errorMsg of
+                  Protocol.UnsupportedCommand errMsg -> do
+                    putErrText $ toS errMsg
+                    exitWith (ExitFailure 2)
               _ -> loop
 
 withDaemonConn :: Maybe FilePath -> (Socket.Socket -> IO a) -> IO a

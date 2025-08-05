@@ -96,7 +96,7 @@ new daemonEnv nixStore daemonOptions daemonLogHandle daemonPushOptions daemonCac
 
   daemonWorkerThreads <- newEmptyMVar
 
-  return $ DaemonEnv {..}
+  return $ DaemonEnv {daemonOptions = daemonOptions, ..}
 
 -- | Configure and run the daemon as a CLI command.
 -- Equivalent to running 'withStore', new', and 'run', together with some signal handling.
@@ -145,7 +145,13 @@ run daemon = fmap join <$> runDaemon daemon $ do
               chan <- liftIO $ subscribe daemon (Just pushId)
               void $ liftIO $ Async.async $ publishToClient socketId chan daemon
             Nothing -> Katip.logFM Katip.ErrorS "Failed to queue push request"
-        ClientStop -> EventLoop.send daemonEventLoop ShutdownGracefully
+        ClientStop -> do
+          DaemonEnv {daemonOptions = opts, daemonClients = clients} <- ask
+          if Options.allowRemoteStop opts
+            then EventLoop.send daemonEventLoop ShutdownGracefully
+            else do
+              let errorMsg = "Remote stop is disabled on this daemon"
+              SocketStore.sendAll socketId (Protocol.newMessage (Protocol.DaemonError (Protocol.UnsupportedCommand errorMsg))) clients
         _ -> return ()
     ShutdownGracefully -> do
       Katip.logFM Katip.InfoS "Shutting down daemon..."

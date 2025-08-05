@@ -12,7 +12,7 @@ where
 
 import Cachix.Client.Config.Orphans ()
 import Cachix.Client.Env as Env
-import Cachix.Client.OptionsParser (PushOptions)
+import Cachix.Client.OptionsParser (DaemonOptions, PushOptions)
 import Cachix.Daemon.Log qualified as Log
 import Cachix.Daemon.Protocol qualified as Protocol
 import Cachix.Daemon.Subscription (SubscriptionManager)
@@ -73,7 +73,9 @@ data DaemonEnv = DaemonEnv
     -- | Logging env
     daemonLogger :: Logger,
     -- | The PID of the daemon process
-    daemonPid :: ProcessID
+    daemonPid :: ProcessID,
+    -- | Daemon configuration options
+    daemonOptions :: DaemonOptions
   }
 
 newtype Daemon a = Daemon

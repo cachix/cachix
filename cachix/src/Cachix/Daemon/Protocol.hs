@@ -1,6 +1,7 @@
 module Cachix.Daemon.Protocol
   ( ClientMessage (..),
     DaemonMessage (..),
+    DaemonErrorMessage (..),
     DaemonExitStatus (..),
     PushRequestId,
     newPushRequestId,
@@ -29,6 +30,13 @@ data DaemonMessage
   = DaemonPong
   | DaemonExit !DaemonExitStatus
   | DaemonPushEvent PushEvent
+  | DaemonError !DaemonErrorMessage
+  deriving stock (Eq, Generic, Show)
+  deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)
+
+-- | Error messages that the daemon can send to the client
+data DaemonErrorMessage
+  = UnsupportedCommand !Text
   deriving stock (Eq, Generic, Show)
   deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)
 

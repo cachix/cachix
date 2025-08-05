@@ -6,8 +6,8 @@ module Cachix.Daemon.NarinfoBatch
     NarinfoBatchManager,
     BatchRequest (..),
     BatchResponse (..),
-    BatchConfig (..),
-    defaultBatchConfig,
+    NarinfoBatchOptions (..),
+    defaultNarinfoBatchOptions,
 
     -- * Operations
     newNarinfoBatchManager,
@@ -28,23 +28,23 @@ import Protolude
 import UnliftIO.Async qualified as Async
 
 -- | Configuration for the narinfo batch manager
-data BatchConfig = BatchConfig
+data NarinfoBatchOptions = NarinfoBatchOptions
   { -- | Maximum number of paths to accumulate before triggering a batch
-    bcMaxBatchSize :: !Int,
+    nboMaxBatchSize :: !Int,
     -- | Maximum time to wait before triggering a batch (in seconds)
-    bcMaxWaitTime :: !NominalDiffTime,
+    nboMaxWaitTime :: !NominalDiffTime,
     -- | Whether the batch processor is enabled
-    bcEnabled :: !Bool
+    nboEnabled :: !Bool
   }
   deriving stock (Eq, Show)
 
 -- | Default configuration with reasonable values
-defaultBatchConfig :: BatchConfig
-defaultBatchConfig =
-  BatchConfig
-    { bcMaxBatchSize = 100,
-      bcMaxWaitTime = 2.0, -- 2 seconds
-      bcEnabled = True
+defaultNarinfoBatchOptions :: NarinfoBatchOptions
+defaultNarinfoBatchOptions =
+  NarinfoBatchOptions
+    { nboMaxBatchSize = 100,
+      nboMaxWaitTime = 2.0, -- 2 seconds
+      nboEnabled = True
     }
 
 -- | A request to check narinfo for store paths
@@ -79,7 +79,7 @@ data BatchState requestId = BatchState
 -- | Manager for batching narinfo queries
 data NarinfoBatchManager requestId = NarinfoBatchManager
   { -- | Configuration
-    nbmConfig :: !BatchConfig,
+    nbmConfig :: !NarinfoBatchOptions,
     -- | Internal state
     nbmState :: !(TVar (BatchState requestId)),
     -- | Condition variable to signal new work
@@ -91,7 +91,7 @@ data NarinfoBatchManager requestId = NarinfoBatchManager
   }
 
 -- | Create a new narinfo batch manager
-newNarinfoBatchManager :: (MonadIO m) => BatchConfig -> (requestId -> BatchResponse -> IO ()) -> m (NarinfoBatchManager requestId)
+newNarinfoBatchManager :: (MonadIO m) => NarinfoBatchOptions -> (requestId -> BatchResponse -> IO ()) -> m (NarinfoBatchManager requestId)
 newNarinfoBatchManager nbmConfig nbmCallback = liftIO $ do
   nbmState <- newTVarIO initialState
   nbmWorkAvailable <- newEmptyTMVarIO
@@ -114,7 +114,7 @@ submitBatchRequest ::
   [StorePath] ->
   m ()
 submitBatchRequest NarinfoBatchManager {nbmConfig, nbmState, nbmWorkAvailable, nbmCallback} requestId storePaths = liftIO $ do
-  if not (bcEnabled nbmConfig)
+  if not (nboEnabled nbmConfig)
     then -- Batching disabled, call callback immediately
       nbmCallback requestId $ BatchResponse storePaths []
     else do
@@ -200,8 +200,8 @@ runBatchProcessor manager@NarinfoBatchManager {nbmConfig, nbmState, nbmWorkAvail
                   Just startTime -> now `diffUTCTime` startTime
 
             return $
-              pathCount >= bcMaxBatchSize nbmConfig
-                || timeElapsed >= bcMaxWaitTime nbmConfig
+              pathCount >= nboMaxBatchSize nbmConfig
+                || timeElapsed >= nboMaxWaitTime nbmConfig
 
           if ready
             then do

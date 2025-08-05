@@ -150,7 +150,7 @@ run daemon = fmap join <$> runDaemon daemon $ do
             Nothing -> Katip.logFM Katip.ErrorS "Failed to queue push request"
         ClientStop -> do
           DaemonEnv {daemonOptions = opts, daemonClients = clients} <- ask
-          if Options.allowRemoteStop opts
+          if Options.daemonAllowRemoteStop opts
             then EventLoop.send daemonEventLoop ShutdownGracefully
             else do
               let errorMsg = "Remote stop is disabled on this daemon"

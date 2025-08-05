@@ -21,7 +21,6 @@ import Cachix.Client.Push
 import Cachix.Daemon.EventLoop qualified as EventLoop
 import Cachix.Daemon.Listen as Listen
 import Cachix.Daemon.Log qualified as Log
-import Cachix.Daemon.NarinfoBatch qualified as NarinfoBatch
 import Cachix.Daemon.Protocol as Protocol
 import Cachix.Daemon.Push as Push
 import Cachix.Daemon.PushManager qualified as PushManager
@@ -47,7 +46,6 @@ import System.Environment (lookupEnv)
 import System.IO.Error (isResourceVanishedError)
 import System.Posix.Process (getProcessID)
 import System.Posix.Signals qualified as Signal
-import Text.Read qualified
 import UnliftIO (MonadUnliftIO, withRunInIO)
 import UnliftIO.Async qualified as Async
 import UnliftIO.Exception (bracket)

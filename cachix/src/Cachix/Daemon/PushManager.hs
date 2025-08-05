@@ -114,7 +114,7 @@ stopPushManager timeoutOptions PushManagerEnv {..} = do
   atomically $ closeTBMQueue pmTaskQueue
 
 -- | Start the batch processor for narinfo queries
-startBatchProcessor :: (MonadUnliftIO m, E.MonadMask m, Katip.KatipContext m) => PushManagerEnv -> m ()
+startBatchProcessor :: (MonadUnliftIO m, Katip.KatipContext m) => PushManagerEnv -> m ()
 startBatchProcessor env@PushManagerEnv {pmNarinfoBatchManager} = do
   NarinfoBatch.startBatchProcessor pmNarinfoBatchManager $ \paths ->
     runPushManager env (processBatchedNarinfo paths)

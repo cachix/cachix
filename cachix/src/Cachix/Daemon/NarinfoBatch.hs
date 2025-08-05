@@ -18,14 +18,11 @@ module Cachix.Daemon.NarinfoBatch
 where
 
 import Control.Concurrent.STM
-import Control.Exception.Safe (bracket_, throwM)
-import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
 import Control.Monad.IO.Unlift (MonadUnliftIO)
-import Data.HashMap.Strict qualified as HashMap
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Time (NominalDiffTime, UTCTime, diffUTCTime, getCurrentTime)
-import Hercules.CNix.Store (Store, StorePath)
+import Hercules.CNix.Store (StorePath)
 import Katip qualified
 import Protolude
 import UnliftIO.Async qualified as Async
@@ -124,15 +121,15 @@ submitBatchRequest NarinfoBatchManager {nbmConfig, nbmState, nbmWorkAvailable, n
       -- Add request to pending queue
       now <- getCurrentTime
       atomically $ do
-        modifyTVar' nbmState $ \state ->
+        modifyTVar' nbmState $ \batchState ->
           let newPaths = Set.fromList storePaths
-              updatedPaths = bsAccumulatedPaths state <> newPaths
+              updatedPaths = bsAccumulatedPaths batchState <> newPaths
               newRequest = BatchRequest requestId storePaths
-              newStartTime = case bsBatchStartTime state of
+              newStartTime = case bsBatchStartTime batchState of
                 Nothing -> Just now
                 justTime -> justTime
-           in state
-                { bsPendingRequests = newRequest : bsPendingRequests state,
+           in batchState
+                { bsPendingRequests = newRequest : bsPendingRequests batchState,
                   bsAccumulatedPaths = updatedPaths,
                   bsBatchStartTime = newStartTime
                 }
@@ -142,7 +139,7 @@ submitBatchRequest NarinfoBatchManager {nbmConfig, nbmState, nbmWorkAvailable, n
 
 -- | Start the batch processor thread
 startBatchProcessor ::
-  (MonadUnliftIO m, MonadMask m, Katip.KatipContext m) =>
+  (MonadUnliftIO m, Katip.KatipContext m) =>
   NarinfoBatchManager requestId ->
   -- | Function to process a batch of paths
   ([StorePath] -> m ([StorePath], [StorePath])) ->
@@ -157,7 +154,7 @@ stopBatchProcessor :: (MonadIO m) => NarinfoBatchManager requestId -> m ()
 stopBatchProcessor NarinfoBatchManager {nbmState, nbmWorkAvailable, nbmProcessorThread} = liftIO $ do
   -- Signal shutdown
   atomically $ do
-    modifyTVar' nbmState $ \state -> state {bsRunning = False}
+    modifyTVar' nbmState $ \batchState -> batchState {bsRunning = False}
     void $ tryPutTMVar nbmWorkAvailable ()
 
   -- Wait for processor thread to finish
@@ -166,7 +163,7 @@ stopBatchProcessor NarinfoBatchManager {nbmState, nbmWorkAvailable, nbmProcessor
 
 -- | Main batch processor loop
 runBatchProcessor ::
-  (MonadUnliftIO m, MonadMask m, Katip.KatipContext m) =>
+  (MonadUnliftIO m, Katip.KatipContext m) =>
   NarinfoBatchManager requestId ->
   ([StorePath] -> m ([StorePath], [StorePath])) ->
   m ()
@@ -176,11 +173,11 @@ runBatchProcessor manager@NarinfoBatchManager {nbmConfig, nbmState, nbmWorkAvail
     loop = do
       -- Wait for work or timeout
       shouldProcess <- liftIO $ atomically $ do
-        state <- readTVar nbmState
-        if not (bsRunning state)
+        batchState <- readTVar nbmState
+        if not (bsRunning batchState)
           then return Nothing -- Shutdown requested
           else
-            if null (bsPendingRequests state)
+            if null (bsPendingRequests batchState)
               then do
                 -- No work, wait for signal
                 takeTMVar nbmWorkAvailable
@@ -196,9 +193,9 @@ runBatchProcessor manager@NarinfoBatchManager {nbmConfig, nbmState, nbmWorkAvail
           -- Check if batch is ready
           now <- liftIO getCurrentTime
           ready <- liftIO $ atomically $ do
-            state <- readTVar nbmState
-            let pathCount = Set.size (bsAccumulatedPaths state)
-                timeElapsed = case bsBatchStartTime state of
+            batchState <- readTVar nbmState
+            let pathCount = Set.size (bsAccumulatedPaths batchState)
+                timeElapsed = case bsBatchStartTime batchState of
                   Nothing -> 0
                   Just startTime -> now `diffUTCTime` startTime
 
@@ -218,21 +215,21 @@ runBatchProcessor manager@NarinfoBatchManager {nbmConfig, nbmState, nbmWorkAvail
 
 -- | Process all pending requests as a single batch
 processPendingBatch ::
-  (MonadUnliftIO m, MonadMask m, Katip.KatipContext m) =>
+  (MonadUnliftIO m, Katip.KatipContext m) =>
   NarinfoBatchManager requestId ->
   ([StorePath] -> m ([StorePath], [StorePath])) ->
   m ()
 processPendingBatch NarinfoBatchManager {nbmState, nbmCallback} processBatch = do
   -- Extract pending requests
   (requests, allPaths, batchStartTime) <- liftIO $ atomically $ do
-    state <- readTVar nbmState
-    let requests = reverse (bsPendingRequests state) -- Process in FIFO order
-        allPaths = Set.toList (bsAccumulatedPaths state)
-        startTime = bsBatchStartTime state
+    batchState <- readTVar nbmState
+    let requests = reverse (bsPendingRequests batchState) -- Process in FIFO order
+        allPaths = Set.toList (bsAccumulatedPaths batchState)
+        startTime = bsBatchStartTime batchState
 
     -- Clear the state
     writeTVar nbmState $
-      state
+      batchState
         { bsPendingRequests = [],
           bsAccumulatedPaths = Set.empty,
           bsBatchStartTime = Nothing

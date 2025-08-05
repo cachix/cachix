@@ -33,9 +33,7 @@ import UnliftIO.Async qualified as Async
 
 -- | Cache entry for storing path existence information
 data CacheEntry = CacheEntry
-  { -- | Whether the path exists in the remote cache
-    ceExists :: !Bool,
-    -- | When this entry expires
+  { -- | When this entry expires
     ceExpiresAt :: !UTCTime
   }
   deriving stock (Eq, Show)
@@ -94,8 +92,8 @@ pruneTTLCacheToSize targetSize cache@TTLCache {tcLookupMap, tcExpirationQueue}
 sizeTTLCache :: TTLCache k v -> Int
 sizeTTLCache TTLCache {tcLookupMap} = Map.size tcLookupMap
 
--- | Type alias for the narinfo cache
-type NarinfoCache = TTLCache StorePath Bool
+-- | Type alias for the narinfo cache (only stores existing paths)
+type NarinfoCache = TTLCache StorePath ()
 
 -- | Configuration for the narinfo batch manager
 data NarinfoBatchOptions = NarinfoBatchOptions
@@ -129,8 +127,8 @@ data BatchRequest requestId = BatchRequest
     brRequestId :: !requestId,
     -- | Store paths to check
     brStorePaths :: ![StorePath],
-    -- | Cached results for some paths (path, exists)
-    brCachedResults :: ![(StorePath, Bool)]
+    -- | Cached existing paths
+    brCachedPaths :: ![StorePath]
   }
 
 -- | Response to a batch request
@@ -196,21 +194,21 @@ newNarinfoBatchManager nbmConfig nbmCallback = liftIO $ do
 -- Cache operations
 
 -- | Check if a path exists in the cache and is not stale
-lookupCache :: (MonadIO m) => NarinfoBatchManager requestId -> StorePath -> m (Maybe Bool)
+lookupCache :: (MonadIO m) => NarinfoBatchManager requestId -> StorePath -> m Bool
 lookupCache NarinfoBatchManager {nbmCache, nbmCachedTime} path = liftIO $ do
   now <- readTVarIO nbmCachedTime
   cache <- readTVarIO nbmCache
-  return $ lookupTTLCache now path cache
+  return $ isJust $ lookupTTLCache now path cache
 
--- | Update cache with new entries
-updateCache :: (MonadIO m) => NarinfoBatchManager requestId -> [(StorePath, Bool)] -> m ()
-updateCache NarinfoBatchManager {nbmCache, nbmConfig, nbmCachedTime} entries = liftIO $ do
+-- | Update cache with new entries (only existing paths)
+updateCache :: (MonadIO m) => NarinfoBatchManager requestId -> [StorePath] -> m ()
+updateCache NarinfoBatchManager {nbmCache, nbmConfig, nbmCachedTime} paths = liftIO $ do
   now <- readTVarIO nbmCachedTime
   let ttl = nboCacheTTL nbmConfig
   when (ttl > 0) $ do
     let expiresAt = addUTCTime ttl now
     atomically $ modifyTVar' nbmCache $ \cache ->
-      let cacheWithNewEntries = foldr (\(path, exists) acc -> insertTTLCache path exists expiresAt acc) cache entries
+      let cacheWithNewEntries = foldr (\path acc -> insertTTLCache path () expiresAt acc) cache paths
           maxSize = nboMaxCacheSize nbmConfig
           currentSize = sizeTTLCache cacheWithNewEntries
           -- Lazy cleanup: only clean up if cache is getting large (20% over limit)
@@ -247,9 +245,9 @@ submitBatchRequest manager@NarinfoBatchManager {nbmConfig, nbmState, nbmCachedTi
     cached <- lookupCache manager path
     return (path, cached)
 
-  let (cachedPaths, uncachedPaths) = partitionCacheResults cacheResults
-      cachedResults = [(path, exists) | (path, Just exists) <- cachedPaths]
-      pathsToQuery = [path | (path, Nothing) <- uncachedPaths]
+  let (cachedPaths, pathsToQuery) = partition snd cacheResults
+      cachedExistingPaths = [path | (path, _) <- cachedPaths]
+      pathsToQuery' = [path | (path, _) <- pathsToQuery]
 
   -- Check if we need to set up a timeout
   batchState <- readTVarIO nbmState
@@ -261,9 +259,8 @@ submitBatchRequest manager@NarinfoBatchManager {nbmConfig, nbmState, nbmCachedTi
       else return batchState
 
   atomically $ do
-    let newPaths = Set.fromList pathsToQuery
-        updatedPaths = bsAccumulatedPaths updatedBatchState <> newPaths
-        newRequest = BatchRequest requestId storePaths cachedResults
+    let updatedPaths = bsAccumulatedPaths updatedBatchState <> Set.fromList pathsToQuery'
+        newRequest = BatchRequest requestId storePaths cachedExistingPaths
         newStartTime = case bsBatchStartTime updatedBatchState of
           Nothing -> Just now
           justTime -> justTime
@@ -274,8 +271,6 @@ submitBatchRequest manager@NarinfoBatchManager {nbmConfig, nbmState, nbmCachedTi
           bsAccumulatedPaths = updatedPaths,
           bsBatchStartTime = newStartTime
         }
-  where
-    partitionCacheResults = partition (\(_, cached) -> isJust cached)
 
 -- | Start the batch processor thread
 startBatchProcessor ::
@@ -476,10 +471,10 @@ processReadyBatch manager@NarinfoBatchManager {nbmCallback} processBatch ReadyBa
                 "missing"
               ]
 
-        -- Update cache with results
+        -- Update cache with results (only cache positive lookups)
         let missingPathsSet = Set.fromList missingPaths
-            cacheEntries = [(path, not (path `Set.member` missingPathsSet)) | path <- allPathsInClosure]
-        updateCache manager cacheEntries
+            existingPaths = filter (not . (`Set.member` missingPathsSet)) allPathsInClosure
+        updateCache manager existingPaths
 
         return (allPathsInClosure, missingPaths)
 
@@ -488,15 +483,13 @@ processReadyBatch manager@NarinfoBatchManager {nbmCallback} processBatch ReadyBa
       missingPathsSet = Set.fromList missingPaths
 
   -- Respond to each request using the manager's callback
-  liftIO $ forM_ rbRequests $ \BatchRequest {brRequestId, brStorePaths, brCachedResults} -> do
+  liftIO $ forM_ rbRequests $ \BatchRequest {brRequestId, brStorePaths, brCachedPaths} -> do
     -- Combine API results with cached results
     let requestPathsFromAPI = filter (`Set.member` allPathsSet) brStorePaths
         requestMissingFromAPI = filter (`Set.member` missingPathsSet) brStorePaths
-        cachedExisting = [path | (path, True) <- brCachedResults]
-        cachedMissing = [path | (path, False) <- brCachedResults]
         -- Combine results, removing duplicates
-        allRequestPaths = Set.toList $ Set.fromList (requestPathsFromAPI ++ cachedExisting)
-        allRequestMissing = Set.toList $ Set.fromList (requestMissingFromAPI ++ cachedMissing)
+        allRequestPaths = Set.toList $ Set.fromList (requestPathsFromAPI ++ brCachedPaths)
+        allRequestMissing = requestMissingFromAPI
         response = BatchResponse allRequestPaths allRequestMissing
 
     -- Call the manager's callback with request ID and response

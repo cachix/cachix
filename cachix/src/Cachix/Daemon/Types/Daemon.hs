@@ -14,6 +14,7 @@ import Cachix.Client.Config.Orphans ()
 import Cachix.Client.Env as Env
 import Cachix.Client.OptionsParser (DaemonOptions, PushOptions)
 import Cachix.Daemon.Log qualified as Log
+import Cachix.Daemon.NarinfoBatch (NarinfoBatchManager)
 import Cachix.Daemon.Protocol qualified as Protocol
 import Cachix.Daemon.Subscription (SubscriptionManager)
 import Cachix.Daemon.Types.Error (DaemonError (DaemonUnhandledException), UnhandledException (..))
@@ -70,6 +71,8 @@ data DaemonEnv = DaemonEnv
     daemonSubscriptionManager :: SubscriptionManager Protocol.PushRequestId PushEvent,
     -- | A thread handle for the subscription manager
     daemonSubscriptionManagerThread :: MVar (Async ()),
+    -- | Manager for batching narinfo queries
+    daemonNarinfoBatchManager :: NarinfoBatchManager,
     -- | Logging env
     daemonLogger :: Logger,
     -- | The PID of the daemon process

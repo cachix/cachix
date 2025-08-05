@@ -88,6 +88,7 @@ library
     Cachix.Daemon.EventLoop
     Cachix.Daemon.Listen
     Cachix.Daemon.Log
+    Cachix.Daemon.NarinfoBatch
     Cachix.Daemon.PostBuildHook
     Cachix.Daemon.Progress
     Cachix.Daemon.Protocol

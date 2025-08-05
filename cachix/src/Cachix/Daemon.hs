@@ -21,6 +21,7 @@ import Cachix.Client.Push
 import Cachix.Daemon.EventLoop qualified as EventLoop
 import Cachix.Daemon.Listen as Listen
 import Cachix.Daemon.Log qualified as Log
+import Cachix.Daemon.NarinfoBatch qualified as NarinfoBatch
 import Cachix.Daemon.Protocol as Protocol
 import Cachix.Daemon.Push as Push
 import Cachix.Daemon.PushManager qualified as PushManager
@@ -46,9 +47,24 @@ import System.Environment (lookupEnv)
 import System.IO.Error (isResourceVanishedError)
 import System.Posix.Process (getProcessID)
 import System.Posix.Signals qualified as Signal
+import Text.Read qualified
 import UnliftIO (MonadUnliftIO, withRunInIO)
 import UnliftIO.Async qualified as Async
 import UnliftIO.Exception (bracket)
+
+-- | Get batch configuration from environment variables
+getBatchConfig :: IO NarinfoBatch.BatchConfig
+getBatchConfig = do
+  batchSize <- maybe 100 (fromMaybe 100 . Text.Read.readMaybe . toS) <$> lookupEnv "CACHIX_NARINFO_BATCH_SIZE"
+  waitTime <- maybe 2.0 (fromMaybe 2.0 . Text.Read.readMaybe . toS) <$> lookupEnv "CACHIX_NARINFO_BATCH_WAIT_TIME"
+  enabled <- maybe True (== "true") <$> lookupEnv "CACHIX_NARINFO_BATCH_ENABLED"
+
+  return $
+    NarinfoBatch.BatchConfig
+      { NarinfoBatch.bcMaxBatchSize = batchSize,
+        NarinfoBatch.bcMaxWaitTime = realToFrac waitTime,
+        NarinfoBatch.bcEnabled = enabled
+      }
 
 -- | Configure a new daemon. Use 'run' to start it.
 new ::
@@ -91,8 +107,12 @@ new daemonEnv nixStore daemonOptions daemonLogHandle daemonPushOptions daemonCac
   daemonSubscriptionManager <- Subscription.newSubscriptionManager
   let onPushEvent = Subscription.pushEvent daemonSubscriptionManager
 
+  -- Create narinfo batch manager with config from env vars
+  batchConfig <- getBatchConfig
+  daemonNarinfoBatchManager <- NarinfoBatch.newNarinfoBatchManager batchConfig
+
   let pushParams = Push.newPushParams nixStore (clientenv daemonEnv) daemonBinaryCache daemonPushSecret daemonPushOptions
-  daemonPushManager <- PushManager.newPushManagerEnv daemonPushOptions pushParams onPushEvent daemonLogger
+  daemonPushManager <- PushManager.newPushManagerEnv daemonPushOptions pushParams onPushEvent daemonNarinfoBatchManager daemonLogger
 
   daemonWorkerThreads <- newEmptyMVar
 
@@ -118,6 +138,10 @@ run daemon = fmap join <$> runDaemon daemon $ do
 
   Async.async (runSubscriptionManager daemonSubscriptionManager)
     >>= (liftIO . putMVar daemonSubscriptionManagerThread)
+
+  -- Start the narinfo batch processor
+  NarinfoBatch.startBatchProcessor daemonNarinfoBatchManager $
+    \paths -> PushManager.runPushManager daemonPushManager (PushManager.processBatchedNarinfo paths)
 
   Worker.startWorkers
     (Options.numJobs daemonPushOptions)
@@ -276,6 +300,9 @@ shutdownGracefully = do
 
   -- Stop the push manager and wait for any remaining paths to be uploaded
   shutdownPushManager daemonPushManager
+
+  -- Stop the narinfo batch processor
+  liftIO $ NarinfoBatch.stopBatchProcessor daemonNarinfoBatchManager
 
   -- Stop worker threads
   withTakeMVar daemonWorkerThreads Worker.stopWorkers

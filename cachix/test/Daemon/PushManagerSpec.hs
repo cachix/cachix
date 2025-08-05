@@ -4,6 +4,7 @@ import Cachix.Client.Env qualified as Env
 import Cachix.Client.OptionsParser (defaultPushOptions)
 import Cachix.Client.Push (PushSecret (PushToken))
 import Cachix.Daemon.Log qualified as Log
+import Cachix.Daemon.NarinfoBatch (defaultNarinfoBatchOptions)
 import Cachix.Daemon.Protocol qualified as Protocol
 import Cachix.Daemon.Push qualified as Daemon.Push
 import Cachix.Daemon.PushManager
@@ -187,8 +188,9 @@ withPushManager f = do
     let binaryCache = newBinaryCache "test"
         pushSecret = PushToken (Token "test")
         pushOptions = defaultPushOptions
+        batchOptions = defaultNarinfoBatchOptions
         pushParams = Daemon.Push.newPushParams store clientEnv binaryCache pushSecret pushOptions
-    newPushManagerEnv pushOptions pushParams mempty logger >>= f
+    newPushManagerEnv pushOptions batchOptions pushParams mempty logger >>= f
 
 inPushManager :: PushManager a -> IO a
 inPushManager f = withPushManager (`runPushManager` f)

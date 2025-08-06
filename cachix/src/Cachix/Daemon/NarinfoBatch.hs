@@ -372,20 +372,17 @@ waitForBatchOrShutdown config stateVar = do
 
 -- | Time refresh thread that updates cached time every few seconds
 runTimeRefreshThread :: (MonadUnliftIO m) => NarinfoBatchManager requestId -> m ()
-runTimeRefreshThread NarinfoBatchManager {nbmCachedTime, nbmState} = do
+runTimeRefreshThread NarinfoBatchManager {nbmCachedTime} = do
   loop
   where
     loop = do
       -- Wait 2 seconds between updates
       liftIO $ threadDelay 2_000_000 -- 2 seconds in microseconds
 
-      -- Check if we should continue running
-      running <- liftIO $ bsRunning <$> readTVarIO nbmState
-      when running $ do
-        -- Update cached time
-        now <- liftIO getCurrentTime
-        liftIO $ atomically $ writeTVar nbmCachedTime now
-        loop
+      -- Update cached time
+      now <- liftIO getCurrentTime
+      liftIO $ atomically $ writeTVar nbmCachedTime now
+      loop
 
 -- | Main batch processor loop
 runBatchProcessor ::

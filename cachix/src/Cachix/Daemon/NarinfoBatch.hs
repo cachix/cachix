@@ -20,13 +20,13 @@ where
 
 import Control.Concurrent.STM
 import Control.Monad.IO.Unlift (MonadUnliftIO)
+import Data.HashMap.Strict qualified as HashMap
 import Data.List (partition)
-import Data.Map.Strict qualified as Map
 import Data.PQueue.Min qualified as PQ
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Time (NominalDiffTime, UTCTime, addUTCTime, diffUTCTime, getCurrentTime)
-import Hercules.CNix.Store (StorePath)
+import Hercules.CNix.Store (StorePath, getStorePathHash)
 import Katip qualified
 import Protolude
 import UnliftIO.Async qualified as Async
@@ -41,7 +41,7 @@ data CacheEntry = CacheEntry
 -- | TTL cache with efficient expiration using priority queue
 data TTLCache k v = TTLCache
   { -- | Fast lookups by key
-    tcLookupMap :: !(Map k (v, UTCTime)),
+    tcLookupMap :: !(HashMap.HashMap k (v, UTCTime)),
     -- | Min-heap ordered by expiration time for efficient cleanup
     tcExpirationQueue :: !(PQ.MinQueue (UTCTime, k))
   }
@@ -49,12 +49,12 @@ data TTLCache k v = TTLCache
 
 -- | Create an empty TTL cache
 emptyTTLCache :: TTLCache k v
-emptyTTLCache = TTLCache Map.empty PQ.empty
+emptyTTLCache = TTLCache HashMap.empty PQ.empty
 
 -- | Lookup a value in the TTL cache, checking expiration
-lookupTTLCache :: (Ord k) => UTCTime -> k -> TTLCache k v -> Maybe v
+lookupTTLCache :: (Ord k, Hashable k) => UTCTime -> k -> TTLCache k v -> Maybe v
 lookupTTLCache now key TTLCache {tcLookupMap} =
-  case Map.lookup key tcLookupMap of
+  case HashMap.lookup key tcLookupMap of
     Nothing -> Nothing
     Just (value, expiresAt) ->
       if now < expiresAt
@@ -62,38 +62,39 @@ lookupTTLCache now key TTLCache {tcLookupMap} =
         else Nothing
 
 -- | Insert a value into the TTL cache with expiration time
-insertTTLCache :: (Ord k) => k -> v -> UTCTime -> TTLCache k v -> TTLCache k v
+insertTTLCache :: (Ord k, Hashable k) => k -> v -> UTCTime -> TTLCache k v -> TTLCache k v
 insertTTLCache key value expiresAt TTLCache {tcLookupMap, tcExpirationQueue} =
   TTLCache
-    { tcLookupMap = Map.insert key (value, expiresAt) tcLookupMap,
+    { tcLookupMap = HashMap.insert key (value, expiresAt) tcLookupMap,
       tcExpirationQueue = PQ.insert (expiresAt, key) tcExpirationQueue
     }
 
 -- | Remove expired entries from the cache
-cleanupExpiredTTLCache :: (Ord k) => UTCTime -> TTLCache k v -> TTLCache k v
+cleanupExpiredTTLCache :: (Ord k, Hashable k) => UTCTime -> TTLCache k v -> TTLCache k v
 cleanupExpiredTTLCache now cache@TTLCache {tcLookupMap, tcExpirationQueue} =
   let (expired, remaining) = PQ.span ((<= now) . fst) tcExpirationQueue
       expiredKeys = map snd expired
-      newLookupMap = foldr Map.delete tcLookupMap expiredKeys
+      newLookupMap = foldr HashMap.delete tcLookupMap expiredKeys
    in cache {tcLookupMap = newLookupMap, tcExpirationQueue = remaining}
 
 -- | Prune cache to target size by removing oldest entries
-pruneTTLCacheToSize :: (Ord k) => Int -> TTLCache k v -> TTLCache k v
+pruneTTLCacheToSize :: (Ord k, Hashable k) => Int -> TTLCache k v -> TTLCache k v
 pruneTTLCacheToSize targetSize cache@TTLCache {tcLookupMap, tcExpirationQueue}
-  | Map.size tcLookupMap <= targetSize = cache
+  | HashMap.size tcLookupMap <= targetSize = cache
   | otherwise =
-      let excessCount = Map.size tcLookupMap - targetSize
+      let excessCount = HashMap.size tcLookupMap - targetSize
           (toRemove, remaining) = PQ.splitAt excessCount tcExpirationQueue
           keysToRemove = map snd toRemove
-          newLookupMap = foldr Map.delete tcLookupMap keysToRemove
+          newLookupMap = foldr HashMap.delete tcLookupMap keysToRemove
        in cache {tcLookupMap = newLookupMap, tcExpirationQueue = remaining}
 
 -- | Get the current size of the cache
 sizeTTLCache :: TTLCache k v -> Int
-sizeTTLCache TTLCache {tcLookupMap} = Map.size tcLookupMap
+sizeTTLCache TTLCache {tcLookupMap} = HashMap.size tcLookupMap
 
--- | Type alias for the narinfo cache (only stores existing paths)
-type NarinfoCache = TTLCache StorePath ()
+-- | Type alias for the positive narinfo cache.
+-- Keys are store path hashes.
+type NarinfoCache = TTLCache ByteString ()
 
 -- | Configuration for the narinfo batch manager
 data NarinfoBatchOptions = NarinfoBatchOptions
@@ -196,19 +197,22 @@ newNarinfoBatchManager nbmConfig nbmCallback = liftIO $ do
 -- | Check if a path exists in the cache and is not stale
 lookupCache :: (MonadIO m) => NarinfoBatchManager requestId -> StorePath -> m Bool
 lookupCache NarinfoBatchManager {nbmCache, nbmCachedTime} path = liftIO $ do
+  pathHash <- getStorePathHash path
   now <- readTVarIO nbmCachedTime
   cache <- readTVarIO nbmCache
-  return $ isJust $ lookupTTLCache now path cache
+  return $ isJust $ lookupTTLCache now pathHash cache
 
 -- | Update cache with new entries (only existing paths)
 updateCache :: (MonadIO m) => NarinfoBatchManager requestId -> [StorePath] -> m ()
 updateCache NarinfoBatchManager {nbmCache, nbmConfig, nbmCachedTime} paths = liftIO $ do
+  -- Convert paths to hashes
+  pathHashes <- forM paths getStorePathHash
   now <- readTVarIO nbmCachedTime
   let ttl = nboCacheTTL nbmConfig
   when (ttl > 0) $ do
     let expiresAt = addUTCTime ttl now
     atomically $ modifyTVar' nbmCache $ \cache ->
-      let cacheWithNewEntries = foldr (\path acc -> insertTTLCache path () expiresAt acc) cache paths
+      let cacheWithNewEntries = foldr (\pathHash acc -> insertTTLCache pathHash () expiresAt acc) cache pathHashes
           maxSize = nboMaxCacheSize nbmConfig
           currentSize = sizeTTLCache cacheWithNewEntries
           -- Lazy cleanup: only clean up if cache is getting large (20% over limit)

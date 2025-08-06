@@ -429,18 +429,12 @@ processReadyBatch manager@NarinfoBatchManager {nbmCallback} processBatch ReadyBa
               Nothing -> 0
               Just startTime -> processingStartTime `diffUTCTime` startTime
 
-        Katip.logFM Katip.InfoS $
-          Katip.ls $
-            T.intercalate
-              " "
-              [ "Processing narinfo batch:",
-                show requestCount :: Text,
-                "requests,",
-                show pathCount :: Text,
-                "paths,",
-                "waited",
-                show waitTime
-              ]
+        Katip.logFM Katip.DebugS "Processing narinfo batch"
+          & Katip.katipAddContext
+            ( Katip.sl "requests" requestCount
+                <> Katip.sl "paths" pathCount
+                <> Katip.sl "wait_time_s" (show waitTime :: Text)
+            )
 
         -- Query narinfo for all paths at once
         (allPathsInClosure, missingPaths) <- processBatch rbAllPaths
@@ -450,18 +444,12 @@ processReadyBatch manager@NarinfoBatchManager {nbmCallback} processBatch ReadyBa
             closureSize = length allPathsInClosure
             missingCount = length missingPaths
 
-        Katip.logFM Katip.InfoS $
-          Katip.ls $
-            T.intercalate
-              " "
-              [ "Batch completed in",
-                show processingTime <> ":",
-                show closureSize :: Text,
-                "total paths,",
-                show missingCount :: Text,
-                "missing"
-              ]
-
+        Katip.logFM Katip.DebugS "Batch completed"
+          & Katip.katipAddContext
+            ( Katip.sl "processing_time_s" (show processingTime :: Text)
+                <> Katip.sl "total_paths" closureSize
+                <> Katip.sl "missing_paths" missingCount
+            )
         -- Update cache with results (only cache positive lookups)
         let missingPathsSet = Set.fromList missingPaths
             existingPaths = filter (not . (`Set.member` missingPathsSet)) allPathsInClosure

@@ -249,28 +249,31 @@ submitBatchRequest manager@NarinfoBatchManager {nbmConfig, nbmState, nbmCachedTi
       cachedExistingPaths = [path | (path, _) <- cachedPaths]
       pathsToQuery' = [path | (path, _) <- pathsToQuery]
 
-  -- Check if we need to set up a timeout
-  batchState <- readTVarIO nbmState
-  let isFirstRequest = null (bsPendingRequests batchState)
-
-  updatedBatchState <-
-    if isFirstRequest && isNothing (bsTimeoutVar batchState) && nboMaxWaitTime nbmConfig > 0
-      then setBatchTimeout (nboMaxWaitTime nbmConfig) batchState
-      else return batchState
-
-  atomically $ do
-    let updatedPaths = bsAccumulatedPaths updatedBatchState <> Set.fromList pathsToQuery'
+  -- Perform the state update atomically and determine if timeout is needed
+  needsTimeout <- atomically $ do
+    batchState <- readTVar nbmState
+    let isFirstRequest = null (bsPendingRequests batchState)
+        needsNewTimeout = isFirstRequest && isNothing (bsTimeoutVar batchState) && nboMaxWaitTime nbmConfig > 0
+        updatedPaths = bsAccumulatedPaths batchState <> Set.fromList pathsToQuery'
         newRequest = BatchRequest requestId storePaths cachedExistingPaths
-        newStartTime = case bsBatchStartTime updatedBatchState of
+        newStartTime = case bsBatchStartTime batchState of
           Nothing -> Just now
           justTime -> justTime
 
     writeTVar nbmState $
-      updatedBatchState
-        { bsPendingRequests = newRequest : bsPendingRequests updatedBatchState,
+      batchState
+        { bsPendingRequests = newRequest : bsPendingRequests batchState,
           bsAccumulatedPaths = updatedPaths,
           bsBatchStartTime = newStartTime
         }
+
+    return needsNewTimeout
+
+  -- Set up timeout outside of STM if needed
+  when needsTimeout $ do
+    timeoutVar <- startBatchTimeout (nboMaxWaitTime nbmConfig)
+    atomically $ do
+      modifyTVar' nbmState $ \bs -> bs {bsTimeoutVar = Just timeoutVar}
 
 -- | Start the batch processor thread
 startBatchProcessor ::
@@ -307,12 +310,6 @@ startBatchTimeout :: NominalDiffTime -> IO (TVar Bool)
 startBatchTimeout delay = do
   let delayMicros = ceiling (delay * 1000000) -- Convert to microseconds
   registerDelay delayMicros
-
--- | Update batch state to start tracking a timeout
-setBatchTimeout :: NominalDiffTime -> BatchState requestId -> IO (BatchState requestId)
-setBatchTimeout delay batchState = do
-  timeoutVar <- startBatchTimeout delay
-  return batchState {bsTimeoutVar = Just timeoutVar}
 
 -- | Check if the current batch has timed out
 isBatchTimedOut :: BatchState requestId -> STM Bool

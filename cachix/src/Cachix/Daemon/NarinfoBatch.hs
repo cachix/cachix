@@ -24,7 +24,6 @@ import Data.HashMap.Strict qualified as HashMap
 import Data.List (partition)
 import Data.PQueue.Min qualified as PQ
 import Data.Set qualified as Set
-import Data.Text qualified as T
 import Data.Time (NominalDiffTime, UTCTime, addUTCTime, diffUTCTime, getCurrentTime)
 import Hercules.CNix.Store (StorePath, getStorePathHash)
 import Katip qualified

@@ -9,12 +9,25 @@ module Cachix.Daemon.NarinfoBatch
     NarinfoBatchOptions (..),
     defaultNarinfoBatchOptions,
 
+    -- * Cache types (for testing)
+    TTLCache (..),
+
     -- * Operations
     newNarinfoBatchManager,
     submitBatchRequest,
     startBatchProcessor,
     stopBatchProcessor,
     cleanupStaleEntries,
+
+    -- * Cache operations (for testing)
+    emptyTTLCache,
+    insertTTLCache,
+    lookupTTLCache,
+    cleanupExpiredTTLCache,
+    pruneTTLCacheToSize,
+    sizeTTLCache,
+    lookupCache,
+    nbmCache,
   )
 where
 
@@ -459,12 +472,13 @@ processReadyBatch manager@NarinfoBatchManager {nbmCallback} processBatch ReadyBa
 
   -- Respond to each request using the manager's callback
   liftIO $ forM_ rbRequests $ \BatchRequest {brRequestId, brStorePaths, brCachedPaths} -> do
-    -- Combine API results with cached results
-    let requestPathsFromAPI = filter (`Set.member` allPathsSet) brStorePaths
-        requestMissingFromAPI = filter (`Set.member` missingPathsSet) brStorePaths
-        -- Combine results, removing duplicates
-        allRequestPaths = Set.toList $ Set.fromList (requestPathsFromAPI ++ brCachedPaths)
-        allRequestMissing = requestMissingFromAPI
+    -- For each request, determine which of its requested paths exist (from API or cache)
+    let -- Paths that exist: intersection of request paths with all existing paths (API + cached)
+        existingPathsFromAPI = filter (`Set.member` allPathsSet) brStorePaths
+        missingPathsFromAPI = filter (`Set.member` missingPathsSet) brStorePaths
+        -- Combine existing paths from API and cache, removing duplicates
+        allRequestPaths = Set.toList $ Set.fromList (existingPathsFromAPI ++ brCachedPaths)
+        allRequestMissing = missingPathsFromAPI
         response = BatchResponse allRequestPaths allRequestMissing
 
     -- Call the manager's callback with request ID and response

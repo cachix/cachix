@@ -244,6 +244,7 @@ test-suite cachix-test
   main-is:            Main.hs
   hs-source-dirs:     test
   other-modules:
+    Daemon.NarinfoBatchSpec
     Daemon.PostBuildHookSpec
     Daemon.ProtocolSpec
     Daemon.PushManagerSpec
@@ -269,6 +270,7 @@ test-suite cachix-test
     , hercules-ci-cnix-store
     , here
     , hspec
+    , katip
     , protolude
     , retry
     , servant-auth-client
@@ -276,6 +278,7 @@ test-suite cachix-test
     , stm
     , temporary
     , time
+    , unliftio
     , versions
 
   build-tool-depends: hspec-discover:hspec-discover

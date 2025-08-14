@@ -565,7 +565,7 @@ batchConfigParser =
       option auto $
         long "narinfo-batch-timeout"
           <> metavar "SECONDS"
-          <> help "Maximum time to wait before processing a batch in seconds. Use 0 for immediate processing (no batching). (default: 2.0)"
+          <> help "Maximum time to wait before processing a batch in seconds. Use 0 for immediate processing (no batching). (default: 0.5)"
           <> value (realToFrac (NarinfoBatch.nboMaxWaitTime NarinfoBatch.defaultNarinfoBatchOptions))
 
     narinfoCacheTTLOption =

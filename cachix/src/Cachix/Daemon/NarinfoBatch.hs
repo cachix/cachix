@@ -119,7 +119,7 @@ defaultNarinfoBatchOptions :: NarinfoBatchOptions
 defaultNarinfoBatchOptions =
   NarinfoBatchOptions
     { nboMaxBatchSize = 100,
-      nboMaxWaitTime = 2.0, -- 2 seconds
+      nboMaxWaitTime = 0.5, -- 500ms
       nboCacheTTL = 300.0, -- 5 minutes
       nboMaxCacheSize = 0 -- Unlimited
     }

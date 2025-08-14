@@ -98,6 +98,7 @@ library
     Cachix.Daemon.ShutdownLatch
     Cachix.Daemon.SocketStore
     Cachix.Daemon.Subscription
+    Cachix.Daemon.TTLCache
     Cachix.Daemon.Types
     Cachix.Daemon.Types.Daemon
     Cachix.Daemon.Types.Error

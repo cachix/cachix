@@ -9,9 +9,6 @@ module Cachix.Daemon.NarinfoBatch
     NarinfoBatchOptions (..),
     defaultNarinfoBatchOptions,
 
-    -- * Cache types (for testing)
-    TTLCache (..),
-
     -- * Operations
     newNarinfoBatchManager,
     submitBatchRequest,
@@ -20,79 +17,22 @@ module Cachix.Daemon.NarinfoBatch
     cleanupStaleEntries,
 
     -- * Cache operations (for testing)
-    emptyTTLCache,
-    insertTTLCache,
-    lookupTTLCache,
-    cleanupExpiredTTLCache,
-    pruneTTLCacheToSize,
-    sizeTTLCache,
     lookupCache,
     nbmCache,
   )
 where
 
+import Cachix.Daemon.TTLCache (TTLCache)
+import Cachix.Daemon.TTLCache qualified as TTLCache
 import Control.Concurrent.STM
 import Control.Monad.IO.Unlift (MonadUnliftIO)
-import Data.HashMap.Strict qualified as HashMap
 import Data.List (partition)
-import Data.PQueue.Min qualified as PQ
 import Data.Set qualified as Set
 import Data.Time (NominalDiffTime, UTCTime, addUTCTime, diffUTCTime, getCurrentTime)
 import Hercules.CNix.Store (StorePath, getStorePathHash)
 import Katip qualified
 import Protolude
 import UnliftIO.Async qualified as Async
-
--- | TTL cache with efficient expiration using priority queue
-data TTLCache k = TTLCache
-  { -- | Fast lookups by key
-    tcLookupMap :: !(HashMap.HashMap k UTCTime),
-    -- | Min-heap ordered by expiration time for efficient cleanup
-    tcExpirationQueue :: !(PQ.MinQueue (UTCTime, k))
-  }
-  deriving stock (Eq, Show)
-
--- | Create an empty TTL cache
-emptyTTLCache :: TTLCache k
-emptyTTLCache = TTLCache HashMap.empty PQ.empty
-
--- | Lookup a value in the TTL cache, checking expiration
-lookupTTLCache :: (Ord k, Hashable k) => UTCTime -> k -> TTLCache k -> Bool
-lookupTTLCache now key TTLCache {tcLookupMap} =
-  case HashMap.lookup key tcLookupMap of
-    Nothing -> False
-    Just expiresAt -> now < expiresAt
-
--- | Insert a value into the TTL cache with expiration time
-insertTTLCache :: (Ord k, Hashable k) => k -> UTCTime -> TTLCache k -> TTLCache k
-insertTTLCache key expiresAt TTLCache {tcLookupMap, tcExpirationQueue} =
-  TTLCache
-    { tcLookupMap = HashMap.insert key expiresAt tcLookupMap,
-      tcExpirationQueue = PQ.insert (expiresAt, key) tcExpirationQueue
-    }
-
--- | Remove expired entries from the cache
-cleanupExpiredTTLCache :: (Ord k, Hashable k) => UTCTime -> TTLCache k -> TTLCache k
-cleanupExpiredTTLCache now cache@TTLCache {tcLookupMap, tcExpirationQueue} =
-  let (expired, remaining) = PQ.span ((<= now) . fst) tcExpirationQueue
-      expiredKeys = map snd expired
-      newLookupMap = foldr HashMap.delete tcLookupMap expiredKeys
-   in cache {tcLookupMap = newLookupMap, tcExpirationQueue = remaining}
-
--- | Prune cache to target size by removing oldest entries
-pruneTTLCacheToSize :: (Ord k, Hashable k) => Int -> TTLCache k -> TTLCache k
-pruneTTLCacheToSize targetSize cache@TTLCache {tcLookupMap, tcExpirationQueue}
-  | HashMap.size tcLookupMap <= targetSize = cache
-  | otherwise =
-      let excessCount = HashMap.size tcLookupMap - targetSize
-          (toRemove, remaining) = PQ.splitAt excessCount tcExpirationQueue
-          keysToRemove = map snd toRemove
-          newLookupMap = foldr HashMap.delete tcLookupMap keysToRemove
-       in cache {tcLookupMap = newLookupMap, tcExpirationQueue = remaining}
-
--- | Get the current size of the cache
-sizeTTLCache :: TTLCache k -> Int
-sizeTTLCache TTLCache {tcLookupMap} = HashMap.size tcLookupMap
 
 -- | Type alias for the positive narinfo cache.
 -- Keys are store path hashes.
@@ -180,7 +120,7 @@ newNarinfoBatchManager :: (MonadIO m) => NarinfoBatchOptions -> (requestId -> Ba
 newNarinfoBatchManager nbmConfig nbmCallback = liftIO $ do
   nbmState <- newTVarIO initialState
   nbmProcessorThread <- newEmptyMVar
-  nbmCache <- newTVarIO emptyTTLCache
+  nbmCache <- newTVarIO TTLCache.empty
   nbmCachedTime <- newTVarIO =<< getCurrentTime
   nbmTimeRefreshThread <- newEmptyMVar
   return NarinfoBatchManager {..}
@@ -202,7 +142,7 @@ lookupCache NarinfoBatchManager {nbmCache, nbmCachedTime} path = liftIO $ do
   pathHash <- getStorePathHash path
   now <- readTVarIO nbmCachedTime
   cache <- readTVarIO nbmCache
-  return $ lookupTTLCache now pathHash cache
+  return $ TTLCache.lookup now pathHash cache
 
 -- | Update cache with new entries (only existing paths)
 updateCache :: (MonadIO m) => NarinfoBatchManager requestId -> [StorePath] -> m ()
@@ -214,17 +154,17 @@ updateCache NarinfoBatchManager {nbmCache, nbmConfig, nbmCachedTime} paths = lif
   when (ttl > 0) $ do
     let expiresAt = addUTCTime ttl now
     atomically $ modifyTVar' nbmCache $ \cache ->
-      let cacheWithNewEntries = foldr (`insertTTLCache` expiresAt) cache pathHashes
+      let cacheWithNewEntries = foldr (`TTLCache.insert` expiresAt) cache pathHashes
           maxSize = nboMaxCacheSize nbmConfig
-          currentSize = sizeTTLCache cacheWithNewEntries
+          currentSize = TTLCache.size cacheWithNewEntries
           -- Lazy cleanup: only clean up if cache is getting large (20% over limit)
           cleanupThreshold = if maxSize > 0 then maxSize + (maxSize `div` 5) else maxBound
        in if currentSize > cleanupThreshold
             then
-              let cleanedCache = cleanupExpiredTTLCache now cacheWithNewEntries
+              let cleanedCache = TTLCache.cleanupExpired now cacheWithNewEntries
                   finalCache =
-                    if maxSize > 0 && sizeTTLCache cleanedCache > maxSize
-                      then pruneTTLCacheToSize maxSize cleanedCache
+                    if maxSize > 0 && TTLCache.size cleanedCache > maxSize
+                      then TTLCache.pruneToSize maxSize cleanedCache
                       else cleanedCache
                in finalCache
             else cacheWithNewEntries
@@ -233,7 +173,7 @@ updateCache NarinfoBatchManager {nbmCache, nbmConfig, nbmCachedTime} paths = lif
 cleanupStaleEntries :: (MonadIO m) => NarinfoBatchManager requestId -> m ()
 cleanupStaleEntries NarinfoBatchManager {nbmCache, nbmCachedTime} = liftIO $ do
   now <- readTVarIO nbmCachedTime
-  atomically $ modifyTVar' nbmCache $ cleanupExpiredTTLCache now
+  atomically $ modifyTVar' nbmCache $ TTLCache.cleanupExpired now
 
 -- | Submit a request to the batch manager
 submitBatchRequest ::

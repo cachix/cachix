@@ -33,9 +33,9 @@ import Katip qualified
 import Protolude
 
 data Task
-  = ResolveClosure Protocol.PushRequestId
-  | ProcessBatchResponse Protocol.PushRequestId NarinfoBatch.BatchResponse
-  | PushStorePath FilePath
+  = QueryMissingPaths Protocol.PushRequestId
+  | HandleMissingPathsResponse Protocol.PushRequestId NarinfoBatch.BatchResponse
+  | PushPath FilePath
 
 type PushJobStore = TVar (HashMap Protocol.PushRequestId PushJob)
 

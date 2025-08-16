@@ -95,7 +95,7 @@ newPushManagerEnv pushOptions batchOptions pmPushParams onPushEvent pmLogger = l
   -- Create batch manager with callback that queues ProcessBatchResponse tasks
   let batchCallback requestId response = do
         atomically $ do
-          result <- tryWriteTBMQueue pmTaskQueue $ ProcessBatchResponse requestId response
+          result <- tryWriteTBMQueue pmTaskQueue $ HandleMissingPathsResponse requestId response
           case result of
             Just True -> return ()
             _ -> retry -- Queue is full, keep trying
@@ -136,7 +136,7 @@ addPushJob pushRequest = do
   let queueJob = do
         modifyTVar' pmPushJobs $ HashMap.insert (pushId pushJob) pushJob
         incrementTVar pmPendingJobCount
-        res <- tryWriteTBMQueue pmTaskQueue $ ResolveClosure (pushId pushJob)
+        res <- tryWriteTBMQueue pmTaskQueue $ QueryMissingPaths (pushId pushJob)
         case res of
           Just True -> return True
           _ -> retry
@@ -218,7 +218,7 @@ queueStorePaths pushId storePaths = do
   let addToQueue storePath = do
         isDuplicate <- HashMap.member storePath <$> readTVar pmStorePathIndex
         unless isDuplicate $
-          writeTBMQueue pmTaskQueue (PushStorePath storePath)
+          writeTBMQueue pmTaskQueue (PushPath storePath)
 
         modifyTVar' pmStorePathIndex $ HashMap.insertWith (<>) storePath [pushId]
 
@@ -291,15 +291,15 @@ handleTask :: Task -> PushManager ()
 handleTask task = do
   pushParams <- asks pmPushParams
   case task of
-    ResolveClosure pushId ->
-      runResolveClosureTask pushParams pushId
-    ProcessBatchResponse pushId batchResponse ->
-      runProcessBatchResponseTask pushParams pushId batchResponse
-    PushStorePath filePath ->
-      runPushStorePathTask pushParams filePath
+    QueryMissingPaths pushId ->
+      runQueryMissingPathsTask pushParams pushId
+    HandleMissingPathsResponse pushId batchResponse ->
+      runHandleMissingPathsResponseTask pushParams pushId batchResponse
+    PushPath filePath ->
+      runPushPathTask pushParams filePath
 
-runResolveClosureTask :: PushParams PushManager () -> Protocol.PushRequestId -> PushManager ()
-runResolveClosureTask pushParams pushId =
+runQueryMissingPathsTask :: PushParams PushManager () -> Protocol.PushRequestId -> PushManager ()
+runQueryMissingPathsTask pushParams pushId =
   resolveClosure `withException` failJob
   where
     failJob :: SomeException -> PushManager ()
@@ -324,8 +324,8 @@ runResolveClosureTask pushParams pushId =
         batchManager <- asks pmNarinfoBatchManager
         NarinfoBatch.submitBatchRequest batchManager pushId validPaths
 
-runProcessBatchResponseTask :: PushParams PushManager () -> Protocol.PushRequestId -> NarinfoBatch.BatchResponse -> PushManager ()
-runProcessBatchResponseTask pushParams pushId batchResponse =
+runHandleMissingPathsResponseTask :: PushParams PushManager () -> Protocol.PushRequestId -> NarinfoBatch.BatchResponse -> PushManager ()
+runHandleMissingPathsResponseTask pushParams pushId batchResponse =
   processBatchResponse `withException` failJob
   where
     failJob :: SomeException -> PushManager ()
@@ -357,8 +357,8 @@ runProcessBatchResponseTask pushParams pushId batchResponse =
 
       resolvePushJob pushId resolvedClosure
 
-runPushStorePathTask :: PushParams PushManager () -> FilePath -> PushManager ()
-runPushStorePathTask pushParams filePath = do
+runPushPathTask :: PushParams PushManager () -> FilePath -> PushManager ()
+runPushPathTask pushParams filePath = do
   pushStorePath `withException` failStorePath
   where
     failStorePath =

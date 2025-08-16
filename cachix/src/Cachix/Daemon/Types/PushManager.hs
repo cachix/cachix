@@ -18,6 +18,8 @@ where
 
 import Cachix.Client.Push (PushParams)
 import Cachix.Daemon.Log qualified as Log
+import Cachix.Daemon.NarinfoQuery (NarinfoQueryManager)
+import Cachix.Daemon.NarinfoQuery qualified as NarinfoQuery
 import Cachix.Daemon.Protocol qualified as Protocol
 import Cachix.Daemon.Types.Log (Logger)
 import Cachix.Daemon.Types.PushEvent (PushEvent (..))
@@ -31,8 +33,9 @@ import Katip qualified
 import Protolude
 
 data Task
-  = ResolveClosure Protocol.PushRequestId
-  | PushStorePath FilePath
+  = QueryMissingPaths Protocol.PushRequestId
+  | HandleMissingPathsResponse Protocol.PushRequestId NarinfoQuery.NarinfoResponse
+  | PushPath FilePath
 
 type PushJobStore = TVar (HashMap Protocol.PushRequestId PushJob)
 
@@ -58,6 +61,8 @@ data PushManagerEnv = PushManagerEnv
     pmLastEventTimestamp :: TVar UTCTime,
     -- | The number of pending (uncompleted) jobs.
     pmPendingJobCount :: TVar Int,
+    -- | Manager for batching narinfo queries
+    pmNarinfoQueryManager :: NarinfoQueryManager Protocol.PushRequestId,
     pmLogger :: Logger
   }
 

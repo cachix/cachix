@@ -340,8 +340,8 @@ runHandleMissingPathsResponseTask pushParams pushId batchResponse =
     processQueryResponse = do
       Katip.logLocM Katip.DebugS $ Katip.ls $ "Processing batch response for push job " <> (show pushId :: Text)
 
-      let allStorePaths = NarinfoQuery.nrAllPaths batchResponse
-          missingStorePaths = NarinfoQuery.nrMissingPaths batchResponse
+      let allStorePaths = Set.toList $ NarinfoQuery.nrAllPaths batchResponse
+          missingStorePaths = Set.toList $ NarinfoQuery.nrMissingPaths batchResponse
           store = pushParamsStore pushParams
 
       storePathsToPush <- pushOnClosureAttempt pushParams allStorePaths missingStorePaths

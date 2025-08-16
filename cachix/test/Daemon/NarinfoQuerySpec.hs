@@ -257,7 +257,7 @@ spec = do
         let secondResponse = case head callbacks of
               Just (CallbackCall _ response _) -> response
               Nothing -> panic "Expected callback call"
-        Set.fromList (nrAllPaths secondResponse) `shouldBe` Set.fromList [path1, path2]
+        nrAllPaths secondResponse `shouldBe` Set.fromList [path1, path2]
 
     it "distributes correct paths to each request" $ withStoreFromURI "dummy://" $ \store -> do
       path1 <- mockStorePath store 1
@@ -289,12 +289,12 @@ spec = do
         Just (CallbackCall _ response2 _) <- return $ findResponse 2
 
         -- Request 1 should get: existing=[1,3], missing=[2]
-        Set.fromList (nrAllPaths response1) `shouldBe` Set.fromList [path1, path3]
-        Set.fromList (nrMissingPaths response1) `shouldBe` Set.fromList [path2]
+        nrAllPaths response1 `shouldBe` Set.fromList [path1, path3]
+        nrMissingPaths response1 `shouldBe` Set.fromList [path2]
 
         -- Request 2 should get: existing=[3,5], missing=[4]
-        Set.fromList (nrAllPaths response2) `shouldBe` Set.fromList [path3, path5]
-        Set.fromList (nrMissingPaths response2) `shouldBe` Set.fromList [path4]
+        nrAllPaths response2 `shouldBe` Set.fromList [path3, path5]
+        nrMissingPaths response2 `shouldBe` Set.fromList [path4]
 
     it "deduplicates paths across requests in same batch" $ withStoreFromURI "dummy://" $ \store -> do
       path1 <- mockStorePath store 1

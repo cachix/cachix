@@ -4,6 +4,8 @@
 module Daemon.NarinfoBatchSpec where
 
 import Cachix.Daemon.NarinfoBatch
+import Cachix.Daemon.TTLCache (TTLCache)
+import Cachix.Daemon.TTLCache qualified as TTLCache
 import Control.Concurrent.STM
 import Data.Set qualified as Set
 import Data.Time (UTCTime, addUTCTime, getCurrentTime)
@@ -122,26 +124,26 @@ spec = do
           future = addUTCTime 10 now -- 10 seconds from now
           cache :: TTLCache Text
           cache =
-            insertTTLCache "expired" past $
-              insertTTLCache "valid" future emptyTTLCache
+            TTLCache.insert "expired" past $
+              TTLCache.insert "valid" future TTLCache.empty
 
       -- Expired entry should not be found
-      lookupTTLCache now "expired" cache `shouldBe` False
+      TTLCache.lookup now "expired" cache `shouldBe` False
       -- Valid entry should be found
-      lookupTTLCache now "valid" cache `shouldBe` True
+      TTLCache.lookup now "valid" cache `shouldBe` True
 
     it "respects size limits when pruning" $ do
       now <- getCurrentTime
       let future = addUTCTime 60 now
           -- Create cache with 5 entries
           cache :: TTLCache Text
-          cache = foldl' (\c i -> insertTTLCache (show i) future c) emptyTTLCache [1 .. 5 :: Integer]
+          cache = foldl' (\c i -> TTLCache.insert (show i) future c) TTLCache.empty [1 .. 5 :: Integer]
 
-      sizeTTLCache cache `shouldBe` 5
+      TTLCache.size cache `shouldBe` 5
 
       -- Prune to 3 entries
-      let pruned = pruneTTLCacheToSize 3 cache
-      sizeTTLCache pruned `shouldBe` 3
+      let pruned = TTLCache.pruneToSize 3 cache
+      TTLCache.size pruned `shouldBe` 3
 
   describe "Batching" $ do
     it "triggers batch when size threshold is reached" $ withStoreFromURI "dummy://" $ \store -> do

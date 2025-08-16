@@ -36,8 +36,8 @@ import Cachix.Client.Config qualified as Config
 import Cachix.Client.InstallationMode qualified as InstallationMode
 import Cachix.Client.URI (URI)
 import Cachix.Client.URI qualified as URI
-import Cachix.Daemon.NarinfoBatch (NarinfoBatchOptions (..))
-import Cachix.Daemon.NarinfoBatch qualified as NarinfoBatch
+import Cachix.Daemon.NarinfoQuery (NarinfoQueryOptions (..))
+import Cachix.Daemon.NarinfoQuery qualified as NarinfoQuery
 import Cachix.Deploy.OptionsParser qualified as DeployOptions
 import Cachix.Types.BinaryCache (BinaryCacheName)
 import Cachix.Types.BinaryCache qualified as BinaryCache
@@ -84,7 +84,7 @@ data CachixCommand
   | Import PushOptions Text URI
   | Pin PinOptions
   | WatchStore PushOptions Text
-  | WatchExec WatchExecMode PushOptions NarinfoBatchOptions Text Text [Text]
+  | WatchExec WatchExecMode PushOptions NarinfoQueryOptions Text Text [Text]
   | Use BinaryCacheName InstallationMode.UseOptions
   | Remove BinaryCacheName
   | DeployCommand DeployOptions.DeployCommand
@@ -172,7 +172,7 @@ data DaemonCommand
 
 data DaemonOptions = DaemonOptions
   { daemonAllowRemoteStop :: Bool,
-    daemonNarinfoBatchOptions :: NarinfoBatchOptions,
+    daemonNarinfoQueryOptions :: NarinfoQueryOptions,
     daemonSocketPath :: Maybe FilePath
   }
   deriving (Show)
@@ -545,9 +545,9 @@ daemonOptionsParser =
     remoteStopOption =
       enableDisableFlag True "remote-stop" "the remote stop command which allows clients to remotely shut down the daemon. Remote stop should be disabled in environments where the lifecycle of the daemon is handled by a service manager, like systemd."
 
-batchConfigParser :: Parser NarinfoBatchOptions
+batchConfigParser :: Parser NarinfoQueryOptions
 batchConfigParser =
-  NarinfoBatchOptions
+  NarinfoQueryOptions
     <$> narinfoBatchSizeOption
     <*> narinfoBatchTimeoutOption
     <*> narinfoCacheTTLOption
@@ -558,7 +558,7 @@ batchConfigParser =
         long "narinfo-batch-size"
           <> metavar "INT"
           <> help "Maximum number of paths to batch together (default: 100)"
-          <> value (NarinfoBatch.nboMaxBatchSize NarinfoBatch.defaultNarinfoBatchOptions)
+          <> value (NarinfoQuery.nqoMaxBatchSize NarinfoQuery.defaultNarinfoQueryOptions)
           <> showDefault
 
     narinfoBatchTimeoutOption =
@@ -566,14 +566,14 @@ batchConfigParser =
         long "narinfo-batch-timeout"
           <> metavar "SECONDS"
           <> help "Maximum time to wait before processing a batch in seconds. Use 0 for immediate processing (no batching). (default: 0.5)"
-          <> value (realToFrac (NarinfoBatch.nboMaxWaitTime NarinfoBatch.defaultNarinfoBatchOptions))
+          <> value (realToFrac (NarinfoQuery.nqoMaxWaitTime NarinfoQuery.defaultNarinfoQueryOptions))
 
     narinfoCacheTTLOption =
       option auto $
         long "narinfo-cache-ttl"
           <> metavar "SECONDS"
           <> help "Time-to-live for cached narinfo results in seconds. Use 0 to disable caching (default: 300.0)"
-          <> value (realToFrac (NarinfoBatch.nboCacheTTL NarinfoBatch.defaultNarinfoBatchOptions))
+          <> value (realToFrac (NarinfoQuery.nqoCacheTTL NarinfoQuery.defaultNarinfoQueryOptions))
           <> showDefault
 
     narinfoMaxCacheSizeOption =
@@ -581,7 +581,7 @@ batchConfigParser =
         long "narinfo-max-cache-size"
           <> metavar "INT"
           <> help "Maximum number of entries in the narinfo cache. Use 0 for unlimited (default: 0)"
-          <> value (NarinfoBatch.nboMaxCacheSize NarinfoBatch.defaultNarinfoBatchOptions)
+          <> value (NarinfoQuery.nqoMaxCacheSize NarinfoQuery.defaultNarinfoQueryOptions)
           <> showDefault
 
 daemonPushOptionsParser :: Parser DaemonPushOptions

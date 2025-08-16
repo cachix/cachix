@@ -11,7 +11,7 @@ import Cachix.Client.OptionsParser
   ( CachixCommand (..),
     DaemonCommand (..),
     PushArguments (..),
-    daemonNarinfoBatchOptions,
+    daemonNarinfoQueryOptions,
     getOpts,
   )
 import Cachix.Client.Version (cachixVersion)
@@ -41,7 +41,7 @@ main = displayConsoleRegions $ do
     Daemon (DaemonRun daemonOptions pushOptions mcacheName) -> Daemon.start env daemonOptions pushOptions mcacheName
     Daemon (DaemonStop daemonOptions) -> Daemon.Client.stop env daemonOptions
     Daemon (DaemonPushPaths daemonOptions daemonPushOptions storePaths) -> Daemon.Client.push env daemonOptions daemonPushOptions storePaths
-    Daemon (DaemonWatchExec daemonOptions pushOptions cacheName cmd args) -> Command.watchExecDaemon env pushOptions (daemonNarinfoBatchOptions daemonOptions) cacheName cmd args
+    Daemon (DaemonWatchExec daemonOptions pushOptions cacheName cmd args) -> Command.watchExecDaemon env pushOptions (daemonNarinfoQueryOptions daemonOptions) cacheName cmd args
     DeployCommand (DeployOptions.Agent opts) -> AgentCommand.run cachixOptions opts
     DeployCommand (DeployOptions.Activate opts) -> ActivateCommand.run env opts
     GenerateKeypair name -> Command.generateKeypair env name

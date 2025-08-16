@@ -25,8 +25,9 @@ where
 import Cachix.Daemon.TTLCache (TTLCache)
 import Cachix.Daemon.TTLCache qualified as TTLCache
 import Control.Concurrent.STM
+import Control.Monad.Extra (partitionM)
 import Control.Monad.IO.Unlift (MonadUnliftIO)
-import Data.List (partition)
+import Data.Sequence qualified as Seq
 import Data.Set qualified as Set
 import Data.Time (NominalDiffTime, UTCTime, addUTCTime, diffUTCTime, getCurrentTime)
 import Hercules.CNix.Store (StorePath, getStorePathHash)
@@ -86,7 +87,7 @@ data BatchResponse = BatchResponse
 -- | Internal state of the batch manager
 data BatchState requestId = BatchState
   { -- | Accumulated requests waiting to be processed
-    bsPendingRequests :: ![BatchRequest requestId],
+    bsPendingRequests :: !(Seq (BatchRequest requestId)),
     -- | All unique paths from pending requests
     bsAccumulatedPaths :: !(Set StorePath),
     -- | Time when the first request in this batch was added
@@ -127,7 +128,7 @@ newNarinfoBatchManager nbmConfig nbmCallback = liftIO $ do
   where
     initialState =
       BatchState
-        { bsPendingRequests = [],
+        { bsPendingRequests = Seq.empty,
           bsAccumulatedPaths = Set.empty,
           bsBatchStartTime = Nothing,
           bsTimeoutVar = Nothing,
@@ -145,10 +146,10 @@ lookupCache NarinfoBatchManager {nbmCache, nbmCachedTime} path = liftIO $ do
   return $ TTLCache.lookup now pathHash cache
 
 -- | Update cache with new entries (only existing paths)
-updateCache :: (MonadIO m) => NarinfoBatchManager requestId -> [StorePath] -> m ()
+updateCache :: (MonadIO m) => NarinfoBatchManager requestId -> Set StorePath -> m ()
 updateCache NarinfoBatchManager {nbmCache, nbmConfig, nbmCachedTime} paths = liftIO $ do
   -- Convert paths to hashes
-  pathHashes <- forM paths getStorePathHash
+  pathHashes <- forM (Set.toList paths) getStorePathHash
   now <- readTVarIO nbmCachedTime
   let ttl = nboCacheTTL nbmConfig
   when (ttl > 0) $ do
@@ -186,19 +187,13 @@ submitBatchRequest manager@NarinfoBatchManager {nbmConfig, nbmState, nbmCachedTi
   -- Add request to pending queue
   now <- readTVarIO nbmCachedTime
 
-  -- Check cache for each path
-  cacheResults <- forM storePaths $ \path -> do
-    cached <- lookupCache manager path
-    return (path, cached)
-
-  let (cachedPaths, pathsToQuery) = partition snd cacheResults
-      cachedExistingPaths = [path | (path, _) <- cachedPaths]
-      pathsToQuery' = [path | (path, _) <- pathsToQuery]
+  -- Check cache for each path in a single pass
+  (cachedExistingPaths, pathsToQuery') <- partitionM (lookupCache manager) storePaths
 
   -- Perform the state update atomically and determine if timeout is needed
   needsTimeout <- atomically $ do
     batchState <- readTVar nbmState
-    let isFirstRequest = null (bsPendingRequests batchState)
+    let isFirstRequest = Seq.null (bsPendingRequests batchState)
         needsNewTimeout = isFirstRequest && isNothing (bsTimeoutVar batchState) && nboMaxWaitTime nbmConfig > 0
         updatedPaths = bsAccumulatedPaths batchState <> Set.fromList pathsToQuery'
         newRequest = BatchRequest requestId storePaths cachedExistingPaths
@@ -208,7 +203,7 @@ submitBatchRequest manager@NarinfoBatchManager {nbmConfig, nbmState, nbmCachedTi
 
     writeTVar nbmState $
       batchState
-        { bsPendingRequests = newRequest : bsPendingRequests batchState,
+        { bsPendingRequests = bsPendingRequests batchState Seq.|> newRequest,
           bsAccumulatedPaths = updatedPaths,
           bsBatchStartTime = newStartTime
         }
@@ -266,7 +261,7 @@ isBatchTimedOut batchState =
 
 -- | Data representing a batch ready for processing
 data ReadyBatch requestId = ReadyBatch
-  { rbRequests :: ![BatchRequest requestId],
+  { rbRequests :: !(Seq (BatchRequest requestId)),
     rbAllPaths :: ![StorePath],
     rbBatchStartTime :: !(Maybe UTCTime)
   }
@@ -285,7 +280,7 @@ waitForBatchOrShutdown config stateVar = do
     then return Nothing
     else do
       -- Check if we have any pending requests
-      if null (bsPendingRequests batchState)
+      if Seq.null (bsPendingRequests batchState)
         then retry -- No work, wait for requests
         else do
           -- We have requests, check if batch is ready
@@ -300,14 +295,14 @@ waitForBatchOrShutdown config stateVar = do
           if sizeReady || timeoutReady || immediateMode
             then do
               -- Batch is ready, extract data and clear state
-              let requests = reverse (bsPendingRequests batchState)
+              let requests = bsPendingRequests batchState
                   allPaths = Set.toList (bsAccumulatedPaths batchState)
                   startTime = bsBatchStartTime batchState
 
               -- Clear the batch state
               writeTVar stateVar $
                 batchState
-                  { bsPendingRequests = [],
+                  { bsPendingRequests = Seq.empty,
                     bsAccumulatedPaths = Set.empty,
                     bsBatchStartTime = Nothing,
                     bsTimeoutVar = Nothing
@@ -372,7 +367,7 @@ processReadyBatch manager@NarinfoBatchManager {nbmCallback} processBatch ReadyBa
         processingStartTime <- liftIO getCurrentTime
 
         -- Log batch statistics
-        let requestCount = length rbRequests
+        let requestCount = Seq.length rbRequests
             pathCount = length rbAllPaths
             waitTime = case rbBatchStartTime of
               Nothing -> 0
@@ -401,8 +396,9 @@ processReadyBatch manager@NarinfoBatchManager {nbmCallback} processBatch ReadyBa
             )
         -- Update cache with results (only cache positive lookups)
         let missingPathsSet = Set.fromList missingPaths
-            existingPaths = filter (not . (`Set.member` missingPathsSet)) allPathsInClosure
-        updateCache manager existingPaths
+            allPathsSet = Set.fromList allPathsInClosure
+            existingPathsSet = allPathsSet `Set.difference` missingPathsSet
+        updateCache manager existingPathsSet
 
         return (allPathsInClosure, missingPaths)
 
@@ -411,7 +407,7 @@ processReadyBatch manager@NarinfoBatchManager {nbmCallback} processBatch ReadyBa
       missingPathsSet = Set.fromList missingPaths
 
   -- Respond to each request using the manager's callback
-  liftIO $ forM_ rbRequests $ \BatchRequest {brRequestId, brStorePaths, brCachedPaths} -> do
+  liftIO $ forM_ (toList rbRequests) $ \BatchRequest {brRequestId, brStorePaths, brCachedPaths} -> do
     -- For each request, determine which of its requested paths exist (from API or cache)
     let -- Paths that exist: intersection of request paths with all existing paths (API + cached)
         existingPathsFromAPI = filter (`Set.member` allPathsSet) brStorePaths

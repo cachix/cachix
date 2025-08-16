@@ -13,7 +13,6 @@ import Hercules.CNix qualified as CNix
 import Hercules.CNix.Store (Store, StorePath, withStoreFromURI)
 import Katip qualified
 import Protolude
-import System.IO.Unsafe (unsafePerformIO)
 import Test.Hspec
 import UnliftIO.Async qualified as Async
 

@@ -15,7 +15,7 @@ import Cachix.Client.Command.Push qualified as Command.Push
 import Cachix.Client.Config qualified as Config
 import Cachix.Client.Config.Orphans ()
 import Cachix.Client.Env as Env
-import Cachix.Client.OptionsParser (DaemonOptions, PushOptions, daemonNarinfoBatchOptions)
+import Cachix.Client.OptionsParser (DaemonOptions, PushOptions, daemonNarinfoQueryOptions)
 import Cachix.Client.OptionsParser qualified as Options
 import Cachix.Client.Push
 import Cachix.Daemon.EventLoop qualified as EventLoop
@@ -92,7 +92,7 @@ new daemonEnv nixStore daemonOptions daemonLogHandle daemonPushOptions daemonCac
   let onPushEvent = Subscription.pushEvent daemonSubscriptionManager
 
   let pushParams = Push.newPushParams nixStore (clientenv daemonEnv) daemonBinaryCache daemonPushSecret daemonPushOptions
-  daemonPushManager <- PushManager.newPushManagerEnv daemonPushOptions (daemonNarinfoBatchOptions daemonOptions) pushParams onPushEvent daemonLogger
+  daemonPushManager <- PushManager.newPushManagerEnv daemonPushOptions (daemonNarinfoQueryOptions daemonOptions) pushParams onPushEvent daemonLogger
 
   daemonWorkerThreads <- newEmptyMVar
 

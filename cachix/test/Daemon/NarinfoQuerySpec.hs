@@ -1,9 +1,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Daemon.NarinfoBatchSpec where
+module Daemon.NarinfoQuerySpec where
 
-import Cachix.Daemon.NarinfoBatch
+import Cachix.Daemon.NarinfoQuery
 import Cachix.Daemon.TTLCache (TTLCache)
 import Cachix.Daemon.TTLCache qualified as TTLCache
 import Control.Concurrent.STM
@@ -32,7 +32,7 @@ data BatchCall = BatchCall
 -- Test data structure to track callback calls
 data CallbackCall requestId = CallbackCall
   { ccRequestId :: requestId,
-    ccResponse :: BatchResponse,
+    ccResponse :: NarinfoResponse,
     ccTimestamp :: UTCTime
   }
   deriving (Show, Eq)
@@ -63,7 +63,7 @@ createMockBatchProcessor callsVar responsesVar inputPaths = do
 createMockCallback ::
   TVar [CallbackCall requestId] ->
   requestId ->
-  BatchResponse ->
+  NarinfoResponse ->
   IO ()
 createMockCallback callsVar requestId response = do
   now <- getCurrentTime
@@ -72,24 +72,24 @@ createMockCallback callsVar requestId response = do
 
 -- Test context to pass around
 data TestContext requestId = TestContext
-  { tcManager :: NarinfoBatchManager requestId,
+  { tcManager :: NarinfoQueryManager requestId,
     tcBatchCalls :: TVar [BatchCall],
     tcCallbackCalls :: TVar [CallbackCall requestId],
     tcResponsesQueue :: TVar [(Set StorePath, Set StorePath)]
   }
 
 -- Helper to start batch processor asynchronously with its own Katip context
-startBatchProcessorAsync :: NarinfoBatchManager requestId -> ([StorePath] -> IO ([StorePath], [StorePath])) -> IO ()
-startBatchProcessorAsync manager batchProcessor = do
+startQueryProcessorAsync :: NarinfoQueryManager requestId -> ([StorePath] -> IO ([StorePath], [StorePath])) -> IO ()
+startQueryProcessorAsync manager batchProcessor = do
   void $ Async.async $ do
     handleScribe <- Katip.mkHandleScribe Katip.ColorIfTerminal stderr (Katip.permitItem Katip.InfoS) Katip.V0
     let makeLogEnv = Katip.registerScribe "stderr" handleScribe Katip.defaultScribeSettings =<< Katip.initLogEnv "test" "test"
     bracket makeLogEnv Katip.closeScribes $ \le ->
-      Katip.runKatipContextT le () mempty $ startBatchProcessor manager (liftIO . batchProcessor)
+      Katip.runKatipContextT le () mempty $ startQueryProcessor manager (liftIO . batchProcessor)
 
 -- Test setup helper that encapsulates common initialization
 withTestManager ::
-  NarinfoBatchOptions ->
+  NarinfoQueryOptions ->
   (TestContext Int -> IO a) ->
   IO a
 withTestManager config action = do
@@ -100,8 +100,8 @@ withTestManager config action = do
   let callback = createMockCallback callbackCalls
       batchProcessor = createMockBatchProcessor batchCalls responsesQueue
 
-  manager <- newNarinfoBatchManager config callback
-  startBatchProcessorAsync manager batchProcessor
+  manager <- newNarinfoQueryManager config callback
+  startQueryProcessorAsync manager batchProcessor
 
   let testContext =
         TestContext
@@ -111,7 +111,7 @@ withTestManager config action = do
             tcResponsesQueue = responsesQueue
           }
 
-  finally (action testContext) (stopBatchProcessor manager)
+  finally (action testContext) (stopQueryProcessor manager)
 
 spec :: Spec
 spec = do
@@ -149,19 +149,19 @@ spec = do
       path1 <- mockStorePath store 1
       path2 <- mockStorePath store 2
       path3 <- mockStorePath store 3
-      let config = defaultNarinfoBatchOptions {nboMaxBatchSize = 2, nboMaxWaitTime = 10} -- Large timeout, small batch
+      let config = defaultNarinfoQueryOptions {nqoMaxBatchSize = 2, nqoMaxWaitTime = 10} -- Large timeout, small batch
       withTestManager config $ \TestContext {..} -> do
         atomically $ writeTVar tcResponsesQueue [(Set.fromList [path1, path2, path3], Set.empty)]
 
         -- Submit first request (1 path) - should not trigger
-        submitBatchRequest tcManager (1 :: Int) [path1]
+        submitQueryRequest tcManager (1 :: Int) [path1]
         threadDelay 10000
 
         calls1 <- readTVarIO tcBatchCalls
         length calls1 `shouldBe` 0 -- No batch yet
 
         -- Submit second request (1 more unique path) - should trigger batch (2 paths total)
-        submitBatchRequest tcManager (2 :: Int) [path2]
+        submitQueryRequest tcManager (2 :: Int) [path2]
         threadDelay 20000 -- Wait for batch processing
         calls2 <- readTVarIO tcBatchCalls
         length calls2 `shouldBe` 1 -- One batch triggered
@@ -176,12 +176,12 @@ spec = do
 
     it "triggers batch when timeout is reached" $ withStoreFromURI "dummy://" $ \store -> do
       path1 <- mockStorePath store 1
-      let config = defaultNarinfoBatchOptions {nboMaxBatchSize = 100, nboMaxWaitTime = 0.05} -- Small timeout, large batch
+      let config = defaultNarinfoQueryOptions {nqoMaxBatchSize = 100, nqoMaxWaitTime = 0.05} -- Small timeout, large batch
       withTestManager config $ \TestContext {..} -> do
         atomically $ writeTVar tcResponsesQueue [(Set.fromList [path1], Set.empty)]
 
         -- Submit request that won't reach size threshold
-        submitBatchRequest tcManager (1 :: Int) [path1]
+        submitQueryRequest tcManager (1 :: Int) [path1]
 
         -- Wait for timeout to trigger
         threadDelay 60000 -- 60ms > 50ms timeout
@@ -191,11 +191,11 @@ spec = do
         length callbacks `shouldBe` 1 -- Request got response
     it "processes immediately when timeout is zero" $ withStoreFromURI "dummy://" $ \store -> do
       path1 <- mockStorePath store 1
-      let config = defaultNarinfoBatchOptions {nboMaxBatchSize = 100, nboMaxWaitTime = 0} -- Immediate mode
+      let config = defaultNarinfoQueryOptions {nqoMaxBatchSize = 100, nqoMaxWaitTime = 0} -- Immediate mode
       withTestManager config $ \TestContext {..} -> do
         atomically $ writeTVar tcResponsesQueue [(Set.fromList [path1], Set.empty)]
 
-        submitBatchRequest tcManager (1 :: Int) [path1]
+        submitQueryRequest tcManager (1 :: Int) [path1]
         threadDelay 20000 -- Short wait
         calls <- readTVarIO tcBatchCalls
         length calls `shouldBe` 1 -- Processed immediately
@@ -206,14 +206,14 @@ spec = do
       path1 <- mockStorePath store 1
       path2 <- mockStorePath store 2
       path3 <- mockStorePath store 3
-      let config = defaultNarinfoBatchOptions {nboMaxWaitTime = 0}
+      let config = defaultNarinfoQueryOptions {nqoMaxWaitTime = 0}
       withTestManager config $ \TestContext {..} -> do
         let existingPaths = Set.fromList [path1, path2]
             missingPaths = Set.fromList [path3]
         atomically $ writeTVar tcResponsesQueue [(existingPaths, missingPaths)]
 
         -- Submit all three paths
-        submitBatchRequest tcManager (1 :: Int) [path1, path2, path3]
+        submitQueryRequest tcManager (1 :: Int) [path1, path2, path3]
         threadDelay 20000
 
         -- Check what's in cache - only existing paths should be cached
@@ -227,16 +227,16 @@ spec = do
     it "bypasses batch processor for cached paths" $ withStoreFromURI "dummy://" $ \store -> do
       path1 <- mockStorePath store 1
       path2 <- mockStorePath store 2
-      let config = defaultNarinfoBatchOptions {nboMaxWaitTime = 0}
+      let config = defaultNarinfoQueryOptions {nqoMaxWaitTime = 0}
       withTestManager config $ \TestContext {..} -> do
         atomically $ writeTVar tcResponsesQueue [(Set.fromList [path1], Set.empty), (Set.fromList [path2], Set.empty)]
 
         -- First request - path1 will be cached
-        submitBatchRequest tcManager (1 :: Int) [path1]
+        submitQueryRequest tcManager (1 :: Int) [path1]
         threadDelay 20000
 
         -- Second request - path1 from cache, path2 goes to batch
-        submitBatchRequest tcManager (2 :: Int) [path1, path2]
+        submitQueryRequest tcManager (2 :: Int) [path1, path2]
         threadDelay 20000
 
         -- Should have 2 batch calls (one for each unique uncached path)
@@ -257,7 +257,7 @@ spec = do
         let secondResponse = case head callbacks of
               Just (CallbackCall _ response _) -> response
               Nothing -> panic "Expected callback call"
-        Set.fromList (brAllPaths secondResponse) `shouldBe` Set.fromList [path1, path2]
+        Set.fromList (nrAllPaths secondResponse) `shouldBe` Set.fromList [path1, path2]
 
     it "distributes correct paths to each request" $ withStoreFromURI "dummy://" $ \store -> do
       path1 <- mockStorePath store 1
@@ -266,7 +266,7 @@ spec = do
       path4 <- mockStorePath store 4
       path5 <- mockStorePath store 5
       path6 <- mockStorePath store 6
-      let config = defaultNarinfoBatchOptions {nboMaxWaitTime = 0}
+      let config = defaultNarinfoQueryOptions {nqoMaxWaitTime = 0}
       withTestManager config $ \TestContext {..} -> do
         -- Setup: path1,3,5 exist; path2,4,6 missing
         let existingPaths = Set.fromList [path1, path3, path5]
@@ -274,9 +274,9 @@ spec = do
         atomically $ writeTVar tcResponsesQueue [(existingPaths, missingPaths)]
 
         -- Request 1: paths 1,2,3
-        submitBatchRequest tcManager (1 :: Int) [path1, path2, path3]
+        submitQueryRequest tcManager (1 :: Int) [path1, path2, path3]
         -- Request 2: paths 3,4,5 (path 3 overlaps)
-        submitBatchRequest tcManager (2 :: Int) [path3, path4, path5]
+        submitQueryRequest tcManager (2 :: Int) [path3, path4, path5]
 
         threadDelay 20000
 
@@ -289,23 +289,23 @@ spec = do
         Just (CallbackCall _ response2 _) <- return $ findResponse 2
 
         -- Request 1 should get: existing=[1,3], missing=[2]
-        Set.fromList (brAllPaths response1) `shouldBe` Set.fromList [path1, path3]
-        Set.fromList (brMissingPaths response1) `shouldBe` Set.fromList [path2]
+        Set.fromList (nrAllPaths response1) `shouldBe` Set.fromList [path1, path3]
+        Set.fromList (nrMissingPaths response1) `shouldBe` Set.fromList [path2]
 
         -- Request 2 should get: existing=[3,5], missing=[4]
-        Set.fromList (brAllPaths response2) `shouldBe` Set.fromList [path3, path5]
-        Set.fromList (brMissingPaths response2) `shouldBe` Set.fromList [path4]
+        Set.fromList (nrAllPaths response2) `shouldBe` Set.fromList [path3, path5]
+        Set.fromList (nrMissingPaths response2) `shouldBe` Set.fromList [path4]
 
     it "deduplicates paths across requests in same batch" $ withStoreFromURI "dummy://" $ \store -> do
       path1 <- mockStorePath store 1
       path2 <- mockStorePath store 2
-      let config = defaultNarinfoBatchOptions {nboMaxBatchSize = 3, nboMaxWaitTime = 0.1}
+      let config = defaultNarinfoQueryOptions {nqoMaxBatchSize = 3, nqoMaxWaitTime = 0.1}
       withTestManager config $ \TestContext {..} -> do
         atomically $ writeTVar tcResponsesQueue [(Set.fromList [path1, path2], Set.empty)]
 
         -- Submit overlapping requests that will be batched together
-        submitBatchRequest tcManager (1 :: Int) [path1, path2] -- paths 1,2
-        submitBatchRequest tcManager (2 :: Int) [path2, path1] -- paths 2,1 (same, different order)
+        submitQueryRequest tcManager (1 :: Int) [path1, path2] -- paths 1,2
+        submitQueryRequest tcManager (2 :: Int) [path2, path1] -- paths 2,1 (same, different order)
         threadDelay 120000 -- Wait 120ms, longer than 100ms timeout
         calls <- readTVarIO tcBatchCalls
         length calls `shouldBe` 1

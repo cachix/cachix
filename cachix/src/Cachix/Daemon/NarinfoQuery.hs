@@ -78,9 +78,9 @@ data QueryRequest requestId = QueryRequest
 -- | Response to a narinfo query request
 data NarinfoResponse = NarinfoResponse
   { -- | All paths in the dependency closure
-    nrAllPaths :: ![StorePath],
+    nrAllPaths :: !(Set StorePath),
     -- | Paths missing from the cache
-    nrMissingPaths :: ![StorePath]
+    nrMissingPaths :: !(Set StorePath)
   }
   deriving stock (Eq, Show)
 
@@ -407,15 +407,17 @@ processReadyBatch manager@NarinfoQueryManager {nqmCallback} processBatch ReadyBa
       missingPathsSet = Set.fromList missingPaths
 
   -- Respond to each request using the manager's callback
-  liftIO $ forM_ (toList rbRequests) $ \QueryRequest {qrRequestId, qrStorePaths, qrCachedPaths} -> do
+  liftIO $ forM_ rbRequests $ \QueryRequest {qrRequestId, qrStorePaths, qrCachedPaths} -> do
     -- For each request, determine which of its requested paths exist (from API or cache)
-    let -- Paths that exist: intersection of request paths with all existing paths (API + cached)
-        existingPathsFromAPI = filter (`Set.member` allPathsSet) qrStorePaths
-        missingPathsFromAPI = filter (`Set.member` missingPathsSet) qrStorePaths
+    let -- Convert request paths to sets for efficient operations
+        qrStorePathsSet = Set.fromList qrStorePaths
+        qrCachedPathsSet = Set.fromList qrCachedPaths
+        -- Paths that exist: intersection of request paths with all existing paths (API + cached)
+        existingPathsFromAPI = qrStorePathsSet `Set.intersection` allPathsSet
+        missingPathsFromAPI = qrStorePathsSet `Set.intersection` missingPathsSet
         -- Combine existing paths from API and cache, removing duplicates
-        allRequestPaths = Set.toList $ Set.fromList (existingPathsFromAPI ++ qrCachedPaths)
-        allRequestMissing = missingPathsFromAPI
-        response = NarinfoResponse allRequestPaths allRequestMissing
+        allRequestPaths = existingPathsFromAPI `Set.union` qrCachedPathsSet
+        response = NarinfoResponse allRequestPaths missingPathsFromAPI
 
     -- Call the manager's callback with request ID and response
     nqmCallback qrRequestId response

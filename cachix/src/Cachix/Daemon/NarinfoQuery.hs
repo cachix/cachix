@@ -4,16 +4,16 @@
 module Cachix.Daemon.NarinfoQuery
   ( -- * Types
     NarinfoQueryManager,
-    QueryRequest (..),
+    NarinfoRequest (..),
     NarinfoResponse (..),
     NarinfoQueryOptions (..),
     defaultNarinfoQueryOptions,
 
     -- * Operations
-    newNarinfoQueryManager,
-    submitQueryRequest,
-    startQueryProcessor,
-    stopQueryProcessor,
+    new,
+    submitRequest,
+    start,
+    stop,
     cleanupStaleEntries,
 
     -- * Cache operations (for testing)
@@ -66,7 +66,7 @@ defaultNarinfoQueryOptions =
     }
 
 -- | A request to check narinfo for store paths
-data QueryRequest requestId = QueryRequest
+data NarinfoRequest requestId = NarinfoRequest
   { -- | Unique identifier for this request
     qrRequestId :: !requestId,
     -- | Store paths to check
@@ -87,7 +87,7 @@ data NarinfoResponse = NarinfoResponse
 -- | Internal state of the query manager
 data QueryState requestId = QueryState
   { -- | Accumulated requests waiting to be processed
-    qsPendingRequests :: !(Seq (QueryRequest requestId)),
+    qsPendingRequests :: !(Seq (NarinfoRequest requestId)),
     -- | All unique paths from pending requests
     qsAccumulatedPaths :: !(Set StorePath),
     -- | Time when the first request in this query group was added
@@ -117,8 +117,8 @@ data NarinfoQueryManager requestId = NarinfoQueryManager
   }
 
 -- | Create a new narinfo query manager
-newNarinfoQueryManager :: (MonadIO m) => NarinfoQueryOptions -> (requestId -> NarinfoResponse -> IO ()) -> m (NarinfoQueryManager requestId)
-newNarinfoQueryManager nqmConfig nqmCallback = liftIO $ do
+new :: (MonadIO m) => NarinfoQueryOptions -> (requestId -> NarinfoResponse -> IO ()) -> m (NarinfoQueryManager requestId)
+new nqmConfig nqmCallback = liftIO $ do
   nqmState <- newTVarIO initialState
   nqmProcessorThread <- newEmptyMVar
   nqmCache <- newTVarIO TTLCache.empty
@@ -149,7 +149,7 @@ lookupCache NarinfoQueryManager {nqmCache, nqmCachedTime} path = liftIO $ do
 updateCache :: (MonadIO m) => NarinfoQueryManager requestId -> Set StorePath -> m ()
 updateCache NarinfoQueryManager {nqmCache, nqmConfig, nqmCachedTime} paths = liftIO $ do
   -- Convert paths to hashes
-  pathHashes <- forM (Set.toList paths) getStorePathHash
+  pathHashes <- mapM getStorePathHash (Set.toList paths)
   now <- readTVarIO nqmCachedTime
   let ttl = nqoCacheTTL nqmConfig
   when (ttl > 0) $ do
@@ -177,13 +177,13 @@ cleanupStaleEntries NarinfoQueryManager {nqmCache, nqmCachedTime} = liftIO $ do
   atomically $ modifyTVar' nqmCache $ TTLCache.cleanupExpired now
 
 -- | Submit a request to the query manager
-submitQueryRequest ::
+submitRequest ::
   (MonadIO m) =>
   NarinfoQueryManager requestId ->
   requestId ->
   [StorePath] ->
   m ()
-submitQueryRequest manager@NarinfoQueryManager {nqmConfig, nqmState, nqmCachedTime} requestId storePaths = liftIO $ do
+submitRequest manager@NarinfoQueryManager {nqmConfig, nqmState, nqmCachedTime} requestId storePaths = liftIO $ do
   -- Add request to pending queue
   now <- readTVarIO nqmCachedTime
 
@@ -196,7 +196,7 @@ submitQueryRequest manager@NarinfoQueryManager {nqmConfig, nqmState, nqmCachedTi
     let isFirstRequest = Seq.null (qsPendingRequests batchState)
         needsNewTimeout = isFirstRequest && isNothing (qsTimeoutVar batchState) && nqoMaxWaitTime nqmConfig > 0
         updatedPaths = qsAccumulatedPaths batchState <> Set.fromList pathsToQuery'
-        newRequest = QueryRequest requestId storePaths cachedExistingPaths
+        newRequest = NarinfoRequest requestId storePaths cachedExistingPaths
         newStartTime = case qsQueryStartTime batchState of
           Nothing -> Just now
           justTime -> justTime
@@ -217,24 +217,24 @@ submitQueryRequest manager@NarinfoQueryManager {nqmConfig, nqmState, nqmCachedTi
       modifyTVar' nqmState $ \bs -> bs {qsTimeoutVar = Just timeoutVar}
 
 -- | Start the query processor thread
-startQueryProcessor ::
+start ::
   (MonadUnliftIO m, Katip.KatipContext m) =>
   NarinfoQueryManager requestId ->
   -- | Function to process a batch of paths
   ([StorePath] -> m ([StorePath], [StorePath])) ->
   m ()
-startQueryProcessor manager@NarinfoQueryManager {nqmProcessorThread, nqmTimeRefreshThread} processBatch = do
+start manager@NarinfoQueryManager {nqmProcessorThread, nqmTimeRefreshThread} processBatch = do
   -- Start time refresh thread
   timeThread <- Async.async $ runTimeRefreshThread manager
   liftIO $ putMVar nqmTimeRefreshThread timeThread
 
   -- Start processor thread
-  thread <- Async.async $ runQueryProcessor manager processBatch
+  thread <- Async.async $ runQueryProcessorThread manager processBatch
   liftIO $ putMVar nqmProcessorThread thread
 
 -- | Stop the query processor
-stopQueryProcessor :: (MonadIO m) => NarinfoQueryManager requestId -> m ()
-stopQueryProcessor NarinfoQueryManager {nqmState, nqmProcessorThread, nqmTimeRefreshThread} = liftIO $ do
+stop :: (MonadIO m) => NarinfoQueryManager requestId -> m ()
+stop NarinfoQueryManager {nqmState, nqmProcessorThread, nqmTimeRefreshThread} = liftIO $ do
   -- Signal shutdown
   atomically $ modifyTVar' nqmState $ \batchState -> batchState {qsRunning = False}
 
@@ -242,7 +242,7 @@ stopQueryProcessor NarinfoQueryManager {nqmState, nqmProcessorThread, nqmTimeRef
   thread <- tryTakeMVar nqmProcessorThread
   for_ thread Async.wait
 
-  -- Wait for time refresh thread to finish
+  -- Cancel the time refresh thread
   timeThread <- tryTakeMVar nqmTimeRefreshThread
   for_ timeThread Async.cancel
 
@@ -261,7 +261,7 @@ isQueryTimedOut queryState =
 
 -- | Data representing a batch ready for processing
 data ReadyBatch requestId = ReadyBatch
-  { rbRequests :: !(Seq (QueryRequest requestId)),
+  { rbRequests :: !(Seq (NarinfoRequest requestId)),
     rbAllPaths :: ![StorePath],
     rbBatchStartTime :: !(Maybe UTCTime)
   }
@@ -323,21 +323,20 @@ runTimeRefreshThread NarinfoQueryManager {nqmCachedTime} = do
   loop
   where
     loop = do
-      -- Wait 2 seconds between updates
-      liftIO $ threadDelay 2_000_000 -- 2 seconds in microseconds
+      -- Update cached time every second
+      liftIO $ threadDelay 1_000_000
 
-      -- Update cached time
       now <- liftIO getCurrentTime
       liftIO $ atomically $ writeTVar nqmCachedTime now
       loop
 
 -- | Main query processor loop
-runQueryProcessor ::
+runQueryProcessorThread ::
   (MonadUnliftIO m, Katip.KatipContext m) =>
   NarinfoQueryManager requestId ->
   ([StorePath] -> m ([StorePath], [StorePath])) ->
   m ()
-runQueryProcessor manager@NarinfoQueryManager {nqmConfig, nqmState} processBatch = do
+runQueryProcessorThread manager@NarinfoQueryManager {nqmConfig, nqmState} processBatch = do
   loop
   where
     loop = do
@@ -407,7 +406,7 @@ processReadyBatch manager@NarinfoQueryManager {nqmCallback} processBatch ReadyBa
       missingPathsSet = Set.fromList missingPaths
 
   -- Respond to each request using the manager's callback
-  liftIO $ forM_ rbRequests $ \QueryRequest {qrRequestId, qrStorePaths, qrCachedPaths} -> do
+  liftIO $ forM_ rbRequests $ \NarinfoRequest {qrRequestId, qrStorePaths, qrCachedPaths} -> do
     -- For each request, determine which of its requested paths exist (from API or cache)
     let -- Convert request paths to sets for efficient operations
         qrStorePathsSet = Set.fromList qrStorePaths

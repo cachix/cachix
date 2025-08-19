@@ -12,8 +12,8 @@ jobs:
         os:
           - [self-hosted, linux, X64]
           - [self-hosted, linux, ARM64]
+          - [self-hosted, macos, ARM64]
           - macos-13 # x86_64
-          - macos-latest # macos-14 == aarch64
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4

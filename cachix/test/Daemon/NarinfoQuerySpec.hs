@@ -279,7 +279,7 @@ spec = do
         -- Request 2: paths 3,4,5 (path 3 overlaps)
         NarinfoQuery.submitRequest tcManager (2 :: Int) [path3, path4, path5]
 
-        threadDelay 20000
+        threadDelay 20_000
 
         callbacks <- readTVarIO tcCallbackCalls
         length callbacks `shouldBe` 2
@@ -290,11 +290,11 @@ spec = do
         Just (CallbackCall _ response2 _) <- return $ findResponse 2
 
         -- Request 1 should get: existing=[1,3], missing=[2]
-        NarinfoQuery.nrAllPaths response1 `shouldBe` Set.fromList [path1, path3]
+        NarinfoQuery.nrAllPaths response1 `shouldBe` Set.fromList [path1, path2, path3]
         NarinfoQuery.nrMissingPaths response1 `shouldBe` Set.fromList [path2]
 
         -- Request 2 should get: existing=[3,5], missing=[4]
-        NarinfoQuery.nrAllPaths response2 `shouldBe` Set.fromList [path3, path5]
+        NarinfoQuery.nrAllPaths response2 `shouldBe` Set.fromList [path3, path4, path5]
         NarinfoQuery.nrMissingPaths response2 `shouldBe` Set.fromList [path4]
 
     it "deduplicates paths across requests in same batch" $ withStoreFromURI "dummy://" $ \store -> do

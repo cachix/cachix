@@ -99,7 +99,7 @@ newPushManagerEnv pushOptions batchOptions pmPushParams onPushEvent pmLogger = l
           case result of
             Just True -> return ()
             _ -> retry -- Queue is full, keep trying
-  pmNarinfoQueryManager <- NarinfoQuery.newNarinfoQueryManager batchOptions batchCallback
+  pmNarinfoQueryManager <- NarinfoQuery.new batchOptions batchCallback
 
   return $ PushManagerEnv {..}
 
@@ -116,13 +116,13 @@ stopPushManager timeoutOptions PushManagerEnv {..} = do
 -- | Start the batch processor for narinfo queries
 startBatchProcessor :: (MonadUnliftIO m, Katip.KatipContext m) => PushManagerEnv -> m ()
 startBatchProcessor env@PushManagerEnv {pmNarinfoQueryManager} = do
-  NarinfoQuery.startQueryProcessor pmNarinfoQueryManager $ \paths ->
+  NarinfoQuery.start pmNarinfoQueryManager $ \paths ->
     runPushManager env (processBatchedNarinfo paths)
 
 -- | Stop the batch processor
 stopBatchProcessor :: (MonadIO m) => PushManagerEnv -> m ()
 stopBatchProcessor PushManagerEnv {pmNarinfoQueryManager} = do
-  NarinfoQuery.stopQueryProcessor pmNarinfoQueryManager
+  NarinfoQuery.stop pmNarinfoQueryManager
 
 -- Manage push jobs
 
@@ -322,7 +322,7 @@ runQueryMissingPathsTask pushParams pushId =
 
         -- Use async batch manager for narinfo queries (non-blocking)
         batchManager <- asks pmNarinfoQueryManager
-        NarinfoQuery.submitQueryRequest batchManager pushId validPaths
+        NarinfoQuery.submitRequest batchManager pushId validPaths
 
 runHandleMissingPathsResponseTask :: PushParams PushManager () -> Protocol.PushRequestId -> NarinfoQuery.NarinfoResponse -> PushManager ()
 runHandleMissingPathsResponseTask pushParams pushId batchResponse =

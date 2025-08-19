@@ -177,6 +177,9 @@ cleanupStaleEntries NarinfoQueryManager {nqmCache, nqmCachedTime} = liftIO $ do
   atomically $ modifyTVar' nqmCache $ TTLCache.cleanupExpired now
 
 -- | Submit a request to the query manager
+--
+-- The store paths will be queued for processing.
+-- The closure will _not_ be computed.
 submitRequest ::
   (MonadIO m) =>
   NarinfoQueryManager requestId ->
@@ -184,14 +187,12 @@ submitRequest ::
   [StorePath] ->
   m ()
 submitRequest manager@NarinfoQueryManager {nqmConfig, nqmState, nqmCachedTime} requestId storePaths = liftIO $ do
-  -- Add request to pending queue
-  now <- readTVarIO nqmCachedTime
-
   -- Check cache for each path in a single pass
   (cachedExistingPaths, pathsToQuery') <- partitionM (lookupCache manager) storePaths
 
   -- Perform the state update atomically and determine if timeout is needed
   needsTimeout <- atomically $ do
+    now <- readTVar nqmCachedTime
     batchState <- readTVar nqmState
     let isFirstRequest = Seq.null (qsPendingRequests batchState)
         needsNewTimeout = isFirstRequest && isNothing (qsTimeoutVar batchState) && nqoMaxWaitTime nqmConfig > 0
@@ -379,7 +380,7 @@ processReadyBatch manager@NarinfoQueryManager {nqmCallback} processBatch ReadyBa
                 <> Katip.sl "wait_time_s" (show waitTime :: Text)
             )
 
-        -- Query narinfo for all paths at once
+        -- Query narinfo
         (allPathsInClosure, missingPaths) <- processBatch rbAllPaths
 
         processingEndTime <- liftIO getCurrentTime
@@ -393,11 +394,6 @@ processReadyBatch manager@NarinfoQueryManager {nqmCallback} processBatch ReadyBa
                 <> Katip.sl "total_paths" closureSize
                 <> Katip.sl "missing_paths" missingCount
             )
-        -- Update cache with results (only cache positive lookups)
-        let missingPathsSet = Set.fromList missingPaths
-            allPathsSet = Set.fromList allPathsInClosure
-            existingPathsSet = allPathsSet `Set.difference` missingPathsSet
-        updateCache manager existingPathsSet
 
         return (allPathsInClosure, missingPaths)
 
@@ -405,18 +401,19 @@ processReadyBatch manager@NarinfoQueryManager {nqmCallback} processBatch ReadyBa
   let allPathsSet = Set.fromList allPathsInClosure
       missingPathsSet = Set.fromList missingPaths
 
+  -- Update cache with results (only cache positive lookups)
+  let existingPathsSet = allPathsSet `Set.difference` missingPathsSet
+  unless (Set.null existingPathsSet) $ do
+    Katip.logFM Katip.DebugS "Updating narinfo cache with existing paths"
+      & Katip.katipAddContext (Katip.sl "count" (Set.size existingPathsSet))
+    updateCache manager existingPathsSet
+
   -- Respond to each request using the manager's callback
-  liftIO $ forM_ rbRequests $ \NarinfoRequest {qrRequestId, qrStorePaths, qrCachedPaths} -> do
-    -- For each request, determine which of its requested paths exist (from API or cache)
-    let -- Convert request paths to sets for efficient operations
-        qrStorePathsSet = Set.fromList qrStorePaths
-        qrCachedPathsSet = Set.fromList qrCachedPaths
-        -- Paths that exist: intersection of request paths with all existing paths (API + cached)
-        existingPathsFromAPI = qrStorePathsSet `Set.intersection` allPathsSet
-        missingPathsFromAPI = qrStorePathsSet `Set.intersection` missingPathsSet
-        -- Combine existing paths from API and cache, removing duplicates
-        allRequestPaths = existingPathsFromAPI `Set.union` qrCachedPathsSet
-        response = NarinfoResponse allRequestPaths missingPathsFromAPI
+  liftIO $ forM_ rbRequests $ \NarinfoRequest {qrRequestId, qrStorePaths} -> do
+    -- Find the missing paths for this requests from the batch
+    let qrStorePathsSet = Set.fromList qrStorePaths
+        missingPathsForRequest = qrStorePathsSet `Set.intersection` missingPathsSet
+        response = NarinfoResponse qrStorePathsSet missingPathsForRequest
 
     -- Call the manager's callback with request ID and response
     nqmCallback qrRequestId response

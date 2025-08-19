@@ -16,8 +16,8 @@ jobs:
           - macos-13 # x86_64
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v4
-    - uses: cachix/install-nix-action@v30
+    - uses: actions/checkout@v5
+    - uses: cachix/install-nix-action@v31
     - name: Setup read-only Cachix cache
       uses: cachix/cachix-action@master
       with:

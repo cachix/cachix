@@ -1,6 +1,6 @@
 cabal-version:   2.2
 name:            cachix-api
-version:         1.8.0
+version:         1.9.0
 synopsis:        Servant HTTP API specification for https://cachix.org
 homepage:        https://github.com/cachix/cachix#readme
 bug-reports:     https://github.com/cachix/cachix/issues

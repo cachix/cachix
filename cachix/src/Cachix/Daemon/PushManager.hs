@@ -40,7 +40,6 @@ module Cachix.Daemon.PushManager
 
     -- * Helpers
     atomicallyWithTimeout,
-    processBatchedNarinfo,
   )
 where
 
@@ -118,6 +117,12 @@ startBatchProcessor :: (MonadUnliftIO m, Katip.KatipContext m) => PushManagerEnv
 startBatchProcessor env@PushManagerEnv {pmNarinfoQueryManager} = do
   NarinfoQuery.start pmNarinfoQueryManager $ \paths ->
     runPushManager env (processBatchedNarinfo paths)
+  where
+    -- Process a batch of store paths for narinfo queries
+    processBatchedNarinfo :: [StorePath] -> PushManager ([StorePath], [StorePath])
+    processBatchedNarinfo storePaths = do
+      pushParams <- asks pmPushParams
+      queryNarInfoBulk pushParams storePaths
 
 -- | Stop the batch processor
 stopBatchProcessor :: (MonadIO m) => PushManagerEnv -> m ()
@@ -317,12 +322,13 @@ runQueryMissingPathsTask pushParams pushId =
       withPushJob pushId $ \pushJob -> do
         let sps = Protocol.storePaths (pushRequest pushJob)
             store = pushParamsStore pushParams
-        normalized <- mapM (normalizeStorePath store) sps
-        let validPaths = catMaybes normalized
+        validPaths <- catMaybes <$> mapM (normalizeStorePath store) sps
+
+        paths <- computeClosure store validPaths
 
         -- Use async batch manager for narinfo queries (non-blocking)
         batchManager <- asks pmNarinfoQueryManager
-        NarinfoQuery.submitRequest batchManager pushId validPaths
+        NarinfoQuery.submitRequest batchManager pushId paths
 
 runHandleMissingPathsResponseTask :: PushParams PushManager () -> Protocol.PushRequestId -> NarinfoQuery.NarinfoResponse -> PushManager ()
 runHandleMissingPathsResponseTask pushParams pushId batchResponse =
@@ -523,12 +529,6 @@ storeToFilePath :: (MonadIO m) => Store -> StorePath -> m FilePath
 storeToFilePath store storePath = do
   fp <- liftIO $ storePathToPath store storePath
   pure $ toS fp
-
--- | Process a batch of store paths for narinfo queries
-processBatchedNarinfo :: [StorePath] -> PushManager ([StorePath], [StorePath])
-processBatchedNarinfo storePaths = do
-  pushParams <- asks pmPushParams
-  getMissingPathsForClosure pushParams storePaths
 
 -- | Canonicalize and validate a store path
 normalizeStorePath :: (MonadIO m) => Store -> FilePath -> m (Maybe StorePath)

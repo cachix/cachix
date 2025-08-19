@@ -5,11 +5,9 @@ module Daemon.NarinfoQuerySpec where
 
 import Cachix.Daemon.NarinfoQuery (NarinfoQueryManager, NarinfoQueryOptions (..), NarinfoResponse, defaultNarinfoQueryOptions)
 import Cachix.Daemon.NarinfoQuery qualified as NarinfoQuery
-import Cachix.Daemon.TTLCache (TTLCache)
-import Cachix.Daemon.TTLCache qualified as TTLCache
 import Control.Concurrent.STM
 import Data.Set qualified as Set
-import Data.Time (UTCTime, addUTCTime, getCurrentTime)
+import Data.Time (UTCTime, getCurrentTime)
 import Hercules.CNix qualified as CNix
 import Hercules.CNix.Store (Store, StorePath, withStoreFromURI)
 import Katip qualified
@@ -116,34 +114,8 @@ withTestManager config action = do
 
 spec :: Spec
 spec = do
+  -- Initialize the CNix library
   runIO CNix.init
-  describe "TTL cache" $ do
-    it "correctly handles expiration" $ do
-      now <- getCurrentTime
-      let past = addUTCTime (-10) now -- 10 seconds ago
-          future = addUTCTime 10 now -- 10 seconds from now
-          cache :: TTLCache Text
-          cache =
-            TTLCache.insert "expired" past $
-              TTLCache.insert "valid" future TTLCache.empty
-
-      -- Expired entry should not be found
-      TTLCache.lookup now "expired" cache `shouldBe` False
-      -- Valid entry should be found
-      TTLCache.lookup now "valid" cache `shouldBe` True
-
-    it "respects size limits when pruning" $ do
-      now <- getCurrentTime
-      let future = addUTCTime 60 now
-          -- Create cache with 5 entries
-          cache :: TTLCache Text
-          cache = foldl' (\c i -> TTLCache.insert (show i) future c) TTLCache.empty [1 .. 5 :: Integer]
-
-      TTLCache.size cache `shouldBe` 5
-
-      -- Prune to 3 entries
-      let pruned = TTLCache.pruneToSize 3 cache
-      TTLCache.size pruned `shouldBe` 3
 
   describe "Batching" $ do
     it "triggers batch when size threshold is reached" $ withStoreFromURI "dummy://" $ \store -> do

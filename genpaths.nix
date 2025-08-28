@@ -1,11 +1,11 @@
 # Realizes <num>> of derivations with size of <size>MB
-# Useful for upload debugging 
+# Useful for upload debugging
 { size ? 1 # MB
-, num ? 10 # count 
+, num ? 10 # count
 , currentTime ? builtins.currentTime
 }:
 
-with (import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/nixos-22.11.tar.gz") {});
+with (import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/nixos-25.05.tar.gz") {});
 
 let
   drv = i: runCommand "${toString currentTime}-${toString i}" {} ''

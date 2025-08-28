@@ -64,7 +64,7 @@ jobs:
 
     - name: "Build with latest GHC"
       continue-on-error: true
-      run: nix build -L .#packages-ghc-latest
+      run: nix build -L .#all-packages-ghc-latest
 
   release:
     needs: build

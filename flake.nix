@@ -27,7 +27,7 @@
 
   outputs = { self, nixpkgs, git-hooks, ... }@inputs: let
     systems = [ "x86_64-linux" "i686-linux" "x86_64-darwin" "aarch64-linux" "aarch64-darwin" ];
-    forAllSystems = f: builtins.listToAttrs (map (name: { inherit name; value = f name; }) systems);
+    forAllSystems = nixpkgs.lib.genAttrs systems;
 
     # Keep in sync with stack.yaml
     ghcVersion = "98";
@@ -62,7 +62,6 @@
           default = pkgs.haskell.lib.justStaticExecutables cachix;
           ci = self.devShells.${system}.default.ci;
           release = pkgs.symlinkJoin { name = "release"; paths = builtins.attrValues release; };
-          devenv-up = self.devShells.${system}.default.config.procfileScript;
         });
 
       checks = forAllSystems (system: {

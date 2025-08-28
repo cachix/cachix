@@ -48,7 +48,8 @@ jobs:
         authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
         signingKey: '${{ secrets.CACHIX_SIGNING_KEY }}'
 
-    - run: nix build -L '.#ci' '.#cachix' --show-trace --impure
+    - name: devenv ci
+      run: nix build -L '.#ci' '.#cachix' --show-trace --impure
 
     - name: "watch-exec test"
       env:
@@ -62,9 +63,11 @@ jobs:
       if: ${{ env.signingKey != '' }}
       run: ${{ steps.cachix.outputs.cachix_bin }} daemon watch-exec cachix -- nix-build genpaths.nix --substituters 'https://cache.nixos.org'
 
-    - name: "Build with latest GHC"
-      continue-on-error: true
-      run: nix build -L .#all-packages-ghc-latest
+    - name: "Build with latest GHC (optional)"
+      run: |
+        if ! nix build -L .#all-packages-ghc-latest; then
+          echo "::warning title='${{ toJSON(matrix.os) }}' Latest GHC build failed::An optional build against the latest GHC failed. Check the logs for more information."
+        fi
 
   release:
     needs: build

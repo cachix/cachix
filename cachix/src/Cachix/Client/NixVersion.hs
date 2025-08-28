@@ -33,7 +33,7 @@ getRawNixVersion = do
   (exitcode, out, err) <- readProcessWithExitCode "nix-env" ["--version"] mempty
   unless (err == "") $ putStrLn $ "nix-env stderr: " <> err
   return $ case exitcode of
-    ExitFailure i -> Left $ "'nix-env --version' exited with " <> show i
+    ExitFailure i -> Left $ "'nix-env --version' exited with " <> Protolude.show i
     ExitSuccess -> Right (toS out)
 
 parseNixVersion :: Text -> Either Text Versioning

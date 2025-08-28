@@ -34,7 +34,7 @@
     #   - the GHC version in nixpkgs-<stable>
     stableGhcVersion = "98";
     # Test builds against the latest GHC version in nixpkgs
-    latestGhcVersion = "HEAD";
+    latestGhcVersion = "910";
 
     # Try to use the same Nix version as cnix-store, if available.
     getNix = { pkgs, haskellPackages ? pkgs.haskellPackages }:

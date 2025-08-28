@@ -62,6 +62,10 @@ jobs:
       if: ${{ env.signingKey != '' }}
       run: ${{ steps.cachix.outputs.cachix_bin }} daemon watch-exec cachix -- nix-build genpaths.nix --substituters 'https://cache.nixos.org'
 
+    - name: "Build with latest GHC"
+      continue-on-error: true
+      run: nix build -L .#packages-ghc-latest
+
   release:
     needs: build
     if: ${{ github.ref == 'refs/heads/master' }}

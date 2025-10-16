@@ -30,7 +30,7 @@
     forAllSystems = nixpkgs.lib.genAttrs systems;
 
     # Keep in sync with stack.yaml
-    ghcVersion = "98";
+    ghcVersion = "910";
 
     # Try to use the same Nix version as cnix-store, if available.
     getNix = { pkgs, haskellPackages ? pkgs.haskellPackages }:

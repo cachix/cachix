@@ -1,5 +1,5 @@
 # Match resolver with nixos-unstable haskellPackages
-resolver: lts-23.27
+resolver: lts-24.15
 system-ghc: true
 
 packages:
@@ -13,19 +13,20 @@ allow-newer-deps:
 extra-deps:
 # not in stackage
 - cabal-pkg-config-version-hook-0.1.0.1@sha256:7b91d1494f696e3264ee82d536c9fb5ae69419a4663b7c0b7efe901ef2568a9b,961
-- hercules-ci-cnix-store-0.3.7.0@sha256:59d4841bbc457a0343a492b4631b167a35cc101826d2db24d2da19fb3d36229e,4452
+- hercules-ci-cnix-store-0.4.0.0@sha256:464e4fb53d862600a483ebe2cffaea97e86945ee7c2ee76aace307554f5b7162,4017
 - lzma-conduit-1.2.3@sha256:d33d14a1e95b134f90ecd73636328ec9b0aa14a6d2666f905443523d90bd159f,1712
 - microlens-pro-0.2.0.4@sha256:af8fc5760d913704c5283e649dd90feaf6bddd739f9b75bf52495b7964830bea,3377
-- nix-narinfo-0.1.1.2@sha256:815530b55fe8df2c4efa08c00022eb39d534499bbceaffb5f021e750071b768e,2254
 
 # hnix-store
 - hnix-store-core-0.8.0.0@sha256:c94fe476a9166b23b9bb593b583b30157cb7ab90c4f6b04a5a3a6dc075a21d9d,2950
 - hnix-store-nar-0.1.1.0@sha256:374b1d356d66c8657470f71f7ade7e9e0e34eee636d9bb8ffeb49c4ca25be6e9,2540
+- nix-derivation-1.1.3@sha256:56fd0d2077af6903b2156067efd43c3806196bf6216acfcdd650477e300d026e,3198
 
 # The hackage release for amazonka is outdated.
 # Use the same rev from source as nixpkgs-unstable.
 - github: brendanhay/amazonka
-  commit: f3a7fca02fdbb832cc348e991983b1465225d50c
+  # 2.0-unstable-2025-04-16
+  commit: 7645bd335f008912b9e5257486f622b674de7afa
   subdirs:
     - lib/amazonka
     - lib/amazonka-core

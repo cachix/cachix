@@ -1,0 +1,5 @@
+{
+  "agents": {
+    "macosvm": "/nix/store/cookies"
+  }
+}

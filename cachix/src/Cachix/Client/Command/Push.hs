@@ -17,7 +17,6 @@ import Cachix.Client.Config qualified as Config
 import Cachix.Client.Env (Env (..))
 import Cachix.Client.Exception (CachixException (..))
 import Cachix.Client.HumanSize (humanSize)
-import Cachix.Client.OptionsParser (PushOptions (..))
 import Cachix.Client.OptionsParser as Options (PushOptions (..))
 import Cachix.Client.Push as Push
 import Cachix.Client.Retry (retryHttp)

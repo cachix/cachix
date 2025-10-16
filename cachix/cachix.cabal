@@ -1,6 +1,6 @@
 cabal-version:      2.2
 name:               cachix
-version:            1.8.0
+version:            1.9.0
 synopsis:
   Command-line client for Nix binary cache hosting https://cachix.org
 
@@ -88,6 +88,7 @@ library
     Cachix.Daemon.EventLoop
     Cachix.Daemon.Listen
     Cachix.Daemon.Log
+    Cachix.Daemon.NarinfoQuery
     Cachix.Daemon.PostBuildHook
     Cachix.Daemon.Progress
     Cachix.Daemon.Protocol
@@ -97,6 +98,7 @@ library
     Cachix.Daemon.ShutdownLatch
     Cachix.Daemon.SocketStore
     Cachix.Daemon.Subscription
+    Cachix.Daemon.TTLCache
     Cachix.Daemon.Types
     Cachix.Daemon.Types.Daemon
     Cachix.Daemon.Types.Error
@@ -169,6 +171,7 @@ library
     , network
     , nix-narinfo
     , optparse-applicative
+    , pqueue
     , pretty-terminal
     , prettyprinter
     , process
@@ -242,9 +245,11 @@ test-suite cachix-test
   main-is:            Main.hs
   hs-source-dirs:     test
   other-modules:
+    Daemon.NarinfoQuerySpec
     Daemon.PostBuildHookSpec
     Daemon.ProtocolSpec
     Daemon.PushManagerSpec
+    Daemon.TTLCacheSpec
     DeploySpec
     InstallationModeSpec
     NetRcSpec
@@ -267,6 +272,7 @@ test-suite cachix-test
     , hercules-ci-cnix-store
     , here
     , hspec
+    , katip
     , protolude
     , retry
     , servant-auth-client
@@ -274,6 +280,7 @@ test-suite cachix-test
     , stm
     , temporary
     , time
+    , unliftio
     , versions
 
   build-tool-depends: hspec-discover:hspec-discover

@@ -15,7 +15,7 @@ import Cachix.Client.Command.Push qualified as Command.Push
 import Cachix.Client.Config qualified as Config
 import Cachix.Client.Config.Orphans ()
 import Cachix.Client.Env as Env
-import Cachix.Client.OptionsParser (DaemonOptions, PushOptions)
+import Cachix.Client.OptionsParser (DaemonOptions, PushOptions, daemonNarinfoQueryOptions)
 import Cachix.Client.OptionsParser qualified as Options
 import Cachix.Client.Push
 import Cachix.Daemon.EventLoop qualified as EventLoop
@@ -92,7 +92,7 @@ new daemonEnv nixStore daemonOptions daemonLogHandle daemonPushOptions daemonCac
   let onPushEvent = Subscription.pushEvent daemonSubscriptionManager
 
   let pushParams = Push.newPushParams nixStore (clientenv daemonEnv) daemonBinaryCache daemonPushSecret daemonPushOptions
-  daemonPushManager <- PushManager.newPushManagerEnv daemonPushOptions pushParams onPushEvent daemonLogger
+  daemonPushManager <- PushManager.newPushManagerEnv daemonPushOptions (daemonNarinfoQueryOptions daemonOptions) pushParams onPushEvent daemonLogger
 
   daemonWorkerThreads <- newEmptyMVar
 
@@ -118,6 +118,9 @@ run daemon = fmap join <$> runDaemon daemon $ do
 
   Async.async (runSubscriptionManager daemonSubscriptionManager)
     >>= (liftIO . putMVar daemonSubscriptionManagerThread)
+
+  -- Start the narinfo batch processor
+  PushManager.startBatchProcessor daemonPushManager
 
   Worker.startWorkers
     (Options.numJobs daemonPushOptions)
@@ -147,7 +150,7 @@ run daemon = fmap join <$> runDaemon daemon $ do
             Nothing -> Katip.logFM Katip.ErrorS "Failed to queue push request"
         ClientStop -> do
           DaemonEnv {daemonOptions = opts, daemonClients = clients} <- ask
-          if Options.allowRemoteStop opts
+          if Options.daemonAllowRemoteStop opts
             then EventLoop.send daemonEventLoop ShutdownGracefully
             else do
               let errorMsg = "Remote stop is disabled on this daemon"
@@ -276,6 +279,9 @@ shutdownGracefully = do
 
   -- Stop the push manager and wait for any remaining paths to be uploaded
   shutdownPushManager daemonPushManager
+
+  -- Stop the narinfo batch processor
+  liftIO $ PushManager.stopBatchProcessor daemonPushManager
 
   -- Stop worker threads
   withTakeMVar daemonWorkerThreads Worker.stopWorkers

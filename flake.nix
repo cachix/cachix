@@ -25,33 +25,59 @@
     };
   };
 
-  outputs = { self, nixpkgs, git-hooks, ... }@inputs: let
-    systems = [ "x86_64-linux" "i686-linux" "x86_64-darwin" "aarch64-linux" "aarch64-darwin" ];
-    forAllSystems = nixpkgs.lib.genAttrs systems;
-
-    # Keep in sync with stack.yaml
-    ghcVersion = "910";
-
-    # Try to use the same Nix version as cnix-store, if available.
-    getNix = { pkgs, haskellPackages ? pkgs.haskellPackages }:
-      haskellPackages.hercules-ci-cnix-store.nixPackage or pkgs.nix;
-
-    customHaskellPackages = { pkgs, haskellPackages }: rec {
-      cachix-api = haskellPackages.callCabal2nix "cachix-api" ./cachix-api {};
-      cachix = haskellPackages.callCabal2nix "cachix" ./cachix {
-        inherit cachix-api;
-        hnix-store-core = haskellPackages.hnix-store-core_0_8_0_0 or haskellPackages.hnix-store-core;
-        nix = getNix { inherit pkgs haskellPackages; };
-      };
-    };
-  in
+  outputs =
     {
-      packages = forAllSystems (system:
+      self,
+      nixpkgs,
+      git-hooks,
+      ...
+    }@inputs:
+    let
+      systems = [
+        "x86_64-linux"
+        "i686-linux"
+        "x86_64-darwin"
+        "aarch64-linux"
+        "aarch64-darwin"
+      ];
+      forAllSystems = nixpkgs.lib.genAttrs systems;
+
+      # Keep in sync with stack.yaml
+      ghcVersion = "910";
+
+      # Try to use the same Nix version as cnix-store, if available.
+      getNix =
+        {
+          pkgs,
+          haskellPackages ? pkgs.haskellPackages,
+        }:
+        haskellPackages.hercules-ci-cnix-store.nixPackage or pkgs.nix;
+
+      customHaskellPackages =
+        { pkgs, haskellPackages }:
+        rec {
+          cachix-api = haskellPackages.callCabal2nix "cachix-api" ./cachix-api { };
+          cachix = haskellPackages.callCabal2nix "cachix" ./cachix {
+            inherit cachix-api;
+            hnix-store-core = haskellPackages.hnix-store-core_0_8_0_0 or haskellPackages.hnix-store-core;
+            nix = getNix { inherit pkgs haskellPackages; };
+          };
+        };
+    in
+    {
+      packages = forAllSystems (
+        system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
           hlib = pkgs.haskell.lib;
-          inherit (customHaskellPackages { inherit pkgs; inherit (pkgs) haskellPackages; })
-            cachix cachix-api;
+          inherit
+            (customHaskellPackages {
+              inherit pkgs;
+              inherit (pkgs) haskellPackages;
+            })
+            cachix
+            cachix-api
+            ;
           release = {
             cachix = hlib.sdistTarball cachix;
             cachix-api = hlib.sdistTarball cachix-api;
@@ -61,8 +87,12 @@
           cachix = pkgs.haskell.lib.justStaticExecutables cachix;
           default = pkgs.haskell.lib.justStaticExecutables cachix;
           ci = self.devShells.${system}.default.ci;
-          release = pkgs.symlinkJoin { name = "release"; paths = builtins.attrValues release; };
-        });
+          release = pkgs.symlinkJoin {
+            name = "release";
+            paths = builtins.attrValues release;
+          };
+        }
+      );
 
       checks = forAllSystems (system: {
         pre-commit-check = git-hooks.lib.${system}.run {
@@ -71,7 +101,8 @@
         };
       });
 
-      devShells = forAllSystems (system:
+      devShells = forAllSystems (
+        system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
         in

@@ -1,4 +1,9 @@
-{ pkgs, ghcVersion, getNix, ... }:
+{
+  pkgs,
+  ghcVersion,
+  getNix,
+  ...
+}:
 
 {
   imports = [ ./git-hooks.nix ];

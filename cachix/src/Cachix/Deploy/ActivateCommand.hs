@@ -153,7 +153,7 @@ renderOverview agents =
   Text.intercalate "\n" $
     "Deploying agents:"
       : [ inBrackets agentName <> " " <> DeployResponse.url details
-          | (agentName, details) <- agents
+        | (agentName, details) <- agents
         ]
 
 renderSummary :: [(Text, Deployment.Deployment)] -> Text
@@ -161,7 +161,7 @@ renderSummary results =
   Text.intercalate "\n" $
     "Deployment summary:"
       : [ inBrackets agentName <> " " <> renderStatus (Deployment.status deployment)
-          | (agentName, deployment) <- results
+        | (agentName, deployment) <- results
         ]
   where
     renderStatus = \case

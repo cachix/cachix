@@ -13,11 +13,14 @@ jobs:
           - [self-hosted, linux, X64]
           - [self-hosted, linux, ARM64]
           - [self-hosted, macos, ARM64]
-          - macos-13 # x86_64
+          - macos-15-intel # x86_64
+
     runs-on: ${{ matrix.os }}
+
     steps:
     - uses: actions/checkout@v5
     - uses: cachix/install-nix-action@v31
+
     - name: Setup read-only Cachix cache
       uses: cachix/cachix-action@master
       with:

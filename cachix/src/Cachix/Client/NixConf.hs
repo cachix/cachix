@@ -117,7 +117,7 @@ class NixConfOps a where
   render :: a -> Text
 
 instance NixConfOps NixConf where
-  readLines predicate (NixConf xs) = foldl f [] xs
+  readLines predicate (NixConf xs) = foldl' f [] xs
     where
       f :: [Text] -> NixConfLine -> [Text]
       f prev next = prev <> fromMaybe [] (predicate next)

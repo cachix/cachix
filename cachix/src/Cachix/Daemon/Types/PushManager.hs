@@ -28,6 +28,7 @@ import Control.Concurrent.STM.TVar
 import Control.Monad.Catch
 import Control.Monad.IO.Unlift (MonadUnliftIO)
 import Data.HashMap.Strict (HashMap)
+import Data.Sequence qualified as Seq
 import Data.Time (UTCTime)
 import Katip qualified
 import Protolude
@@ -39,7 +40,7 @@ data Task
 
 type PushJobStore = TVar (HashMap Protocol.PushRequestId PushJob)
 
-type StorePathIndex = TVar (HashMap FilePath [Protocol.PushRequestId])
+type StorePathIndex = TVar (HashMap FilePath (Seq.Seq Protocol.PushRequestId))
 
 -- TODO: a lot of the logic surrounding deduping, search, and job tracking could be replaced by sqlite.
 -- sqlite can run in-memory if we don't need persistence.

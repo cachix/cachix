@@ -68,6 +68,7 @@ import Control.Retry (RetryStatus, rsIterNumber)
 import Data.ByteString qualified as BS
 import Data.HashMap.Strict qualified as HashMap
 import Data.IORef
+import Data.Sequence qualified as Seq
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Time (UTCTime, diffUTCTime, getCurrentTime, secondsToNominalDiffTime)
@@ -195,7 +196,7 @@ modifyPushJobSTM pushJobs pushId f =
     let pj = HashMap.adjust f pushId jobs
     (HashMap.lookup pushId pj, pj)
 
-modifyPushJobs :: [Protocol.PushRequestId] -> (PushJob -> PushJob) -> PushManager ()
+modifyPushJobs :: (Foldable f) => f Protocol.PushRequestId -> (PushJob -> PushJob) -> PushManager ()
 modifyPushJobs pushIds f = do
   pushJobs <- asks pmPushJobs
   liftIO $ atomically $ modifyTVar' pushJobs $ \pushJobs' ->
@@ -225,7 +226,7 @@ queueStorePaths pushId storePaths = do
         unless isDuplicate $
           writeTBMQueue pmTaskQueue (PushPath storePath)
 
-        modifyTVar' pmStorePathIndex $ HashMap.insertWith (<>) storePath [pushId]
+        modifyTVar' pmStorePathIndex $ HashMap.insertWith (<>) storePath (Seq.singleton pushId)
 
   transactionally $ map addToQueue storePaths
 
@@ -235,11 +236,11 @@ removeStorePath storePath = do
   liftIO $ atomically $ do
     modifyTVar' storePathIndex $ HashMap.delete storePath
 
-lookupStorePathIndex :: FilePath -> PushManager [Protocol.PushRequestId]
+lookupStorePathIndex :: FilePath -> PushManager (Seq.Seq Protocol.PushRequestId)
 lookupStorePathIndex storePath = do
   storePathIndex <- asks pmStorePathIndex
   references <- liftIO $ readTVarIO storePathIndex
-  return $ fromMaybe [] (HashMap.lookup storePath references)
+  return $ fromMaybe Seq.empty (HashMap.lookup storePath references)
 
 checkPushJobCompleted :: Protocol.PushRequestId -> PushManager ()
 checkPushJobCompleted pushId = do
@@ -483,7 +484,7 @@ pushFinished pushJob@PushJob {pushId} = void $ runMaybeT $ do
 
   lift $ removePushJob pushId
 
-sendStorePathEvent :: [Protocol.PushRequestId] -> PushEventMessage -> PushManager ()
+sendStorePathEvent :: (Foldable f) => f Protocol.PushRequestId -> PushEventMessage -> PushManager ()
 sendStorePathEvent pushIds msg = do
   timestamp <- liftIO getCurrentTime
   sendPushEvent <- asks pmOnPushEvent

@@ -6,12 +6,13 @@ import Control.Concurrent.STM.TVar
 import Data.Aeson as Aeson (ToJSON)
 import Data.HashMap.Strict (HashMap)
 import Data.HashMap.Strict qualified as HashMap
+import Data.Sequence qualified as Seq
 import Network.Socket qualified as Socket
 import Protolude
 
 data SubscriptionManager k v = SubscriptionManager
-  { managerSubscriptions :: TVar (HashMap k [Subscription v]),
-    managerGlobalSubscriptions :: TVar [Subscription v],
+  { managerSubscriptions :: TVar (HashMap k (Seq.Seq (Subscription v))),
+    managerGlobalSubscriptions :: TVar (Seq.Seq (Subscription v)),
     managerEvents :: TBMQueue (k, v)
   }
 
@@ -24,7 +25,7 @@ data Subscription v
 newSubscriptionManager :: IO (SubscriptionManager k v)
 newSubscriptionManager = do
   subscriptions <- newTVarIO HashMap.empty
-  globalSubscriptions <- newTVarIO []
+  globalSubscriptions <- newTVarIO Seq.empty
   events <- newTBMQueueIO 10000
   pure $ SubscriptionManager subscriptions globalSubscriptions events
 
@@ -38,26 +39,26 @@ subscribeToAll :: (MonadIO m) => SubscriptionManager k v -> Subscription v -> m 
 subscribeToAll manager subscription =
   liftIO $ atomically $ subscribeToAllSTM manager subscription
 
-getSubscriptionsFor :: (Hashable k, MonadIO m) => SubscriptionManager k v -> k -> m [Subscription v]
+getSubscriptionsFor :: (Hashable k, MonadIO m) => SubscriptionManager k v -> k -> m (Seq.Seq (Subscription v))
 getSubscriptionsFor manager key =
   liftIO $ atomically $ getSubscriptionsForSTM manager key
 
 subscribeToSTM :: (Hashable k) => SubscriptionManager k v -> k -> Subscription v -> STM ()
 subscribeToSTM manager key subscription = do
   subscriptions <- readTVar $ managerSubscriptions manager
-  let subscriptions' = HashMap.insertWith (<>) key [subscription] subscriptions
+  let subscriptions' = HashMap.insertWith (<>) key (Seq.singleton subscription) subscriptions
   writeTVar (managerSubscriptions manager) subscriptions'
 
 subscribeToAllSTM :: SubscriptionManager k v -> Subscription v -> STM ()
 subscribeToAllSTM manager subscription = do
   subscriptions <- readTVar $ managerGlobalSubscriptions manager
-  let subscriptions' = subscription : subscriptions
+  let subscriptions' = subscription Seq.<| subscriptions
   writeTVar (managerGlobalSubscriptions manager) subscriptions'
 
-getSubscriptionsForSTM :: (Hashable k) => SubscriptionManager k v -> k -> STM [Subscription v]
+getSubscriptionsForSTM :: (Hashable k) => SubscriptionManager k v -> k -> STM (Seq.Seq (Subscription v))
 getSubscriptionsForSTM manager key = do
   subscriptions <- readTVar $ managerSubscriptions manager
-  pure $ HashMap.lookupDefault [] key subscriptions
+  pure $ HashMap.lookupDefault Seq.empty key subscriptions
 
 -- Events
 
@@ -95,7 +96,7 @@ stopSubscriptionManager manager = do
   globalSubscriptions <- liftIO $ readTVarIO $ managerGlobalSubscriptions manager
   subscriptions <- liftIO $ readTVarIO $ managerSubscriptions manager
 
-  forM_ (concat subscriptions <> globalSubscriptions) $ \case
+  forM_ (fold subscriptions <> globalSubscriptions) $ \case
     SubSocket queue sock -> do
       atomically $ closeTBMQueue queue
       Socket.close sock

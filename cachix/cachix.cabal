@@ -98,6 +98,7 @@ library
     Cachix.Daemon.ShutdownLatch
     Cachix.Daemon.SocketStore
     Cachix.Daemon.Subscription
+    Cachix.Daemon.TaskQueue
     Cachix.Daemon.TTLCache
     Cachix.Daemon.Types
     Cachix.Daemon.Types.Daemon
@@ -107,6 +108,7 @@ library
     Cachix.Daemon.Types.PushEvent
     Cachix.Daemon.Types.PushManager
     Cachix.Daemon.Types.SocketStore
+    Cachix.Daemon.Types.TaskQueue
     Cachix.Daemon.Worker
     Cachix.Deploy.Activate
     Cachix.Deploy.ActivateCommand

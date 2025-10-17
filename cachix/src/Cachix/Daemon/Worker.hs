@@ -7,25 +7,25 @@ module Cachix.Daemon.Worker
   )
 where
 
+import Cachix.Daemon.TaskQueue
 import Control.Concurrent.Async qualified as Async
-import Control.Concurrent.STM.TBMQueue
 import Control.Immortal qualified as Immortal
 import Control.Monad.IO.Unlift (MonadUnliftIO)
 import Katip qualified
 import Protolude
 
 startWorkers ::
-  (MonadUnliftIO m, Katip.KatipContext m) =>
+  (MonadUnliftIO m, Katip.KatipContext m, Ord a) =>
   Int ->
-  TBMQueue a ->
+  TaskQueue a ->
   (a -> m ()) ->
   m [Immortal.Thread]
 startWorkers numWorkers queue f = do
   replicateM numWorkers (startWorker queue f)
 
 startWorker ::
-  (MonadUnliftIO m, Katip.KatipContext m) =>
-  TBMQueue a ->
+  (MonadUnliftIO m, Katip.KatipContext m, Ord a) =>
+  TaskQueue a ->
   (a -> m ()) ->
   m Immortal.Thread
 startWorker queue f = do
@@ -49,11 +49,11 @@ logWorkerException (Left err) =
   Katip.logFM Katip.ErrorS $ Katip.ls (toS $ displayException err :: Text)
 logWorkerException _ = return ()
 
-runWorker :: (MonadIO m) => TBMQueue a -> (a -> m ()) -> m ()
+runWorker :: (MonadIO m, Ord a) => TaskQueue a -> (a -> m ()) -> m ()
 runWorker queue f = loop
   where
     loop = do
-      mres <- liftIO $ atomically $ readTBMQueue queue
+      mres <- liftIO $ atomically $ readTask queue
 
       case mres of
         Nothing -> return ()

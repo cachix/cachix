@@ -23,7 +23,7 @@ import Cachix.Daemon.NarinfoQuery qualified as NarinfoQuery
 import Cachix.Daemon.Protocol qualified as Protocol
 import Cachix.Daemon.Types.Log (Logger)
 import Cachix.Daemon.Types.PushEvent (PushEvent (..))
-import Control.Concurrent.STM.TBMQueue
+import Cachix.Daemon.Types.TaskQueue (TaskQueue)
 import Control.Concurrent.STM.TVar
 import Control.Monad.Catch
 import Control.Monad.IO.Unlift (MonadUnliftIO)
@@ -33,10 +33,23 @@ import Data.Time (UTCTime)
 import Katip qualified
 import Protolude
 
+-- | A task to be processed by the PushManager
+-- Tasks are prioritized by their Ord instance
 data Task
   = QueryMissingPaths Protocol.PushRequestId
   | HandleMissingPathsResponse Protocol.PushRequestId NarinfoQuery.NarinfoResponse
   | PushPath FilePath
+  deriving stock (Eq)
+
+-- | Ord instance that only compares constructors for priority
+-- PushPath > HandleMissingPathsResponse > QueryMissingPaths
+instance Ord Task where
+  compare = comparing taskPriority
+    where
+      taskPriority :: Task -> Int
+      taskPriority (PushPath _) = 3
+      taskPriority (HandleMissingPathsResponse _ _) = 2
+      taskPriority (QueryMissingPaths _) = 1
 
 type PushJobStore = TVar (HashMap Protocol.PushRequestId PushJob)
 
@@ -52,8 +65,8 @@ data PushManagerEnv = PushManagerEnv
     -- | A mapping of store paths to push requests.
     -- Used when deduplicating pushes.
     pmStorePathIndex :: StorePathIndex,
-    -- | FIFO queue of push tasks.
-    pmTaskQueue :: TBMQueue Task,
+    -- | Priority queue of push tasks.
+    pmTaskQueue :: TaskQueue Task,
     -- | A semaphore to control task concurrency.
     pmTaskSemaphore :: QSem,
     -- | A callback for push events.

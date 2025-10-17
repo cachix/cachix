@@ -53,13 +53,13 @@ import Cachix.Client.Retry (retryAll)
 import Cachix.Daemon.NarinfoQuery qualified as NarinfoQuery
 import Cachix.Daemon.Protocol qualified as Protocol
 import Cachix.Daemon.PushManager.PushJob qualified as PushJob
+import Cachix.Daemon.TaskQueue
 import Cachix.Daemon.Types.Log (Logger)
 import Cachix.Daemon.Types.PushEvent (PushEvent (..), PushEventMessage (..), newPushRetryStatus)
 import Cachix.Daemon.Types.PushManager
 import Cachix.Types.BinaryCache qualified as BinaryCache
 import Conduit qualified as C
 import Control.Concurrent.Async qualified as Async
-import Control.Concurrent.STM.TBMQueue
 import Control.Concurrent.STM.TVar
 import Control.Monad.Catch qualified as E
 import Control.Monad.IO.Unlift (MonadUnliftIO)
@@ -87,18 +87,14 @@ newPushManagerEnv pushOptions batchOptions pmPushParams onPushEvent pmLogger = l
   pmPushJobs <- newTVarIO mempty
   pmPendingJobCount <- newTVarIO 0
   pmStorePathIndex <- newTVarIO mempty
-  pmTaskQueue <- newTBMQueueIO 100_000
+  pmTaskQueue <- atomically newTaskQueue
   pmTaskSemaphore <- QSem.newQSem (numJobs pushOptions)
   pmLastEventTimestamp <- newTVarIO =<< getCurrentTime
   let pmOnPushEvent id pushEvent = updateTimestampTVar pmLastEventTimestamp >> onPushEvent id pushEvent
 
   -- Create query manager with callback that queues ProcessQueryResponse tasks
   let batchCallback requestId response = do
-        atomically $ do
-          result <- tryWriteTBMQueue pmTaskQueue $ HandleMissingPathsResponse requestId response
-          case result of
-            Just True -> return ()
-            _ -> retry -- Queue is full, keep trying
+        atomically $ writeTask pmTaskQueue $ HandleMissingPathsResponse requestId response
   pmNarinfoQueryManager <- NarinfoQuery.new batchOptions batchCallback
 
   return $ PushManagerEnv {..}
@@ -111,7 +107,7 @@ stopPushManager timeoutOptions PushManagerEnv {..} = do
   atomicallyWithTimeout timeoutOptions pmLastEventTimestamp $ do
     pendingJobs <- readTVar pmPendingJobCount
     check (pendingJobs <= 0)
-  atomically $ closeTBMQueue pmTaskQueue
+  atomically $ closeTaskQueue pmTaskQueue
 
 -- | Start the batch processor for narinfo queries
 startBatchProcessor :: (MonadUnliftIO m, Katip.KatipContext m) => PushManagerEnv -> m ()
@@ -142,12 +138,12 @@ addPushJob pushRequest = do
   let queueJob = do
         modifyTVar' pmPushJobs $ HashMap.insert (pushId pushJob) pushJob
         incrementTVar pmPendingJobCount
-        res <- tryWriteTBMQueue pmTaskQueue $ QueryMissingPaths (pushId pushJob)
+        res <- tryWriteTask pmTaskQueue $ QueryMissingPaths (pushId pushJob)
         case res of
           Just True -> return True
-          _ -> retry
+          _ -> return False
 
-  didQueue <- liftIO $ atomically $ queueJob `orElse` return False
+  didQueue <- liftIO $ atomically queueJob
 
   if didQueue
     then return $ Just $ pushId pushJob
@@ -224,7 +220,7 @@ queueStorePaths pushId storePaths = do
   let addToQueue storePath = do
         isDuplicate <- HashMap.member storePath <$> readTVar pmStorePathIndex
         unless isDuplicate $
-          writeTBMQueue pmTaskQueue (PushPath storePath)
+          writeTask pmTaskQueue (PushPath storePath)
 
         modifyTVar' pmStorePathIndex $ HashMap.insertWith (<>) storePath (Seq.singleton pushId)
 

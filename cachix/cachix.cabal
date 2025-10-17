@@ -48,7 +48,7 @@ common defaults
   --   ghc-options:       -Wpartial-fields
 
   if impl(ghc >=9.4)
-    ghc-options: -Wredundant-strictness-flags -Wforall-identifier
+    ghc-options: -Wredundant-strictness-flags
 
   default-language:   GHC2021
 

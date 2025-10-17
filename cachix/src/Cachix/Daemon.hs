@@ -277,11 +277,11 @@ shutdownGracefully :: Daemon (Either DaemonError ())
 shutdownGracefully = do
   DaemonEnv {..} <- ask
 
+  -- Stop the narinfo batch processor first (before closing the queue)
+  liftIO $ PushManager.stopBatchProcessor daemonPushManager
+
   -- Stop the push manager and wait for any remaining paths to be uploaded
   shutdownPushManager daemonPushManager
-
-  -- Stop the narinfo batch processor
-  liftIO $ PushManager.stopBatchProcessor daemonPushManager
 
   -- Stop worker threads
   withTakeMVar daemonWorkerThreads Worker.stopWorkers

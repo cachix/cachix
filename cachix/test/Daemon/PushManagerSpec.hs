@@ -17,7 +17,7 @@ import Control.Concurrent.STM.TVar
 import Control.Monad (fail)
 import Control.Retry (defaultRetryStatus)
 import Data.Set qualified as Set
-import Data.Time (getCurrentTime)
+import Data.Time (diffUTCTime, getCurrentTime)
 import Hercules.CNix qualified as CNix
 import Protolude
 import Servant.Auth.Client (Token (Token))
@@ -154,15 +154,24 @@ spec = do
 
       it "shuts down after jobs complete" $ withPushManager $ \pm -> do
         let paths = ["foo"]
-        let longTimeoutOptions = TimeoutOptions {toTimeout = 10.0, toPollingInterval = 0.1}
+        let longTimeoutOptions = TimeoutOptions {toTimeout = 1.0, toPollingInterval = 0.1}
 
-        _ <- runPushManager pm $ do
+        Just _ <- runPushManager pm $ do
           let request = Protocol.PushRequest {Protocol.storePaths = paths, Protocol.subscribeToUpdates = False}
-          addPushJob request
+          pushId <- addPushJob request
+          let pathSet = Set.fromList paths
+              closure = PushJob.ResolvedClosure pathSet pathSet
+          for_ pushId $ \pid -> resolvePushJob pid closure
+          return pushId
 
+        startTime <- getCurrentTime
         concurrently_ (stopPushManager longTimeoutOptions pm) $
           runPushManager pm $
             for_ paths pushStorePathDone
+        endTime <- getCurrentTime
+
+        let elapsed = diffUTCTime endTime startTime
+        elapsed `shouldSatisfy` (< 0.5)
 
       it "shuts down on job stall" $
         withPushManager $ \pm -> do

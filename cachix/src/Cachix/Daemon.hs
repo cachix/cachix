@@ -122,8 +122,10 @@ run daemon = fmap join <$> runDaemon daemon $ do
   -- Start the narinfo batch processor
   PushManager.startBatchProcessor daemonPushManager
 
+  -- Double the number of workers to keep queues filled with jobs
+  let numWorkers = Options.numJobs daemonPushOptions * 2
   Worker.startWorkers
-    (Options.numJobs daemonPushOptions)
+    numWorkers
     (PushManager.pmTaskQueue daemonPushManager)
     (liftIO . PushManager.runPushManager daemonPushManager . PushManager.handleTask)
     >>= (liftIO . putMVar daemonWorkerThreads)

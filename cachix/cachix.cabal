@@ -251,6 +251,7 @@ test-suite cachix-test
     Daemon.PostBuildHookSpec
     Daemon.ProtocolSpec
     Daemon.PushManagerSpec
+    Daemon.TaskQueueSpec
     Daemon.TTLCacheSpec
     DeploySpec
     InstallationModeSpec

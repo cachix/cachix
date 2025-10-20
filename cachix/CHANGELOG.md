@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] - 2025-10-16
+
+### Added
+
+- daemon: `cachix daemon push` displays upload progress
+- daemon: `cachix daemon push` can read store paths from standard input @joshuaspence
+- daemon: add `--wait` flag to `cachix daemon push` to block until completion @joshuaspence
+- daemon: add `--no-remote-stop` option to prevent remote daemon shutdown
+- daemon: narinfo batching and caching for significantly improved push performance
+
+### Changed
+
+- daemon: store paths can be separated by any whitespace character @joshuaspence
+- deps: support for GHC 9.10 @roberth
+
+### Fixed
+
+- daemon: symlinks are now properly resolved when pushing paths @joshuaspence
+- daemon: `cachix daemon push` returns correct exit codes on failure
+
 ## [1.8.0] - 2025-07-11
 
 ### Added

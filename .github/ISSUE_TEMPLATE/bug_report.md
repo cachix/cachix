@@ -14,5 +14,5 @@ Make sure to include full logs and what you expected to happen.
 
 **Version**
  
-Paste the output of `$ cachix version`.
+Paste the output of `$ cachix --version`.
 

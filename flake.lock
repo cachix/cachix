@@ -98,6 +98,22 @@
         "type": "github"
       }
     },
+    "ghc": {
+      "locked": {
+        "lastModified": 1761166759,
+        "narHash": "sha256-DTTTjEVRxEBLHoiCJ2xZL+IOZ7Vw2PnnGintfZt16QM=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "01b6809f7f9d1183a2b3e081f0a1e6f8f415cb09",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "01b6809f7f9d1183a2b3e081f0a1e6f8f415cb09",
+        "type": "github"
+      }
+    },
     "git-hooks": {
       "inputs": {
         "flake-compat": [
@@ -185,11 +201,11 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1760524057,
-        "narHash": "sha256-EVAqOteLBFmd7pKkb0+FIUyzTF61VKi7YmvP1tw4nEw=",
+        "lastModified": 1762977756,
+        "narHash": "sha256-4PqRErxfe+2toFJFgcRKZ0UI9NSIOJa+7RXVtBhy4KE=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "544961dfcce86422ba200ed9a0b00dd4b1486ec5",
+        "rev": "c5ae371f1a6a7fd27823bc500d9390b38c05fa55",
         "type": "github"
       },
       "original": {
@@ -203,6 +219,7 @@
       "inputs": {
         "devenv": "devenv",
         "flake-compat": "flake-compat",
+        "ghc": "ghc",
         "git-hooks": "git-hooks",
         "nixpkgs": "nixpkgs"
       }

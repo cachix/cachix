@@ -2,6 +2,7 @@
   pkgs,
   ghcVersion,
   getNix,
+  inputs,
   ...
 }:
 
@@ -29,7 +30,12 @@
 
     # Haskell
     pkgs.stack
-    pkgs.haskell.compiler."ghc${ghcVersion}"
+    # Works
+    inputs.ghc.legacyPackages.${pkgs.stdenv.system}.haskell.compiler.ghc9101
+    # Broken
+    # inputs.ghc.legacyPackages.${pkgs.stdenv.system}.haskell.compiler.ghc9102
+    #
+    # pkgs.haskell.compiler."ghc${ghcVersion}"
     (pkgs.haskell-language-server.override { supportedGhcVersions = [ ghcVersion ]; })
   ];
 }

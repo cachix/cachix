@@ -2,12 +2,12 @@ packages: */*.cabal
 
 allow-newer: lzma-conduit:*
 
-# The hackage release for amazonka is outdated.
-# Use the same rev from source as nixpkgs-unstable.
+-- The hackage release for amazonka is outdated.
+-- Use the same rev from source as nixpkgs-unstable.
 source-repository-package
   type: git
   location: https://github.com/brendanhay/amazonka
-  # 2.0-unstable-2025-04-16
+  -- 2.0-unstable-2025-04-16
   tag: 7645bd335f008912b9e5257486f622b674de7afa
   subdir:
     lib/amazonka

@@ -159,7 +159,8 @@ push _env daemonOptions daemonPushOptions cliPaths = do
                       then exitWith (toExitCode DaemonPushFailure)
                       else exitSuccess
                   _ -> loop
-              _ -> loop
+              Protocol.DaemonError err -> handleDaemonError err
+              Protocol.DaemonExit exitStatus -> handleDaemonExit exitStatus
 
 -- | Tell the daemon to stop and wait for it to gracefully exit
 stop :: Env -> DaemonOptions -> IO ()
@@ -178,16 +179,9 @@ stop _env daemonOptions =
           Just (Right msg) ->
             case msg of
               Protocol.DaemonPong -> loop
-              Protocol.DaemonExit exitStatus ->
-                case exitCode exitStatus of
-                  0 -> exitSuccess
-                  code -> exitWith (ExitFailure code)
-              Protocol.DaemonError errorMsg -> do
-                case errorMsg of
-                  Protocol.UnsupportedCommand errMsg -> do
-                    putErrText $ toS errMsg
-                    exitWith (ExitFailure 2)
-              _ -> loop
+              Protocol.DaemonError err -> handleDaemonError err
+              Protocol.DaemonExit exitStatus -> handleDaemonExit exitStatus
+              Protocol.DaemonPushEvent _ -> loop
 
 withDaemonConn :: Maybe FilePath -> (Socket.Socket -> IO a) -> IO a
 withDaemonConn optionalSocketPath f = do
@@ -204,3 +198,20 @@ withDaemonConn optionalSocketPath f = do
     failedToConnectTo socketPath = do
       putErrText "\nFailed to connect to Cachix Daemon"
       putErrText $ "Tried to connect to: " <> toS socketPath <> "\n"
+
+handleDaemonExit :: Protocol.DaemonExitStatus -> IO a
+handleDaemonExit exitStatus =
+  case exitCode exitStatus of
+    0 -> exitSuccess
+    code -> do
+      case exitMessage exitStatus of
+        Just msg -> putErrText $ toS msg
+        Nothing -> return ()
+      exitWith (ExitFailure code)
+
+handleDaemonError :: Protocol.DaemonErrorMessage -> IO a
+handleDaemonError err =
+  case err of
+    Protocol.UnsupportedCommand errMsg -> do
+      putErrText $ toS errMsg
+      exitWith (ExitFailure 2)

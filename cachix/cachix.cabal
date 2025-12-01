@@ -153,7 +153,7 @@ library
     , filepath
     , fsnotify                >=0.4.1
     , generic-lens
-    , hercules-ci-cnix-store
+    , hercules-ci-cnix-store  >=0.4
     , here
     , hnix-store-core         >=0.8
     , hnix-store-nar
@@ -206,7 +206,7 @@ library
     , wuss
 
   -- These versions are pinned in hercules-ci-cnix-store
-  pkgconfig-depends: nix-main, nix-store
+  pkgconfig-depends: nix-store
 
 executable cachix
   import:          defaults

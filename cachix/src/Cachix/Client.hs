@@ -21,7 +21,6 @@ import Cachix.Deploy.ActivateCommand as ActivateCommand
 import Cachix.Deploy.Agent qualified as AgentCommand
 import Cachix.Deploy.OptionsParser qualified as DeployOptions
 import Hercules.CNix qualified as CNix
-import Hercules.CNix.Util qualified as CNix.Util
 import Protolude
 import System.Console.AsciiProgress (displayConsoleRegions)
 import System.Posix.Signals qualified as Signal
@@ -78,6 +77,3 @@ initNixStore = do
   -- darwin: restore the signal mask modified by Nix
   -- https://github.com/cachix/cachix/issues/501
   Signal.setSignalMask signalset
-
-  -- Interrupt Nix before throwing UserInterrupt
-  CNix.Util.installDefaultSigINTHandler

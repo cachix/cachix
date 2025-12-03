@@ -144,12 +144,19 @@ run daemon = fmap join <$> runDaemon daemon $ do
     ReceivedMessage socketId clientMsg ->
       case clientMsg of
         ClientPushRequest pushRequest -> do
-          maybePushId <- queueJob pushRequest
-          case maybePushId of
-            Just pushId -> when (Protocol.subscribeToUpdates pushRequest) $ do
+          -- Create push job upfront so we can subscribe before queuing
+          pushJob <- liftIO $ PushManager.newPushJob pushRequest
+          let pushId = PushManager.pushId pushJob
+
+          Katip.katipAddContext (Katip.sl "push_id" pushId) $ do
+            when (Protocol.subscribeToUpdates pushRequest) $ do
               chan <- liftIO $ subscribe daemon (Just pushId)
               void $ liftIO $ Async.async $ publishToClient socketId chan daemon
-            Nothing -> Katip.logFM Katip.ErrorS "Failed to queue push request"
+
+            -- Now add the job
+            success <- queueJob pushJob
+            unless success $
+              Katip.logFM Katip.ErrorS "Failed to queue push request"
         ClientStop -> do
           DaemonEnv {daemonOptions = opts, daemonClients = clients} <- ask
           if Options.daemonAllowRemoteStop opts
@@ -225,10 +232,10 @@ installSignalHandlers = do
         threadDelay (15 * 1000 * 1000) -- 15 seconds
         throwTo mainThreadId ExitSuccess
 
-queueJob :: Protocol.PushRequest -> Daemon (Maybe PushRequestId)
-queueJob pushRequest = do
+queueJob :: PushManager.PushJob -> Daemon Bool
+queueJob pushJob = do
   DaemonEnv {daemonPushManager} <- ask
-  liftIO $ PushManager.runPushManager daemonPushManager (PushManager.addPushJob pushRequest)
+  liftIO $ PushManager.runPushManager daemonPushManager (PushManager.addPushJob pushJob)
 
 subscribe :: DaemonEnv -> Maybe PushRequestId -> IO (TMChan PushEvent)
 subscribe daemonEnv maybePushId = do

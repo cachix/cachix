@@ -243,14 +243,16 @@ subscribeAll daemonEnv = subscribe daemonEnv Nothing
 
 -- Publish messages from the channel to the client over the socket
 publishToClient :: SocketId -> TMChan PushEvent -> DaemonEnv -> IO ()
-publishToClient socketId chan daemonEnv = do
-  forever $ do
-    msg <- atomically $ readTMChan chan
-    case msg of
-      Nothing -> return ()
-      Just evt -> do
-        let daemonMsg = DaemonPushEvent evt
-        SocketStore.sendAll socketId (Protocol.newMessage daemonMsg) (daemonClients daemonEnv)
+publishToClient socketId chan daemonEnv = go
+  where
+    go = do
+      msg <- atomically $ readTMChan chan
+      case msg of
+        Nothing -> return ()
+        Just evt -> do
+          let daemonMsg = DaemonPushEvent evt
+          SocketStore.sendAll socketId (Protocol.newMessage daemonMsg) (daemonClients daemonEnv)
+          go
 
 -- | Print the daemon configuration to the log.
 printConfiguration :: Daemon ()

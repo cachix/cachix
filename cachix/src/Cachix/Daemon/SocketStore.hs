@@ -2,12 +2,15 @@ module Cachix.Daemon.SocketStore
   ( newSocketStore,
     addSocket,
     removeSocket,
+    addPublisherThread,
+    cancelPublisherThread,
     toList,
     Socket (..),
     sendAll,
   )
 where
 
+import Cachix.Daemon.Types.PushEvent (PushRequestId)
 import Cachix.Daemon.Types.SocketStore (Socket (..), SocketId, SocketStore (..))
 import Control.Concurrent.STM.TVar
 import Control.Monad.IO.Unlift (MonadUnliftIO)
@@ -29,6 +32,7 @@ addSocket :: (MonadUnliftIO m) => Network.Socket.Socket -> (SocketId -> Network.
 addSocket socket handler (SocketStore st) = do
   socketId <- newSocketId
   handlerThread <- Async.async (handler socketId socket)
+  publisherThreads <- liftIO $ newTVarIO HashMap.empty
   liftIO $ atomically $ modifyTVar' st $ HashMap.insert socketId (Socket {..})
 
 removeSocket :: (MonadIO m) => SocketId -> SocketStore -> m ()
@@ -37,8 +41,28 @@ removeSocket socketId (SocketStore stvar) = do
     let msocket = HashMap.lookup socketId st
      in (msocket, HashMap.delete socketId st)
 
-  -- shut down the handler thread
-  mapM_ (Async.uninterruptibleCancel . handlerThread) msocket
+  for_ msocket $ \sock -> do
+    -- Cancel all publisher threads for this socket
+    publishers <- liftIO $ readTVarIO (publisherThreads sock)
+    mapM_ Async.cancel (HashMap.elems publishers)
+    -- Cancel handler thread
+    Async.uninterruptibleCancel (handlerThread sock)
+
+addPublisherThread :: (MonadIO m) => SocketId -> PushRequestId -> Async () -> SocketStore -> m ()
+addPublisherThread socketId pushId thread (SocketStore stvar) = liftIO $ atomically $ do
+  sockets <- readTVar stvar
+  for_ (HashMap.lookup socketId sockets) $ \sock ->
+    modifyTVar' (publisherThreads sock) $ HashMap.insert pushId thread
+
+cancelPublisherThread :: (MonadIO m) => SocketId -> PushRequestId -> SocketStore -> m ()
+cancelPublisherThread socketId pushId (SocketStore stvar) = do
+  mthread <- liftIO $ atomically $ do
+    sockets <- readTVar stvar
+    case HashMap.lookup socketId sockets of
+      Nothing -> return Nothing
+      Just sock -> stateTVar (publisherThreads sock) $ \threads ->
+        (HashMap.lookup pushId threads, HashMap.delete pushId threads)
+  mapM_ Async.cancel mthread
 
 toList :: (MonadIO m) => SocketStore -> m [Socket]
 toList (SocketStore st) = do

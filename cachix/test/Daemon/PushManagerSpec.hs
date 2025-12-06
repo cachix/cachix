@@ -113,7 +113,7 @@ spec = do
   describe "push manager" $ do
     it "queues push jobs " $ inPushManager $ do
       let request = Protocol.PushRequest {Protocol.storePaths = ["foo", "bar"], Protocol.subscribeToUpdates = False}
-      Just pushId <- addPushJob request
+      Just pushId <- addPushJobFromRequest request
       Just pushJob <- lookupPushJob pushId
       liftIO $ do
         PushJob.pushId pushJob `shouldBe` pushId
@@ -123,7 +123,7 @@ spec = do
       let paths = ["bar", "foo"]
 
       let pushRequest = Protocol.PushRequest {Protocol.storePaths = paths, Protocol.subscribeToUpdates = False}
-      Just pushId <- addPushJob pushRequest
+      Just pushId <- addPushJobFromRequest pushRequest
 
       let pathSet = Set.fromList paths
           closure = PushJob.ResolvedClosure pathSet pathSet
@@ -158,7 +158,7 @@ spec = do
 
         Just _ <- runPushManager pm $ do
           let request = Protocol.PushRequest {Protocol.storePaths = paths, Protocol.subscribeToUpdates = False}
-          pushId <- addPushJob request
+          pushId <- addPushJobFromRequest request
           let pathSet = Set.fromList paths
               closure = PushJob.ResolvedClosure pathSet pathSet
           for_ pushId $ \pid -> resolvePushJob pid closure
@@ -177,7 +177,7 @@ spec = do
         withPushManager $ \pm -> do
           _ <- runPushManager pm $ do
             let request = Protocol.PushRequest {Protocol.storePaths = ["foo"], Protocol.subscribeToUpdates = False}
-            addPushJob request
+            addPushJobFromRequest request
 
           stopPushManager timeoutOptions pm
 

@@ -1,4 +1,20 @@
-module Cachix.Daemon.Subscription where
+module Cachix.Daemon.Subscription
+  ( SubscriptionManager (..),
+    Subscription (..),
+    newSubscriptionManager,
+    subscribeTo,
+    subscribeToAll,
+    subscribeToSTM,
+    subscribeToAllSTM,
+    queueUnsubscribe,
+    getSubscriptionsFor,
+    getSubscriptionsForSTM,
+    pushEvent,
+    pushEventSTM,
+    runSubscriptionManager,
+    stopSubscriptionManager,
+  )
+where
 
 import Control.Concurrent.STM.TBMQueue
 import Control.Concurrent.STM.TMChan
@@ -13,8 +29,14 @@ import Protolude
 data SubscriptionManager k v = SubscriptionManager
   { managerSubscriptions :: TVar (HashMap k (Seq.Seq (Subscription v))),
     managerGlobalSubscriptions :: TVar (Seq.Seq (Subscription v)),
-    managerEvents :: TBMQueue (k, v)
+    managerMessages :: TBMQueue (ManagerMessage k v)
   }
+
+data ManagerMessage k v
+  = -- | An event to be dispatched to subscribers
+    EventMessage k v
+  | -- | Close subscriptions for a key (processed in order with events)
+    UnsubscribeMessage k
 
 data Subscription v
   = -- | A subscriber that listens on a socket.
@@ -26,8 +48,8 @@ newSubscriptionManager :: IO (SubscriptionManager k v)
 newSubscriptionManager = do
   subscriptions <- newTVarIO HashMap.empty
   globalSubscriptions <- newTVarIO Seq.empty
-  events <- newTBMQueueIO 10000
-  pure $ SubscriptionManager subscriptions globalSubscriptions events
+  messages <- newTBMQueueIO 10000
+  pure $ SubscriptionManager subscriptions globalSubscriptions messages
 
 -- Subscriptions
 
@@ -60,6 +82,12 @@ getSubscriptionsForSTM manager key = do
   subscriptions <- readTVar $ managerSubscriptions manager
   pure $ HashMap.lookupDefault Seq.empty key subscriptions
 
+-- | Queue an unsubscribe command to close all subscription channels for a key.
+-- This is processed in order with events, ensuring pending events are delivered first.
+queueUnsubscribe :: (MonadIO m) => SubscriptionManager k v -> k -> m ()
+queueUnsubscribe manager key =
+  liftIO $ atomically $ writeTBMQueue (managerMessages manager) (UnsubscribeMessage key)
+
 -- Events
 
 pushEvent :: (MonadIO m) => SubscriptionManager k v -> k -> v -> m ()
@@ -68,7 +96,7 @@ pushEvent manager key event =
 
 pushEventSTM :: SubscriptionManager k v -> k -> v -> STM ()
 pushEventSTM manager key event =
-  writeTBMQueue (managerEvents manager) (key, event)
+  writeTBMQueue (managerMessages manager) (EventMessage key event)
 
 sendEventToSub :: Subscription v -> v -> STM ()
 -- TODO: implement socket subscriptions.
@@ -78,13 +106,23 @@ sendEventToSub (SubChannel chan) event = writeTMChan chan event
 runSubscriptionManager :: (Show k, Show v, Hashable k, ToJSON v, MonadIO m) => SubscriptionManager k v -> m ()
 runSubscriptionManager manager = do
   isDone <- liftIO $ atomically $ do
-    mevent <- readTBMQueue (managerEvents manager)
-    case mevent of
+    mmsg <- readTBMQueue (managerMessages manager)
+    case mmsg of
       Nothing -> return True
-      Just (key, event) -> do
+      Just (EventMessage key event) -> do
         subscriptions <- getSubscriptionsForSTM manager key
         globalSubscriptions <- readTVar $ managerGlobalSubscriptions manager
         mapM_ (`sendEventToSub` event) (subscriptions <> globalSubscriptions)
+        return False
+      Just (UnsubscribeMessage key) -> do
+        subscriptions <- readTVar $ managerSubscriptions manager
+        case HashMap.lookup key subscriptions of
+          Nothing -> return ()
+          Just subs -> do
+            forM_ subs $ \case
+              SubSocket queue _ -> closeTBMQueue queue
+              SubChannel chan -> closeTMChan chan
+            writeTVar (managerSubscriptions manager) $ HashMap.delete key subscriptions
         return False
 
   unless isDone $
@@ -92,7 +130,7 @@ runSubscriptionManager manager = do
 
 stopSubscriptionManager :: SubscriptionManager k v -> IO ()
 stopSubscriptionManager manager = do
-  liftIO $ atomically $ closeTBMQueue (managerEvents manager)
+  liftIO $ atomically $ closeTBMQueue (managerMessages manager)
   globalSubscriptions <- liftIO $ readTVarIO $ managerGlobalSubscriptions manager
   subscriptions <- liftIO $ readTVarIO $ managerSubscriptions manager
 

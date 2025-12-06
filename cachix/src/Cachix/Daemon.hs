@@ -89,7 +89,11 @@ new daemonEnv nixStore daemonOptions daemonLogHandle daemonPushOptions daemonCac
 
   daemonSubscriptionManagerThread <- newEmptyMVar
   daemonSubscriptionManager <- Subscription.newSubscriptionManager
-  let onPushEvent = Subscription.pushEvent daemonSubscriptionManager
+  let onPushEvent pushId event = do
+        Subscription.pushEvent daemonSubscriptionManager pushId event
+        case Types.eventMessage event of
+          Types.PushFinished -> Subscription.queueUnsubscribe daemonSubscriptionManager pushId
+          _ -> return ()
 
   let pushParams = Push.newPushParams nixStore (clientenv daemonEnv) daemonBinaryCache daemonPushSecret daemonPushOptions
   daemonPushManager <- PushManager.newPushManagerEnv daemonPushOptions (daemonNarinfoQueryOptions daemonOptions) pushParams onPushEvent daemonLogger
@@ -151,7 +155,8 @@ run daemon = fmap join <$> runDaemon daemon $ do
           Katip.katipAddContext (Katip.sl "push_id" pushId) $ do
             when (Protocol.subscribeToUpdates pushRequest) $ do
               chan <- liftIO $ subscribe daemon (Just pushId)
-              void $ liftIO $ Async.async $ publishToClient socketId chan daemon
+              publisherThread <- liftIO $ Async.async $ publishToClient socketId chan daemon
+              SocketStore.addPublisherThread socketId pushId publisherThread daemonClients
 
             -- Now add the job
             success <- queueJob pushJob

@@ -89,7 +89,11 @@ new daemonEnv nixStore daemonOptions daemonLogHandle daemonPushOptions daemonCac
 
   daemonSubscriptionManagerThread <- newEmptyMVar
   daemonSubscriptionManager <- Subscription.newSubscriptionManager
-  let onPushEvent = Subscription.pushEvent daemonSubscriptionManager
+  let onPushEvent pushId event = do
+        Subscription.pushEvent daemonSubscriptionManager pushId event
+        case Types.eventMessage event of
+          Types.PushFinished -> Subscription.queueUnsubscribe daemonSubscriptionManager pushId
+          _ -> return ()
 
   let pushParams = Push.newPushParams nixStore (clientenv daemonEnv) daemonBinaryCache daemonPushSecret daemonPushOptions
   daemonPushManager <- PushManager.newPushManagerEnv daemonPushOptions (daemonNarinfoQueryOptions daemonOptions) pushParams onPushEvent daemonLogger
@@ -144,12 +148,20 @@ run daemon = fmap join <$> runDaemon daemon $ do
     ReceivedMessage socketId clientMsg ->
       case clientMsg of
         ClientPushRequest pushRequest -> do
-          maybePushId <- queueJob pushRequest
-          case maybePushId of
-            Just pushId -> when (Protocol.subscribeToUpdates pushRequest) $ do
+          -- Create push job upfront so we can subscribe before queuing
+          pushJob <- liftIO $ PushManager.newPushJob pushRequest
+          let pushId = PushManager.pushId pushJob
+
+          Katip.katipAddContext (Katip.sl "push_id" pushId) $ do
+            when (Protocol.subscribeToUpdates pushRequest) $ do
               chan <- liftIO $ subscribe daemon (Just pushId)
-              void $ liftIO $ Async.async $ publishToClient socketId chan daemon
-            Nothing -> Katip.logFM Katip.ErrorS "Failed to queue push request"
+              publisherThread <- liftIO $ Async.async $ publishToClient socketId chan daemon
+              SocketStore.addPublisherThread socketId pushId publisherThread daemonClients
+
+            -- Now add the job
+            success <- queueJob pushJob
+            unless success $
+              Katip.logFM Katip.ErrorS "Failed to queue push request"
         ClientStop -> do
           DaemonEnv {daemonOptions = opts, daemonClients = clients} <- ask
           if Options.daemonAllowRemoteStop opts
@@ -225,10 +237,10 @@ installSignalHandlers = do
         threadDelay (15 * 1000 * 1000) -- 15 seconds
         throwTo mainThreadId ExitSuccess
 
-queueJob :: Protocol.PushRequest -> Daemon (Maybe PushRequestId)
-queueJob pushRequest = do
+queueJob :: PushManager.PushJob -> Daemon Bool
+queueJob pushJob = do
   DaemonEnv {daemonPushManager} <- ask
-  liftIO $ PushManager.runPushManager daemonPushManager (PushManager.addPushJob pushRequest)
+  liftIO $ PushManager.runPushManager daemonPushManager (PushManager.addPushJob pushJob)
 
 subscribe :: DaemonEnv -> Maybe PushRequestId -> IO (TMChan PushEvent)
 subscribe daemonEnv maybePushId = do
@@ -243,14 +255,16 @@ subscribeAll daemonEnv = subscribe daemonEnv Nothing
 
 -- Publish messages from the channel to the client over the socket
 publishToClient :: SocketId -> TMChan PushEvent -> DaemonEnv -> IO ()
-publishToClient socketId chan daemonEnv = do
-  forever $ do
-    msg <- atomically $ readTMChan chan
-    case msg of
-      Nothing -> return ()
-      Just evt -> do
-        let daemonMsg = DaemonPushEvent evt
-        SocketStore.sendAll socketId (Protocol.newMessage daemonMsg) (daemonClients daemonEnv)
+publishToClient socketId chan daemonEnv = go
+  where
+    go = do
+      msg <- atomically $ readTMChan chan
+      case msg of
+        Nothing -> return ()
+        Just evt -> do
+          let daemonMsg = DaemonPushEvent evt
+          SocketStore.sendAll socketId (Protocol.newMessage daemonMsg) (daemonClients daemonEnv)
+          go
 
 -- | Print the daemon configuration to the log.
 printConfiguration :: Daemon ()

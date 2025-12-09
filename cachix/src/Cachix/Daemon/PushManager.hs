@@ -8,7 +8,9 @@ module Cachix.Daemon.PushManager
 
     -- * Push job
     PushJob (..),
+    newPushJob,
     addPushJob,
+    addPushJobFromRequest,
     lookupPushJob,
     withPushJob,
     resolvePushJob,
@@ -128,28 +130,36 @@ stopBatchProcessor PushManagerEnv {pmNarinfoQueryManager} = do
 
 -- Manage push jobs
 
-addPushJob :: Protocol.PushRequest -> PushManager (Maybe Protocol.PushRequestId)
-addPushJob pushRequest = do
-  PushManagerEnv {..} <- ask
-  pushJob <- PushJob.new pushRequest
+newPushJob :: (MonadIO m) => Protocol.PushRequest -> m PushJob
+newPushJob = PushJob.new
 
-  Katip.logLocM Katip.DebugS $ Katip.ls $ "Queued push job " <> (show (pushId pushJob) :: Text)
+addPushJob :: PushJob -> PushManager Bool
+addPushJob pushJob = do
+  PushManagerEnv {..} <- ask
+  let pushId = PushJob.pushId pushJob
+
+  Katip.logLocM Katip.DebugS $ Katip.ls $ "Queued push job " <> (show pushId :: Text)
 
   let queueJob = do
-        modifyTVar' pmPushJobs $ HashMap.insert (pushId pushJob) pushJob
+        modifyTVar' pmPushJobs $ HashMap.insert pushId pushJob
         incrementTVar pmPendingJobCount
-        res <- tryWriteTask pmTaskQueue $ QueryMissingPaths (pushId pushJob)
+        res <- tryWriteTask pmTaskQueue $ QueryMissingPaths pushId
         case res of
           Just True -> return True
           _ -> return False
 
   didQueue <- liftIO $ atomically queueJob
 
-  if didQueue
-    then return $ Just $ pushId pushJob
-    else do
-      Katip.logLocM Katip.WarningS "Failed to queue push job. Queue likely full."
-      return Nothing
+  unless didQueue $
+    Katip.logLocM Katip.WarningS "Failed to queue push job. Queue likely full."
+
+  return didQueue
+
+addPushJobFromRequest :: Protocol.PushRequest -> PushManager (Maybe Protocol.PushRequestId)
+addPushJobFromRequest pushRequest = do
+  pushJob <- newPushJob pushRequest
+  success <- addPushJob pushJob
+  return $ if success then Just (PushJob.pushId pushJob) else Nothing
 
 removePushJob :: Protocol.PushRequestId -> PushManager ()
 removePushJob pushId = do

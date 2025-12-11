@@ -80,11 +80,16 @@ data TestContext requestId = TestContext
 -- Helper to start batch processor asynchronously with its own Katip context
 startQueryProcessorAsync :: NarinfoQueryManager requestId -> ([StorePath] -> IO ([StorePath], [StorePath])) -> IO ()
 startQueryProcessorAsync manager batchProcessor = do
+  started <- newEmptyMVar
   void $ Async.async $ do
     handleScribe <- Katip.mkHandleScribe Katip.ColorIfTerminal stderr (Katip.permitItem Katip.InfoS) Katip.V0
     let makeLogEnv = Katip.registerScribe "stderr" handleScribe Katip.defaultScribeSettings =<< Katip.initLogEnv "test" "test"
     bracket makeLogEnv Katip.closeScribes $ \le ->
-      Katip.runKatipContextT le () mempty $ NarinfoQuery.start manager (liftIO . batchProcessor)
+      Katip.runKatipContextT le () mempty $ do
+        liftIO $ putMVar started ()
+        NarinfoQuery.start manager (liftIO . batchProcessor)
+  -- Wait for the processor to start before returning
+  takeMVar started
 
 -- Test setup helper that encapsulates common initialization
 withTestManager ::

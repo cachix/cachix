@@ -54,14 +54,20 @@
         haskellPackages.hercules-ci-cnix-store.nixPackage or pkgs.nix;
 
       customHaskellPackages =
-        { pkgs, haskellPackages }:
-        rec {
+        {
+          pkgs,
+          haskellPackages ? pkgs.haskellPackages,
+        }@args:
+        let
           cachix-api = haskellPackages.callCabal2nix "cachix-api" ./cachix-api { };
           cachix = haskellPackages.callCabal2nix "cachix" ./cachix {
             inherit cachix-api;
             hnix-store-core = haskellPackages.hnix-store-core_0_8_0_0 or haskellPackages.hnix-store-core;
-            nix = getNix { inherit pkgs haskellPackages; };
+            nix = getNix args;
           };
+        in
+        {
+          inherit cachix cachix-api;
         };
     in
     {
@@ -70,11 +76,7 @@
         let
           pkgs = nixpkgs.legacyPackages.${system};
           hlib = pkgs.haskell.lib;
-          inherit
-            (customHaskellPackages {
-              inherit pkgs;
-              inherit (pkgs) haskellPackages;
-            })
+          inherit (customHaskellPackages { inherit pkgs; })
             cachix
             cachix-api
             ;
@@ -84,13 +86,15 @@
           };
         in
         {
-          cachix = pkgs.haskell.lib.justStaticExecutables cachix;
-          default = pkgs.haskell.lib.justStaticExecutables cachix;
-          ci = self.devShells.${system}.default.ci;
+          cachix = hlib.justStaticExecutables cachix;
           release = pkgs.symlinkJoin {
             name = "release";
             paths = builtins.attrValues release;
           };
+        }
+        // {
+          ci = self.devShells.${system}.default.ci;
+          default = self.packages.${system}.cachix;
         }
       );
 

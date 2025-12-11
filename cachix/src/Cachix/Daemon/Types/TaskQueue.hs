@@ -5,7 +5,6 @@ module Cachix.Daemon.Types.TaskQueue
 where
 
 import Control.Concurrent.STM.TVar
-import Data.Int (Int32)
 import Data.PQueue.Max (MaxQueue)
 import Protolude
 
@@ -26,9 +25,7 @@ instance (Ord a) => Ord (Prioritized a) where
     where
       -- Circular sequence comparison: older (smaller) sequences come first
       -- Uses signed arithmetic to handle wraparound (works for sequences up to 2^31 apart)
-      compareSeq s1 s2 =
-        let diff = s2 - s1
-         in compare diff 0
+      compareSeq s1 s2 = compare (s2 - s1) 0
 
 -- | A priority queue that maintains TBMQueue-compatible API
 -- The queue is unbounded and prioritizes items by their Ord instance

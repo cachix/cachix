@@ -10,6 +10,7 @@ import Cachix.Client.Exception (CachixException (DeprecatedCommand))
 import Cachix.Client.OptionsParser
   ( CachixCommand (..),
     DaemonCommand (..),
+    DoctorOptions (..),
     PushArguments (..),
     daemonNarinfoQueryOptions,
     getOpts,
@@ -43,6 +44,7 @@ main = displayConsoleRegions $ do
     Daemon (DaemonWatchExec daemonOptions pushOptions cacheName cmd args) -> Command.watchExecDaemon env pushOptions (daemonNarinfoQueryOptions daemonOptions) cacheName cmd args
     DeployCommand (DeployOptions.Agent opts) -> AgentCommand.run cachixOptions opts
     DeployCommand (DeployOptions.Activate opts) -> ActivateCommand.run env opts
+    Doctor doctorOptions -> Command.doctor env doctorOptions
     GenerateKeypair name -> Command.generateKeypair env name
     Import pushOptions name uri -> Command.import' env pushOptions name uri
     Pin pingArgs -> Command.pin env pingArgs

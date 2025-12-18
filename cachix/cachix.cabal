@@ -60,6 +60,7 @@ library
     Cachix.Client.Command
     Cachix.Client.Command.Cache
     Cachix.Client.Command.Config
+    Cachix.Client.Command.Doctor
     Cachix.Client.Command.Import
     Cachix.Client.Command.Pin
     Cachix.Client.Command.Push

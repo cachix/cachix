@@ -619,17 +619,24 @@ doctorCommand :: Parser CachixCommand
 doctorCommand =
   Doctor
     <$> ( DoctorOptions
-            <$> optional cacheNameParser
+            <$> cacheOption
             <*> socketOption
             <*> storePathArg
         )
   where
+    cacheOption =
+      optional . strOption $
+        long "cache"
+          <> short 'c'
+          <> metavar "CACHE-NAME"
+          <> help "Binary cache to check"
+
     socketOption =
       optional . strOption $
         long "socket"
           <> short 's'
           <> metavar "SOCKET"
-          <> help "Path to the daemon socket"
+          <> help "Path to the daemon socket (default: $CACHIX_DAEMON_SOCKET)"
 
     storePathArg =
       optional . strArgument $

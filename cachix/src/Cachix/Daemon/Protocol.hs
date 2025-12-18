@@ -3,6 +3,7 @@ module Cachix.Daemon.Protocol
     DaemonMessage (..),
     DaemonErrorMessage (..),
     DaemonExitStatus (..),
+    DaemonDiagnostics (..),
     PushRequestId,
     newPushRequestId,
     PushRequest (..),
@@ -22,6 +23,7 @@ data ClientMessage
   = ClientPushRequest !PushRequest
   | ClientStop
   | ClientPing
+  | ClientDiagnosticsRequest
   deriving stock (Eq, Generic, Show)
   deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)
 
@@ -31,6 +33,7 @@ data DaemonMessage
   | DaemonExit !DaemonExitStatus
   | DaemonPushEvent PushEvent
   | DaemonError !DaemonErrorMessage
+  | DaemonDiagnosticsResult !DaemonDiagnostics
   deriving stock (Eq, Generic, Show)
   deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)
 
@@ -43,6 +46,18 @@ data DaemonErrorMessage
 data DaemonExitStatus = DaemonExitStatus
   { exitCode :: !Int,
     exitMessage :: !(Maybe Text)
+  }
+  deriving stock (Eq, Generic, Show)
+  deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)
+
+-- | Diagnostics information about the daemon's cache configuration
+data DaemonDiagnostics = DaemonDiagnostics
+  { diagCacheName :: !Text,
+    diagCacheUri :: !Text,
+    diagCachePublic :: !Bool,
+    diagHasSigningKey :: !Bool,
+    diagAuthOk :: !Bool,
+    diagError :: !(Maybe Text)
   }
   deriving stock (Eq, Generic, Show)
   deriving anyclass (Aeson.FromJSON, Aeson.ToJSON)

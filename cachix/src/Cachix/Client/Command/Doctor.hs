@@ -24,6 +24,7 @@ import Protolude.Conv
 import Servant.Auth.Client
 import Servant.Client.Streaming (ClientError, runClientM)
 import System.Directory (doesFileExist)
+import System.Environment (lookupEnv)
 import System.Timeout (timeout)
 
 -- | Result of a single check
@@ -47,26 +48,55 @@ data CacheCheckResult = CacheCheckResult
 -- | Result of checking daemon
 data DaemonCheckResult
   = DaemonNotRunning
-  | DaemonRunning FilePath
+  | DaemonRunning FilePath (Maybe Protocol.DaemonDiagnostics)
   | DaemonConnectionFailed Text
   deriving (Show)
 
 doctor :: Env -> DoctorOptions -> IO ()
 doctor env opts = do
+  -- Resolve socket path: CLI option takes precedence over environment variable
+  envSocketPath <- fmap toS <$> lookupEnv "CACHIX_DAEMON_SOCKET"
+  let socketPath = doctorSocketPath opts <|> envSocketPath
+      socketExplicit = isJust socketPath
+
+  -- Validate options: socket and CACHE-NAME are mutually exclusive
+  case (socketPath, doctorCacheName opts) of
+    (Just _, Just _) -> do
+      putErrText "Error: --socket/CACHIX_DAEMON_SOCKET and CACHE-NAME cannot be used together."
+      putErrText "When using a socket, the daemon determines which cache to check."
+      exitFailure
+    _ -> return ()
+
   putStrLn ("Cachix Doctor" :: Text)
   putStrLn ("=============" :: Text)
   putStrLn ("" :: Text)
 
-  -- Configuration checks
-  configResult <- checkConfiguration env
+  -- Daemon check first (needed to decide config check behavior)
+  daemonResult <- checkDaemon socketPath
+
+  -- Configuration checks (skip if using daemon successfully)
+  configResult <- case (socketPath, daemonResult) of
+    (Just _, DaemonRunning _ (Just _)) ->
+      return
+        ConfigCheckResult
+          { configFileResult = CheckOK,
+            authTokenResult = CheckOK,
+            authTokenSource = Just "via daemon"
+          }
+    _ -> checkConfiguration env
   printConfigResult configResult
 
   -- Auth check
   authResult <- checkAuth env
   printAuthResult authResult
 
-  -- Cache checks
-  cacheResults <- checkCaches env opts
+  -- Daemon status
+  printDaemonResult daemonResult
+
+  -- Cache checks - use daemon diagnostics only if socket explicitly provided and daemon responded
+  cacheResults <- case (socketPath, daemonResult) of
+    (Just _, DaemonRunning _ (Just diag)) -> return [diagnosticsToCacheResult diag]
+    _ -> checkCaches env opts
   printCacheResults cacheResults
 
   -- Store path check (if provided)
@@ -77,18 +107,30 @@ doctor env opts = do
       return (Just result)
     Nothing -> return Nothing
 
-  -- Daemon check
-  daemonResult <- checkDaemon (doctorSocketPath opts)
-  printDaemonResult daemonResult
-
   -- Summary
-  let allPassed = configPassed configResult && authPassed authResult && cachesPassed cacheResults && storePathOk storePathResult && daemonOk daemonResult
+  let allPassed = configPassed configResult && authPassed authResult && cachesPassed cacheResults && storePathOk storePathResult && daemonOk socketExplicit daemonResult
   putStrLn ("" :: Text)
   if allPassed
     then putStrLn ("All checks passed." :: Text)
     else do
       putStrLn ("Some checks failed." :: Text)
       exitFailure
+
+-- | Convert daemon diagnostics to cache check result for unified rendering
+diagnosticsToCacheResult :: Protocol.DaemonDiagnostics -> CacheCheckResult
+diagnosticsToCacheResult diag =
+  CacheCheckResult
+    { cacheResultName = Protocol.diagCacheName diag,
+      cacheResultUri = Just (Protocol.diagCacheUri diag),
+      cacheResultPublic = Just (Protocol.diagCachePublic diag),
+      cacheResultPermission = Nothing, -- Daemon doesn't report permission level
+      cacheResultHasSigningKey = Protocol.diagHasSigningKey diag,
+      cacheResultConnectivity = CheckOK, -- Daemon is connected
+      cacheResultAuth =
+        if Protocol.diagAuthOk diag
+          then CheckOK
+          else CheckFailed (fromMaybe "authentication failed" (Protocol.diagError diag))
+    }
 
 -- Configuration checks
 data ConfigCheckResult = ConfigCheckResult
@@ -100,9 +142,9 @@ data ConfigCheckResult = ConfigCheckResult
 configPassed :: ConfigCheckResult -> Bool
 configPassed ConfigCheckResult {..} =
   case (configFileResult, authTokenResult) of
-    (CheckOK, CheckOK) -> True
-    (CheckOK, CheckWarning _) -> True -- Warning is OK for auth token
-    _ -> False
+    (CheckFailed _, _) -> False
+    (_, CheckFailed _) -> False
+    _ -> True -- Warnings are OK for both config file and auth token
 
 checkConfiguration :: Env -> IO ConfigCheckResult
 checkConfiguration env = do
@@ -245,7 +287,8 @@ printCacheResults results = do
     case cacheResultPermission result of
       Just p -> putStrLn ("  Permission: " <> T.toLower (show p))
       Nothing -> return ()
-    printCheck "Signing key" (if cacheResultHasSigningKey result then CheckOK else CheckWarning "Not configured") Nothing
+    let signingKeyResult = if cacheResultHasSigningKey result then CheckOK else CheckWarning "not configured"
+    printCheck "Signing key" signingKeyResult Nothing
     printCheck "Connectivity" (cacheResultConnectivity result) Nothing
     printCheck "Authentication" (cacheResultAuth result) Nothing
 
@@ -346,10 +389,15 @@ printStorePathResult StorePathCheckResult {..} = do
       printCheck "Status" (CheckFailed err) Nothing
 
 -- Daemon checks
-daemonOk :: DaemonCheckResult -> Bool
-daemonOk DaemonNotRunning = True -- Not an error, just informational
-daemonOk (DaemonRunning _) = True
-daemonOk (DaemonConnectionFailed _) = True -- Also informational
+
+-- | Check if daemon status is OK
+-- If socket was explicitly requested (--socket), failures are errors
+-- Otherwise, daemon issues are just informational
+daemonOk :: Bool -> DaemonCheckResult -> Bool
+daemonOk socketExplicit result = case result of
+  DaemonNotRunning -> not socketExplicit -- Fail if socket explicitly requested but doesn't exist
+  DaemonRunning _ maybeDiag -> maybe True Protocol.diagAuthOk maybeDiag
+  DaemonConnectionFailed _ -> not socketExplicit -- Fail if socket explicitly requested but can't connect
 
 checkDaemon :: Maybe FilePath -> IO DaemonCheckResult
 checkDaemon optionalSocketPath = do
@@ -359,28 +407,28 @@ checkDaemon optionalSocketPath = do
   if not exists
     then return DaemonNotRunning
     else do
-      -- Try to connect and ping
-      result <- Exception.try $ pingDaemon socketPath
+      -- Try to connect and get diagnostics
+      result <- Exception.try $ queryDaemonDiagnostics socketPath
       case result of
-        Right True -> return $ DaemonRunning socketPath
-        Right False -> return $ DaemonConnectionFailed "No response to ping"
+        Right (Just diag) -> return $ DaemonRunning socketPath (Just diag)
+        Right Nothing -> return $ DaemonConnectionFailed "No response from daemon"
         Left (e :: SomeException) -> return $ DaemonConnectionFailed (toS $ displayException e)
 
-pingDaemon :: FilePath -> IO Bool
-pingDaemon socketPath = do
-  sock <- Socket.socket Socket.AF_UNIX Socket.Stream Socket.defaultProtocol
-  Socket.connect sock (Socket.SockAddrUnix socketPath)
-
-  -- Send ping
-  Socket.LBS.sendAll sock $ Protocol.newMessage Protocol.ClientPing
-
-  -- Wait for response with timeout (2 seconds)
-  result <- timeout 2000000 $ receiveResponse sock
-  Socket.close sock
-
-  case result of
-    Just (Just Protocol.DaemonPong) -> return True
-    _ -> return False
+queryDaemonDiagnostics :: FilePath -> IO (Maybe Protocol.DaemonDiagnostics)
+queryDaemonDiagnostics socketPath =
+  Exception.bracket
+    (Socket.socket Socket.AF_UNIX Socket.Stream Socket.defaultProtocol)
+    Socket.close
+    ( \sock -> do
+        Socket.connect sock (Socket.SockAddrUnix socketPath)
+        -- Send diagnostics request
+        Socket.LBS.sendAll sock $ Protocol.newMessage Protocol.ClientDiagnosticsRequest
+        -- Wait for response with timeout (10 seconds - auth check may take time)
+        result <- timeout 10000000 $ receiveResponse sock
+        case result of
+          Just (Just (Protocol.DaemonDiagnosticsResult diag)) -> return (Just diag)
+          _ -> return Nothing
+    )
 
 receiveResponse :: Socket.Socket -> IO (Maybe Protocol.DaemonMessage)
 receiveResponse sock = do
@@ -404,7 +452,7 @@ printDaemonResult result = do
   case result of
     DaemonNotRunning ->
       printCheck "Status" (CheckWarning "not running") Nothing
-    DaemonRunning socketPath -> do
+    DaemonRunning socketPath _ -> do
       printCheck "Status" CheckOK (Just "running")
       putStrLn ("  Socket: " <> (toS socketPath :: Text))
     DaemonConnectionFailed reason ->
@@ -413,9 +461,13 @@ printDaemonResult result = do
 -- Helper to print a check result
 printCheck :: Text -> CheckResult -> Maybe Text -> IO ()
 printCheck name result extra = do
-  let status = case result of
-        CheckOK -> "[OK]"
-        CheckWarning msg -> "[WARN] " <> msg
-        CheckFailed msg -> "[FAIL] " <> msg
-      extraText = maybe "" (" (" <>) extra <> maybe "" (const ")") extra
-  putStrLn $ "  " <> name <> ": " <> status <> extraText
+  let (symbol, status) = case result of
+        CheckOK -> ("✓", "")
+        CheckWarning msg -> ("!", msg)
+        CheckFailed msg -> ("✗", msg)
+      extraText = case (extra, status) of
+        (Just e, "") -> e
+        (Just e, s) -> s <> " (" <> e <> ")"
+        (Nothing, s) -> s
+      statusText = if T.null extraText then "" else " " <> extraText
+  putStrLn $ "  " <> symbol <> " " <> name <> statusText

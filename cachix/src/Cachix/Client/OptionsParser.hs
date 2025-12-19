@@ -627,7 +627,6 @@ doctorCommand =
     cacheOption =
       optional . strOption $
         long "cache"
-          <> short 'c'
           <> metavar "CACHE-NAME"
           <> help "Binary cache to check"
 

@@ -84,6 +84,16 @@ Liveness check. The daemon responds with `DaemonPong`.
 
 The client sends ping messages to monitor daemon health. The daemon should respond immediately with `DaemonPong`.
 
+### ClientDiagnosticsRequest
+
+Request diagnostic information about the daemon's cache configuration and authentication status.
+
+```json
+{ "tag": "ClientDiagnosticsRequest" }
+```
+
+The daemon responds with `DaemonDiagnosticsResult` containing cache information and authentication status. This is used by `cachix doctor` to verify the daemon's credentials are valid.
+
 ## Daemon → Client Messages
 
 ### DaemonPong
@@ -93,6 +103,32 @@ Response to `ClientPing`.
 ```json
 { "tag": "DaemonPong" }
 ```
+
+### DaemonDiagnosticsResult
+
+Response to `ClientDiagnosticsRequest` with cache configuration and authentication status.
+
+```json
+{
+  "tag": "DaemonDiagnosticsResult",
+  "contents": {
+    "diagCacheName": "my-cache",
+    "diagCacheUri": "https://my-cache.cachix.org",
+    "diagCachePublic": false,
+    "diagHasSigningKey": true,
+    "diagAuthOk": true,
+    "diagError": null
+  }
+}
+```
+
+**Fields**:
+- `diagCacheName` (string): Name of the binary cache the daemon is configured for
+- `diagCacheUri` (string): URI of the binary cache
+- `diagCachePublic` (boolean): Whether the cache is public
+- `diagHasSigningKey` (boolean): Whether the daemon has a signing key configured
+- `diagAuthOk` (boolean): Whether authentication was verified successfully (makes an API call to confirm)
+- `diagError` (string or null): Error message if authentication failed
 
 ### DaemonExit
 

@@ -21,6 +21,9 @@ module Cachix.Client.OptionsParser
     -- * Pin options
     PinOptions (..),
 
+    -- * Doctor options
+    DoctorOptions (..),
+
     -- * Global options
     Flags (..),
 
@@ -79,6 +82,7 @@ data CachixCommand
   = AuthToken (Maybe Text)
   | Config Config.Command
   | Daemon DaemonCommand
+  | Doctor DoctorOptions
   | GenerateKeypair BinaryCacheName
   | Push PushArguments
   | Import PushOptions Text URI
@@ -182,6 +186,13 @@ data DaemonPushOptions = DaemonPushOptions
   }
   deriving (Show)
 
+data DoctorOptions = DoctorOptions
+  { doctorCacheName :: Maybe BinaryCacheName,
+    doctorSocketPath :: Maybe FilePath,
+    doctorStorePath :: Maybe Text
+  }
+  deriving (Show)
+
 -- | CLI parser entry point
 getOpts :: IO (Flags, CachixCommand)
 getOpts = do
@@ -206,6 +217,7 @@ commandParser =
     <|> storePathCommands
     <|> daemonCommands
     <|> deployCommands
+    <|> diagnosticCommands
   where
     configCommands =
       subparser $
@@ -258,6 +270,14 @@ commandParser =
           [ commandGroup "Cachix Deploy commands:",
             hidden,
             command "deploy" $ infoH deployCommand $ progDesc "Manage remote Nix-based systems with Cachix Deploy"
+          ]
+
+    diagnosticCommands =
+      subparser $
+        fold
+          [ commandGroup "Diagnostic commands:",
+            hidden,
+            command "doctor" $ infoH doctorCommand $ progDesc "Check Cachix configuration and connectivity"
           ]
 
 flagParser :: Config.ConfigPath -> Parser Flags
@@ -594,6 +614,34 @@ daemonPushOptionsParser =
 
 deployCommand :: Parser CachixCommand
 deployCommand = DeployCommand <$> DeployOptions.parser
+
+doctorCommand :: Parser CachixCommand
+doctorCommand =
+  Doctor
+    <$> ( DoctorOptions
+            <$> cacheOption
+            <*> socketOption
+            <*> storePathArg
+        )
+  where
+    cacheOption =
+      optional . strOption $
+        long "cache"
+          <> short 'c'
+          <> metavar "CACHE-NAME"
+          <> help "Binary cache to check"
+
+    socketOption =
+      optional . strOption $
+        long "socket"
+          <> short 's'
+          <> metavar "SOCKET"
+          <> help "Path to the daemon socket (default: $CACHIX_DAEMON_SOCKET)"
+
+    storePathArg =
+      optional . strArgument $
+        metavar "STORE-PATH"
+          <> help "Check if a specific store path or hash exists in the cache"
 
 watchExecCommand :: Parser CachixCommand
 watchExecCommand =

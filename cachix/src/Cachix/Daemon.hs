@@ -11,6 +11,7 @@ module Cachix.Daemon
   )
 where
 
+import Cachix.API qualified as API
 import Cachix.Client.Command.Push qualified as Command.Push
 import Cachix.Client.Config qualified as Config
 import Cachix.Client.Config.Orphans ()
@@ -18,6 +19,8 @@ import Cachix.Client.Env as Env
 import Cachix.Client.OptionsParser (DaemonOptions, PushOptions, daemonNarinfoQueryOptions)
 import Cachix.Client.OptionsParser qualified as Options
 import Cachix.Client.Push
+import Cachix.Client.Retry (retryHttp)
+import Cachix.Client.Servant (cachixClient)
 import Cachix.Daemon.EventLoop qualified as EventLoop
 import Cachix.Daemon.Listen as Listen
 import Cachix.Daemon.Log qualified as Log
@@ -42,6 +45,7 @@ import Katip qualified
 import Network.Socket qualified as Socket
 import Network.Socket.ByteString qualified as Socket.BS
 import Protolude hiding (bracket)
+import Servant.Client.Streaming (runClientM)
 import System.Environment (lookupEnv)
 import System.IO.Error (isResourceVanishedError)
 import System.Posix.Process (getProcessID)
@@ -169,6 +173,33 @@ run daemon = fmap join <$> runDaemon daemon $ do
             else do
               let errorMsg = "Remote stop is disabled on this daemon"
               SocketStore.sendAll socketId (Protocol.newMessage (Protocol.DaemonError (Protocol.UnsupportedCommand errorMsg))) clients
+        ClientDiagnosticsRequest -> do
+          DaemonEnv {daemonEnv, daemonCacheName, daemonBinaryCache, daemonPushManager, daemonClients} <- ask
+          -- Get push secret to check for signing key and auth token
+          let pushParams = PushManager.pmPushParams daemonPushManager
+              pushSecret = pushParamsSecret pushParams
+              hasSigningKey = case pushSecret of
+                PushSigningKey {} -> True
+                PushToken {} -> False
+              maybeToken = getAuthTokenFromPushSecret pushSecret
+          -- Verify auth by making an API call
+          authResult <- case maybeToken of
+            Nothing -> pure $ Left "No auth token configured"
+            Just token -> do
+              res <- liftIO $ retryHttp $ (`runClientM` clientenv daemonEnv) $ API.getCache cachixClient token daemonCacheName
+              pure $ case res of
+                Right _ -> Right ()
+                Left err -> Left (show err)
+          let diagnostics =
+                Protocol.DaemonDiagnostics
+                  { Protocol.diagCacheName = daemonCacheName,
+                    Protocol.diagCacheUri = BinaryCache.uri daemonBinaryCache,
+                    Protocol.diagCachePublic = BinaryCache.isPublic daemonBinaryCache,
+                    Protocol.diagHasSigningKey = hasSigningKey,
+                    Protocol.diagAuthOk = isRight authResult,
+                    Protocol.diagError = either Just (const Nothing) authResult
+                  }
+          SocketStore.sendAll socketId (Protocol.newMessage (Protocol.DaemonDiagnosticsResult diagnostics)) daemonClients
         _ -> return ()
     ShutdownGracefully -> do
       Katip.logFM Katip.InfoS "Shutting down daemon..."

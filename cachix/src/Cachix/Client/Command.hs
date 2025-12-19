@@ -3,6 +3,7 @@ module Cachix.Client.Command
     Cache.remove,
     Config.authtoken,
     Config.generateKeypair,
+    Doctor.doctor,
     Import.import',
     Pin.pin,
     Push.push,
@@ -15,6 +16,7 @@ where
 
 import Cachix.Client.Command.Cache qualified as Cache
 import Cachix.Client.Command.Config qualified as Config
+import Cachix.Client.Command.Doctor qualified as Doctor
 import Cachix.Client.Command.Import qualified as Import
 import Cachix.Client.Command.Pin qualified as Pin
 import Cachix.Client.Command.Push qualified as Push

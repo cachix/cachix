@@ -10,7 +10,6 @@ import Cachix.Client.Exception (CachixException (DeprecatedCommand))
 import Cachix.Client.OptionsParser
   ( CachixCommand (..),
     DaemonCommand (..),
-    DoctorOptions (..),
     PushArguments (..),
     daemonNarinfoQueryOptions,
     getOpts,

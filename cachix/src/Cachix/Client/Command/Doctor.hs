@@ -13,7 +13,6 @@ import Cachix.Types.Permission (Permission (..))
 import Control.Exception.Safe qualified as Exception
 import Data.Aeson qualified as Aeson
 import Data.ByteString qualified as BS
-import Data.ByteString.Lazy qualified as LBS
 import Data.Text qualified as T
 import Network.HTTP.Types (status401, status404)
 import Network.Socket qualified as Socket
@@ -351,16 +350,16 @@ checkStorePath env opts storePath = do
             storePathCacheName = cacheName,
             storePathStatus = StorePathCheckError "Invalid store path format"
           }
-    Just hash -> do
+    Just storeHash -> do
       -- Use narinfoBulk to check if the path exists
-      result <- retryHttp $ (`runClientM` clientenv env) $ API.narinfoBulk cachixClient token cacheName [hash]
+      result <- retryHttp $ (`runClientM` clientenv env) $ API.narinfoBulk cachixClient token cacheName [storeHash]
       case result of
         Right missingHashes ->
-          let status = if hash `elem` missingHashes then NotInCache else InCache
+          let status = if storeHash `elem` missingHashes then NotInCache else InCache
            in return
                 StorePathCheckResult
                   { storePathQuery = storePath,
-                    storePathHash = hash,
+                    storePathHash = storeHash,
                     storePathCacheName = cacheName,
                     storePathStatus = status
                   }
@@ -368,7 +367,7 @@ checkStorePath env opts storePath = do
           return
             StorePathCheckResult
               { storePathQuery = storePath,
-                storePathHash = hash,
+                storePathHash = storeHash,
                 storePathCacheName = cacheName,
                 storePathStatus = StorePathCheckError (toS (show err :: [Char]))
               }

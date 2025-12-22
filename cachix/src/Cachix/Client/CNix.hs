@@ -15,13 +15,22 @@ validateStorePath store storePath = do
     else return Nothing
 
 -- | Like 'validateStorePath', but logs a warning when the path is invalid.
+--
+-- When validation fails due to an error (e.g., permission denied),
+-- the actual error message is logged instead of a generic "is not valid" message.
 filterInvalidStorePath :: Store -> StorePath -> IO (Maybe StorePath)
 filterInvalidStorePath store storePath = do
-  mstorePath <- validateStorePath store storePath
-
-  when (isNothing mstorePath) (logBadStorePath store storePath)
-
-  return mstorePath
+  result <- tryValidate
+  case result of
+    Right True -> return (Just storePath)
+    Right False -> do
+      logBadStorePath store storePath
+      return Nothing
+    Left err -> do
+      logStorePathError store storePath err
+      return Nothing
+  where
+    tryValidate = (Right <$> Store.isValidPath store storePath) `catchNixError` (return . Left)
 
 filterInvalidStorePaths :: Store -> [StorePath] -> IO [Maybe StorePath]
 filterInvalidStorePaths store =
@@ -70,6 +79,13 @@ logBadStorePath :: Store -> StorePath -> IO ()
 logBadStorePath store storePath = do
   path <- Store.storePathToPath store storePath
   logBadPath path
+
+-- | Print a warning with the actual error when accessing a store path fails.
+logStorePathError :: Store -> StorePath -> NixError -> IO ()
+logStorePathError store storePath (NixError {..}) = do
+  path <- Store.storePathToPath store storePath
+  let pathText = decodeUtf8With lenientDecode path
+  putErrText $ color Yellow $ "Warning: " <> pathText <> " - " <> msg <> ", skipping"
 
 -- | Print a warning when the path is invalid.
 --

@@ -161,6 +161,7 @@ push _env daemonOptions daemonPushOptions cliPaths = do
                   _ -> loop
               Protocol.DaemonError err -> handleDaemonError err
               Protocol.DaemonExit exitStatus -> handleDaemonExit exitStatus
+              Protocol.DaemonDiagnosticsResult _ -> loop
 
 -- | Tell the daemon to stop and wait for it to gracefully exit
 stop :: Env -> DaemonOptions -> IO ()
@@ -182,6 +183,7 @@ stop _env daemonOptions =
               Protocol.DaemonError err -> handleDaemonError err
               Protocol.DaemonExit exitStatus -> handleDaemonExit exitStatus
               Protocol.DaemonPushEvent _ -> loop
+              Protocol.DaemonDiagnosticsResult _ -> loop
 
 withDaemonConn :: Maybe FilePath -> (Socket.Socket -> IO a) -> IO a
 withDaemonConn optionalSocketPath f = do

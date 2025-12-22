@@ -174,7 +174,6 @@ run daemon = fmap join <$> runDaemon daemon $ do
               let errorMsg = "Remote stop is disabled on this daemon"
               SocketStore.sendAll socketId (Protocol.newMessage (Protocol.DaemonError (Protocol.UnsupportedCommand errorMsg))) clients
         ClientDiagnosticsRequest -> do
-          DaemonEnv {daemonEnv, daemonCacheName, daemonBinaryCache, daemonPushManager, daemonClients} <- ask
           -- Get push secret to check for signing key and auth token
           let pushParams = PushManager.pmPushParams daemonPushManager
               pushSecret = pushParamsSecret pushParams

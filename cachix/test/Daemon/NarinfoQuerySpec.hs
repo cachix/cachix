@@ -14,6 +14,7 @@ import Katip qualified
 import Protolude
 import Test.Hspec
 import UnliftIO.Async qualified as Async
+import UnliftIO.Timeout (timeout)
 
 -- Create a mock StorePath for testing
 mockStorePath :: Store -> Int -> IO StorePath
@@ -116,6 +117,16 @@ withTestManager config action = do
           }
 
   finally (action testContext) (NarinfoQuery.stop manager)
+
+-- | Wait for an STM condition to be satisfied, with a timeout.
+-- Fails with an error if the timeout expires before the condition is met.
+waitForSTM :: Int -> STM Bool -> IO ()
+waitForSTM timeoutMicros condition = do
+  result <- timeout timeoutMicros $ atomically $ do
+    satisfied <- condition
+    unless satisfied retry
+  when (isNothing result) $
+    expectationFailure "Timeout waiting for STM condition"
 
 spec :: Spec
 spec = do
@@ -244,19 +255,24 @@ spec = do
       path4 <- mockStorePath store 4
       path5 <- mockStorePath store 5
       path6 <- mockStorePath store 6
-      let config = defaultNarinfoQueryOptions {nqoMaxWaitTime = 0}
+      -- Use batch size = 5 (exact unique paths count) so batch triggers on request 2
+      -- Request 1 adds 3 paths, request 2 adds 2 more unique (5 total), triggering batch
+      let config = defaultNarinfoQueryOptions {nqoMaxBatchSize = 5, nqoMaxWaitTime = 10}
       withTestManager config $ \TestContext {..} -> do
         -- Setup: path1,3,5 exist; path2,4,6 missing
         let existingPaths = Set.fromList [path1, path3, path5]
             missingPaths = Set.fromList [path2, path4, path6]
         atomically $ writeTVar tcResponsesQueue [(existingPaths, missingPaths)]
 
-        -- Request 1: paths 1,2,3
+        -- Request 1: paths 1,2,3 (3 unique paths, below threshold)
         NarinfoQuery.submitRequest tcManager (1 :: Int) [path1, path2, path3]
-        -- Request 2: paths 3,4,5 (path 3 overlaps)
+        -- Request 2: paths 3,4,5 (path 3 overlaps, adds 2 new → 5 total, triggers batch)
         NarinfoQuery.submitRequest tcManager (2 :: Int) [path3, path4, path5]
 
-        threadDelay 20_000
+        -- Wait until both callbacks are received (deterministic, no timing dependency)
+        waitForSTM 5_000_000 $ do
+          cbs <- readTVar tcCallbackCalls
+          return $ length cbs >= 2
 
         callbacks <- readTVarIO tcCallbackCalls
         length callbacks `shouldBe` 2

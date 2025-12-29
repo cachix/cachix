@@ -1,5 +1,6 @@
 {
   pkgs,
+  lib,
   ghcVersion,
   getNix,
   ...
@@ -26,7 +27,9 @@
     pkgs.sqlite.dev
     pkgs.libgit2
     pkgs.pcre2
-    pkgs.libcpuid
+  ]
+  ++ lib.optional pkgs.stdenv.hostPlatform.isx86 pkgs.libcpuid
+  ++ [
 
     # Haskell
     pkgs.cabal-install

@@ -3,6 +3,7 @@ module Cachix.Client.Command
     Cache.remove,
     Config.authtoken,
     Config.generateKeypair,
+    Doctor.daemonDoctor,
     Doctor.doctor,
     Import.import',
     Pin.pin,

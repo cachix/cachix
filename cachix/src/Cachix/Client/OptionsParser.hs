@@ -172,6 +172,7 @@ data DaemonCommand
   | DaemonRun DaemonOptions PushOptions BinaryCacheName
   | DaemonStop DaemonOptions
   | DaemonWatchExec DaemonOptions PushOptions BinaryCacheName Text [Text]
+  | DaemonDoctor DaemonOptions
   deriving (Show)
 
 data DaemonOptions = DaemonOptions
@@ -188,7 +189,6 @@ data DaemonPushOptions = DaemonPushOptions
 
 data DoctorOptions = DoctorOptions
   { doctorCacheName :: Maybe BinaryCacheName,
-    doctorSocketPath :: Maybe FilePath,
     doctorStorePath :: Maybe Text
   }
   deriving (Show)
@@ -516,11 +516,15 @@ daemonSubCommand :: Parser DaemonCommand
 daemonSubCommand =
   subparser $
     fold
-      [ command "push" $ infoH daemonPush $ progDesc "Push store paths to the daemon",
+      [ command "doctor" $ infoH daemonDoctorParser $ progDesc "Check daemon health and connectivity",
+        command "push" $ infoH daemonPush $ progDesc "Push store paths to the daemon",
         command "run" $ infoH daemonRun $ progDesc "Launch the daemon",
         command "stop" $ infoH daemonStop $ progDesc "Stop the daemon and wait for any queued paths to be pushed",
         command "watch-exec" $ infoH daemonWatchExec $ progDesc "Run a command and upload any store paths built during its execution"
       ]
+
+daemonDoctorParser :: Parser DaemonCommand
+daemonDoctorParser = DaemonDoctor <$> daemonOptionsParser
 
 daemonPush :: Parser DaemonCommand
 daemonPush =
@@ -620,7 +624,6 @@ doctorCommand =
   Doctor
     <$> ( DoctorOptions
             <$> cacheOption
-            <*> socketOption
             <*> storePathArg
         )
   where
@@ -629,13 +632,6 @@ doctorCommand =
         long "cache"
           <> metavar "CACHE-NAME"
           <> help "Binary cache to check"
-
-    socketOption =
-      optional . strOption $
-        long "socket"
-          <> short 's'
-          <> metavar "SOCKET"
-          <> help "Path to the daemon socket (default: $CACHIX_DAEMON_SOCKET)"
 
     storePathArg =
       optional . strArgument $

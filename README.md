@@ -58,6 +58,9 @@ Daemon commands:
 
 Cachix Deploy commands:
   deploy                   Manage remote Nix-based systems with Cachix Deploy
+
+Diagnostic commands:
+  doctor                   Check Cachix configuration and connectivity
 ```
 
 

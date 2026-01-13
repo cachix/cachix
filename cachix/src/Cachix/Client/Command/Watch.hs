@@ -34,7 +34,7 @@ import Protolude hiding (toS)
 import Protolude.Conv
 import Servant.Conduit ()
 import System.Console.Pretty
-import System.Environment (getEnvironment)
+import System.Environment (getEnvironment, lookupEnv)
 import System.IO.Error (isEOFError)
 import System.IO.Temp (withTempFile)
 import System.Posix.Signals qualified as Signals
@@ -72,8 +72,9 @@ watchExec env watchExecMode pushOptions batchOptions cacheName cmd args = do
 --
 -- Requires the user to be a trusted user in a multi-user installation.
 watchExecDaemon :: Env -> PushOptions -> NarinfoQueryOptions -> BinaryCacheName -> Text -> [Text] -> IO ()
-watchExecDaemon env pushOpts batchOptions cacheName cmd args =
-  Daemon.PostBuildHook.withSetup Nothing $ \hookEnv ->
+watchExecDaemon env pushOpts batchOptions cacheName cmd args = do
+  envSocketPath <- lookupEnv "CACHIX_DAEMON_SOCKET"
+  Daemon.PostBuildHook.withSetup envSocketPath $ \hookEnv ->
     withTempFile (Daemon.PostBuildHook.tempDir hookEnv) "daemon-log-capture" $ \_ logHandle ->
       withStore $ \store -> do
         let daemonOptions =

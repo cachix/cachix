@@ -86,6 +86,7 @@ library
     Cachix.Client.WatchStore
     Cachix.Daemon
     Cachix.Daemon.Client
+    Cachix.Daemon.DryMode
     Cachix.Daemon.EventLoop
     Cachix.Daemon.Listen
     Cachix.Daemon.Log

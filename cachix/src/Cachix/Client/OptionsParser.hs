@@ -178,7 +178,8 @@ data DaemonCommand
 data DaemonOptions = DaemonOptions
   { daemonAllowRemoteStop :: Bool,
     daemonNarinfoQueryOptions :: NarinfoQueryOptions,
-    daemonSocketPath :: Maybe FilePath
+    daemonSocketPath :: Maybe FilePath,
+    daemonDryRun :: Bool
   }
   deriving (Show)
 
@@ -558,6 +559,7 @@ daemonOptionsParser =
     <$> remoteStopOption
     <*> batchConfigParser
     <*> socketOption
+    <*> dryRunOption
   where
     socketOption =
       optional . strOption $
@@ -569,6 +571,11 @@ daemonOptionsParser =
     remoteStopOption =
       enableDisableFlag True "remote-stop" "the remote stop command which allows clients to remotely shut down the daemon. Remote stop should be disabled in environments where the lifecycle of the daemon is handled by a service manager, like systemd."
 
+    dryRunOption =
+      switch $
+        long "dry-run"
+          <> help "Skip all network requests (for testing socket/protocol)"
+
 batchConfigParser :: Parser NarinfoQueryOptions
 batchConfigParser =
   NarinfoQueryOptions
@@ -576,6 +583,7 @@ batchConfigParser =
     <*> narinfoBatchTimeoutOption
     <*> narinfoCacheTTLOption
     <*> narinfoMaxCacheSizeOption
+    <*> pure False -- dry run is set from DaemonOptions.daemonDryRun
   where
     narinfoBatchSizeOption =
       option auto $

@@ -79,6 +79,7 @@ watchExecDaemon env pushOpts batchOptions cacheName cmd args =
         let daemonOptions =
               DaemonOptions
                 { daemonAllowRemoteStop = False,
+                  daemonDryRun = False,
                   daemonNarinfoQueryOptions = batchOptions,
                   daemonSocketPath = Just (Daemon.PostBuildHook.daemonSock hookEnv)
                 }

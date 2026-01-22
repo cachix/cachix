@@ -51,7 +51,9 @@ data NarinfoQueryOptions = NarinfoQueryOptions
     nqoCacheTTL :: !NominalDiffTime,
     -- | Maximum number of entries in the cache
     -- Use 0 for unlimited
-    nqoMaxCacheSize :: !Int
+    nqoMaxCacheSize :: !Int,
+    -- | Dry run: skip network requests, treat all paths as present
+    nqoDryRun :: !Bool
   }
   deriving stock (Eq, Show)
 
@@ -62,7 +64,8 @@ defaultNarinfoQueryOptions =
     { nqoMaxBatchSize = 100,
       nqoMaxWaitTime = 0.5, -- 500ms
       nqoCacheTTL = 300.0, -- 5 minutes
-      nqoMaxCacheSize = 0 -- Unlimited
+      nqoMaxCacheSize = 0, -- Unlimited
+      nqoDryRun = False
     }
 
 -- | A request to check narinfo for store paths
@@ -224,14 +227,24 @@ start ::
   -- | Function to process a batch of paths
   ([StorePath] -> m ([StorePath], [StorePath])) ->
   m ()
-start manager@NarinfoQueryManager {nqmProcessorThread, nqmTimeRefreshThread} processBatch = do
+start manager@NarinfoQueryManager {nqmConfig, nqmProcessorThread, nqmTimeRefreshThread} processBatch = do
   -- Start time refresh thread
   timeThread <- Async.async $ runTimeRefreshThread manager
   liftIO $ putMVar nqmTimeRefreshThread timeThread
 
+  -- Use mock processor in dry run (returns empty results = all paths present)
+  let actualProcessor =
+        if nqoDryRun nqmConfig
+          then dryRunProcessBatch
+          else processBatch
+
   -- Start processor thread
-  thread <- Async.async $ runQueryProcessorThread manager processBatch
+  thread <- Async.async $ runQueryProcessorThread manager actualProcessor
   liftIO $ putMVar nqmProcessorThread thread
+  where
+    -- Mock processor that assumes all paths are already present
+    dryRunProcessBatch :: (MonadIO n) => [StorePath] -> n ([StorePath], [StorePath])
+    dryRunProcessBatch _storePaths = pure ([], [])
 
 -- | Stop the query processor
 stop :: (MonadIO m) => NarinfoQueryManager requestId -> m ()

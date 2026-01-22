@@ -33,6 +33,8 @@ data PushEventMessage
   | PushStorePathProgress FilePath Int64 Int64
   | PushStorePathDone FilePath
   | PushStorePathFailed FilePath Text
+  | PushStorePathSkipped FilePath
+  | PushStorePathInvalid FilePath Text
   | PushFinished
   deriving stock (Eq, Generic, Show)
   deriving anyclass (FromJSON, ToJSON)

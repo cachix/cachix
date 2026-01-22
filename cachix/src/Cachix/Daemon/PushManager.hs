@@ -45,7 +45,7 @@ module Cachix.Daemon.PushManager
   )
 where
 
-import Cachix.Client.CNix (logStorePathWarning, resolveStorePaths)
+import Cachix.Client.CNix (formatStorePathError, logStorePathWarning, resolveStorePaths)
 import Cachix.Client.Command.Push hiding (pushStrategy)
 import Cachix.Client.OptionsParser as Client.OptionsParser
   ( PushOptions (..),
@@ -282,6 +282,10 @@ resolvePushJob pushId closure = do
 
   withPushJob pushId $ \pushJob -> do
     pushStarted pushJob
+    -- Emit PushStorePathSkipped events for paths already present in the cache
+    let skippedPaths = Set.difference (PushJob.rcAllPaths closure) (PushJob.rcMissingPaths closure)
+    forM_ skippedPaths $ \path ->
+      sendStorePathEvent [pushId] (PushStorePathSkipped path)
     -- Create STM action for each path and then run everything atomically
     queueStorePaths pushId $ Set.toList (PushJob.rcMissingPaths closure)
     -- Check if the job is already completed, i.e. all paths have been skipped.
@@ -337,6 +341,10 @@ runQueryMissingPathsTask pushParams pushId =
 
         -- Log warnings for invalid paths
         liftIO $ for_ errors $ uncurry logStorePathWarning
+
+        -- Emit PushStorePathInvalid events for invalid paths
+        forM_ errors $ \(path, err) ->
+          sendStorePathEvent [pushId] (PushStorePathInvalid path (formatStorePathError err))
 
         paths <- computeClosure store validPaths
 

@@ -4,6 +4,7 @@ module Cachix.Client.CNix
     resolveStorePath,
     resolveStorePaths,
     validateStorePath,
+    formatStorePathError,
     formatStorePathWarning,
     logStorePathWarning,
     logStorePathWarning',
@@ -62,6 +63,13 @@ resolveStorePaths store paths = do
   where
     go (path, Left err) (errs, oks) = ((path, err) : errs, oks)
     go (_, Right sp) (errs, oks) = (errs, sp : oks)
+
+-- | Format a store path error as a reason string (without the path).
+formatStorePathError :: StorePathError -> Text
+formatStorePathError = \case
+  StorePathNotFound reason -> reason
+  StorePathNotValid -> "not valid"
+  StorePathError reason -> reason
 
 -- | Format a store path error as a user-friendly warning message.
 formatStorePathWarning :: FilePath -> StorePathError -> Text

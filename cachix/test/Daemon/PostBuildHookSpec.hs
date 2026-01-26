@@ -4,7 +4,7 @@ import Cachix.Daemon.PostBuildHook
 import Data.String
 import Protolude
 import System.Environment qualified as System
-import System.FilePath (takeDirectory, (</>))
+import System.FilePath (takeBaseName, takeDirectory, (</>))
 import System.IO.Temp (getCanonicalTemporaryDirectory)
 import Test.Hspec
 
@@ -14,29 +14,30 @@ spec = do
       configPath = "my-nix.conf"
 
   describe "withRunnerFriendlyTempDirectory" $ do
+    it "creates a temp directory with a socket path that fits within the limit" $ do
+      let prefix = "cachix-daemon"
+      withRunnerFriendlyTempDirectory prefix $ \tempDir -> do
+        let dirName = takeBaseName tempDir
+            socketPath = tempDir </> "daemon.sock"
+        length dirName `shouldBe` length prefix + 6
+        length socketPath `shouldSatisfy` (< unixSocketMaxPath)
+
     it "uses RUNNER_TEMP when path fits within socket limit" $ do
       systemTempDir <- getCanonicalTemporaryDirectory
-      -- Use a short path that will fit
       withTempEnv ("RUNNER_TEMP", systemTempDir) $ do
         withRunnerFriendlyTempDirectory "cachix-daemon" $ \tempDir -> do
           takeDirectory tempDir `shouldBe` systemTempDir
 
-    it "falls back to system temp when RUNNER_TEMP would exceed socket path limit" $ do
+    it "falls back to system temp when RUNNER_TEMP is unset or too long" $ do
       systemTempDir <- getCanonicalTemporaryDirectory
-      -- Create a path long enough to exceed the limit when combined with daemon socket path
-      -- unixSocketMaxPath is 104 (macOS/BSD) or 108 (Linux)
-      -- We need: dir + "/cachix-daemonXXXXXX" (19) + "/daemon.sock" (12) >= limit
-      -- So dir needs to be >= limit - 31 = 73 (macOS) or 77 (Linux)
-      let longPath = "/tmp" </> replicate (unixSocketMaxPath - 20) 'x'
-      withTempEnv ("RUNNER_TEMP", longPath) $ do
-        withRunnerFriendlyTempDirectory "cachix-daemon" $ \tempDir -> do
-          -- Should fall back to system temp, not use the long RUNNER_TEMP
-          takeDirectory tempDir `shouldBe` systemTempDir
 
-    it "uses system temp when RUNNER_TEMP is not set" $ do
-      systemTempDir <- getCanonicalTemporaryDirectory
       withTempEnv ("RUNNER_TEMP", "") $ do
         System.unsetEnv "RUNNER_TEMP"
+        withRunnerFriendlyTempDirectory "cachix-daemon" $ \tempDir -> do
+          takeDirectory tempDir `shouldBe` systemTempDir
+
+      let longPath = "/tmp" </> replicate (unixSocketMaxPath - 20) 'x'
+      withTempEnv ("RUNNER_TEMP", longPath) $ do
         withRunnerFriendlyTempDirectory "cachix-daemon" $ \tempDir -> do
           takeDirectory tempDir `shouldBe` systemTempDir
 

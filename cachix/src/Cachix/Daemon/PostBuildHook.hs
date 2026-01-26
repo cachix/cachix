@@ -166,15 +166,14 @@ withRunnerFriendlyTempDirectory prefix action = do
   runnerTempDir <- liftIO $ lookupEnv "RUNNER_TEMP"
   systemTempDir <- liftIO getCanonicalTemporaryDirectory
 
-  -- Check if RUNNER_TEMP would result in a path that's too long for Unix sockets
-  -- by constructing the actual socket path and measuring it
-  let wouldFit dir = length (dir </> (prefix <> "XXXXXX") </> "daemon.sock") < unixSocketMaxPath
+  -- Check if RUNNER_TEMP would result in a path that's too long for Unix sockets.
+  -- mkdtemp appends 6 random chars to the prefix.
+  let wouldFit dir = length (dir </> prefix <> "XXXXXX" </> "daemon.sock") < unixSocketMaxPath
       baseDir = case runnerTempDir of
         Just rt | wouldFit rt -> rt
         _ -> systemTempDir
 
-  -- mkdtemp replaces XXXXXX with 6 random characters
-  let dirTemplate = baseDir </> (prefix <> "XXXXXX")
+  let dirTemplate = baseDir </> prefix
   E.bracket
     (liftIO $ mkdtemp dirTemplate)
     (liftIO . ignoringIOErrors . removeDirectoryRecursive)

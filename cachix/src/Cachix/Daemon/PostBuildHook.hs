@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE TypeApplications #-}
 
@@ -13,10 +14,13 @@ module Cachix.Daemon.PostBuildHook
     -- * Internal
     buildNixConfEnv,
     buildNixUserConfFilesEnv,
+    withRunnerFriendlyTempDirectory,
+    unixSocketMaxPath,
   )
 where
 
 import Control.Monad.Catch (MonadMask)
+import Control.Monad.Catch qualified as E
 import Data.Containers.ListUtils (nubOrd)
 import Data.String (String)
 import Data.String.Here
@@ -26,11 +30,13 @@ import System.Directory
     XdgDirectoryList (XdgConfigDirs),
     getXdgDirectory,
     getXdgDirectoryList,
+    removeDirectoryRecursive,
   )
 import System.Environment (getExecutablePath, lookupEnv)
 import System.FilePath ((</>))
-import System.IO.Temp (getCanonicalTemporaryDirectory, withTempDirectory)
+import System.IO.Temp (getCanonicalTemporaryDirectory)
 import System.Posix.Files
+import System.Posix.Temp (mkdtemp)
 
 type EnvVar = (String, String)
 
@@ -141,14 +147,38 @@ exec ${toS cachixBin :: Text} daemon push \\
   $OUT_PATHS
   |]
 
+-- | Maximum length for Unix socket paths (sizeof(sockaddr_un.sun_path)).
+-- Linux: 108, macOS/BSD: 104.
+unixSocketMaxPath :: Int
+#if defined(linux_HOST_OS)
+unixSocketMaxPath = 108
+#else
+unixSocketMaxPath = 104
+#endif
+
 -- | Run an action with a temporary directory.
 --
--- Respects the RUNNER_TEMP environment variable if set.
--- This is important on self-hosted GitHub runners with locked down system temp directories.
+-- Uses RUNNER_TEMP if set and the resulting socket path fits within Unix limits.
+-- Falls back to system temp directory if the path would be too long.
 -- The directory is deleted after use.
 withRunnerFriendlyTempDirectory :: (MonadIO m, MonadMask m) => String -> (FilePath -> m a) -> m a
-withRunnerFriendlyTempDirectory name action = do
+withRunnerFriendlyTempDirectory prefix action = do
   runnerTempDir <- liftIO $ lookupEnv "RUNNER_TEMP"
   systemTempDir <- liftIO getCanonicalTemporaryDirectory
-  let tempDir = maybe systemTempDir toS runnerTempDir
-  withTempDirectory tempDir name action
+
+  -- Check if RUNNER_TEMP would result in a path that's too long for Unix sockets
+  -- by constructing the actual socket path and measuring it
+  let wouldFit dir = length (dir </> (prefix <> "XXXXXX") </> "daemon.sock") < unixSocketMaxPath
+      baseDir = case runnerTempDir of
+        Just rt | wouldFit rt -> rt
+        _ -> systemTempDir
+
+  -- mkdtemp replaces XXXXXX with 6 random characters
+  let dirTemplate = baseDir </> (prefix <> "XXXXXX")
+  E.bracket
+    (liftIO $ mkdtemp dirTemplate)
+    (liftIO . ignoringIOErrors . removeDirectoryRecursive)
+    action
+  where
+    ignoringIOErrors :: IO () -> IO ()
+    ignoringIOErrors io = io `E.catch` (\(_ :: IOException) -> return ())

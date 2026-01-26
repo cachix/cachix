@@ -4,7 +4,7 @@ import Cachix.Daemon.PostBuildHook
 import Data.String
 import Protolude
 import System.Environment qualified as System
-import System.FilePath ((</>), takeDirectory)
+import System.FilePath (takeDirectory, (</>))
 import System.IO.Temp (getCanonicalTemporaryDirectory)
 import Test.Hspec
 

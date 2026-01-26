@@ -46,6 +46,7 @@ where
 import Cachix.API qualified as API
 import Cachix.API.Error
 import Cachix.API.Signing (fingerprint, passthroughHashSink, passthroughHashSinkB16, passthroughSizeSink)
+import Cachix.Client.CNix (formatStorePathWarning, validateStorePath)
 import Cachix.Client.Exception (CachixException (..))
 import Cachix.Client.Push.S3 qualified as Push.S3
 import Cachix.Client.Retry (retryAll, retryHttp)
@@ -211,12 +212,14 @@ uploadStorePath pushParams storePath retrystatus = do
   let store = pushParamsStore pushParams
       strategy = pushParamsStrategy pushParams storePath
 
-  -- TODO: storePathText is redundant. Use storePath directly.
   storePathText <- liftIO $ Store.storePathToPath store storePath
+  let path = toS storePathText
 
-  -- This should be a noop because storePathText came from a StorePath
-  normalized <- liftIO $ Store.followLinksToStorePath store storePathText
-  pathInfo <- newPathInfoFromStorePath store normalized
+  -- Validate the path is still valid (may have been GC'd since queued)
+  liftIO (validateStorePath store storePath) >>= \case
+    Right _ -> pure ()
+    Left err -> throwM $ InvalidStorePath $ formatStorePathWarning path err
+  pathInfo <- newPathInfoFromStorePath store storePath
   let narSize = fromIntegral (piNarSize pathInfo)
 
   onAttempt strategy retrystatus narSize

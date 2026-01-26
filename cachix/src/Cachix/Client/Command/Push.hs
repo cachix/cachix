@@ -12,7 +12,7 @@ module Cachix.Client.Command.Push
 where
 
 import Cachix.API qualified as API
-import Cachix.Client.CNix (filterInvalidStorePath, followLinksToStorePath)
+import Cachix.Client.CNix (logStorePathWarning, resolveStorePaths)
 import Cachix.Client.Config qualified as Config
 import Cachix.Client.Env (Env (..))
 import Cachix.Client.Exception (CachixException (..))
@@ -25,7 +25,6 @@ import Cachix.Client.Servant
 import Cachix.Types.BinaryCache (BinaryCacheName)
 import Cachix.Types.BinaryCache qualified as BinaryCache
 import Control.Exception.Safe (throwM)
-import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
 import Control.Retry (RetryStatus (rsIterNumber))
 import Data.ByteString qualified as BS
 import Data.Conduit qualified as Conduit
@@ -59,17 +58,14 @@ push env opts name cliPaths = do
       -- This is somewhat like the behavior of `cat` for example.
       (_, paths) -> return paths
   withPushParams env opts name $ \pushParams -> do
-    normalized <- liftIO $
-      for inputStorePaths $ \path ->
-        runMaybeT $ do
-          storePath <- MaybeT $ followLinksToStorePath (pushParamsStore pushParams) (encodeUtf8 path)
-          MaybeT $ filterInvalidStorePath (pushParamsStore pushParams) storePath
+    (errors, validPaths) <- liftIO $ resolveStorePaths (pushParamsStore pushParams) (map toS inputStorePaths)
+    liftIO $ forM_ errors $ uncurry logStorePathWarning
     pushedPaths <-
       pushClosure
         (mapConcurrentlyBounded (numJobs opts))
         pushParams
-        (catMaybes normalized)
-    case (length normalized, length pushedPaths) of
+        validPaths
+    case (length inputStorePaths, length pushedPaths) of
       (0, _) -> putErrText "Nothing to push."
       (_, 0) -> putErrText "Nothing to push - all store paths are already on Cachix."
       _ -> putErrText "\nAll done."

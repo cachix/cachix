@@ -1,5 +1,6 @@
 module Cachix.Daemon.Client (push, stop) where
 
+import Cachix.Client.CNix (logStorePathWarning, resolveStorePaths)
 import Cachix.Client.Env as Env
 import Cachix.Client.Exception (CachixException (..))
 import Cachix.Client.OptionsParser (DaemonOptions (..), DaemonPushOptions (..))
@@ -123,8 +124,9 @@ push _env daemonOptions daemonPushOptions cliPaths = do
       (_, paths) -> return paths
 
   storePaths <- Store.withStore $ \store -> do
-    inputStorePaths' <- mapM (Store.followLinksToStorePath store . BS8.pack) inputStorePaths
-    mapM (fmap (toS . BS8.unpack) . Store.storePathToPath store) inputStorePaths'
+    (errors, validPaths) <- resolveStorePaths store inputStorePaths
+    for_ errors $ uncurry logStorePathWarning
+    mapM (fmap (toS . BS8.unpack) . Store.storePathToPath store) validPaths
 
   withDaemonConn (daemonSocketPath daemonOptions) $ \sock -> do
     let shouldWait = Options.shouldWait daemonPushOptions

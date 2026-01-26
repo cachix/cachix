@@ -45,7 +45,7 @@ module Cachix.Daemon.PushManager
   )
 where
 
-import Cachix.Client.CNix (filterInvalidStorePath, followLinksToStorePath)
+import Cachix.Client.CNix (logStorePathWarning, resolveStorePaths)
 import Cachix.Client.Command.Push hiding (pushStrategy)
 import Cachix.Client.OptionsParser as Client.OptionsParser
   ( PushOptions (..),
@@ -329,7 +329,12 @@ runQueryMissingPathsTask pushParams pushId =
       withPushJob pushId $ \pushJob -> do
         let sps = Protocol.storePaths (pushRequest pushJob)
             store = pushParamsStore pushParams
-        validPaths <- catMaybes <$> mapM (normalizeStorePath store) sps
+
+        -- Resolve paths and track which ones are invalid
+        (errors, validPaths) <- liftIO $ resolveStorePaths store sps
+
+        -- Log warnings for invalid paths
+        liftIO $ for_ errors $ uncurry logStorePathWarning
 
         paths <- computeClosure store validPaths
 
@@ -536,13 +541,6 @@ storeToFilePath :: (MonadIO m) => Store -> StorePath -> m FilePath
 storeToFilePath store storePath = do
   fp <- liftIO $ storePathToPath store storePath
   pure $ toS fp
-
--- | Canonicalize and validate a store path
-normalizeStorePath :: (MonadIO m) => Store -> FilePath -> m (Maybe StorePath)
-normalizeStorePath store fp =
-  liftIO $ runMaybeT $ do
-    storePath <- MaybeT $ followLinksToStorePath store (encodeUtf8 $ T.pack fp)
-    MaybeT $ filterInvalidStorePath store storePath
 
 withException :: (E.MonadCatch m) => m a -> (SomeException -> m a) -> m a
 withException action handler = action `E.catchAll` (\e -> handler e >> E.throwM e)

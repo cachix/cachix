@@ -3,12 +3,11 @@ module Cachix.Client.WatchStore
   )
 where
 
-import Cachix.Client.CNix (filterInvalidStorePath)
+import Cachix.Client.CNix (logStorePathWarning, resolveStorePath)
 import Cachix.Client.Push
 import Cachix.Client.PushQueue qualified as PushQueue
 import Control.Concurrent.STM.TBQueue qualified as TBQueue
 import Hercules.CNix.Store (Store)
-import Hercules.CNix.Store qualified as Store
 import Protolude
 import System.FSNotify
 import System.Systemd.Daemon qualified as Systemd
@@ -25,10 +24,10 @@ producer store mgr queue = do
 
 queueStorePathAction :: Store -> PushQueue.Queue -> Event -> IO ()
 queueStorePathAction store queue (Removed lockFile _ _) = do
-  sp <- Store.parseStorePath store (encodeUtf8 $ toS $ dropLast 5 lockFile)
-  filterInvalidStorePath store sp >>= \case
-    Nothing -> return ()
-    Just p -> atomically $ TBQueue.writeTBQueue queue p
+  let filePath = dropLast 5 lockFile
+  resolveStorePath store filePath >>= \case
+    Left err -> logStorePathWarning filePath err
+    Right p -> atomically $ TBQueue.writeTBQueue queue p
 queueStorePathAction _ _ _ = return ()
 
 dropLast :: Int -> [a] -> [a]

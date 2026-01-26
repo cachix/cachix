@@ -22,6 +22,7 @@ data CachixException
   | BinaryCacheNotFound Text
   | ImportUnsupportedHash Text
   | RemoveCacheUnsupported Text
+  | InvalidStorePath Text
   deriving (Show, Typeable)
 
 instance Exception CachixException where
@@ -44,3 +45,4 @@ instance Exception CachixException where
   displayException (BinaryCacheNotFound s) = toS s
   displayException (ImportUnsupportedHash s) = toS s
   displayException (RemoveCacheUnsupported s) = toS s
+  displayException (InvalidStorePath s) = toS s

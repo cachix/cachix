@@ -74,6 +74,7 @@ import Data.Sequence qualified as Seq
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Time (UTCTime, diffUTCTime, getCurrentTime, secondsToNominalDiffTime)
+import GHC.Clock (getMonotonicTimeNSec)
 import Hercules.CNix (StorePath)
 import Hercules.CNix.Store (Store, parseStorePath, storePathToPath)
 import Katip qualified
@@ -92,6 +93,7 @@ newPushManagerEnv pushOptions batchOptions pmPushParams onPushEvent pmLogger = l
   pmTaskQueue <- atomically newTaskQueue
   pmTaskSemaphore <- QSem.newQSem (numJobs pushOptions)
   pmLastEventTimestamp <- newTVarIO =<< getCurrentTime
+  let pmProgressEmitIntervalNs = 200 * 1000 * 1000
   let pmOnPushEvent id pushEvent = updateTimestampTVar pmLastEventTimestamp >> onPushEvent id pushEvent
 
   -- Create query manager with callback that queues ProcessQueryResponse tasks
@@ -427,15 +429,17 @@ newPushStrategy store authToken opts cacheName compressionMethod storePath =
 
       onUncompressedNARStream _ size = do
         sp <- liftIO $ storePathToPath store storePath
-        lastEmitRef <- liftIO $ newIORef (0 :: Int64)
+        progressEmitIntervalNs <- asks pmProgressEmitIntervalNs
+        lastEmitNsRef <- liftIO $ newIORef =<< getMonotonicTimeNSec
         currentBytesRef <- liftIO $ newIORef (0 :: Int64)
         C.awaitForever $ \chunk -> do
           let newBytes = fromIntegral (BS.length chunk)
           currentBytes <- liftIO $ atomicModifyIORef' currentBytesRef (\b -> (b + newBytes, b + newBytes))
-          lastEmit <- liftIO $ readIORef lastEmitRef
+          lastEmitNs <- liftIO $ readIORef lastEmitNsRef
+          nowNs <- liftIO getMonotonicTimeNSec
 
-          when (currentBytes - lastEmit >= 1024 || currentBytes == size) $ do
-            liftIO $ writeIORef lastEmitRef currentBytes
+          when (nowNs - lastEmitNs >= progressEmitIntervalNs || currentBytes == size) $ do
+            liftIO $ writeIORef lastEmitNsRef nowNs
             lift $ lift $ pushStorePathProgress (toS sp) currentBytes newBytes
 
           C.yield chunk

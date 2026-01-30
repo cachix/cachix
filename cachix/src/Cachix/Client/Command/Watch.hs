@@ -13,6 +13,9 @@ import Cachix.Client.OptionsParser
   ( DaemonOptions (..),
     PushOptions (..),
     WatchExecMode (..),
+    defaultKeepAliveEnabled,
+    defaultKeepAliveInterval,
+    defaultKeepAliveTimeout,
   )
 import Cachix.Client.Push
 import Cachix.Client.WatchStore qualified as WatchStore
@@ -81,7 +84,10 @@ watchExecDaemon env pushOpts batchOptions cacheName cmd args = do
               DaemonOptions
                 { daemonAllowRemoteStop = False,
                   daemonNarinfoQueryOptions = batchOptions,
-                  daemonSocketPath = Just (Daemon.PostBuildHook.daemonSock hookEnv)
+                  daemonSocketPath = Just (Daemon.PostBuildHook.daemonSock hookEnv),
+                  daemonKeepAliveEnabled = defaultKeepAliveEnabled,
+                  daemonKeepAliveInterval = defaultKeepAliveInterval,
+                  daemonKeepAliveTimeout = defaultKeepAliveTimeout
                 }
         daemon <- Daemon.new env store daemonOptions (Just logHandle) pushOpts cacheName
 

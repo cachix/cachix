@@ -10,6 +10,7 @@ import Protolude
 data Socket = Socket
   { socketId :: SocketId,
     socket :: Network.Socket,
+    sendLock :: MVar (),
     handlerThread :: Async (),
     publisherThreads :: TVar (HashMap PushRequestId (Async ()))
   }

@@ -11,6 +11,7 @@ where
 import Cachix.Client.Config.Orphans ()
 import Cachix.Daemon.EventLoop qualified as EventLoop
 import Cachix.Daemon.Protocol as Protocol
+import Cachix.Daemon.SocketStore qualified as SocketStore
 import Cachix.Daemon.Types
   ( DaemonError,
     DaemonEvent
@@ -21,7 +22,7 @@ import Cachix.Daemon.Types
     toExitCodeInt,
   )
 import Cachix.Daemon.Types.EventLoop (EventLoop)
-import Cachix.Daemon.Types.SocketStore (SocketId)
+import Cachix.Daemon.Types.SocketStore (SocketId, SocketStore)
 import Control.Exception.Safe (catchAny)
 import Control.Monad.Catch qualified as E
 import Data.Aeson qualified as Aeson
@@ -30,7 +31,6 @@ import Katip qualified
 import Network.Socket (Socket)
 import Network.Socket qualified as Socket
 import Network.Socket.ByteString qualified as Socket.BS
-import Network.Socket.ByteString.Lazy qualified as Socket.LBS
 import Protolude
 import System.Directory
   ( XdgDirectory (..),
@@ -76,10 +76,11 @@ handleClient ::
   forall m a.
   (E.MonadMask m, Katip.KatipContext m) =>
   EventLoop DaemonEvent a ->
+  SocketStore ->
   SocketId ->
   Socket ->
   m ()
-handleClient eventloop socketId conn = do
+handleClient eventloop socketStore socketId conn = do
   go BS.empty `E.finally` removeClient
   where
     go leftovers = do
@@ -98,7 +99,7 @@ handleClient eventloop socketId conn = do
             EventLoop.send eventloop (ReceivedMessage socketId msg)
             case msg of
               Protocol.ClientPing ->
-                liftIO $ Socket.LBS.sendAll conn $ Protocol.newMessage DaemonPong
+                liftIO $ SocketStore.sendAll socketId (Protocol.newMessage DaemonPong) socketStore
               _ -> return ()
 
           go newLeftovers
@@ -114,9 +115,9 @@ decodeMessage bs =
       return Nothing
     Right msg -> return (Just msg)
 
-serverBye :: Socket.Socket -> Either DaemonError () -> IO ()
-serverBye sock exitResult =
-  Socket.LBS.sendAll sock (Protocol.newMessage (DaemonExit exitStatus)) `catchAny` (\_ -> return ())
+serverBye :: SocketId -> SocketStore -> Either DaemonError () -> IO ()
+serverBye socketId socketStore exitResult =
+  SocketStore.sendAll socketId (Protocol.newMessage (DaemonExit exitStatus)) socketStore `catchAny` (\_ -> return ())
   where
     exitStatus = DaemonExitStatus {exitCode, exitMessage}
     exitCode = toExitCodeInt exitResult

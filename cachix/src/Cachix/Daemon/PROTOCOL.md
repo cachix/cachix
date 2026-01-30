@@ -18,7 +18,7 @@ The Cachix Daemon accepts connections on a Unix domain socket and communicates v
 - **Message format**: UTF-8 JSON
 - **Delimiter**: Newline character (`\n`) after each message
 - **Buffering**: Line-buffered
-- **Liveness detection**: Client sends pings every ~2 seconds; considers daemon stalled if no pong received within 20 seconds
+- **Liveness detection**: Client sends pings every ~30 seconds; considers daemon stalled if no pong received within 180 seconds
 
 ## Message Format
 
@@ -313,7 +313,7 @@ Client          Daemon
   |              |
 ```
 
-The client periodically sends ping messages to detect if the daemon has become unresponsive. If the client does not receive a pong response within 20 seconds, it considers the daemon connection stalled and raises an error. The client sends pings approximately every 2 seconds.
+The client periodically sends ping messages to detect if the daemon has become unresponsive. If the client does not receive a pong response within 180 seconds, it considers the daemon connection stalled and raises an error. The client sends pings approximately every 30 seconds.
 
 ### Graceful Shutdown
 

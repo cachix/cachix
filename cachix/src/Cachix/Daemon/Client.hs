@@ -47,26 +47,28 @@ instance Exception SocketError where
 withSocketComm :: Socket.Socket -> (STM (Maybe (Either SocketError Protocol.DaemonMessage)) -> (Protocol.ClientMessage -> STM ()) -> IO a) -> IO a
 withSocketComm sock action = do
   let size = 1000
-  (rx, tx) <- atomically $ (,) <$> newTBMQueue size <*> newTBMQueue size
+  let prioritySize = 100
+  (rxPriority, rx, tx) <- atomically $ (,,) <$> newTBMQueue prioritySize <*> newTBMQueue size <*> newTBMQueue size
 
   lastPongRef <- newIORef =<< getCurrentTime
-  rxThread <- Async.async (handleIncoming lastPongRef rx sock)
+  rxThread <- Async.async (handleIncoming lastPongRef rxPriority rx sock)
   txThread <- Async.async (handleOutgoing tx sock)
-  pingThread <- Async.async (runPingThread lastPongRef rx tx)
+  pingThread <- Async.async (runPingThread lastPongRef rxPriority tx)
 
   let threads = [rxThread, txThread, pingThread]
   mapM_ Async.link threads
 
-  finally (action (readTBMQueue rx) (writeTBMQueue tx)) (mapM_ Async.cancel threads)
+  let receive = readTBMQueue rxPriority `orElse` readTBMQueue rx
+  finally (action receive (writeTBMQueue tx)) (mapM_ Async.cancel threads)
   where
-    runPingThread lastPongRef rx tx = go
+    runPingThread lastPongRef rxPriority tx = go
       where
         go = do
           timestamp <- getCurrentTime
           lastPong <- readIORef lastPongRef
 
           if timestamp >= addUTCTime 20 lastPong
-            then atomically $ writeTBMQueue rx (Left SocketStalled)
+            then atomically $ writeTBMQueue rxPriority (Left SocketStalled)
             else do
               atomically $ writeTBMQueue tx Protocol.ClientPing
               threadDelay (2 * 1000 * 1000)
@@ -82,9 +84,9 @@ withSocketComm sock action = do
               Retry.retryAll $ const $ Socket.LBS.sendAll sock' $ Protocol.newMessage msg
               go
 
-    handleIncoming lastPongRef rx sock' = go BS.empty
+    handleIncoming lastPongRef rxPriority rx sock' = go BS.empty
       where
-        socketClosed = atomically $ writeTBMQueue rx (Left SocketClosed)
+        socketClosed = atomically $ writeTBMQueue rxPriority (Left SocketClosed)
 
         go leftovers = do
           ebs <- liftIO $ try $ Socket.BS.recv sock' 4096
@@ -101,12 +103,12 @@ withSocketComm sock action = do
                   Left err -> do
                     let terr = toS err
                     putErrText terr
-                    atomically $ writeTBMQueue rx (Left (SocketDecodingError terr))
+                    atomically $ writeTBMQueue rxPriority (Left (SocketDecodingError terr))
                   Right msg -> do
                     case msg of
                       Protocol.DaemonPong -> do
                         writeIORef lastPongRef =<< getCurrentTime
-                        atomically $ writeTBMQueue rx (Right msg)
+                        atomically $ writeTBMQueue rxPriority (Right msg)
                       _ -> atomically $ writeTBMQueue rx (Right msg)
 
               go newLeftovers

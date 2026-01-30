@@ -44,8 +44,8 @@ instance Exception SocketError where
     SocketDecodingError err -> "Failed to decode the message from socket: " <> toS err
 
 -- | Run socket communication with ping/pong handling
-withSocketComm :: Socket.Socket -> (STM (Maybe (Either SocketError Protocol.DaemonMessage)) -> (Protocol.ClientMessage -> STM ()) -> IO a) -> IO a
-withSocketComm sock action = do
+withSocketComm :: DaemonOptions -> Socket.Socket -> (STM (Maybe (Either SocketError Protocol.DaemonMessage)) -> (Protocol.ClientMessage -> STM ()) -> IO a) -> IO a
+withSocketComm daemonOptions sock action = do
   let size = 5000
   let prioritySize = 200
   (rxPriority, rx, tx) <- atomically $ (,,) <$> newTBMQueue prioritySize <*> newTBMQueue size <*> newTBMQueue size
@@ -53,9 +53,12 @@ withSocketComm sock action = do
   lastPongRef <- newIORef =<< getCurrentTime
   rxThread <- Async.async (handleIncoming lastPongRef rxPriority rx sock)
   txThread <- Async.async (handleOutgoing tx sock)
-  pingThread <- Async.async (runPingThread lastPongRef rxPriority tx)
+  pingThread <-
+    if daemonKeepAliveEnabled daemonOptions
+      then Just <$> Async.async (runPingThread lastPongRef rxPriority tx)
+      else pure Nothing
 
-  let threads = [rxThread, txThread, pingThread]
+  let threads = rxThread : txThread : maybeToList pingThread
   mapM_ Async.link threads
 
   let receive = readTBMQueue rxPriority `orElse` readTBMQueue rx
@@ -67,11 +70,11 @@ withSocketComm sock action = do
           timestamp <- getCurrentTime
           lastPong <- readIORef lastPongRef
 
-          if timestamp >= addUTCTime 180 lastPong
+          if timestamp >= addUTCTime (fromIntegral (daemonKeepAliveTimeout daemonOptions)) lastPong
             then atomically $ writeTBMQueue rxPriority (Left SocketStalled)
             else do
               atomically $ writeTBMQueue tx Protocol.ClientPing
-              threadDelay (30 * 1000 * 1000)
+              threadDelay (daemonKeepAliveInterval daemonOptions * 1000 * 1000)
               go
 
     handleOutgoing tx sock' = go
@@ -139,7 +142,7 @@ push _env daemonOptions daemonPushOptions cliPaths = do
     Socket.LBS.sendAll sock $ Protocol.newMessage pushRequest
     unless shouldWait exitSuccess
 
-    withSocketComm sock $ \receive _send -> do
+    withSocketComm daemonOptions sock $ \receive _send -> do
       progressState <- Daemon.Progress.newProgressState
       failureRef <- newIORef False
 
@@ -173,7 +176,7 @@ push _env daemonOptions daemonPushOptions cliPaths = do
 stop :: Env -> DaemonOptions -> IO ()
 stop _env daemonOptions =
   withDaemonConn (daemonSocketPath daemonOptions) $ \sock -> do
-    withSocketComm sock $ \receive send -> do
+    withSocketComm daemonOptions sock $ \receive send -> do
       atomically $ send Protocol.ClientStop
 
       fix $ \loop -> do

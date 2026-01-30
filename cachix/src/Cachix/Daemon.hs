@@ -343,7 +343,7 @@ shutdownGracefully = do
           else Left DaemonPushFailure
 
   -- Gracefully close open connections to clients
-  Async.mapConcurrently_ (sayGoodbye pushResult) =<< SocketStore.toList daemonClients
+  Async.mapConcurrently_ (sayGoodbye daemonClients pushResult) =<< SocketStore.toList daemonClients
 
   return pushResult
   where
@@ -370,13 +370,14 @@ shutdownGracefully = do
       _ <- Async.wait subscriptionManagerThread
       Katip.logFM Katip.DebugS "Event manager shut down."
 
-    sayGoodbye exitResult socket = do
+    sayGoodbye socketStore exitResult socket = do
       let clientSock = SocketStore.socket socket
       let clientThread = SocketStore.handlerThread socket
+      let clientSocketId = SocketStore.socketId socket
       Async.cancel clientThread
 
       -- Wave goodbye to the client that requested the shutdown
-      liftIO $ Listen.serverBye clientSock exitResult
+      liftIO $ Listen.serverBye clientSocketId socketStore exitResult
       liftIO $ Socket.shutdown clientSock Socket.ShutdownBoth `catchAny` (\_ -> return ())
       -- Wait for the other end to disconnect
       ebs <- liftIO $ try $ Socket.BS.recv clientSock 4096

@@ -31,7 +31,6 @@ import Katip qualified
 import Network.Socket (Socket)
 import Network.Socket qualified as Socket
 import Network.Socket.ByteString qualified as Socket.BS
-import Network.Socket.ByteString.Lazy qualified as Socket.LBS
 import Protolude
 import System.Directory
   ( XdgDirectory (..),
@@ -116,9 +115,9 @@ decodeMessage bs =
       return Nothing
     Right msg -> return (Just msg)
 
-serverBye :: Socket.Socket -> Either DaemonError () -> IO ()
-serverBye sock exitResult =
-  Socket.LBS.sendAll sock (Protocol.newMessage (DaemonExit exitStatus)) `catchAny` (\_ -> return ())
+serverBye :: SocketId -> SocketStore -> Either DaemonError () -> IO ()
+serverBye socketId socketStore exitResult =
+  SocketStore.sendAll socketId (Protocol.newMessage (DaemonExit exitStatus)) socketStore `catchAny` (\_ -> return ())
   where
     exitStatus = DaemonExitStatus {exitCode, exitMessage}
     exitCode = toExitCodeInt exitResult

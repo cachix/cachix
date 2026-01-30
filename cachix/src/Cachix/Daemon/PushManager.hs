@@ -274,21 +274,35 @@ lookupStorePathIndex storePath = do
 checkPushJobCompleted :: Protocol.PushRequestId -> PushManager ()
 checkPushJobCompleted pushId = do
   PushManagerEnv {..} <- ask
-  mpushJob <- lookupPushJob pushId
-  for_ mpushJob $ \pushJob ->
-    when (Set.null $ pushQueue pushJob) $ do
-      timestamp <- liftIO getCurrentTime
-      liftIO $ atomically $ do
-        mjob' <- modifyPushJobSTM pmPushJobs pmQueuedStorePathCount pushId $ \pushJob' ->
-          if PushJob.hasFailedPaths pushJob'
-            then PushJob.fail timestamp pushJob'
-            else PushJob.complete timestamp pushJob'
-        for_ mjob' $ \job' ->
-          if PushJob.isFailed job'
-            then StmSet.insert pushId pmFailedJobs
-            else StmSet.delete pushId pmFailedJobs
-        decrementTVar pmPendingJobCount
-      pushFinished pushJob
+  timestamp <- liftIO getCurrentTime
+  mcompletedJob <- liftIO $ atomically $ do
+    CompleteResult {..} <-
+      StmMap.focus
+        (Focus.cases (CompleteResult Nothing False False, Focus.Leave) (update timestamp))
+        pushId
+        pmPushJobs
+    when didTransition (decrementTVar pmPendingJobCount)
+    when didTransition $
+      if isFailed
+        then StmSet.insert pushId pmFailedJobs
+        else StmSet.delete pushId pmFailedJobs
+    pure completedJob
+  for_ mcompletedJob pushFinished
+  where
+    update ts job
+      | Set.null (PushJob.queue job) && not (PushJob.isProcessed job) =
+          let job' =
+                if PushJob.hasFailedPaths job
+                  then PushJob.fail ts job
+                  else PushJob.complete ts job
+           in (CompleteResult (Just job') True (PushJob.isFailed job'), Focus.Set job')
+      | otherwise = (CompleteResult Nothing False False, Focus.Leave)
+
+data CompleteResult = CompleteResult
+  { completedJob :: Maybe PushJob,
+    didTransition :: Bool,
+    isFailed :: Bool
+  }
 
 queuedStorePathCount :: PushManager Integer
 queuedStorePathCount = do

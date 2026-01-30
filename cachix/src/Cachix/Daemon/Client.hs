@@ -46,8 +46,8 @@ instance Exception SocketError where
 -- | Run socket communication with ping/pong handling
 withSocketComm :: Socket.Socket -> (STM (Maybe (Either SocketError Protocol.DaemonMessage)) -> (Protocol.ClientMessage -> STM ()) -> IO a) -> IO a
 withSocketComm sock action = do
-  let size = 1000
-  let prioritySize = 100
+  let size = 5000
+  let prioritySize = 200
   (rxPriority, rx, tx) <- atomically $ (,,) <$> newTBMQueue prioritySize <*> newTBMQueue size <*> newTBMQueue size
 
   lastPongRef <- newIORef =<< getCurrentTime

@@ -12,8 +12,8 @@ where
 
 import Cachix.Daemon.Types.PushEvent (PushRequestId)
 import Cachix.Daemon.Types.SocketStore (Socket (..), SocketId, SocketStore (..))
-import Control.Concurrent.STM.TVar
 import Control.Concurrent.MVar
+import Control.Concurrent.STM.TVar
 import Control.Monad.IO.Unlift (MonadUnliftIO)
 import Data.ByteString.Lazy qualified as LBS
 import Data.HashMap.Strict qualified as HashMap

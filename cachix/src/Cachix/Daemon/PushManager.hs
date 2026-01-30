@@ -59,7 +59,6 @@ import Cachix.Daemon.TaskQueue
 import Cachix.Daemon.Types.Log (Logger)
 import Cachix.Daemon.Types.PushEvent (PushEvent (..), PushEventMessage (..), newPushRetryStatus)
 import Cachix.Daemon.Types.PushManager
-import GHC.Clock (getMonotonicTimeNSec)
 import Cachix.Types.BinaryCache qualified as BinaryCache
 import Conduit qualified as C
 import Control.Concurrent.Async qualified as Async
@@ -75,6 +74,7 @@ import Data.Sequence qualified as Seq
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Time (UTCTime, diffUTCTime, getCurrentTime, secondsToNominalDiffTime)
+import GHC.Clock (getMonotonicTimeNSec)
 import Hercules.CNix (StorePath)
 import Hercules.CNix.Store (Store, parseStorePath, storePathToPath)
 import Katip qualified

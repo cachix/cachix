@@ -11,6 +11,7 @@ where
 import Cachix.Client.Config.Orphans ()
 import Cachix.Daemon.EventLoop qualified as EventLoop
 import Cachix.Daemon.Protocol as Protocol
+import Cachix.Daemon.SocketStore qualified as SocketStore
 import Cachix.Daemon.Types
   ( DaemonError,
     DaemonEvent
@@ -22,7 +23,6 @@ import Cachix.Daemon.Types
   )
 import Cachix.Daemon.Types.EventLoop (EventLoop)
 import Cachix.Daemon.Types.SocketStore (SocketId, SocketStore)
-import Cachix.Daemon.SocketStore qualified as SocketStore
 import Control.Exception.Safe (catchAny)
 import Control.Monad.Catch qualified as E
 import Data.Aeson qualified as Aeson

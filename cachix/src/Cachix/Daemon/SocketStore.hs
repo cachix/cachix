@@ -32,7 +32,7 @@ newSocketId = liftIO UUID.nextRandom
 addSocket :: (MonadUnliftIO m) => Network.Socket.Socket -> (SocketId -> Network.Socket.Socket -> m ()) -> SocketStore -> m ()
 addSocket socket handler (SocketStore st) = do
   socketId <- newSocketId
-  sendLock <- newMVar ()
+  sendLock <- liftIO $ newMVar ()
   handlerThread <- Async.async (handler socketId socket)
   publisherThreads <- liftIO $ newTVarIO HashMap.empty
   liftIO $ atomically $ modifyTVar' st $ HashMap.insert socketId (Socket {..})

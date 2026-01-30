@@ -109,6 +109,8 @@ withSocketComm sock action = do
                       Protocol.DaemonPong -> do
                         writeIORef lastPongRef =<< getCurrentTime
                         atomically $ writeTBMQueue rxPriority (Right msg)
+                      Protocol.DaemonPushEvent PushEvent {eventMessage = PushStorePathProgress {}} ->
+                            void $ atomically $ tryWriteTBMQueue rx (Right msg)
                       _ -> atomically $ writeTBMQueue rx (Right msg)
 
               go newLeftovers

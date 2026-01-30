@@ -21,7 +21,8 @@ import Cachix.Daemon.Types
     toExitCodeInt,
   )
 import Cachix.Daemon.Types.EventLoop (EventLoop)
-import Cachix.Daemon.Types.SocketStore (SocketId)
+import Cachix.Daemon.Types.SocketStore (SocketId, SocketStore)
+import Cachix.Daemon.SocketStore qualified as SocketStore
 import Control.Exception.Safe (catchAny)
 import Control.Monad.Catch qualified as E
 import Data.Aeson qualified as Aeson
@@ -76,10 +77,11 @@ handleClient ::
   forall m a.
   (E.MonadMask m, Katip.KatipContext m) =>
   EventLoop DaemonEvent a ->
+  SocketStore ->
   SocketId ->
   Socket ->
   m ()
-handleClient eventloop socketId conn = do
+handleClient eventloop socketStore socketId conn = do
   go BS.empty `E.finally` removeClient
   where
     go leftovers = do
@@ -98,7 +100,7 @@ handleClient eventloop socketId conn = do
             EventLoop.send eventloop (ReceivedMessage socketId msg)
             case msg of
               Protocol.ClientPing ->
-                liftIO $ Socket.LBS.sendAll conn $ Protocol.newMessage DaemonPong
+                liftIO $ SocketStore.sendAll socketId (Protocol.newMessage DaemonPong) socketStore
               _ -> return ()
 
           go newLeftovers

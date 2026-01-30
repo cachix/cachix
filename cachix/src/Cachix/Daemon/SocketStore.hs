@@ -13,6 +13,7 @@ where
 import Cachix.Daemon.Types.PushEvent (PushRequestId)
 import Cachix.Daemon.Types.SocketStore (Socket (..), SocketId, SocketStore (..))
 import Control.Concurrent.STM.TVar
+import Control.Concurrent.MVar
 import Control.Monad.IO.Unlift (MonadUnliftIO)
 import Data.ByteString.Lazy qualified as LBS
 import Data.HashMap.Strict qualified as HashMap
@@ -31,6 +32,7 @@ newSocketId = liftIO UUID.nextRandom
 addSocket :: (MonadUnliftIO m) => Network.Socket.Socket -> (SocketId -> Network.Socket.Socket -> m ()) -> SocketStore -> m ()
 addSocket socket handler (SocketStore st) = do
   socketId <- newSocketId
+  sendLock <- newMVar ()
   handlerThread <- Async.async (handler socketId socket)
   publisherThreads <- liftIO $ newTVarIO HashMap.empty
   liftIO $ atomically $ modifyTVar' st $ HashMap.insert socketId (Socket {..})
@@ -73,5 +75,5 @@ sendAll :: (MonadIO m) => SocketId -> LBS.ByteString -> SocketStore -> m ()
 sendAll socketId msg (SocketStore stvar) = do
   mSocket <- liftIO $ readTVarIO stvar
   case HashMap.lookup socketId mSocket of
-    Just (Socket {socket}) -> liftIO $ Socket.LBS.sendAll socket msg
+    Just (Socket {socket, sendLock}) -> liftIO $ withMVar sendLock $ \_ -> Socket.LBS.sendAll socket msg
     Nothing -> return ()

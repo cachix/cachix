@@ -143,7 +143,7 @@ run daemon = fmap join <$> runDaemon daemon $ do
 
   eventLoopRes <- EventLoop.run daemonEventLoop $ \case
     AddSocketClient conn ->
-      SocketStore.addSocket conn (Listen.handleClient daemonEventLoop) daemonClients
+      SocketStore.addSocket conn (Listen.handleClient daemonEventLoop daemonClients) daemonClients
     RemoveSocketClient socketId ->
       SocketStore.removeSocket socketId daemonClients
     ReconnectSocket ->

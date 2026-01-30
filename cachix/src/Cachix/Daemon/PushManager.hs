@@ -69,23 +69,23 @@ import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
 import Control.Retry (RetryStatus, rsIterNumber)
 import Data.ByteString qualified as BS
 import Data.IORef
-import Focus qualified
-import ListT qualified
-import StmContainers.Map qualified as StmMap
-import StmContainers.Set qualified as StmSet
 import Data.Sequence qualified as Seq
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Time (UTCTime, diffUTCTime, getCurrentTime, secondsToNominalDiffTime)
+import Focus qualified
 import GHC.Clock (getMonotonicTimeNSec)
 import Hercules.CNix (StorePath)
 import Hercules.CNix.Store (Store, parseStorePath, storePathToPath)
 import Katip qualified
+import ListT qualified
 import Protolude hiding (toS)
 import Protolude.Conv (toS)
 import Servant.Auth ()
 import Servant.Auth.Client
 import Servant.Conduit ()
+import StmContainers.Map qualified as StmMap
+import StmContainers.Set qualified as StmSet
 import UnliftIO.QSem qualified as QSem
 
 newPushManagerEnv :: (MonadIO m) => PushOptions -> NarinfoQuery.NarinfoQueryOptions -> PushParams PushManager () -> OnPushEvent -> Logger -> m PushManagerEnv
@@ -223,10 +223,11 @@ modifyPushJobSTM pushJobs queuedCount pushId f = do
 modifyPushJobs :: (Foldable f) => f Protocol.PushRequestId -> (PushJob -> PushJob) -> PushManager ()
 modifyPushJobs pushIds f = do
   PushManagerEnv {..} <- ask
-  liftIO $ atomically $
-    for_ pushIds $ \pushId -> do
-      _ <- modifyPushJobSTM pmPushJobs pmQueuedStorePathCount pushId f
-      pure ()
+  liftIO $
+    atomically $
+      for_ pushIds $ \pushId -> do
+        _ <- modifyPushJobSTM pmPushJobs pmQueuedStorePathCount pushId f
+        pure ()
 
 queueSize :: PushJob -> Int
 queueSize = Set.size . PushJob.queue
@@ -255,17 +256,19 @@ queueStorePaths pushId storePaths = do
         wasNew <- StmMap.focus insertOrAppend storePath pmStorePathIndex
         when wasNew $
           writeTask pmTaskQueue (PushPath storePath)
-      insertOrAppend = Focus.cases
-        (True, Focus.Set (Seq.singleton pushId))
-        (\existing -> (False, Focus.Set (existing Seq.|> pushId)))
+      insertOrAppend =
+        Focus.cases
+          (True, Focus.Set (Seq.singleton pushId))
+          (\existing -> (False, Focus.Set (existing Seq.|> pushId)))
 
   transactionally $ map addToQueue storePaths
 
 removeStorePath :: FilePath -> PushManager ()
 removeStorePath storePath = do
   storePathIndex <- asks pmStorePathIndex
-  liftIO $ atomically $
-    StmMap.delete storePath storePathIndex
+  liftIO $
+    atomically $
+      StmMap.delete storePath storePathIndex
 
 lookupStorePathIndex :: FilePath -> PushManager (Seq.Seq Protocol.PushRequestId)
 lookupStorePathIndex storePath = do

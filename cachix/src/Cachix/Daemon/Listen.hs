@@ -99,7 +99,7 @@ handleClient eventloop socketStore socketId conn = do
             EventLoop.send eventloop (ReceivedMessage socketId msg)
             case msg of
               Protocol.ClientPing ->
-                liftIO $ SocketStore.sendAll socketId (Protocol.newMessage DaemonPong) socketStore
+                liftIO $ SocketStore.sendAll socketStore socketId (Protocol.newMessage DaemonPong)
               _ -> return ()
 
           go newLeftovers
@@ -117,7 +117,7 @@ decodeMessage bs =
 
 serverBye :: SocketId -> SocketStore -> Either DaemonError () -> IO ()
 serverBye socketId socketStore exitResult =
-  SocketStore.sendAll socketId (Protocol.newMessage (DaemonExit exitStatus)) socketStore `catchAny` (\_ -> return ())
+  SocketStore.sendAll socketStore socketId (Protocol.newMessage (DaemonExit exitStatus)) `catchAny` (\_ -> return ())
   where
     exitStatus = DaemonExitStatus {exitCode, exitMessage}
     exitCode = toExitCodeInt exitResult

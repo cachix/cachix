@@ -30,6 +30,7 @@ import Control.Monad.Catch
 import Control.Monad.IO.Unlift (MonadUnliftIO)
 import Data.Sequence qualified as Seq
 import StmContainers.Map qualified as StmMap
+import StmContainers.Set qualified as StmSet
 import Data.Time (UTCTime)
 import Katip qualified
 import Protolude
@@ -56,6 +57,8 @@ type PushJobStore = StmMap.Map Protocol.PushRequestId PushJob
 
 type StorePathIndex = StmMap.Map FilePath (Seq.Seq Protocol.PushRequestId)
 
+type FailedJobIndex = StmSet.Set Protocol.PushRequestId
+
 -- TODO: a lot of the logic surrounding deduping, search, and job tracking could be replaced by sqlite.
 -- sqlite can run in-memory if we don't need persistence.
 -- If we do, then we can we get stop/resume for free.
@@ -66,6 +69,8 @@ data PushManagerEnv = PushManagerEnv
     -- | A mapping of store paths to push requests.
     -- Used when deduplicating pushes.
     pmStorePathIndex :: StorePathIndex,
+    -- | Failed push jobs indexed by PushRequestId.
+    pmFailedJobs :: FailedJobIndex,
     -- | Priority queue of push tasks.
     pmTaskQueue :: TaskQueue Task,
     -- | A semaphore to control task concurrency.
@@ -78,6 +83,8 @@ data PushManagerEnv = PushManagerEnv
     pmProgressEmitIntervalNs :: Word64,
     -- | The number of pending (uncompleted) jobs.
     pmPendingJobCount :: TVar Int,
+    -- | Total number of queued store paths across all jobs.
+    pmQueuedStorePathCount :: TVar Int,
     -- | Manager for batching narinfo queries
     pmNarinfoQueryManager :: NarinfoQueryManager Protocol.PushRequestId,
     pmLogger :: Logger

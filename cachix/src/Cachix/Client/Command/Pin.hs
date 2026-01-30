@@ -2,7 +2,7 @@ module Cachix.Client.Command.Pin (pin) where
 
 import Cachix.API qualified as API
 import Cachix.API.Error
-import Cachix.Client.CNix (followLinksToStorePath)
+import Cachix.Client.CNix (formatStorePathWarning, resolveStorePath)
 import Cachix.Client.Config qualified as Config
 import Cachix.Client.Env (Env (..))
 import Cachix.Client.Exception (CachixException (..))
@@ -21,8 +21,12 @@ pin :: Env -> PinOptions -> IO ()
 pin env pinOpts = do
   authToken <- Config.getAuthTokenRequired (config env)
   storePath <- withStore $ \store -> do
-    mpath <- followLinksToStorePath store (encodeUtf8 $ pinStorePath pinOpts)
-    maybe exitFailure (storePathToPath store) mpath
+    let filePath = toS (pinStorePath pinOpts)
+    resolveStorePath store filePath >>= \case
+      Left err -> do
+        putErrText $ formatStorePathWarning filePath err
+        exitFailure
+      Right sp -> storePathToPath store sp
   traverse_ (validateArtifact (toS storePath)) (pinArtifacts pinOpts)
   let pinCreate =
         PinCreate.PinCreate

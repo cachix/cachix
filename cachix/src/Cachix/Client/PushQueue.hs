@@ -12,7 +12,7 @@ module Cachix.Client.PushQueue
   )
 where
 
-import Cachix.Client.CNix (filterInvalidStorePath)
+import Cachix.Client.CNix (logStorePathWarning', validateStorePath)
 import Cachix.Client.Push (getMissingPathsForClosure)
 import Cachix.Client.Push qualified as Push
 import Cachix.Client.Retry (retryAll)
@@ -44,11 +44,13 @@ worker :: Push.PushParams IO () -> PushWorkerState -> IO ()
 worker pushParams workerState = forever $ do
   storePath <- atomically $ TBQueue.readTBQueue $ pushQueue workerState
   bracket_ (inProgressModify (+ 1)) (inProgressModify (\x -> x - 1)) $ do
-    maybeStorePath <- filterInvalidStorePath (Push.pushParamsStore pushParams) storePath
-    for_ maybeStorePath $ \validStorePath -> do
-      (_, missingPaths) <- getMissingPathsForClosure pushParams [validStorePath]
-      for_ missingPaths $ \missingPath ->
-        retryAll $ Push.uploadStorePath pushParams missingPath
+    let store = Push.pushParamsStore pushParams
+    validateStorePath store storePath >>= \case
+      Left err -> logStorePathWarning' store storePath err
+      Right validStorePath -> do
+        (_, missingPaths) <- getMissingPathsForClosure pushParams [validStorePath]
+        for_ missingPaths $ \missingPath ->
+          retryAll $ Push.uploadStorePath pushParams missingPath
   where
     inProgressModify f =
       atomically $ modifyTVar' (inProgress workerState) f

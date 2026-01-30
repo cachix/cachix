@@ -14,6 +14,7 @@ module Cachix.Daemon.PushManager
     lookupPushJob,
     withPushJob,
     resolvePushJob,
+    failPushJob,
     pendingJobCount,
 
     -- * Query

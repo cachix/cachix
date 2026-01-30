@@ -147,6 +147,28 @@ spec = do
               prSkippedPaths = mempty
             }
 
+    it "does not double-decrement pending count on concurrent completion" $ withPushManager $ \pm -> do
+      let paths = ["a", "b"]
+
+      Just pushId <- runPushManager pm $ do
+        let request = Protocol.PushRequest {Protocol.storePaths = paths, Protocol.subscribeToUpdates = False}
+        addPushJobFromRequest request
+
+      runPushManager pm $ do
+        let pathSet = Set.fromList paths
+            closure = PushJob.ResolvedClosure pathSet pathSet
+        resolvePushJob pushId closure
+
+      concurrently_
+        (runPushManager pm $ pushStorePathDone "a")
+        (runPushManager pm $ pushStorePathDone "b")
+
+      pendingCount <- runPushManager pm pendingJobCount
+      pendingCount `shouldBe` 0
+
+      mjob <- runPushManager pm (lookupPushJob pushId)
+      mjob `shouldBe` Nothing
+
     describe "graceful shutdown" $ do
       it "shuts down with no jobs" $
         withPushManager $
@@ -180,6 +202,205 @@ spec = do
             addPushJobFromRequest request
 
           stopPushManager timeoutOptions pm
+
+    describe "queued store path counter" $ do
+      it "increments on resolve and decrements as paths complete" $ withPushManager $ \pm -> do
+        let paths = ["a", "b", "c"]
+            request = Protocol.PushRequest {Protocol.storePaths = paths, Protocol.subscribeToUpdates = False}
+
+        Just pushId <- runPushManager pm $ addPushJobFromRequest request
+
+        count0 <- runPushManager pm queuedStorePathCount
+        count0 `shouldBe` 0
+
+        runPushManager pm $ do
+          let pathSet = Set.fromList paths
+              closure = PushJob.ResolvedClosure pathSet pathSet
+          resolvePushJob pushId closure
+
+        count1 <- runPushManager pm queuedStorePathCount
+        count1 `shouldBe` 3
+
+        runPushManager pm $ pushStorePathDone "a"
+        count2 <- runPushManager pm queuedStorePathCount
+        count2 `shouldBe` 2
+
+        runPushManager pm $ pushStorePathDone "b"
+        count3 <- runPushManager pm queuedStorePathCount
+        count3 `shouldBe` 1
+
+        runPushManager pm $ pushStorePathDone "c"
+        count4 <- runPushManager pm queuedStorePathCount
+        count4 `shouldBe` 0
+
+      it "decrements on failed paths" $ withPushManager $ \pm -> do
+        let paths = ["a", "b"]
+            request = Protocol.PushRequest {Protocol.storePaths = paths, Protocol.subscribeToUpdates = False}
+
+        Just pushId <- runPushManager pm $ addPushJobFromRequest request
+
+        runPushManager pm $ do
+          let pathSet = Set.fromList paths
+              closure = PushJob.ResolvedClosure pathSet pathSet
+          resolvePushJob pushId closure
+
+        count0 <- runPushManager pm queuedStorePathCount
+        count0 `shouldBe` 2
+
+        runPushManager pm $ pushStorePathFailed "a" "error"
+        count1 <- runPushManager pm queuedStorePathCount
+        count1 `shouldBe` 1
+
+        runPushManager pm $ pushStorePathDone "b"
+        count2 <- runPushManager pm queuedStorePathCount
+        count2 `shouldBe` 0
+
+      it "stays zero when all paths are skipped" $ withPushManager $ \pm -> do
+        let paths = ["a", "b"]
+            request = Protocol.PushRequest {Protocol.storePaths = paths, Protocol.subscribeToUpdates = False}
+
+        Just pushId <- runPushManager pm $ addPushJobFromRequest request
+
+        runPushManager pm $ do
+          let allPaths = Set.fromList paths
+              closure = PushJob.ResolvedClosure allPaths Set.empty
+          resolvePushJob pushId closure
+
+        count <- runPushManager pm queuedStorePathCount
+        count `shouldBe` 0
+
+        mjob <- runPushManager pm $ lookupPushJob pushId
+        mjob `shouldBe` Nothing
+
+      it "tracks paths across multiple jobs sharing a store path" $ withPushManager $ \pm -> do
+        let request1 = Protocol.PushRequest {Protocol.storePaths = ["shared", "unique1"], Protocol.subscribeToUpdates = False}
+            request2 = Protocol.PushRequest {Protocol.storePaths = ["shared", "unique2"], Protocol.subscribeToUpdates = False}
+
+        Just pushId1 <- runPushManager pm $ addPushJobFromRequest request1
+        Just pushId2 <- runPushManager pm $ addPushJobFromRequest request2
+
+        runPushManager pm $ do
+          let pathSet1 = Set.fromList ["shared", "unique1"]
+              closure1 = PushJob.ResolvedClosure pathSet1 pathSet1
+          resolvePushJob pushId1 closure1
+
+          let pathSet2 = Set.fromList ["shared", "unique2"]
+              closure2 = PushJob.ResolvedClosure pathSet2 pathSet2
+          resolvePushJob pushId2 closure2
+
+        count0 <- runPushManager pm queuedStorePathCount
+        count0 `shouldBe` 4
+
+        -- "shared" is completed for both jobs at once
+        runPushManager pm $ pushStorePathDone "shared"
+        count1 <- runPushManager pm queuedStorePathCount
+        count1 `shouldBe` 2
+
+        runPushManager pm $ pushStorePathDone "unique1"
+        count2 <- runPushManager pm queuedStorePathCount
+        count2 `shouldBe` 1
+
+        runPushManager pm $ pushStorePathDone "unique2"
+        count3 <- runPushManager pm queuedStorePathCount
+        count3 `shouldBe` 0
+
+    describe "failed jobs index" $ do
+      it "reports jobs that failed before queue population" $ withPushManager $ \pm -> do
+        let request = Protocol.PushRequest {Protocol.storePaths = ["a"], Protocol.subscribeToUpdates = False}
+
+        Just pushId <- runPushManager pm $ addPushJobFromRequest request
+
+        runPushManager pm $ failPushJob pushId
+
+        count <- runPushManager pm queuedStorePathCount
+        count `shouldBe` 0
+
+        failed <- runPushManager pm getFailedPushJobs
+        map PushJob.pushId failed `shouldBe` [pushId]
+
+      it "cleans up failed jobs after path-level completion" $ withPushManager $ \pm -> do
+        let paths = ["a", "b"]
+            request = Protocol.PushRequest {Protocol.storePaths = paths, Protocol.subscribeToUpdates = False}
+
+        Just pushId <- runPushManager pm $ addPushJobFromRequest request
+
+        runPushManager pm $ do
+          let pathSet = Set.fromList paths
+              closure = PushJob.ResolvedClosure pathSet pathSet
+          resolvePushJob pushId closure
+
+        runPushManager pm $ pushStorePathFailed "a" "error"
+        runPushManager pm $ pushStorePathDone "b"
+
+        failed <- runPushManager pm getFailedPushJobs
+        failed `shouldBe` []
+
+        mjob <- runPushManager pm $ lookupPushJob pushId
+        mjob `shouldBe` Nothing
+
+      it "does not report successful jobs as failed" $ withPushManager $ \pm -> do
+        let paths = ["a", "b"]
+            request = Protocol.PushRequest {Protocol.storePaths = paths, Protocol.subscribeToUpdates = False}
+
+        Just pushId <- runPushManager pm $ addPushJobFromRequest request
+
+        runPushManager pm $ do
+          let pathSet = Set.fromList paths
+              closure = PushJob.ResolvedClosure pathSet pathSet
+          resolvePushJob pushId closure
+
+        runPushManager pm $ pushStorePathDone "a"
+        runPushManager pm $ pushStorePathDone "b"
+
+        failed <- runPushManager pm getFailedPushJobs
+        failed `shouldBe` []
+
+      it "correctly reports only failed jobs after mixed outcomes" $ withPushManager $ \pm -> do
+        let request1 = Protocol.PushRequest {Protocol.storePaths = ["a"], Protocol.subscribeToUpdates = False}
+            request2 = Protocol.PushRequest {Protocol.storePaths = ["b", "c"], Protocol.subscribeToUpdates = False}
+
+        Just pushId1 <- runPushManager pm $ addPushJobFromRequest request1
+        Just pushId2 <- runPushManager pm $ addPushJobFromRequest request2
+
+        -- Job 1: closure-level failure
+        runPushManager pm $ failPushJob pushId1
+
+        -- Job 2: resolve and complete all paths (success)
+        runPushManager pm $ do
+          let pathSet2 = Set.fromList ["b", "c"]
+              closure2 = PushJob.ResolvedClosure pathSet2 pathSet2
+          resolvePushJob pushId2 closure2
+
+        runPushManager pm $ pushStorePathDone "b"
+        runPushManager pm $ pushStorePathDone "c"
+
+        failed <- runPushManager pm getFailedPushJobs
+        map PushJob.pushId failed `shouldBe` [pushId1]
+
+    describe "concurrent path completion" $ do
+      it "handles concurrent pushStorePathDone and pushStorePathFailed" $ withPushManager $ \pm -> do
+        let paths = ["a", "b"]
+            request = Protocol.PushRequest {Protocol.storePaths = paths, Protocol.subscribeToUpdates = False}
+
+        Just pushId <- runPushManager pm $ addPushJobFromRequest request
+
+        runPushManager pm $ do
+          let pathSet = Set.fromList paths
+              closure = PushJob.ResolvedClosure pathSet pathSet
+          resolvePushJob pushId closure
+
+        concurrently_
+          (runPushManager pm $ pushStorePathDone "a")
+          (runPushManager pm $ pushStorePathFailed "b" "error")
+
+        count <- runPushManager pm queuedStorePathCount
+        count `shouldBe` 0
+
+        pendingCount <- runPushManager pm pendingJobCount
+        pendingCount `shouldBe` 0
+
+        mjob <- runPushManager pm $ lookupPushJob pushId
+        mjob `shouldBe` Nothing
 
   describe "STM" $
     describe "timeout" $ do

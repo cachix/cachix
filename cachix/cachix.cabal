@@ -187,8 +187,11 @@ library
     , servant-auth-client     >=0.3.3.0
     , servant-client          >=0.16
     , servant-conduit
+    , focus
+    , list-t
     , stm
     , stm-chans
+    , stm-containers
     , stm-conduit
     , systemd
     , temporary

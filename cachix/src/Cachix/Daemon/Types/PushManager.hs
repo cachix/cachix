@@ -6,6 +6,7 @@ module Cachix.Daemon.Types.PushManager
   ( PushManagerEnv (..),
     PushManager (..),
     PushJobStore,
+    StorePathIndex,
     PushJob (..),
     JobStatus (..),
     JobStats (..),
@@ -27,8 +28,8 @@ import Cachix.Daemon.Types.TaskQueue (TaskQueue)
 import Control.Concurrent.STM.TVar
 import Control.Monad.Catch
 import Control.Monad.IO.Unlift (MonadUnliftIO)
-import Data.HashMap.Strict (HashMap)
 import Data.Sequence qualified as Seq
+import StmContainers.Map qualified as StmMap
 import Data.Time (UTCTime)
 import Katip qualified
 import Protolude
@@ -51,9 +52,9 @@ instance Ord Task where
       taskPriority (HandleMissingPathsResponse _ _) = 2
       taskPriority (QueryMissingPaths _) = 1
 
-type PushJobStore = TVar (HashMap Protocol.PushRequestId PushJob)
+type PushJobStore = StmMap.Map Protocol.PushRequestId PushJob
 
-type StorePathIndex = TVar (HashMap FilePath (Seq.Seq Protocol.PushRequestId))
+type StorePathIndex = StmMap.Map FilePath (Seq.Seq Protocol.PushRequestId)
 
 -- TODO: a lot of the logic surrounding deduping, search, and job tracking could be replaced by sqlite.
 -- sqlite can run in-memory if we don't need persistence.

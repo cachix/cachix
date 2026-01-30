@@ -68,8 +68,10 @@ import Control.Monad.IO.Unlift (MonadUnliftIO)
 import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
 import Control.Retry (RetryStatus, rsIterNumber)
 import Data.ByteString qualified as BS
-import Data.HashMap.Strict qualified as HashMap
 import Data.IORef
+import Focus qualified
+import ListT qualified
+import StmContainers.Map qualified as StmMap
 import Data.Sequence qualified as Seq
 import Data.Set qualified as Set
 import Data.Text qualified as T
@@ -87,9 +89,9 @@ import UnliftIO.QSem qualified as QSem
 
 newPushManagerEnv :: (MonadIO m) => PushOptions -> NarinfoQuery.NarinfoQueryOptions -> PushParams PushManager () -> OnPushEvent -> Logger -> m PushManagerEnv
 newPushManagerEnv pushOptions batchOptions pmPushParams onPushEvent pmLogger = liftIO $ do
-  pmPushJobs <- newTVarIO mempty
+  pmPushJobs <- StmMap.newIO
   pmPendingJobCount <- newTVarIO 0
-  pmStorePathIndex <- newTVarIO mempty
+  pmStorePathIndex <- StmMap.newIO
   pmTaskQueue <- atomically newTaskQueue
   pmTaskSemaphore <- QSem.newQSem (numJobs pushOptions)
   pmLastEventTimestamp <- newTVarIO =<< getCurrentTime
@@ -143,7 +145,7 @@ addPushJob pushJob = do
   Katip.logLocM Katip.DebugS $ Katip.ls $ "Queued push job " <> (show pushId :: Text)
 
   let queueJob = do
-        modifyTVar' pmPushJobs $ HashMap.insert pushId pushJob
+        StmMap.insert pushJob pushId pmPushJobs
         incrementTVar pmPendingJobCount
         res <- tryWriteTask pmTaskQueue $ QueryMissingPaths pushId
         case res of
@@ -167,21 +169,21 @@ removePushJob :: Protocol.PushRequestId -> PushManager ()
 removePushJob pushId = do
   PushManagerEnv {..} <- ask
   liftIO $ atomically $ do
-    mpushJob <- HashMap.lookup pushId <$> readTVar pmPushJobs
-    for_ mpushJob $ \pushJob -> do
-      -- Decrement the job count if this job had not been processed yet
+    mpushJob <- StmMap.focus Focus.lookupAndDelete pushId pmPushJobs
+    for_ mpushJob $ \pushJob ->
       unless (PushJob.isProcessed pushJob) (decrementTVar pmPendingJobCount)
-      modifyTVar' pmPushJobs (HashMap.delete pushId)
 
 lookupPushJob :: Protocol.PushRequestId -> PushManager (Maybe PushJob)
 lookupPushJob pushId = do
   pushJobs <- asks pmPushJobs
-  liftIO $ HashMap.lookup pushId <$> readTVarIO pushJobs
+  liftIO $ atomically $ StmMap.lookup pushId pushJobs
 
 filterPushJobs :: (PushJob -> Bool) -> PushManager [PushJob]
 filterPushJobs f = do
   pushJobs <- asks pmPushJobs
-  liftIO $ filter f . HashMap.elems <$> readTVarIO pushJobs
+  liftIO $ atomically $ do
+    pairs <- ListT.toList (StmMap.listT pushJobs)
+    pure $ filter f (map snd pairs)
 
 getFailedPushJobs :: PushManager [PushJob]
 getFailedPushJobs = filterPushJobs PushJob.isFailed
@@ -200,15 +202,17 @@ modifyPushJob pushId f = do
 
 modifyPushJobSTM :: PushJobStore -> Protocol.PushRequestId -> (PushJob -> PushJob) -> STM (Maybe PushJob)
 modifyPushJobSTM pushJobs pushId f =
-  stateTVar pushJobs $ \jobs -> do
-    let pj = HashMap.adjust f pushId jobs
-    (HashMap.lookup pushId pj, pj)
+  StmMap.focus
+    (Focus.cases (Nothing, Focus.Leave) (\job -> let job' = f job in (Just job', Focus.Set job')))
+    pushId
+    pushJobs
 
 modifyPushJobs :: (Foldable f) => f Protocol.PushRequestId -> (PushJob -> PushJob) -> PushManager ()
 modifyPushJobs pushIds f = do
   pushJobs <- asks pmPushJobs
-  liftIO $ atomically $ modifyTVar' pushJobs $ \pushJobs' ->
-    foldl' (flip (HashMap.adjust f)) pushJobs' pushIds
+  liftIO $ atomically $
+    for_ pushIds $ \pushId ->
+      StmMap.focus (Focus.adjust f) pushId pushJobs
 
 failPushJob :: Protocol.PushRequestId -> PushManager ()
 failPushJob pushId = do
@@ -230,25 +234,25 @@ queueStorePaths pushId storePaths = do
   PushManagerEnv {..} <- ask
 
   let addToQueue storePath = do
-        isDuplicate <- HashMap.member storePath <$> readTVar pmStorePathIndex
-        unless isDuplicate $
+        wasNew <- StmMap.focus insertOrAppend storePath pmStorePathIndex
+        when wasNew $
           writeTask pmTaskQueue (PushPath storePath)
-
-        modifyTVar' pmStorePathIndex $ HashMap.insertWith (<>) storePath (Seq.singleton pushId)
+      insertOrAppend = Focus.cases
+        (True, Focus.Set (Seq.singleton pushId))
+        (\existing -> (False, Focus.Set (existing Seq.|> pushId)))
 
   transactionally $ map addToQueue storePaths
 
 removeStorePath :: FilePath -> PushManager ()
 removeStorePath storePath = do
   storePathIndex <- asks pmStorePathIndex
-  liftIO $ atomically $ do
-    modifyTVar' storePathIndex $ HashMap.delete storePath
+  liftIO $ atomically $
+    StmMap.delete storePath storePathIndex
 
 lookupStorePathIndex :: FilePath -> PushManager (Seq.Seq Protocol.PushRequestId)
 lookupStorePathIndex storePath = do
   storePathIndex <- asks pmStorePathIndex
-  references <- liftIO $ readTVarIO storePathIndex
-  return $ fromMaybe Seq.empty (HashMap.lookup storePath references)
+  liftIO $ fromMaybe Seq.empty <$> atomically (StmMap.lookup storePath storePathIndex)
 
 checkPushJobCompleted :: Protocol.PushRequestId -> PushManager ()
 checkPushJobCompleted pushId = do
@@ -268,8 +272,8 @@ checkPushJobCompleted pushId = do
 queuedStorePathCount :: PushManager Integer
 queuedStorePathCount = do
   pmPushJobs <- asks pmPushJobs
-  jobs <- liftIO $ readTVarIO pmPushJobs
-  pure $ foldl' countQueuedPaths 0 (HashMap.elems jobs)
+  jobs <- liftIO $ atomically $ ListT.toList (StmMap.listT pmPushJobs)
+  pure $ foldl' countQueuedPaths 0 (map snd jobs)
   where
     countQueuedPaths acc job = acc + fromIntegral (Set.size $ pushQueue job)
 

@@ -5,7 +5,10 @@ module Daemon.NarinfoQuerySpec where
 
 import Cachix.Daemon.NarinfoQuery (NarinfoQueryManager, NarinfoQueryOptions (..), NarinfoResponse, defaultNarinfoQueryOptions)
 import Cachix.Daemon.NarinfoQuery qualified as NarinfoQuery
+import Cachix.Daemon.Tracing (HasTracer (..))
+import Cachix.Daemon.Tracing qualified as Tracing
 import Control.Concurrent.STM
+import OpenTelemetry.Trace (Tracer)
 import Data.Set qualified as Set
 import Data.Time (UTCTime, getCurrentTime)
 import Hercules.CNix qualified as CNix
@@ -15,6 +18,11 @@ import Protolude
 import Test.Hspec
 import UnliftIO.Async qualified as Async
 import UnliftIO.Timeout (timeout)
+
+newtype TestEnv = TestEnv {testTracer :: Tracer}
+
+instance HasTracer TestEnv where
+  getTracer = testTracer
 
 -- Create a mock StorePath for testing
 mockStorePath :: Store -> Int -> IO StorePath
@@ -82,15 +90,23 @@ data TestContext requestId = TestContext
 startQueryProcessorAsync :: NarinfoQueryManager requestId -> ([StorePath] -> IO ([StorePath], [StorePath])) -> IO ()
 startQueryProcessorAsync manager batchProcessor = do
   started <- newEmptyMVar
+  tracer <- Tracing.getDaemonTracer
+  let env = TestEnv tracer
   void $ Async.async $ do
     handleScribe <- Katip.mkHandleScribe Katip.ColorIfTerminal stderr (Katip.permitItem Katip.InfoS) Katip.V0
     let makeLogEnv = Katip.registerScribe "stderr" handleScribe Katip.defaultScribeSettings =<< Katip.initLogEnv "test" "test"
     bracket makeLogEnv Katip.closeScribes $ \le ->
-      Katip.runKatipContextT le () mempty $ do
+      Katip.runKatipContextT le () mempty $ flip runReaderT env $ do
         liftIO $ putMVar started ()
         NarinfoQuery.start manager (liftIO . batchProcessor)
   -- Wait for the processor to start before returning
   takeMVar started
+
+-- Helper to run NarinfoQuery operations that need a HasTracer env
+runWithTracer :: ReaderT TestEnv IO a -> IO a
+runWithTracer action = do
+  tracer <- Tracing.getDaemonTracer
+  runReaderT action (TestEnv tracer)
 
 -- Test setup helper that encapsulates common initialization
 withTestManager ::
@@ -143,14 +159,14 @@ spec = do
         atomically $ writeTVar tcResponsesQueue [(Set.fromList [path1, path2, path3], Set.empty)]
 
         -- Submit first request (1 path) - should not trigger
-        NarinfoQuery.submitRequest tcManager (1 :: Int) [path1]
+        runWithTracer $ NarinfoQuery.submitRequest tcManager (1 :: Int) [path1]
         threadDelay 10000
 
         calls1 <- readTVarIO tcBatchCalls
         length calls1 `shouldBe` 0 -- No batch yet
 
         -- Submit second request (1 more unique path) - should trigger batch (2 paths total)
-        NarinfoQuery.submitRequest tcManager (2 :: Int) [path2]
+        runWithTracer $ NarinfoQuery.submitRequest tcManager (2 :: Int) [path2]
         threadDelay 20000 -- Wait for batch processing
         calls2 <- readTVarIO tcBatchCalls
         length calls2 `shouldBe` 1 -- One batch triggered
@@ -170,7 +186,7 @@ spec = do
         atomically $ writeTVar tcResponsesQueue [(Set.fromList [path1], Set.empty)]
 
         -- Submit request that won't reach size threshold
-        NarinfoQuery.submitRequest tcManager (1 :: Int) [path1]
+        runWithTracer $ NarinfoQuery.submitRequest tcManager (1 :: Int) [path1]
 
         -- Wait for timeout to trigger
         threadDelay 60000 -- 60ms > 50ms timeout
@@ -184,7 +200,7 @@ spec = do
       withTestManager config $ \TestContext {..} -> do
         atomically $ writeTVar tcResponsesQueue [(Set.fromList [path1], Set.empty)]
 
-        NarinfoQuery.submitRequest tcManager (1 :: Int) [path1]
+        runWithTracer $ NarinfoQuery.submitRequest tcManager (1 :: Int) [path1]
         threadDelay 20000 -- Short wait
         calls <- readTVarIO tcBatchCalls
         length calls `shouldBe` 1 -- Processed immediately
@@ -202,7 +218,7 @@ spec = do
         atomically $ writeTVar tcResponsesQueue [(existingPaths, missingPaths)]
 
         -- Submit all three paths
-        NarinfoQuery.submitRequest tcManager (1 :: Int) [path1, path2, path3]
+        runWithTracer $ NarinfoQuery.submitRequest tcManager (1 :: Int) [path1, path2, path3]
         threadDelay 20000
 
         -- Check what's in cache - only existing paths should be cached
@@ -221,11 +237,11 @@ spec = do
         atomically $ writeTVar tcResponsesQueue [(Set.fromList [path1], Set.empty), (Set.fromList [path2], Set.empty)]
 
         -- First request - path1 will be cached
-        NarinfoQuery.submitRequest tcManager (1 :: Int) [path1]
+        runWithTracer $ NarinfoQuery.submitRequest tcManager (1 :: Int) [path1]
         threadDelay 20000
 
         -- Second request - path1 from cache, path2 goes to batch
-        NarinfoQuery.submitRequest tcManager (2 :: Int) [path1, path2]
+        runWithTracer $ NarinfoQuery.submitRequest tcManager (2 :: Int) [path1, path2]
         threadDelay 20000
 
         -- Should have 2 batch calls (one for each unique uncached path)
@@ -265,9 +281,9 @@ spec = do
         atomically $ writeTVar tcResponsesQueue [(existingPaths, missingPaths)]
 
         -- Request 1: paths 1,2,3 (3 unique paths, below threshold)
-        NarinfoQuery.submitRequest tcManager (1 :: Int) [path1, path2, path3]
+        runWithTracer $ NarinfoQuery.submitRequest tcManager (1 :: Int) [path1, path2, path3]
         -- Request 2: paths 3,4,5 (path 3 overlaps, adds 2 new → 5 total, triggers batch)
-        NarinfoQuery.submitRequest tcManager (2 :: Int) [path3, path4, path5]
+        runWithTracer $ NarinfoQuery.submitRequest tcManager (2 :: Int) [path3, path4, path5]
 
         -- Wait until both callbacks are received (deterministic, no timing dependency)
         waitForSTM 5_000_000 $ do
@@ -298,8 +314,8 @@ spec = do
         atomically $ writeTVar tcResponsesQueue [(Set.fromList [path1, path2], Set.empty)]
 
         -- Submit overlapping requests that will be batched together
-        NarinfoQuery.submitRequest tcManager (1 :: Int) [path1, path2] -- paths 1,2
-        NarinfoQuery.submitRequest tcManager (2 :: Int) [path2, path1] -- paths 2,1 (same, different order)
+        runWithTracer $ NarinfoQuery.submitRequest tcManager (1 :: Int) [path1, path2] -- paths 1,2
+        runWithTracer $ NarinfoQuery.submitRequest tcManager (2 :: Int) [path2, path1] -- paths 2,1 (same, different order)
         threadDelay 120000 -- Wait 120ms, longer than 100ms timeout
         calls <- readTVarIO tcBatchCalls
         length calls `shouldBe` 1

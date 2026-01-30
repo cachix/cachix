@@ -19,6 +19,7 @@ where
 
 import Cachix.Client.Push (PushParams)
 import Cachix.Daemon.Log qualified as Log
+import Cachix.Daemon.Tracing (HasTracer (..))
 import Cachix.Daemon.NarinfoQuery (NarinfoQueryManager)
 import Cachix.Daemon.NarinfoQuery qualified as NarinfoQuery
 import Cachix.Daemon.Protocol qualified as Protocol
@@ -31,6 +32,7 @@ import Control.Monad.IO.Unlift (MonadUnliftIO)
 import Data.Sequence qualified as Seq
 import Data.Time (UTCTime)
 import Katip qualified
+import OpenTelemetry.Trace (Span, Tracer)
 import Protolude
 import StmContainers.Map qualified as StmMap
 import StmContainers.Set qualified as StmSet
@@ -77,6 +79,8 @@ data PushManagerEnv = PushManagerEnv
     pmTaskSemaphore :: QSem,
     -- | A callback for push events.
     pmOnPushEvent :: OnPushEvent,
+    -- | Current span for per-path work (if any).
+    pmCurrentSpan :: Maybe Span,
     -- | The timestamp of the most recent event. This is used to track activity internally.
     pmLastEventTimestamp :: TVar UTCTime,
     -- | Minimum interval between progress events (monotonic time, in nanoseconds).
@@ -87,7 +91,9 @@ data PushManagerEnv = PushManagerEnv
     pmQueuedStorePathCount :: TVar Int,
     -- | Manager for batching narinfo queries
     pmNarinfoQueryManager :: NarinfoQueryManager Protocol.PushRequestId,
-    pmLogger :: Logger
+    pmLogger :: Logger,
+    -- | OpenTelemetry tracer
+    pmTracer :: Tracer
   }
 
 type OnPushEvent = Protocol.PushRequestId -> PushEvent -> IO ()
@@ -106,6 +112,9 @@ newtype PushManager a = PushManager {unPushManager :: ReaderT PushManagerEnv IO 
       Alternative,
       MonadPlus
     )
+
+instance HasTracer PushManagerEnv where
+  getTracer = pmTracer
 
 instance Katip.Katip PushManager where
   getLogEnv = Log.getKatipLogEnv <$> asks pmLogger

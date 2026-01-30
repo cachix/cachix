@@ -12,7 +12,9 @@ import Control.Retry (RetryStatus (..))
 import Data.Aeson (FromJSON, ToJSON)
 import Data.Time (UTCTime)
 import Data.UUID (UUID)
-import Data.UUID.V4 qualified as UUID
+import Data.UUID qualified as UUID
+import Data.UUID.V4 qualified as UUID.V4
+import OpenTelemetry.Trace (ToAttribute (..))
 import Protolude
 
 data PushEvent = PushEvent
@@ -41,8 +43,11 @@ newtype PushRequestId = PushRequestId UUID
   deriving stock (Generic)
   deriving newtype (Eq, Ord, Show, FromJSON, ToJSON, Hashable)
 
+instance ToAttribute PushRequestId where
+  toAttribute (PushRequestId uuid) = toAttribute (UUID.toText uuid)
+
 newPushRequestId :: (MonadIO m) => m PushRequestId
-newPushRequestId = liftIO $ PushRequestId <$> UUID.nextRandom
+newPushRequestId = liftIO $ PushRequestId <$> UUID.V4.nextRandom
 
 data PushRetryStatus = PushRetryStatus {retryCount :: Int}
   deriving stock (Eq, Generic, Show)

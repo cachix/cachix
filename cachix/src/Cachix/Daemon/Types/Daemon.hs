@@ -20,10 +20,12 @@ import Cachix.Daemon.Types.Error (DaemonError (DaemonUnhandledException), Unhand
 import Cachix.Daemon.Types.EventLoop (EventLoop)
 import Cachix.Daemon.Types.Log (Logger)
 import Cachix.Daemon.Types.PushEvent (PushEvent)
+import Cachix.Daemon.Tracing (HasTracer (..))
 import Cachix.Daemon.Types.PushManager (PushManagerEnv (..))
 import Cachix.Daemon.Types.SocketStore (SocketId, SocketStore)
 import Cachix.Daemon.Worker qualified as Worker
 import Cachix.Types.BinaryCache (BinaryCache, BinaryCacheName)
+import OpenTelemetry.Trace (Tracer)
 import Control.Exception.Safe qualified as Safe
 import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
 import Control.Monad.IO.Unlift (MonadUnliftIO)
@@ -75,7 +77,9 @@ data DaemonEnv = DaemonEnv
     -- | The PID of the daemon process
     daemonPid :: ProcessID,
     -- | Daemon configuration options
-    daemonOptions :: DaemonOptions
+    daemonOptions :: DaemonOptions,
+    -- | OpenTelemetry tracer
+    daemonTracer :: Tracer
   }
 
 newtype Daemon a = Daemon
@@ -92,6 +96,9 @@ newtype Daemon a = Daemon
       MonadMask,
       MonadThrow
     )
+
+instance HasTracer DaemonEnv where
+  getTracer = daemonTracer
 
 instance Katip.Katip Daemon where
   getLogEnv = Log.getKatipLogEnv <$> asks daemonLogger

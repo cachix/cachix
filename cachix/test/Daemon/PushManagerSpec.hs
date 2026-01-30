@@ -5,6 +5,7 @@ import Cachix.Client.OptionsParser (defaultPushOptions)
 import Cachix.Client.Push (PushSecret (PushToken))
 import Cachix.Daemon.Log qualified as Log
 import Cachix.Daemon.NarinfoQuery (defaultNarinfoQueryOptions)
+import Cachix.Daemon.Tracing qualified as Tracing
 import Cachix.Daemon.Protocol qualified as Protocol
 import Cachix.Daemon.Push qualified as Daemon.Push
 import Cachix.Daemon.PushManager
@@ -420,7 +421,8 @@ withPushManager f = do
         pushOptions = defaultPushOptions
         batchOptions = defaultNarinfoQueryOptions
         pushParams = Daemon.Push.newPushParams store clientEnv binaryCache pushSecret pushOptions
-    newPushManagerEnv pushOptions batchOptions pushParams mempty logger >>= f
+    tracer <- Tracing.getDaemonTracer
+    newPushManagerEnv pushOptions batchOptions pushParams mempty logger tracer >>= f
 
 inPushManager :: PushManager a -> IO a
 inPushManager f = withPushManager (`runPushManager` f)

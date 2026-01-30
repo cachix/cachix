@@ -24,6 +24,7 @@ import Cachix.Daemon.Types
 import Cachix.Daemon.Types.EventLoop (EventLoop)
 import Cachix.Daemon.Types.SocketStore (SocketId, SocketStore)
 import Control.Exception.Safe (catchAny)
+import Control.Monad.Catch (MonadCatch)
 import Control.Monad.Catch qualified as E
 import Data.Aeson qualified as Aeson
 import Data.ByteString qualified as BS
@@ -99,7 +100,7 @@ handleClient eventloop socketStore socketId conn = do
             EventLoop.send eventloop (ReceivedMessage socketId msg)
             case msg of
               Protocol.ClientPing ->
-                liftIO $ SocketStore.sendAll socketStore socketId (Protocol.newMessage DaemonPong)
+                SocketStore.sendAll socketStore socketId (Protocol.newMessage DaemonPong)
               _ -> return ()
 
           go newLeftovers
@@ -115,7 +116,7 @@ decodeMessage bs =
       return Nothing
     Right msg -> return (Just msg)
 
-serverBye :: SocketId -> SocketStore -> Either DaemonError () -> IO ()
+serverBye :: (MonadIO m, MonadCatch m) => SocketId -> SocketStore -> Either DaemonError () -> m ()
 serverBye socketId socketStore exitResult =
   SocketStore.sendAll socketStore socketId (Protocol.newMessage (DaemonExit exitStatus)) `catchAny` (\_ -> return ())
   where

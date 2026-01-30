@@ -23,6 +23,7 @@ import Data.Aeson as Aeson (ToJSON)
 import Data.HashMap.Strict (HashMap)
 import Data.HashMap.Strict qualified as HashMap
 import Data.Sequence qualified as Seq
+import Katip qualified
 import Network.Socket qualified as Socket
 import Protolude
 
@@ -103,18 +104,21 @@ sendEventToSub :: Subscription v -> v -> STM ()
 sendEventToSub (SubSocket _queue _) _ = pure () -- writeTBMQueue queue
 sendEventToSub (SubChannel chan) event = writeTMChan chan event
 
-runSubscriptionManager :: (Show k, Show v, Hashable k, ToJSON v, MonadIO m) => SubscriptionManager k v -> m ()
+runSubscriptionManager :: (Show k, Hashable k, ToJSON v, Katip.KatipContext m) => SubscriptionManager k v -> m ()
 runSubscriptionManager manager = do
-  isDone <- liftIO $ atomically $ do
-    mmsg <- readTBMQueue (managerMessages manager)
-    case mmsg of
-      Nothing -> return True
-      Just (EventMessage key event) -> do
+  mmsg <- liftIO $ atomically $ readTBMQueue (managerMessages manager)
+  case mmsg of
+    Nothing -> return ()
+    Just (EventMessage key event) -> do
+      Katip.logFM Katip.DebugS $ Katip.ls $ "Dispatching event for " <> (show key :: Text)
+      liftIO $ atomically $ do
         subscriptions <- getSubscriptionsForSTM manager key
         globalSubscriptions <- readTVar $ managerGlobalSubscriptions manager
         mapM_ (`sendEventToSub` event) (subscriptions <> globalSubscriptions)
-        return False
-      Just (UnsubscribeMessage key) -> do
+      runSubscriptionManager manager
+    Just (UnsubscribeMessage key) -> do
+      Katip.logFM Katip.DebugS $ Katip.ls $ "Unsubscribing " <> (show key :: Text)
+      liftIO $ atomically $ do
         subscriptions <- readTVar $ managerSubscriptions manager
         case HashMap.lookup key subscriptions of
           Nothing -> return ()
@@ -123,10 +127,7 @@ runSubscriptionManager manager = do
               SubSocket queue _ -> closeTBMQueue queue
               SubChannel chan -> closeTMChan chan
             writeTVar (managerSubscriptions manager) $ HashMap.delete key subscriptions
-        return False
-
-  unless isDone $
-    runSubscriptionManager manager
+      runSubscriptionManager manager
 
 stopSubscriptionManager :: SubscriptionManager k v -> IO ()
 stopSubscriptionManager manager = do

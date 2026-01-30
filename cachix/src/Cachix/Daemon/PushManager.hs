@@ -59,6 +59,7 @@ import Cachix.Daemon.TaskQueue
 import Cachix.Daemon.Types.Log (Logger)
 import Cachix.Daemon.Types.PushEvent (PushEvent (..), PushEventMessage (..), newPushRetryStatus)
 import Cachix.Daemon.Types.PushManager
+import GHC.Clock (getMonotonicTimeNSec)
 import Cachix.Types.BinaryCache qualified as BinaryCache
 import Conduit qualified as C
 import Control.Concurrent.Async qualified as Async
@@ -92,6 +93,7 @@ newPushManagerEnv pushOptions batchOptions pmPushParams onPushEvent pmLogger = l
   pmTaskQueue <- atomically newTaskQueue
   pmTaskSemaphore <- QSem.newQSem (numJobs pushOptions)
   pmLastEventTimestamp <- newTVarIO =<< getCurrentTime
+  let pmProgressEmitIntervalNs = 200 * 1000 * 1000
   let pmOnPushEvent id pushEvent = updateTimestampTVar pmLastEventTimestamp >> onPushEvent id pushEvent
 
   -- Create query manager with callback that queues ProcessQueryResponse tasks
@@ -427,15 +429,17 @@ newPushStrategy store authToken opts cacheName compressionMethod storePath =
 
       onUncompressedNARStream _ size = do
         sp <- liftIO $ storePathToPath store storePath
-        lastEmitRef <- liftIO $ newIORef (0 :: Int64)
+        progressEmitIntervalNs <- asks pmProgressEmitIntervalNs
+        lastEmitNsRef <- liftIO $ newIORef =<< getMonotonicTimeNSec
         currentBytesRef <- liftIO $ newIORef (0 :: Int64)
         C.awaitForever $ \chunk -> do
           let newBytes = fromIntegral (BS.length chunk)
           currentBytes <- liftIO $ atomicModifyIORef' currentBytesRef (\b -> (b + newBytes, b + newBytes))
-          lastEmit <- liftIO $ readIORef lastEmitRef
+          lastEmitNs <- liftIO $ readIORef lastEmitNsRef
+          nowNs <- liftIO getMonotonicTimeNSec
 
-          when (currentBytes - lastEmit >= 1024 || currentBytes == size) $ do
-            liftIO $ writeIORef lastEmitRef currentBytes
+          when (nowNs - lastEmitNs >= progressEmitIntervalNs || currentBytes == size) $ do
+            liftIO $ writeIORef lastEmitNsRef nowNs
             lift $ lift $ pushStorePathProgress (toS sp) currentBytes newBytes
 
           C.yield chunk

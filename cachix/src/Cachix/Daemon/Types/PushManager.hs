@@ -73,6 +73,8 @@ data PushManagerEnv = PushManagerEnv
     pmOnPushEvent :: OnPushEvent,
     -- | The timestamp of the most recent event. This is used to track activity internally.
     pmLastEventTimestamp :: TVar UTCTime,
+    -- | Minimum interval between progress events (monotonic time, in nanoseconds).
+    pmProgressEmitIntervalNs :: Word64,
     -- | The number of pending (uncompleted) jobs.
     pmPendingJobCount :: TVar Int,
     -- | Manager for batching narinfo queries

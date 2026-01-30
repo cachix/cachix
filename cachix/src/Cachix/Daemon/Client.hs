@@ -67,11 +67,11 @@ withSocketComm sock action = do
           timestamp <- getCurrentTime
           lastPong <- readIORef lastPongRef
 
-          if timestamp >= addUTCTime 20 lastPong
+          if timestamp >= addUTCTime 180 lastPong
             then atomically $ writeTBMQueue rxPriority (Left SocketStalled)
             else do
               atomically $ writeTBMQueue tx Protocol.ClientPing
-              threadDelay (2 * 1000 * 1000)
+              threadDelay (30 * 1000 * 1000)
               go
 
     handleOutgoing tx sock' = go

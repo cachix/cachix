@@ -143,9 +143,9 @@ run daemon = fmap join <$> runDaemon daemon $ do
 
   eventLoopRes <- EventLoop.run daemonEventLoop $ \case
     AddSocketClient conn ->
-      SocketStore.addSocket conn (Listen.handleClient daemonEventLoop daemonClients) daemonClients
+      SocketStore.addSocket daemonClients conn (Listen.handleClient daemonEventLoop daemonClients)
     RemoveSocketClient socketId ->
-      SocketStore.removeSocket socketId daemonClients
+      SocketStore.removeSocket daemonClients socketId 
     ReconnectSocket ->
       -- TODO: implement reconnection logic
       EventLoop.exitLoopWith (Left DaemonSocketError) daemonEventLoop
@@ -160,7 +160,7 @@ run daemon = fmap join <$> runDaemon daemon $ do
             when (Protocol.subscribeToUpdates pushRequest) $ do
               chan <- liftIO $ subscribe daemon (Just pushId)
               publisherThread <- liftIO $ Async.async $ publishToClient socketId chan daemon
-              SocketStore.addPublisherThread socketId pushId publisherThread daemonClients
+              SocketStore.addPublisherThread daemonClients socketId pushId publisherThread
 
             -- Now add the job
             success <- queueJob pushJob
@@ -172,7 +172,7 @@ run daemon = fmap join <$> runDaemon daemon $ do
             then EventLoop.send daemonEventLoop ShutdownGracefully
             else do
               let errorMsg = "Remote stop is disabled on this daemon"
-              SocketStore.sendAll socketId (Protocol.newMessage (Protocol.DaemonError (Protocol.UnsupportedCommand errorMsg))) clients
+              SocketStore.sendAll clients socketId (Protocol.newMessage (Protocol.DaemonError (Protocol.UnsupportedCommand errorMsg)))
         ClientDiagnosticsRequest -> do
           -- Get push secret to check for signing key and auth token
           let pushParams = PushManager.pmPushParams daemonPushManager
@@ -198,7 +198,7 @@ run daemon = fmap join <$> runDaemon daemon $ do
                     Protocol.diagAuthOk = isRight authResult,
                     Protocol.diagError = either Just (const Nothing) authResult
                   }
-          SocketStore.sendAll socketId (Protocol.newMessage (Protocol.DaemonDiagnosticsResult diagnostics)) daemonClients
+          SocketStore.sendAll daemonClients socketId (Protocol.newMessage (Protocol.DaemonDiagnosticsResult diagnostics))
         _ -> return ()
     ShutdownGracefully -> do
       Katip.logFM Katip.InfoS "Shutting down daemon..."
@@ -293,7 +293,7 @@ publishToClient socketId chan daemonEnv = go
         Nothing -> return ()
         Just evt -> do
           let daemonMsg = DaemonPushEvent evt
-          SocketStore.sendAll socketId (Protocol.newMessage daemonMsg) (daemonClients daemonEnv)
+          SocketStore.sendAll (daemonClients daemonEnv) socketId (Protocol.newMessage daemonMsg)
           go
 
 -- | Print the daemon configuration to the log.

@@ -152,6 +152,7 @@ library
     , exceptions
     , extra
     , filepath
+    , focus
     , fsnotify                >=0.4.1
     , generic-lens
     , hercules-ci-cnix-store  >=0.4
@@ -165,6 +166,7 @@ library
     , immortal
     , inline-c-cpp
     , katip
+    , list-t
     , lukko
     , lzma-conduit
     , megaparsec              >=7.0.0
@@ -187,12 +189,10 @@ library
     , servant-auth-client     >=0.3.3.0
     , servant-client          >=0.16
     , servant-conduit
-    , focus
-    , list-t
     , stm
     , stm-chans
-    , stm-containers
     , stm-conduit
+    , stm-containers
     , systemd
     , temporary
     , text

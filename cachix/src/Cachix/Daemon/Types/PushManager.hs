@@ -29,11 +29,11 @@ import Control.Concurrent.STM.TVar
 import Control.Monad.Catch
 import Control.Monad.IO.Unlift (MonadUnliftIO)
 import Data.Sequence qualified as Seq
-import StmContainers.Map qualified as StmMap
-import StmContainers.Set qualified as StmSet
 import Data.Time (UTCTime)
 import Katip qualified
 import Protolude
+import StmContainers.Map qualified as StmMap
+import StmContainers.Set qualified as StmSet
 
 -- | A task to be processed by the PushManager
 -- Tasks are prioritized by their Ord instance

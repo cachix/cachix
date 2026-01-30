@@ -16,14 +16,17 @@ module Cachix.Daemon.Subscription
   )
 where
 
+import Cachix.Daemon.Tracing qualified as Tracing
 import Control.Concurrent.STM.TBMQueue
 import Control.Concurrent.STM.TMChan
 import Control.Concurrent.STM.TVar
+import Control.Monad.IO.Unlift (MonadUnliftIO)
 import Data.Aeson as Aeson (ToJSON)
 import Data.HashMap.Strict (HashMap)
 import Data.HashMap.Strict qualified as HashMap
 import Data.Sequence qualified as Seq
 import Network.Socket qualified as Socket
+import OpenTelemetry.Trace (SpanKind (..), addAttribute)
 import Protolude
 
 data SubscriptionManager k v = SubscriptionManager
@@ -103,30 +106,33 @@ sendEventToSub :: Subscription v -> v -> STM ()
 sendEventToSub (SubSocket _queue _) _ = pure () -- writeTBMQueue queue
 sendEventToSub (SubChannel chan) event = writeTMChan chan event
 
-runSubscriptionManager :: (Show k, Show v, Hashable k, ToJSON v, MonadIO m) => SubscriptionManager k v -> m ()
+runSubscriptionManager :: (Show k, Show v, Hashable k, ToJSON v, MonadUnliftIO m) => SubscriptionManager k v -> m ()
 runSubscriptionManager manager = do
-  isDone <- liftIO $ atomically $ do
-    mmsg <- readTBMQueue (managerMessages manager)
-    case mmsg of
-      Nothing -> return True
-      Just (EventMessage key event) -> do
-        subscriptions <- getSubscriptionsForSTM manager key
-        globalSubscriptions <- readTVar $ managerGlobalSubscriptions manager
-        mapM_ (`sendEventToSub` event) (subscriptions <> globalSubscriptions)
-        return False
-      Just (UnsubscribeMessage key) -> do
-        subscriptions <- readTVar $ managerSubscriptions manager
-        case HashMap.lookup key subscriptions of
-          Nothing -> return ()
-          Just subs -> do
-            forM_ subs $ \case
-              SubSocket queue _ -> closeTBMQueue queue
-              SubChannel chan -> closeTMChan chan
-            writeTVar (managerSubscriptions manager) $ HashMap.delete key subscriptions
-        return False
-
-  unless isDone $
-    runSubscriptionManager manager
+  mmsg <- liftIO $ atomically $ readTBMQueue (managerMessages manager)
+  case mmsg of
+    Nothing -> return ()
+    Just (EventMessage key event) -> do
+      Tracing.withDaemonSpan "daemon.subscriptions.dispatch" Internal $ \otelSpan -> do
+        addAttribute otelSpan "daemon.subscription_key" (show key :: Text)
+        addAttribute otelSpan "daemon.subscription_event" (show event :: Text)
+        liftIO $ atomically $ do
+          subscriptions <- getSubscriptionsForSTM manager key
+          globalSubscriptions <- readTVar $ managerGlobalSubscriptions manager
+          mapM_ (`sendEventToSub` event) (subscriptions <> globalSubscriptions)
+      runSubscriptionManager manager
+    Just (UnsubscribeMessage key) -> do
+      Tracing.withDaemonSpan "daemon.subscriptions.unsubscribe" Internal $ \otelSpan -> do
+        addAttribute otelSpan "daemon.subscription_key" (show key :: Text)
+        liftIO $ atomically $ do
+          subscriptions <- readTVar $ managerSubscriptions manager
+          case HashMap.lookup key subscriptions of
+            Nothing -> return ()
+            Just subs -> do
+              forM_ subs $ \case
+                SubSocket queue _ -> closeTBMQueue queue
+                SubChannel chan -> closeTMChan chan
+              writeTVar (managerSubscriptions manager) $ HashMap.delete key subscriptions
+      runSubscriptionManager manager
 
 stopSubscriptionManager :: SubscriptionManager k v -> IO ()
 stopSubscriptionManager manager = do

@@ -24,6 +24,7 @@ where
 
 import Cachix.Daemon.TTLCache (TTLCache)
 import Cachix.Daemon.TTLCache qualified as TTLCache
+import Cachix.Daemon.Tracing qualified as Tracing
 import Control.Concurrent.STM
 import Control.Monad.Extra (partitionM)
 import Control.Monad.IO.Unlift (MonadUnliftIO)
@@ -32,6 +33,7 @@ import Data.Set qualified as Set
 import Data.Time (NominalDiffTime, UTCTime, addUTCTime, diffUTCTime, getCurrentTime)
 import Hercules.CNix.Store (StorePath, getStorePathHash)
 import Katip qualified
+import OpenTelemetry.Trace (SpanKind (..), addAttribute)
 import Protolude
 import UnliftIO.Async qualified as Async
 
@@ -181,41 +183,49 @@ cleanupStaleEntries NarinfoQueryManager {nqmCache, nqmCachedTime} = liftIO $ do
 -- The store paths will be queued for processing.
 -- The closure will _not_ be computed.
 submitRequest ::
-  (MonadIO m) =>
+  (MonadUnliftIO m, Show requestId) =>
   NarinfoQueryManager requestId ->
   requestId ->
   [StorePath] ->
   m ()
-submitRequest manager@NarinfoQueryManager {nqmConfig, nqmState, nqmCachedTime} requestId storePaths = liftIO $ do
-  -- Check cache for each path in a single pass
-  (cachedExistingPaths, pathsToQuery') <- partitionM (lookupCache manager) storePaths
+submitRequest manager@NarinfoQueryManager {nqmConfig, nqmState, nqmCachedTime} requestId storePaths = do
+  Tracing.withDaemonSpan "daemon.narinfo.submit_request" Internal $ \otelSpan -> do
+    addAttribute otelSpan "daemon.request_id" (show requestId :: Text)
+    addAttribute otelSpan "daemon.path_count" (length storePaths)
+    addAttribute otelSpan "daemon.narinfo.request_id" (show requestId :: Text)
+    addAttribute otelSpan "daemon.narinfo.path_count" (length storePaths)
+    submitRequestIO manager requestId storePaths
+  where
+    submitRequestIO mgr reqId paths = do
+      -- Check cache for each path in a single pass
+      (cachedExistingPaths, pathsToQuery') <- liftIO $ partitionM (lookupCache mgr) paths
 
-  -- Perform the state update atomically and determine if timeout is needed
-  needsTimeout <- atomically $ do
-    now <- readTVar nqmCachedTime
-    batchState <- readTVar nqmState
-    let isFirstRequest = Seq.null (qsPendingRequests batchState)
-        needsNewTimeout = isFirstRequest && isNothing (qsTimeoutVar batchState) && nqoMaxWaitTime nqmConfig > 0
-        updatedPaths = qsAccumulatedPaths batchState <> Set.fromList pathsToQuery'
-        newRequest = NarinfoRequest requestId storePaths cachedExistingPaths
-        newStartTime = case qsQueryStartTime batchState of
-          Nothing -> Just now
-          justTime -> justTime
+      -- Perform the state update atomically and determine if timeout is needed
+      needsTimeout <- liftIO $ atomically $ do
+        now <- readTVar nqmCachedTime
+        batchState <- readTVar nqmState
+        let isFirstRequest = Seq.null (qsPendingRequests batchState)
+            needsNewTimeout = isFirstRequest && isNothing (qsTimeoutVar batchState) && nqoMaxWaitTime nqmConfig > 0
+            updatedPaths = qsAccumulatedPaths batchState <> Set.fromList pathsToQuery'
+            newRequest = NarinfoRequest reqId paths cachedExistingPaths
+            newStartTime = case qsQueryStartTime batchState of
+              Nothing -> Just now
+              justTime -> justTime
 
-    writeTVar nqmState $
-      batchState
-        { qsPendingRequests = qsPendingRequests batchState Seq.|> newRequest,
-          qsAccumulatedPaths = updatedPaths,
-          qsQueryStartTime = newStartTime
-        }
+        writeTVar nqmState $
+          batchState
+            { qsPendingRequests = qsPendingRequests batchState Seq.|> newRequest,
+              qsAccumulatedPaths = updatedPaths,
+              qsQueryStartTime = newStartTime
+            }
 
-    return needsNewTimeout
+        return needsNewTimeout
 
-  -- Set up timeout outside of STM if needed
-  when needsTimeout $ do
-    timeoutVar <- startBatchTimeout (nqoMaxWaitTime nqmConfig)
-    atomically $ do
-      modifyTVar' nqmState $ \bs -> bs {qsTimeoutVar = Just timeoutVar}
+      -- Set up timeout outside of STM if needed
+      when needsTimeout $ do
+        timeoutVar <- liftIO $ startBatchTimeout (nqoMaxWaitTime nqmConfig)
+        liftIO $ atomically $ do
+          modifyTVar' nqmState $ \bs -> bs {qsTimeoutVar = Just timeoutVar}
 
 -- | Start the query processor thread
 start ::
@@ -358,62 +368,82 @@ processReadyBatch ::
   ([StorePath] -> m ([StorePath], [StorePath])) ->
   ReadyBatch requestId ->
   m ()
-processReadyBatch manager@NarinfoQueryManager {nqmCallback} processBatch ReadyBatch {rbRequests, rbAllPaths, rbBatchStartTime} = do
-  -- Process the batch if we have paths to query
-  (allPathsInClosure, missingPaths) <-
-    if null rbAllPaths
-      then return ([], [])
-      else do
-        processingStartTime <- liftIO getCurrentTime
+processReadyBatch manager@NarinfoQueryManager {nqmCallback} processBatch ReadyBatch {rbRequests, rbAllPaths, rbBatchStartTime} =
+  Tracing.withDaemonSpan "daemon.narinfo.process_batch" Internal $ \otelSpan -> do
+    let requestCount = Seq.length rbRequests
+        pathCount = length rbAllPaths
+    addAttribute otelSpan "daemon.batch_size" pathCount
+    addAttribute otelSpan "daemon.request_count" requestCount
+    addAttribute otelSpan "daemon.narinfo.batch_size" pathCount
+    addAttribute otelSpan "daemon.narinfo.request_count" requestCount
+    case rbBatchStartTime of
+      Nothing -> do
+        addAttribute otelSpan "daemon.wait_time_ms" (0 :: Double)
+        addAttribute otelSpan "daemon.narinfo.wait_time_ms" (0 :: Double)
+      Just startTime -> do
+        now <- liftIO getCurrentTime
+        let waitTimeMs = realToFrac (diffUTCTime now startTime) * 1000
+        addAttribute otelSpan "daemon.wait_time_ms" (waitTimeMs :: Double)
+        addAttribute otelSpan "daemon.narinfo.wait_time_ms" (waitTimeMs :: Double)
 
-        -- Log batch statistics
-        let requestCount = Seq.length rbRequests
-            pathCount = length rbAllPaths
-            waitTime = case rbBatchStartTime of
-              Nothing -> 0
-              Just startTime -> processingStartTime `diffUTCTime` startTime
+    -- Process the batch if we have paths to query
+    (allPathsInClosure, missingPaths) <-
+      if null rbAllPaths
+        then return ([], [])
+        else do
+          processingStartTime <- liftIO getCurrentTime
 
-        Katip.logFM Katip.DebugS "Processing narinfo batch"
-          & Katip.katipAddContext
-            ( Katip.sl "requests" requestCount
-                <> Katip.sl "paths" pathCount
-                <> Katip.sl "wait_time_s" (show waitTime :: Text)
-            )
+          Katip.logFM Katip.DebugS "Processing narinfo batch"
+            & Katip.katipAddContext
+              ( Katip.sl "requests" requestCount
+                  <> Katip.sl "paths" pathCount
+              )
 
-        -- Query narinfo
-        (allPathsInClosure, missingPaths) <- processBatch rbAllPaths
+          -- Query narinfo
+          (allPathsInClosure, missingPaths) <- processBatch rbAllPaths
 
-        processingEndTime <- liftIO getCurrentTime
-        let processingTime = processingEndTime `diffUTCTime` processingStartTime
-            closureSize = length allPathsInClosure
-            missingCount = length missingPaths
+          processingEndTime <- liftIO getCurrentTime
+          let processingTime = processingEndTime `diffUTCTime` processingStartTime
+              closureSize = length allPathsInClosure
+              missingCount = length missingPaths
+              hitCount = closureSize - missingCount
 
-        Katip.logFM Katip.DebugS "Batch completed"
-          & Katip.katipAddContext
-            ( Katip.sl "processing_time_s" (show processingTime :: Text)
-                <> Katip.sl "total_paths" closureSize
-                <> Katip.sl "missing_paths" missingCount
-            )
+          let processingTimeMs = realToFrac processingTime * 1000
+          addAttribute otelSpan "daemon.processing_time_ms" (processingTimeMs :: Double)
+          addAttribute otelSpan "daemon.total_paths" closureSize
+          addAttribute otelSpan "daemon.missing_paths" missingCount
+          addAttribute otelSpan "daemon.hit_paths" hitCount
+          addAttribute otelSpan "daemon.narinfo.processing_time_ms" (processingTimeMs :: Double)
+          addAttribute otelSpan "daemon.narinfo.total_paths" closureSize
+          addAttribute otelSpan "daemon.narinfo.missing_paths" missingCount
+          addAttribute otelSpan "daemon.narinfo.hit_paths" hitCount
 
-        return (allPathsInClosure, missingPaths)
+          Katip.logFM Katip.DebugS "Batch completed"
+            & Katip.katipAddContext
+              ( Katip.sl "processing_time_s" (show processingTime :: Text)
+                  <> Katip.sl "total_paths" closureSize
+                  <> Katip.sl "missing_paths" missingCount
+              )
 
-  -- Build lookup tables including cached results
-  let allPathsSet = Set.fromList allPathsInClosure
-      missingPathsSet = Set.fromList missingPaths
+          return (allPathsInClosure, missingPaths)
 
-  -- Update cache with results (only cache positive lookups)
-  let existingPathsSet = allPathsSet `Set.difference` missingPathsSet
-  unless (Set.null existingPathsSet) $ do
-    Katip.logFM Katip.DebugS "Updating narinfo cache with existing paths"
-      & Katip.katipAddContext (Katip.sl "count" (Set.size existingPathsSet))
-    updateCache manager existingPathsSet
+    -- Build lookup tables including cached results
+    let allPathsSet = Set.fromList allPathsInClosure
+        missingPathsSet = Set.fromList missingPaths
 
-  -- Respond to each request using the manager's callback
-  liftIO $ forM_ rbRequests $ \NarinfoRequest {qrRequestId, qrStorePaths} -> do
-    -- Find the missing paths for this requests from the batch
-    let qrStorePathsSet = Set.fromList qrStorePaths
-        missingPathsForRequest = qrStorePathsSet `Set.intersection` missingPathsSet
-        response = NarinfoResponse qrStorePathsSet missingPathsForRequest
+    -- Update cache with results (only cache positive lookups)
+    let existingPathsSet = allPathsSet `Set.difference` missingPathsSet
+    unless (Set.null existingPathsSet) $ do
+      Katip.logFM Katip.DebugS "Updating narinfo cache with existing paths"
+        & Katip.katipAddContext (Katip.sl "count" (Set.size existingPathsSet))
+      updateCache manager existingPathsSet
 
-    -- Call the manager's callback with request ID and response
-    nqmCallback qrRequestId response
+    -- Respond to each request using the manager's callback
+    liftIO $ forM_ rbRequests $ \NarinfoRequest {qrRequestId, qrStorePaths} -> do
+      -- Find the missing paths for this requests from the batch
+      let qrStorePathsSet = Set.fromList qrStorePaths
+          missingPathsForRequest = qrStorePathsSet `Set.intersection` missingPathsSet
+          response = NarinfoResponse qrStorePathsSet missingPathsForRequest
+
+      -- Call the manager's callback with request ID and response
+      nqmCallback qrRequestId response

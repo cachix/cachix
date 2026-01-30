@@ -29,6 +29,7 @@ import Cachix.Daemon.Push as Push
 import Cachix.Daemon.PushManager qualified as PushManager
 import Cachix.Daemon.SocketStore qualified as SocketStore
 import Cachix.Daemon.Subscription as Subscription
+import Cachix.Daemon.Tracing qualified as Tracing
 import Cachix.Daemon.Types as Types
 import Cachix.Daemon.Types.PushManager qualified as PushManager
 import Cachix.Daemon.Types.SocketStore (SocketId)
@@ -44,6 +45,7 @@ import Hercules.CNix.Util qualified as CNix.Util
 import Katip qualified
 import Network.Socket qualified as Socket
 import Network.Socket.ByteString qualified as Socket.BS
+import OpenTelemetry.Trace (SpanKind (..), addAttribute)
 import Protolude hiding (bracket)
 import Servant.Client.Streaming (runClientM)
 import System.Environment (lookupEnv)
@@ -110,106 +112,141 @@ new daemonEnv nixStore daemonOptions daemonLogHandle daemonPushOptions daemonCac
 -- Equivalent to running 'withStore', new', and 'run', together with some signal handling.
 start :: Env -> DaemonOptions -> PushOptions -> BinaryCacheName -> IO ()
 start daemonEnv daemonOptions daemonPushOptions daemonCacheName =
-  withStore $ \store -> do
-    daemon <- new daemonEnv store daemonOptions Nothing daemonPushOptions daemonCacheName
-    void $ runDaemon daemon installSignalHandlers
-    result <- run daemon
-    exitWith (toExitCode result)
+  Tracing.withStandaloneTracing $
+    withStore $ \store -> do
+      daemon <- new daemonEnv store daemonOptions Nothing daemonPushOptions daemonCacheName
+      void $ runDaemon daemon installSignalHandlers
+      result <- run daemon
+      exitWith (toExitCode result)
 
 -- | Run a daemon from a given configuration.
 run :: DaemonEnv -> IO (Either DaemonError ())
-run daemon = fmap join <$> runDaemon daemon $ do
-  Katip.logFM Katip.InfoS "Starting Cachix Daemon"
-  DaemonEnv {..} <- ask
+run daemon = fmap join <$> runDaemon daemon $
+  Tracing.withDaemonSpan "daemon.run" Server $ \_ -> do
+    Katip.logFM Katip.InfoS "Starting Cachix Daemon"
+    DaemonEnv {..} <- ask
 
-  printConfiguration
+    printConfiguration
 
-  Async.async (runSubscriptionManager daemonSubscriptionManager)
-    >>= (liftIO . putMVar daemonSubscriptionManagerThread)
+    Async.async (runSubscriptionManager daemonSubscriptionManager)
+      >>= (liftIO . putMVar daemonSubscriptionManagerThread)
 
-  -- Start the narinfo batch processor
-  PushManager.startBatchProcessor daemonPushManager
+    -- Start the narinfo batch processor
+    PushManager.startBatchProcessor daemonPushManager
 
-  -- Double the number of workers to keep queues filled with jobs
-  let numWorkers = Options.numJobs daemonPushOptions * 2
-  Worker.startWorkers
-    numWorkers
-    (PushManager.pmTaskQueue daemonPushManager)
-    (liftIO . PushManager.runPushManager daemonPushManager . PushManager.handleTask)
-    >>= (liftIO . putMVar daemonWorkerThreads)
+    -- Double the number of workers to keep queues filled with jobs
+    let numWorkers = Options.numJobs daemonPushOptions * 2
+    let runTask task =
+          Tracing.withDaemonSpan "daemon.worker.execute_task" Internal $ \otelSpan -> do
+            addAttribute otelSpan "daemon.task_type" (taskTypeName task)
+            liftIO $ PushManager.runPushManager daemonPushManager (PushManager.handleTask task)
+    Worker.startWorkers
+      numWorkers
+      (PushManager.pmTaskQueue daemonPushManager)
+      runTask
+      >>= (liftIO . putMVar daemonWorkerThreads)
 
-  Async.async (Listen.listen daemonEventLoop daemonSocketPath)
-    >>= (liftIO . putMVar daemonSocketThread)
+    Async.async (Listen.listen daemonEventLoop daemonSocketPath)
+      >>= (liftIO . putMVar daemonSocketThread)
 
-  eventLoopRes <- EventLoop.run daemonEventLoop $ \case
-    AddSocketClient conn ->
-      SocketStore.addSocket daemonClients conn (Listen.handleClient daemonEventLoop daemonClients)
-    RemoveSocketClient socketId ->
-      SocketStore.removeSocket daemonClients socketId 
-    ReconnectSocket ->
-      -- TODO: implement reconnection logic
-      EventLoop.exitLoopWith (Left DaemonSocketError) daemonEventLoop
-    ReceivedMessage socketId clientMsg ->
-      case clientMsg of
-        ClientPushRequest pushRequest -> do
-          -- Create push job upfront so we can subscribe before queuing
-          pushJob <- liftIO $ PushManager.newPushJob pushRequest
-          let pushId = PushManager.pushId pushJob
+    eventLoopRes <- EventLoop.run daemonEventLoop $ \event ->
+      Tracing.withDaemonSpan "daemon.event_loop.process" Internal $ \otelSpan -> do
+        addAttribute otelSpan "daemon.event_type" (daemonEventName event)
+        case event of
+          AddSocketClient conn ->
+            SocketStore.addSocket daemonClients conn (Listen.handleClient daemonEventLoop daemonClients)
+          RemoveSocketClient socketId ->
+            SocketStore.removeSocket daemonClients socketId
+          ReconnectSocket ->
+            -- TODO: implement reconnection logic
+            EventLoop.exitLoopWith (Left DaemonSocketError) daemonEventLoop
+          ReceivedMessage socketId clientMsg ->
+            Tracing.withDaemonSpan "daemon.client_message" Server $ \clientSpan -> do
+              addAttribute clientSpan "daemon.socket_id" (show socketId :: Text)
+              addAttribute clientSpan "daemon.client_message" (clientMessageName clientMsg)
+              case clientMsg of
+                ClientPushRequest pushRequest -> do
+                  -- Create push job upfront so we can subscribe before queuing
+                  pushJob <- liftIO $ PushManager.newPushJob pushRequest
+                  let pushId = PushManager.pushId pushJob
 
-          Katip.katipAddContext (Katip.sl "push_id" pushId) $ do
-            when (Protocol.subscribeToUpdates pushRequest) $ do
-              chan <- liftIO $ subscribe daemon (Just pushId)
-              publisherThread <- liftIO $ Async.async $ publishToClient socketId chan daemon
-              SocketStore.addPublisherThread daemonClients socketId pushId publisherThread
+                  addAttribute clientSpan "daemon.push_id" (show pushId :: Text)
 
-            -- Now add the job
-            success <- queueJob pushJob
-            unless success $
-              Katip.logFM Katip.ErrorS "Failed to queue push request"
-        ClientStop -> do
-          DaemonEnv {daemonOptions = opts, daemonClients = clients} <- ask
-          if Options.daemonAllowRemoteStop opts
-            then EventLoop.send daemonEventLoop ShutdownGracefully
-            else do
-              let errorMsg = "Remote stop is disabled on this daemon"
-              SocketStore.sendAll clients socketId (Protocol.newMessage (Protocol.DaemonError (Protocol.UnsupportedCommand errorMsg)))
-        ClientDiagnosticsRequest -> do
-          -- Get push secret to check for signing key and auth token
-          let pushParams = PushManager.pmPushParams daemonPushManager
-              pushSecret = pushParamsSecret pushParams
-              hasSigningKey = case pushSecret of
-                PushSigningKey {} -> True
-                PushToken {} -> False
-              maybeToken = getAuthTokenFromPushSecret pushSecret
-          -- Verify auth by making an API call
-          authResult <- case maybeToken of
-            Nothing -> pure $ Left "No auth token configured"
-            Just token -> do
-              res <- liftIO $ retryHttp $ (`runClientM` clientenv daemonEnv) $ API.getCache cachixClient token daemonCacheName
-              pure $ case res of
-                Right _ -> Right ()
-                Left err -> Left (show err)
-          let diagnostics =
-                Protocol.DaemonDiagnostics
-                  { Protocol.diagCacheName = daemonCacheName,
-                    Protocol.diagCacheUri = BinaryCache.uri daemonBinaryCache,
-                    Protocol.diagCachePublic = BinaryCache.isPublic daemonBinaryCache,
-                    Protocol.diagHasSigningKey = hasSigningKey,
-                    Protocol.diagAuthOk = isRight authResult,
-                    Protocol.diagError = either Just (const Nothing) authResult
-                  }
-          SocketStore.sendAll daemonClients socketId (Protocol.newMessage (Protocol.DaemonDiagnosticsResult diagnostics))
-        _ -> return ()
-    ShutdownGracefully -> do
-      Katip.logFM Katip.InfoS "Shutting down daemon..."
-      pushResult <- shutdownGracefully
-      Katip.logFM Katip.InfoS "Daemon shut down. Exiting."
-      EventLoop.exitLoopWith pushResult daemonEventLoop
+                  Katip.katipAddContext (Katip.sl "push_id" pushId) $ do
+                    when (Protocol.subscribeToUpdates pushRequest) $ do
+                      chan <- liftIO $ subscribe daemon (Just pushId)
+                      publisherThread <- Async.async $ publishToClient socketId chan
+                      SocketStore.addPublisherThread daemonClients socketId pushId publisherThread
 
-  return $ case eventLoopRes of
-    Left err -> Left (DaemonEventLoopError err)
-    Right (Left err) -> Left err
-    Right (Right ()) -> Right ()
+                    -- Now add the job
+                    success <- queueJob pushJob
+                    unless success $
+                      Katip.logFM Katip.ErrorS "Failed to queue push request"
+                ClientStop -> do
+                  DaemonEnv {daemonOptions = opts, daemonClients = clients} <- ask
+                  if Options.daemonAllowRemoteStop opts
+                    then EventLoop.send daemonEventLoop ShutdownGracefully
+                    else do
+                      let errorMsg = "Remote stop is disabled on this daemon"
+                      SocketStore.sendAll clients socketId (Protocol.newMessage (Protocol.DaemonError (Protocol.UnsupportedCommand errorMsg)))
+                ClientDiagnosticsRequest -> do
+                  -- Get push secret to check for signing key and auth token
+                  let pushParams = PushManager.pmPushParams daemonPushManager
+                      pushSecret = pushParamsSecret pushParams
+                      hasSigningKey = case pushSecret of
+                        PushSigningKey {} -> True
+                        PushToken {} -> False
+                      maybeToken = getAuthTokenFromPushSecret pushSecret
+                  -- Verify auth by making an API call
+                  authResult <- case maybeToken of
+                    Nothing -> pure $ Left "No auth token configured"
+                    Just token -> do
+                      res <- liftIO $ retryHttp $ (`runClientM` clientenv daemonEnv) $ API.getCache cachixClient token daemonCacheName
+                      pure $ case res of
+                        Right _ -> Right ()
+                        Left err -> Left (show err)
+                  let diagnostics =
+                        Protocol.DaemonDiagnostics
+                          { Protocol.diagCacheName = daemonCacheName,
+                            Protocol.diagCacheUri = BinaryCache.uri daemonBinaryCache,
+                            Protocol.diagCachePublic = BinaryCache.isPublic daemonBinaryCache,
+                            Protocol.diagHasSigningKey = hasSigningKey,
+                            Protocol.diagAuthOk = isRight authResult,
+                            Protocol.diagError = either Just (const Nothing) authResult
+                          }
+                  SocketStore.sendAll daemonClients socketId (Protocol.newMessage (Protocol.DaemonDiagnosticsResult diagnostics))
+                _ -> return ()
+          ShutdownGracefully -> do
+            Katip.logFM Katip.InfoS "Shutting down daemon..."
+            pushResult <- shutdownGracefully
+            Katip.logFM Katip.InfoS "Daemon shut down. Exiting."
+            EventLoop.exitLoopWith pushResult daemonEventLoop
+
+    return $ case eventLoopRes of
+      Left err -> Left (DaemonEventLoopError err)
+      Right (Left err) -> Left err
+      Right (Right ()) -> Right ()
+  where
+    clientMessageName :: ClientMessage -> Text
+    clientMessageName = \case
+      ClientPushRequest {} -> "push_request"
+      ClientStop -> "stop"
+      ClientPing -> "ping"
+      ClientDiagnosticsRequest -> "diagnostics"
+
+    daemonEventName :: DaemonEvent -> Text
+    daemonEventName = \case
+      ShutdownGracefully -> "shutdown"
+      ReconnectSocket -> "reconnect_socket"
+      AddSocketClient {} -> "add_socket_client"
+      RemoveSocketClient {} -> "remove_socket_client"
+      ReceivedMessage {} -> "received_message"
+
+    taskTypeName :: PushManager.Task -> Text
+    taskTypeName = \case
+      PushManager.QueryMissingPaths {} -> "query_missing_paths"
+      PushManager.HandleMissingPathsResponse {} -> "handle_missing_paths_response"
+      PushManager.PushPath {} -> "push_path"
 
 stop :: Daemon ()
 stop = do
@@ -284,17 +321,19 @@ subscribeAll :: DaemonEnv -> IO (TMChan PushEvent)
 subscribeAll daemonEnv = subscribe daemonEnv Nothing
 
 -- Publish messages from the channel to the client over the socket
-publishToClient :: SocketId -> TMChan PushEvent -> DaemonEnv -> IO ()
-publishToClient socketId chan daemonEnv = go
+publishToClient :: SocketId -> TMChan PushEvent -> Daemon ()
+publishToClient socketId chan = do
+  daemonEnv <- ask
+  liftIO $ go daemonEnv
   where
-    go = do
+    go env = do
       msg <- atomically $ readTMChan chan
       case msg of
         Nothing -> return ()
         Just evt -> do
           let daemonMsg = DaemonPushEvent evt
-          SocketStore.sendAll (daemonClients daemonEnv) socketId (Protocol.newMessage daemonMsg)
-          go
+          SocketStore.sendAll (daemonClients env) socketId (Protocol.newMessage daemonMsg)
+          go env
 
 -- | Print the daemon configuration to the log.
 printConfiguration :: Daemon ()
@@ -321,31 +360,32 @@ showConfiguration = do
 
 shutdownGracefully :: Daemon (Either DaemonError ())
 shutdownGracefully = do
-  DaemonEnv {..} <- ask
+  Tracing.withDaemonSpan "daemon.shutdown" Internal $ \_ -> do
+    DaemonEnv {..} <- ask
 
-  -- Stop the narinfo batch processor first (before closing the queue)
-  liftIO $ PushManager.stopBatchProcessor daemonPushManager
+    Tracing.withDaemonSpan "daemon.shutdown.stop_batch_processor" Internal $ \_ ->
+      liftIO $ PushManager.stopBatchProcessor daemonPushManager
 
-  -- Stop the push manager and wait for any remaining paths to be uploaded
-  shutdownPushManager daemonPushManager
+    Tracing.withDaemonSpan "daemon.shutdown.stop_push_manager" Internal $ \_ ->
+      shutdownPushManager daemonPushManager
 
-  -- Stop worker threads
-  withTakeMVar daemonWorkerThreads Worker.stopWorkers
+    Tracing.withDaemonSpan "daemon.shutdown.stop_workers" Internal $ \_ ->
+      withTakeMVar daemonWorkerThreads Worker.stopWorkers
 
-  -- Close all event subscriptions
-  withTakeMVar daemonSubscriptionManagerThread (shutdownSubscriptions daemonSubscriptionManager)
+    Tracing.withDaemonSpan "daemon.shutdown.stop_subscriptions" Internal $ \_ ->
+      withTakeMVar daemonSubscriptionManagerThread (shutdownSubscriptions daemonSubscriptionManager)
 
-  failedJobs <-
-    PushManager.runPushManager daemonPushManager PushManager.getFailedPushJobs
-  let pushResult =
-        if null failedJobs
-          then Right ()
-          else Left DaemonPushFailure
+    failedJobs <-
+      PushManager.runPushManager daemonPushManager PushManager.getFailedPushJobs
+    let pushResult =
+          if null failedJobs
+            then Right ()
+            else Left DaemonPushFailure
 
-  -- Gracefully close open connections to clients
-  Async.mapConcurrently_ (sayGoodbye daemonClients pushResult) =<< SocketStore.toList daemonClients
+    Tracing.withDaemonSpan "daemon.shutdown.close_connections" Internal $ \_ ->
+      Async.mapConcurrently_ (sayGoodbye daemonClients pushResult) =<< SocketStore.toList daemonClients
 
-  return pushResult
+    return pushResult
   where
     shutdownPushManager daemonPushManager = do
       queuedStorePathCount <- PushManager.runPushManager daemonPushManager PushManager.queuedStorePathCount
@@ -377,7 +417,7 @@ shutdownGracefully = do
       Async.cancel clientThread
 
       -- Wave goodbye to the client that requested the shutdown
-      liftIO $ Listen.serverBye clientSocketId socketStore exitResult
+      Listen.serverBye clientSocketId socketStore exitResult
       liftIO $ Socket.shutdown clientSock Socket.ShutdownBoth `catchAny` (\_ -> return ())
       -- Wait for the other end to disconnect
       ebs <- liftIO $ try $ Socket.BS.recv clientSock 4096

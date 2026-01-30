@@ -100,6 +100,7 @@ library
     Cachix.Daemon.SocketStore
     Cachix.Daemon.Subscription
     Cachix.Daemon.TaskQueue
+    Cachix.Daemon.Tracing
     Cachix.Daemon.TTLCache
     Cachix.Daemon.Types
     Cachix.Daemon.Types.Daemon
@@ -159,6 +160,8 @@ library
     , here
     , hnix-store-core         >=0.8
     , hnix-store-nar
+    , hs-opentelemetry-api
+    , hs-opentelemetry-sdk
     , http-client
     , http-client-tls
     , http-conduit

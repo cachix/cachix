@@ -56,6 +56,7 @@ import Cachix.Daemon.NarinfoQuery qualified as NarinfoQuery
 import Cachix.Daemon.Protocol qualified as Protocol
 import Cachix.Daemon.PushManager.PushJob qualified as PushJob
 import Cachix.Daemon.TaskQueue
+import Cachix.Daemon.Tracing qualified as Tracing
 import Cachix.Daemon.Types.Log (Logger)
 import Cachix.Daemon.Types.PushEvent (PushEvent (..), PushEventMessage (..), newPushRetryStatus)
 import Cachix.Daemon.Types.PushManager
@@ -68,6 +69,7 @@ import Control.Monad.IO.Unlift (MonadUnliftIO)
 import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
 import Control.Retry (RetryStatus, rsIterNumber)
 import Data.ByteString qualified as BS
+import Data.HashMap.Strict qualified as HashMap
 import Data.IORef
 import Data.Sequence qualified as Seq
 import Data.Set qualified as Set
@@ -79,6 +81,19 @@ import Hercules.CNix (StorePath)
 import Hercules.CNix.Store (Store, parseStorePath, storePathToPath)
 import Katip qualified
 import ListT qualified
+import OpenTelemetry.Attributes.Map qualified as OTelAttributesMap
+import OpenTelemetry.Trace
+  ( Attribute,
+    NewEvent (..),
+    Span,
+    SpanKind (..),
+    SpanStatus (Error),
+    ToAttribute (..),
+    addAttribute,
+    addEvent,
+    recordException,
+    setStatus,
+  )
 import Protolude hiding (toS)
 import Protolude.Conv (toS)
 import Servant.Auth ()
@@ -100,6 +115,7 @@ newPushManagerEnv pushOptions batchOptions pmPushParams onPushEvent pmLogger = l
   pmLastEventTimestamp <- newTVarIO =<< getCurrentTime
   let pmProgressEmitIntervalNs = 200 * 1000 * 1000
   let pmOnPushEvent id pushEvent = updateTimestampTVar pmLastEventTimestamp >> onPushEvent id pushEvent
+  let pmCurrentSpan = Nothing
 
   -- Create query manager with callback that queues ProcessQueryResponse tasks
   let batchCallback requestId response = do
@@ -128,7 +144,9 @@ startBatchProcessor env@PushManagerEnv {pmNarinfoQueryManager} = do
     processBatchedNarinfo :: [StorePath] -> PushManager ([StorePath], [StorePath])
     processBatchedNarinfo storePaths = do
       pushParams <- asks pmPushParams
-      queryNarInfoBulk pushParams storePaths
+      Tracing.withDaemonSpan "daemon.narinfo.query_bulk" Internal $ \otelSpan -> do
+        addAttribute otelSpan "daemon.narinfo.path_count" (length storePaths)
+        queryNarInfoBulk pushParams storePaths
 
 -- | Stop the batch processor
 stopBatchProcessor :: (MonadIO m) => PushManagerEnv -> m ()
@@ -144,24 +162,29 @@ addPushJob :: PushJob -> PushManager Bool
 addPushJob pushJob = do
   PushManagerEnv {..} <- ask
   let pushId = PushJob.pushId pushJob
+      storePathCount = length (Protocol.storePaths (PushJob.pushRequest pushJob))
 
-  Katip.logLocM Katip.DebugS $ Katip.ls $ "Queued push job " <> (show pushId :: Text)
+  Tracing.withDaemonSpan "pushmanager.add_push_job" Internal $ \otelSpan -> do
+    addAttribute otelSpan "daemon.push_id" (show pushId :: Text)
+    addAttribute otelSpan "pushmanager.store_path_count" storePathCount
 
-  let queueJob = do
-        StmMap.insert pushJob pushId pmPushJobs
-        StmSet.delete pushId pmFailedJobs
-        incrementTVar pmPendingJobCount
-        res <- tryWriteTask pmTaskQueue $ QueryMissingPaths pushId
-        case res of
-          Just True -> return True
-          _ -> return False
+    Katip.logLocM Katip.DebugS $ Katip.ls $ "Queued push job " <> (show pushId :: Text)
 
-  didQueue <- liftIO $ atomically queueJob
+    let queueJob = do
+          StmMap.insert pushJob pushId pmPushJobs
+          StmSet.delete pushId pmFailedJobs
+          incrementTVar pmPendingJobCount
+          res <- tryWriteTask pmTaskQueue $ QueryMissingPaths pushId
+          case res of
+            Just True -> return True
+            _ -> return False
 
-  unless didQueue $
-    Katip.logLocM Katip.WarningS "Failed to queue push job. Queue likely full."
+    didQueue <- liftIO $ atomically queueJob
 
-  return didQueue
+    unless didQueue $
+      Katip.logLocM Katip.WarningS "Failed to queue push job. Queue likely full."
+
+    return didQueue
 
 addPushJobFromRequest :: Protocol.PushRequest -> PushManager (Maybe Protocol.PushRequestId)
 addPushJobFromRequest pushRequest = do
@@ -315,31 +338,40 @@ queuedStorePathCount = do
 
 resolvePushJob :: Protocol.PushRequestId -> PushJob.ResolvedClosure FilePath -> PushManager ()
 resolvePushJob pushId closure = do
-  Katip.logLocM Katip.DebugS $ Katip.ls $ showClosureStats closure
+  Tracing.withDaemonSpan "pushmanager.resolve_push_job" Internal $ \otelSpan -> do
+    let (statsText, totalCount, queuedCount, skippedCount) = closureStats closure
+    addAttribute otelSpan "daemon.push_id" (show pushId :: Text)
+    addAttribute otelSpan "pushmanager.total_paths" totalCount
+    addAttribute otelSpan "pushmanager.missing_paths" queuedCount
+    addAttribute otelSpan "pushmanager.skipped_paths" skippedCount
 
-  timestamp <- liftIO getCurrentTime
-  _ <- modifyPushJob pushId $ PushJob.populateQueue closure timestamp
+    Katip.logLocM Katip.DebugS $ Katip.ls statsText
 
-  withPushJob pushId $ \pushJob -> do
-    pushStarted pushJob
-    -- Create STM action for each path and then run everything atomically
-    queueStorePaths pushId $ Set.toList (PushJob.rcMissingPaths closure)
-    -- Check if the job is already completed, i.e. all paths have been skipped.
-    checkPushJobCompleted pushId
+    timestamp <- liftIO getCurrentTime
+    _ <- modifyPushJob pushId $ PushJob.populateQueue closure timestamp
+
+    withPushJob pushId $ \pushJob -> do
+      pushStarted pushJob
+      -- Create STM action for each path and then run everything atomically
+      queueStorePaths pushId $ Set.toList (PushJob.rcMissingPaths closure)
+      -- Check if the job is already completed, i.e. all paths have been skipped.
+      checkPushJobCompleted pushId
   where
-    showClosureStats :: PushJob.ResolvedClosure FilePath -> Text
-    showClosureStats PushJob.ResolvedClosure {..} =
+    closureStats :: PushJob.ResolvedClosure FilePath -> (Text, Int, Int, Int)
+    closureStats PushJob.ResolvedClosure {..} =
       let skippedPaths = Set.difference rcAllPaths rcMissingPaths
-          queuedCount = length rcMissingPaths
-          skippedCount = length skippedPaths
+          queuedCount = Set.size rcMissingPaths
+          skippedCount = Set.size skippedPaths
           totalCount = queuedCount + skippedCount
-       in T.intercalate
-            "\n"
-            [ "Resolved push job " <> show pushId,
-              "Total paths: " <> show totalCount,
-              "Queued paths: " <> show queuedCount,
-              "Skipped paths: " <> show skippedCount
-            ]
+          statsText =
+            T.intercalate
+              "\n"
+              [ "Resolved push job " <> show pushId,
+                "Total paths: " <> show totalCount,
+                "Queued paths: " <> show queuedCount,
+                "Skipped paths: " <> show skippedCount
+              ]
+       in (statsText, totalCount, queuedCount, skippedCount)
 
 handleTask :: Task -> PushManager ()
 handleTask task = do
@@ -354,7 +386,9 @@ handleTask task = do
 
 runQueryMissingPathsTask :: PushParams PushManager () -> Protocol.PushRequestId -> PushManager ()
 runQueryMissingPathsTask pushParams pushId =
-  resolveClosure `withException` failJob
+  Tracing.withDaemonSpan "pushmanager.query_missing_paths" Internal $ \otelSpan -> do
+    addAttribute otelSpan "daemon.push_id" (show pushId :: Text)
+    withException otelSpan resolveClosure failJob
   where
     failJob :: SomeException -> PushManager ()
     failJob err = do
@@ -386,7 +420,9 @@ runQueryMissingPathsTask pushParams pushId =
 
 runHandleMissingPathsResponseTask :: PushParams PushManager () -> Protocol.PushRequestId -> NarinfoQuery.NarinfoResponse -> PushManager ()
 runHandleMissingPathsResponseTask pushParams pushId batchResponse =
-  processQueryResponse `withException` failJob
+  Tracing.withDaemonSpan "pushmanager.handle_missing_paths_response" Internal $ \otelSpan -> do
+    addAttribute otelSpan "daemon.push_id" (show pushId :: Text)
+    withException otelSpan processQueryResponse failJob
   where
     failJob :: SomeException -> PushManager ()
     failJob err = do
@@ -419,10 +455,13 @@ runHandleMissingPathsResponseTask pushParams pushId batchResponse =
 
 runPushPathTask :: PushParams PushManager () -> FilePath -> PushManager ()
 runPushPathTask pushParams filePath = do
-  pushStorePath `withException` failStorePath
+  Tracing.withDaemonSpan "pushmanager.push_path" Internal $ \otelSpan -> do
+    addAttribute otelSpan "daemon.store_path" (toS filePath :: Text)
+    local (\env -> env {pmCurrentSpan = Just otelSpan}) $
+      withException otelSpan pushStorePath failStorePath
   where
-    failStorePath =
-      pushStorePathFailed filePath . toS . displayException
+    failStorePath err = do
+      pushStorePathFailed filePath (toS (displayException err))
 
     pushStorePath = do
       qs <- asks pmTaskSemaphore
@@ -433,6 +472,12 @@ runPushPathTask pushParams filePath = do
         storePath <- liftIO $ parseStorePath store (toS filePath)
 
         retryAll $ uploadStorePath pushParams storePath
+
+addPushPathEvent :: Text -> [(Text, Attribute)] -> PushManager ()
+addPushPathEvent name attrs = do
+  mspan <- asks pmCurrentSpan
+  for_ mspan $ \otelSpan ->
+    liftIO $ addEvent otelSpan (NewEvent name (HashMap.fromList attrs) Nothing)
 
 newPushStrategy ::
   Store ->
@@ -445,6 +490,7 @@ newPushStrategy store authToken opts cacheName compressionMethod storePath =
   let onAlreadyPresent = do
         sp <- liftIO $ storePathToPath store storePath
         Katip.logFM Katip.InfoS $ Katip.ls $ "Skipping " <> (toS sp :: Text)
+        addPushPathEvent "already_present" []
         -- TODO: needs another event type here
         pushStorePathDone (toS sp)
 
@@ -453,6 +499,7 @@ newPushStrategy store authToken opts cacheName compressionMethod storePath =
         sp <- liftIO $ storePathToPath store storePath
         Katip.katipAddContext (Katip.sl "error" errText) $
           Katip.logFM Katip.InfoS (Katip.ls $ "Failed to push " <> (toS sp :: Text))
+        addPushPathEvent "upload_error" [("error", toAttribute errText)]
         pushStorePathFailed (toS sp) errText
 
       onAttempt retryStatus size = do
@@ -465,6 +512,11 @@ newPushStrategy store authToken opts cacheName compressionMethod storePath =
           Katip.logFM Katip.InfoS $
             Katip.ls $
               "Pushing " <> (toS sp :: Text)
+        addPushPathEvent
+          "attempt"
+          [ ("retry_count", toAttribute (rsIterNumber retryStatus)),
+            ("size", toAttribute size)
+          ]
         pushStorePathAttempt (toS sp) size retryStatus
 
       onUncompressedNARStream _ size = do
@@ -487,6 +539,7 @@ newPushStrategy store authToken opts cacheName compressionMethod storePath =
       onDone = do
         sp <- liftIO $ storePathToPath store storePath
         Katip.logFM Katip.InfoS $ Katip.ls $ "Pushed " <> (toS sp :: Text)
+        addPushPathEvent "upload_complete" []
         pushStorePathDone (toS sp)
    in PushStrategy
         { onAlreadyPresent = onAlreadyPresent,
@@ -586,8 +639,13 @@ storeToFilePath store storePath = do
   fp <- liftIO $ storePathToPath store storePath
   pure $ toS fp
 
-withException :: (E.MonadCatch m) => m a -> (SomeException -> m a) -> m a
-withException action handler = action `E.catchAll` (\e -> handler e >> E.throwM e)
+withException :: (E.MonadCatch m, MonadIO m) => Span -> m a -> (SomeException -> m a) -> m a
+withException otelSpan action handler =
+  action `E.catchAll` \e -> do
+    recordException otelSpan OTelAttributesMap.empty Nothing e
+    setStatus otelSpan (Error (toS (displayException e)))
+    _ <- handler e
+    E.throwM e
 
 -- STM helpers
 

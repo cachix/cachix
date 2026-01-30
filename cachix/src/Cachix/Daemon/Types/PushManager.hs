@@ -31,6 +31,7 @@ import Control.Monad.IO.Unlift (MonadUnliftIO)
 import Data.Sequence qualified as Seq
 import Data.Time (UTCTime)
 import Katip qualified
+import OpenTelemetry.Trace (Span)
 import Protolude
 import StmContainers.Map qualified as StmMap
 import StmContainers.Set qualified as StmSet
@@ -77,6 +78,8 @@ data PushManagerEnv = PushManagerEnv
     pmTaskSemaphore :: QSem,
     -- | A callback for push events.
     pmOnPushEvent :: OnPushEvent,
+    -- | Current span for per-path work (if any).
+    pmCurrentSpan :: Maybe Span,
     -- | The timestamp of the most recent event. This is used to track activity internally.
     pmLastEventTimestamp :: TVar UTCTime,
     -- | Minimum interval between progress events (monotonic time, in nanoseconds).

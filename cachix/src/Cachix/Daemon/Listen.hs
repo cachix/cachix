@@ -12,6 +12,7 @@ import Cachix.Client.Config.Orphans ()
 import Cachix.Daemon.EventLoop qualified as EventLoop
 import Cachix.Daemon.Protocol as Protocol
 import Cachix.Daemon.SocketStore qualified as SocketStore
+import Cachix.Daemon.Tracing qualified as Tracing
 import Cachix.Daemon.Types
   ( DaemonError,
     DaemonEvent
@@ -24,13 +25,16 @@ import Cachix.Daemon.Types
 import Cachix.Daemon.Types.EventLoop (EventLoop)
 import Cachix.Daemon.Types.SocketStore (SocketId, SocketStore)
 import Control.Exception.Safe (catchAny)
+import Control.Monad.Catch (MonadCatch)
 import Control.Monad.Catch qualified as E
 import Data.Aeson qualified as Aeson
 import Data.ByteString qualified as BS
+import Data.HashMap.Strict qualified as HashMap
 import Katip qualified
 import Network.Socket (Socket)
 import Network.Socket qualified as Socket
 import Network.Socket.ByteString qualified as Socket.BS
+import OpenTelemetry.Trace (NewEvent (..), SpanKind (..), ToAttribute (..), addAttribute, addEvent)
 import Protolude
 import System.Directory
   ( XdgDirectory (..),
@@ -42,6 +46,7 @@ import System.Environment qualified as System
 import System.FilePath ((</>))
 import System.IO.Error (isDoesNotExistError, isResourceVanishedError)
 import System.Posix.Files (setFileMode)
+import UnliftIO (MonadUnliftIO)
 
 -- TODO: reconcile with Client
 data ListenError
@@ -74,16 +79,18 @@ listen eventloop daemonSocketPath = do
 -- Requests the daemon to remove the client socket once the loop exits.
 handleClient ::
   forall m a.
-  (E.MonadMask m, Katip.KatipContext m) =>
+  (E.MonadMask m, Katip.KatipContext m, MonadUnliftIO m) =>
   EventLoop DaemonEvent a ->
   SocketStore ->
   SocketId ->
   Socket ->
   m ()
 handleClient eventloop socketStore socketId conn = do
-  go BS.empty `E.finally` removeClient
+  Tracing.withDaemonSpan "daemon.listen.client_connection" Server $ \otelSpan -> do
+    addAttribute otelSpan "daemon.socket_id" (show socketId :: Text)
+    go otelSpan BS.empty `E.finally` removeClient
   where
-    go leftovers = do
+    go otelSpan leftovers = do
       ebs <- liftIO $ try $ Socket.BS.recv conn 8192
 
       case ebs of
@@ -95,14 +102,26 @@ handleClient eventloop socketStore socketId conn = do
           let (rawMsgs, newLeftovers) = Protocol.splitMessages (BS.append leftovers bs)
           msgs <- catMaybes <$> mapM decodeMessage rawMsgs
 
+          unless (null rawMsgs) $ do
+            addEvent otelSpan $
+              NewEvent
+                "decode_message"
+                ( HashMap.fromList
+                    [ ("daemon.message_bytes", toAttribute (BS.length bs)),
+                      ("daemon.message_count", toAttribute (length rawMsgs)),
+                      ("daemon.decoded_message_count", toAttribute (length msgs))
+                    ]
+                )
+                Nothing
+
           forM_ msgs $ \msg -> do
             EventLoop.send eventloop (ReceivedMessage socketId msg)
             case msg of
               Protocol.ClientPing ->
-                liftIO $ SocketStore.sendAll socketStore socketId (Protocol.newMessage DaemonPong)
+                SocketStore.sendAll socketStore socketId (Protocol.newMessage DaemonPong)
               _ -> return ()
 
-          go newLeftovers
+          go otelSpan newLeftovers
 
     removeClient = EventLoop.send eventloop (RemoveSocketClient socketId)
 
@@ -115,7 +134,7 @@ decodeMessage bs =
       return Nothing
     Right msg -> return (Just msg)
 
-serverBye :: SocketId -> SocketStore -> Either DaemonError () -> IO ()
+serverBye :: (MonadIO m, MonadCatch m) => SocketId -> SocketStore -> Either DaemonError () -> m ()
 serverBye socketId socketStore exitResult =
   SocketStore.sendAll socketStore socketId (Protocol.newMessage (DaemonExit exitStatus)) `catchAny` (\_ -> return ())
   where

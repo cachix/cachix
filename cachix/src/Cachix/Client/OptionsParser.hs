@@ -14,6 +14,9 @@ module Cachix.Client.OptionsParser
     defaultChunkSize,
     defaultNumJobs,
     defaultOmitDeriver,
+    defaultKeepAliveEnabled,
+    defaultKeepAliveInterval,
+    defaultKeepAliveTimeout,
 
     -- * Watch exec
     WatchExecMode (..),
@@ -156,6 +159,15 @@ defaultNumJobs = 8
 defaultOmitDeriver :: Bool
 defaultOmitDeriver = False
 
+defaultKeepAliveEnabled :: Bool
+defaultKeepAliveEnabled = True
+
+defaultKeepAliveInterval :: Int
+defaultKeepAliveInterval = 30
+
+defaultKeepAliveTimeout :: Int
+defaultKeepAliveTimeout = 180
+
 defaultPushOptions :: PushOptions
 defaultPushOptions =
   PushOptions
@@ -178,7 +190,10 @@ data DaemonCommand
 data DaemonOptions = DaemonOptions
   { daemonAllowRemoteStop :: Bool,
     daemonNarinfoQueryOptions :: NarinfoQueryOptions,
-    daemonSocketPath :: Maybe FilePath
+    daemonSocketPath :: Maybe FilePath,
+    daemonKeepAliveEnabled :: Bool,
+    daemonKeepAliveInterval :: Int,
+    daemonKeepAliveTimeout :: Int
   }
   deriving (Show)
 
@@ -558,6 +573,9 @@ daemonOptionsParser =
     <$> remoteStopOption
     <*> batchConfigParser
     <*> socketOption
+    <*> keepAliveOption
+    <*> keepAliveIntervalOption
+    <*> keepAliveTimeoutOption
   where
     socketOption =
       optional . strOption $
@@ -568,6 +586,25 @@ daemonOptionsParser =
 
     remoteStopOption =
       enableDisableFlag True "remote-stop" "the remote stop command which allows clients to remotely shut down the daemon. Remote stop should be disabled in environments where the lifecycle of the daemon is handled by a service manager, like systemd."
+
+    keepAliveOption =
+      enableDisableFlag defaultKeepAliveEnabled "keep-alive" "the client keep-alive pings to the daemon"
+
+    keepAliveIntervalOption =
+      option auto $
+        long "keep-alive-interval"
+          <> metavar "SECONDS"
+          <> help "Keep-alive ping interval in seconds"
+          <> value defaultKeepAliveInterval
+          <> showDefault
+
+    keepAliveTimeoutOption =
+      option auto $
+        long "keep-alive-timeout"
+          <> metavar "SECONDS"
+          <> help "Keep-alive timeout in seconds before considering the daemon stalled"
+          <> value defaultKeepAliveTimeout
+          <> showDefault
 
 batchConfigParser :: Parser NarinfoQueryOptions
 batchConfigParser =

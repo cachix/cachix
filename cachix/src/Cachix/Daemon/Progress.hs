@@ -31,11 +31,13 @@ data UploadProgress
   = ProgressBar
       { path :: String,
         size :: Int64,
-        progressBar :: Ascii.ProgressBar
+        progressBar :: Ascii.ProgressBar,
+        lastBytesRef :: IORef Int64
       }
   | FallbackText
       { path :: String,
-        size :: Int64
+        size :: Int64,
+        lastBytesRef :: IORef Int64
       }
 
 -- | State for tracking multiple progress bars
@@ -47,6 +49,7 @@ newProgressState = newIORef HashMap.empty
 
 new :: Handle -> String -> Int64 -> PushRetryStatus -> IO UploadProgress
 new hdl path size retryStatus = do
+  lastBytesRef <- newIORef 0
   isCI <- liftIO $ (== Just "true") <$> lookupEnv "CI"
   isTerminal <- liftIO $ hIsTerminalDevice hdl
   if isTerminal && not isCI
@@ -64,6 +67,13 @@ complete _ = pure ()
 tick :: UploadProgress -> Int64 -> IO ()
 tick ProgressBar {..} deltaBytes = Ascii.tickN progressBar (fromIntegral deltaBytes)
 tick _ _ = pure ()
+
+tickAbsolute :: UploadProgress -> Int64 -> IO ()
+tickAbsolute progress currentBytes = do
+  lastBytes <- readIORef (lastBytesRef progress)
+  let delta = max 0 (currentBytes - lastBytes)
+  when (delta > 0) $ tick progress delta
+  writeIORef (lastBytesRef progress) currentBytes
 
 fail :: UploadProgress -> IO ()
 fail ProgressBar {..} =
@@ -195,10 +205,10 @@ displayPushEvent statsRef PushEvent {eventMessage} = do
         Nothing -> do
           progress <- new stderr (toS path) pathSize retryStatus
           writeIORef statsRef $ HashMap.insert path (progress, retryStatus) stats
-    PushStorePathProgress path _ newBytes -> do
+    PushStorePathProgress path currentBytes _deltaBytes -> do
       case HashMap.lookup path stats of
         Nothing -> return ()
-        Just (progress, _) -> tick progress newBytes
+        Just (progress, _) -> tickAbsolute progress currentBytes
     PushStorePathDone path -> do
       mapM_ (complete . fst) (HashMap.lookup path stats)
     PushStorePathFailed path _ -> do

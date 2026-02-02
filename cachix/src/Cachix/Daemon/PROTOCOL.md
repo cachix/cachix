@@ -215,8 +215,8 @@ Upload progress for a store path.
 
 **Fields**:
 - `contents[0]` (string): Store path being pushed
-- `contents[1]` (integer): Bytes uploaded so far
-- `contents[2]` (integer): Total bytes to upload
+- `contents[1]` (integer): Cumulative bytes uploaded so far
+- `contents[2]` (integer): Bytes uploaded since the last progress event (delta)
 
 #### PushStorePathDone
 Store path successfully pushed.

@@ -432,6 +432,7 @@ newPushStrategy store authToken opts cacheName compressionMethod storePath =
         progressEmitIntervalNs <- asks pmProgressEmitIntervalNs
         lastEmitNsRef <- liftIO $ newIORef =<< getMonotonicTimeNSec
         currentBytesRef <- liftIO $ newIORef (0 :: Int64)
+        lastEmittedBytesRef <- liftIO $ newIORef (0 :: Int64)
         C.awaitForever $ \chunk -> do
           let newBytes = fromIntegral (BS.length chunk)
           currentBytes <- liftIO $ atomicModifyIORef' currentBytesRef (\b -> (b + newBytes, b + newBytes))
@@ -440,7 +441,13 @@ newPushStrategy store authToken opts cacheName compressionMethod storePath =
 
           when (nowNs - lastEmitNs >= progressEmitIntervalNs || currentBytes == size) $ do
             liftIO $ writeIORef lastEmitNsRef nowNs
-            lift $ lift $ pushStorePathProgress (toS sp) currentBytes newBytes
+            lastEmitted <- liftIO $ readIORef lastEmittedBytesRef
+            let emitBytes = currentBytes - lastEmitted
+            liftIO $ writeIORef lastEmittedBytesRef currentBytes
+            when (emitBytes > 0) $
+              lift $
+                lift $
+                  pushStorePathProgress (toS sp) currentBytes emitBytes
 
           C.yield chunk
 

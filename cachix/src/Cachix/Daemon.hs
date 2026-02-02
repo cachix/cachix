@@ -245,7 +245,11 @@ installSignalHandlers = do
 
     -- SIGINT: First try to shutdown gracefully, on second press force exit
     intHandler :: ThreadId -> IORef Bool -> Daemon ()
-    intHandler mainThreadId interruptRef = do
+    intHandler mainThreadId interruptRef =
+      handleInterrupt mainThreadId interruptRef
+
+    handleInterrupt :: ThreadId -> IORef Bool -> Daemon ()
+    handleInterrupt mainThreadId interruptRef = do
       liftIO CNix.Util.triggerInterrupt
       isSecondInterrupt <- liftIO $ atomicModifyIORef' interruptRef (True,)
       eventLoop <- asks daemonEventLoop
@@ -256,6 +260,8 @@ installSignalHandlers = do
           startExitTimer mainThreadId
           -- Force shutdown at the event loop level to ensure exit even if queue is full
           EventLoop.exitLoopWithFailure EventLoopClosed eventLoop
+          -- Interrupt the main thread right away so we don't wait for graceful shutdown.
+          liftIO $ throwTo mainThreadId ExitSuccess
         else do
           Katip.logFM Katip.InfoS "Shutting down gracefully (Ctrl+C again to force exit)..."
           EventLoop.send eventLoop ShutdownGracefully

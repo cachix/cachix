@@ -148,12 +148,13 @@ addPushJob pushJob = do
   Katip.logLocM Katip.DebugS $ Katip.ls $ "Queued push job " <> (show pushId :: Text)
 
   let queueJob = do
-        StmMap.insert pushJob pushId pmPushJobs
-        StmSet.delete pushId pmFailedJobs
-        incrementTVar pmPendingJobCount
         res <- tryWriteTask pmTaskQueue $ QueryMissingPaths pushId
         case res of
-          Just True -> return True
+          Just True -> do
+            StmMap.insert pushJob pushId pmPushJobs
+            StmSet.delete pushId pmFailedJobs
+            incrementTVar pmPendingJobCount
+            return True
           _ -> return False
 
   didQueue <- liftIO $ atomically queueJob

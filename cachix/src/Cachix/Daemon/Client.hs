@@ -54,7 +54,7 @@ withSocketComm daemonOptions sock action = do
   rxThread <- Async.async (handleIncoming lastPongRef rxPriority rx sock)
   txThread <- Async.async (handleOutgoing tx sock)
   pingThread <-
-    if daemonKeepAliveEnabled daemonOptions
+    if daemonKeepAliveInterval daemonOptions > 0
       then Just <$> Async.async (runPingThread lastPongRef rxPriority tx)
       else pure Nothing
 

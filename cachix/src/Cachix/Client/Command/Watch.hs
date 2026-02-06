@@ -13,7 +13,6 @@ import Cachix.Client.OptionsParser
   ( DaemonOptions (..),
     PushOptions (..),
     WatchExecMode (..),
-    defaultKeepAliveEnabled,
     defaultKeepAliveInterval,
     defaultKeepAliveTimeout,
   )
@@ -85,7 +84,6 @@ watchExecDaemon env pushOpts batchOptions cacheName cmd args = do
                 { daemonAllowRemoteStop = False,
                   daemonNarinfoQueryOptions = batchOptions,
                   daemonSocketPath = Just (Daemon.PostBuildHook.daemonSock hookEnv),
-                  daemonKeepAliveEnabled = defaultKeepAliveEnabled,
                   daemonKeepAliveInterval = defaultKeepAliveInterval,
                   daemonKeepAliveTimeout = defaultKeepAliveTimeout
                 }

@@ -14,7 +14,6 @@ module Cachix.Client.OptionsParser
     defaultChunkSize,
     defaultNumJobs,
     defaultOmitDeriver,
-    defaultKeepAliveEnabled,
     defaultKeepAliveInterval,
     defaultKeepAliveTimeout,
 
@@ -159,9 +158,6 @@ defaultNumJobs = 8
 defaultOmitDeriver :: Bool
 defaultOmitDeriver = False
 
-defaultKeepAliveEnabled :: Bool
-defaultKeepAliveEnabled = True
-
 defaultKeepAliveInterval :: Int
 defaultKeepAliveInterval = 30
 
@@ -191,7 +187,6 @@ data DaemonOptions = DaemonOptions
   { daemonAllowRemoteStop :: Bool,
     daemonNarinfoQueryOptions :: NarinfoQueryOptions,
     daemonSocketPath :: Maybe FilePath,
-    daemonKeepAliveEnabled :: Bool,
     daemonKeepAliveInterval :: Int,
     daemonKeepAliveTimeout :: Int
   }
@@ -573,7 +568,6 @@ daemonOptionsParser =
     <$> remoteStopOption
     <*> batchConfigParser
     <*> socketOption
-    <*> keepAliveOption
     <*> keepAliveIntervalOption
     <*> keepAliveTimeoutOption
   where
@@ -587,14 +581,11 @@ daemonOptionsParser =
     remoteStopOption =
       enableDisableFlag True "remote-stop" "the remote stop command which allows clients to remotely shut down the daemon. Remote stop should be disabled in environments where the lifecycle of the daemon is handled by a service manager, like systemd."
 
-    keepAliveOption =
-      enableDisableFlag defaultKeepAliveEnabled "keep-alive" "the client keep-alive pings to the daemon"
-
     keepAliveIntervalOption =
       option auto $
         long "keep-alive-interval"
           <> metavar "SECONDS"
-          <> help "Keep-alive ping interval in seconds"
+          <> help "Keep-alive ping interval in seconds (0 to disable)"
           <> value defaultKeepAliveInterval
           <> showDefault
 

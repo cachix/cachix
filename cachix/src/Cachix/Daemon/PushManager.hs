@@ -14,10 +14,10 @@ module Cachix.Daemon.PushManager
     lookupPushJob,
     withPushJob,
     resolvePushJob,
+    failPushJob,
     pendingJobCount,
 
     -- * Query
-    filterPushJobs,
     getFailedPushJobs,
 
     -- * Store paths
@@ -68,28 +68,33 @@ import Control.Monad.IO.Unlift (MonadUnliftIO)
 import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
 import Control.Retry (RetryStatus, rsIterNumber)
 import Data.ByteString qualified as BS
-import Data.HashMap.Strict qualified as HashMap
 import Data.IORef
 import Data.Sequence qualified as Seq
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Time (UTCTime, diffUTCTime, getCurrentTime, secondsToNominalDiffTime)
+import Focus qualified
 import GHC.Clock (getMonotonicTimeNSec)
 import Hercules.CNix (StorePath)
 import Hercules.CNix.Store (Store, parseStorePath, storePathToPath)
 import Katip qualified
+import ListT qualified
 import Protolude hiding (toS)
 import Protolude.Conv (toS)
 import Servant.Auth ()
 import Servant.Auth.Client
 import Servant.Conduit ()
+import StmContainers.Map qualified as StmMap
+import StmContainers.Set qualified as StmSet
 import UnliftIO.QSem qualified as QSem
 
 newPushManagerEnv :: (MonadIO m) => PushOptions -> NarinfoQuery.NarinfoQueryOptions -> PushParams PushManager () -> OnPushEvent -> Logger -> m PushManagerEnv
 newPushManagerEnv pushOptions batchOptions pmPushParams onPushEvent pmLogger = liftIO $ do
-  pmPushJobs <- newTVarIO mempty
+  pmPushJobs <- StmMap.newIO
   pmPendingJobCount <- newTVarIO 0
-  pmStorePathIndex <- newTVarIO mempty
+  pmStorePathIndex <- StmMap.newIO
+  pmFailedJobs <- StmSet.newIO
+  pmQueuedStorePathCount <- newTVarIO 0
   pmTaskQueue <- atomically newTaskQueue
   pmTaskSemaphore <- QSem.newQSem (numJobs pushOptions)
   pmLastEventTimestamp <- newTVarIO =<< getCurrentTime
@@ -143,11 +148,13 @@ addPushJob pushJob = do
   Katip.logLocM Katip.DebugS $ Katip.ls $ "Queued push job " <> (show pushId :: Text)
 
   let queueJob = do
-        modifyTVar' pmPushJobs $ HashMap.insert pushId pushJob
-        incrementTVar pmPendingJobCount
         res <- tryWriteTask pmTaskQueue $ QueryMissingPaths pushId
         case res of
-          Just True -> return True
+          Just True -> do
+            StmMap.insert pushJob pushId pmPushJobs
+            StmSet.delete pushId pmFailedJobs
+            incrementTVar pmPendingJobCount
+            return True
           _ -> return False
 
   didQueue <- liftIO $ atomically queueJob
@@ -167,24 +174,24 @@ removePushJob :: Protocol.PushRequestId -> PushManager ()
 removePushJob pushId = do
   PushManagerEnv {..} <- ask
   liftIO $ atomically $ do
-    mpushJob <- HashMap.lookup pushId <$> readTVar pmPushJobs
+    mpushJob <- StmMap.focus Focus.lookupAndDelete pushId pmPushJobs
+    StmSet.delete pushId pmFailedJobs
     for_ mpushJob $ \pushJob -> do
-      -- Decrement the job count if this job had not been processed yet
       unless (PushJob.isProcessed pushJob) (decrementTVar pmPendingJobCount)
-      modifyTVar' pmPushJobs (HashMap.delete pushId)
+      let delta = negate (queueSize pushJob)
+      when (delta /= 0) (modifyTVar' pmQueuedStorePathCount (+ delta))
 
 lookupPushJob :: Protocol.PushRequestId -> PushManager (Maybe PushJob)
 lookupPushJob pushId = do
   pushJobs <- asks pmPushJobs
-  liftIO $ HashMap.lookup pushId <$> readTVarIO pushJobs
-
-filterPushJobs :: (PushJob -> Bool) -> PushManager [PushJob]
-filterPushJobs f = do
-  pushJobs <- asks pmPushJobs
-  liftIO $ filter f . HashMap.elems <$> readTVarIO pushJobs
+  liftIO $ atomically $ StmMap.lookup pushId pushJobs
 
 getFailedPushJobs :: PushManager [PushJob]
-getFailedPushJobs = filterPushJobs PushJob.isFailed
+getFailedPushJobs = do
+  PushManagerEnv {..} <- ask
+  liftIO $ atomically $ do
+    pushIds <- ListT.toList (StmSet.listT pmFailedJobs)
+    catMaybes <$> traverse (`StmMap.lookup` pmPushJobs) pushIds
 
 withPushJob :: Protocol.PushRequestId -> (PushJob -> PushManager ()) -> PushManager ()
 withPushJob pushId f =
@@ -195,27 +202,44 @@ withPushJob pushId f =
 
 modifyPushJob :: Protocol.PushRequestId -> (PushJob -> PushJob) -> PushManager (Maybe PushJob)
 modifyPushJob pushId f = do
-  pushJobs <- asks pmPushJobs
-  liftIO $ atomically $ modifyPushJobSTM pushJobs pushId f
+  PushManagerEnv {..} <- ask
+  liftIO $ atomically $ modifyPushJobSTM pmPushJobs pmQueuedStorePathCount pushId f
 
-modifyPushJobSTM :: PushJobStore -> Protocol.PushRequestId -> (PushJob -> PushJob) -> STM (Maybe PushJob)
-modifyPushJobSTM pushJobs pushId f =
-  stateTVar pushJobs $ \jobs -> do
-    let pj = HashMap.adjust f pushId jobs
-    (HashMap.lookup pushId pj, pj)
+modifyPushJobSTM ::
+  PushJobStore ->
+  TVar Int ->
+  Protocol.PushRequestId ->
+  (PushJob -> PushJob) ->
+  STM (Maybe PushJob)
+modifyPushJobSTM pushJobs queuedCount pushId f = do
+  (mjob, delta) <- StmMap.focus (Focus.cases ((Nothing, 0), Focus.Leave) update) pushId pushJobs
+  when (delta /= 0) (modifyTVar' queuedCount (+ delta))
+  pure mjob
+  where
+    update job =
+      let job' = f job
+          delta = queueSize job' - queueSize job
+       in ((Just job', delta), Focus.Set job')
 
 modifyPushJobs :: (Foldable f) => f Protocol.PushRequestId -> (PushJob -> PushJob) -> PushManager ()
 modifyPushJobs pushIds f = do
-  pushJobs <- asks pmPushJobs
-  liftIO $ atomically $ modifyTVar' pushJobs $ \pushJobs' ->
-    foldl' (flip (HashMap.adjust f)) pushJobs' pushIds
+  PushManagerEnv {..} <- ask
+  liftIO $
+    atomically $
+      for_ pushIds $ \pushId -> do
+        _ <- modifyPushJobSTM pmPushJobs pmQueuedStorePathCount pushId f
+        pure ()
+
+queueSize :: PushJob -> Int
+queueSize = Set.size . PushJob.queue
 
 failPushJob :: Protocol.PushRequestId -> PushManager ()
 failPushJob pushId = do
   PushManagerEnv {..} <- ask
   timestamp <- liftIO getCurrentTime
   liftIO $ atomically $ do
-    _ <- modifyPushJobSTM pmPushJobs pushId $ PushJob.fail timestamp
+    mjob <- modifyPushJobSTM pmPushJobs pmQueuedStorePathCount pushId $ PushJob.fail timestamp
+    when (isJust mjob) (StmSet.insert pushId pmFailedJobs)
     decrementTVar pmPendingJobCount
 
 pendingJobCount :: PushManager Int
@@ -230,48 +254,65 @@ queueStorePaths pushId storePaths = do
   PushManagerEnv {..} <- ask
 
   let addToQueue storePath = do
-        isDuplicate <- HashMap.member storePath <$> readTVar pmStorePathIndex
-        unless isDuplicate $
+        wasNew <- StmMap.focus insertOrAppend storePath pmStorePathIndex
+        when wasNew $
           writeTask pmTaskQueue (PushPath storePath)
-
-        modifyTVar' pmStorePathIndex $ HashMap.insertWith (<>) storePath (Seq.singleton pushId)
+      insertOrAppend =
+        Focus.cases
+          (True, Focus.Set (Seq.singleton pushId))
+          (\existing -> (False, Focus.Set (existing Seq.|> pushId)))
 
   transactionally $ map addToQueue storePaths
 
 removeStorePath :: FilePath -> PushManager ()
 removeStorePath storePath = do
   storePathIndex <- asks pmStorePathIndex
-  liftIO $ atomically $ do
-    modifyTVar' storePathIndex $ HashMap.delete storePath
+  liftIO $
+    atomically $
+      StmMap.delete storePath storePathIndex
 
 lookupStorePathIndex :: FilePath -> PushManager (Seq.Seq Protocol.PushRequestId)
 lookupStorePathIndex storePath = do
   storePathIndex <- asks pmStorePathIndex
-  references <- liftIO $ readTVarIO storePathIndex
-  return $ fromMaybe Seq.empty (HashMap.lookup storePath references)
+  liftIO $ fromMaybe Seq.empty <$> atomically (StmMap.lookup storePath storePathIndex)
 
 checkPushJobCompleted :: Protocol.PushRequestId -> PushManager ()
 checkPushJobCompleted pushId = do
   PushManagerEnv {..} <- ask
-  mpushJob <- lookupPushJob pushId
-  for_ mpushJob $ \pushJob ->
-    when (Set.null $ pushQueue pushJob) $ do
-      timestamp <- liftIO getCurrentTime
-      liftIO $ atomically $ do
-        _ <- modifyPushJobSTM pmPushJobs pushId $ \pushJob' ->
-          if PushJob.hasFailedPaths pushJob'
-            then PushJob.fail timestamp pushJob'
-            else PushJob.complete timestamp pushJob'
-        decrementTVar pmPendingJobCount
-      pushFinished pushJob
+  timestamp <- liftIO getCurrentTime
+  mcompletedJob <- liftIO $ atomically $ do
+    CompleteResult {..} <-
+      StmMap.focus
+        (Focus.cases (CompleteResult Nothing False False, Focus.Leave) (update timestamp))
+        pushId
+        pmPushJobs
+    when didTransition (decrementTVar pmPendingJobCount)
+    when didTransition $
+      if isFailed
+        then StmSet.insert pushId pmFailedJobs
+        else StmSet.delete pushId pmFailedJobs
+    pure completedJob
+  for_ mcompletedJob pushFinished
+  where
+    update ts job
+      | Set.null (PushJob.queue job) && not (PushJob.isProcessed job) =
+          let job' =
+                if PushJob.hasFailedPaths job
+                  then PushJob.fail ts job
+                  else PushJob.complete ts job
+           in (CompleteResult (Just job') True (PushJob.isFailed job'), Focus.Set job')
+      | otherwise = (CompleteResult Nothing False False, Focus.Leave)
+
+data CompleteResult = CompleteResult
+  { completedJob :: Maybe PushJob,
+    didTransition :: Bool,
+    isFailed :: Bool
+  }
 
 queuedStorePathCount :: PushManager Integer
 queuedStorePathCount = do
-  pmPushJobs <- asks pmPushJobs
-  jobs <- liftIO $ readTVarIO pmPushJobs
-  pure $ foldl' countQueuedPaths 0 (HashMap.elems jobs)
-  where
-    countQueuedPaths acc job = acc + fromIntegral (Set.size $ pushQueue job)
+  pmQueuedStorePathCount <- asks pmQueuedStorePathCount
+  liftIO $ fromIntegral <$> readTVarIO pmQueuedStorePathCount
 
 resolvePushJob :: Protocol.PushRequestId -> PushJob.ResolvedClosure FilePath -> PushManager ()
 resolvePushJob pushId closure = do

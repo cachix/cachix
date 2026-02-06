@@ -6,6 +6,7 @@ module Cachix.Daemon.Types.PushManager
   ( PushManagerEnv (..),
     PushManager (..),
     PushJobStore,
+    StorePathIndex,
     PushJob (..),
     JobStatus (..),
     JobStats (..),
@@ -27,11 +28,12 @@ import Cachix.Daemon.Types.TaskQueue (TaskQueue)
 import Control.Concurrent.STM.TVar
 import Control.Monad.Catch
 import Control.Monad.IO.Unlift (MonadUnliftIO)
-import Data.HashMap.Strict (HashMap)
 import Data.Sequence qualified as Seq
 import Data.Time (UTCTime)
 import Katip qualified
 import Protolude
+import StmContainers.Map qualified as StmMap
+import StmContainers.Set qualified as StmSet
 
 -- | A task to be processed by the PushManager
 -- Tasks are prioritized by their Ord instance
@@ -51,9 +53,11 @@ instance Ord Task where
       taskPriority (HandleMissingPathsResponse _ _) = 2
       taskPriority (QueryMissingPaths _) = 1
 
-type PushJobStore = TVar (HashMap Protocol.PushRequestId PushJob)
+type PushJobStore = StmMap.Map Protocol.PushRequestId PushJob
 
-type StorePathIndex = TVar (HashMap FilePath (Seq.Seq Protocol.PushRequestId))
+type StorePathIndex = StmMap.Map FilePath (Seq.Seq Protocol.PushRequestId)
+
+type FailedJobIndex = StmSet.Set Protocol.PushRequestId
 
 -- TODO: a lot of the logic surrounding deduping, search, and job tracking could be replaced by sqlite.
 -- sqlite can run in-memory if we don't need persistence.
@@ -65,6 +69,8 @@ data PushManagerEnv = PushManagerEnv
     -- | A mapping of store paths to push requests.
     -- Used when deduplicating pushes.
     pmStorePathIndex :: StorePathIndex,
+    -- | Failed push jobs indexed by PushRequestId.
+    pmFailedJobs :: FailedJobIndex,
     -- | Priority queue of push tasks.
     pmTaskQueue :: TaskQueue Task,
     -- | A semaphore to control task concurrency.
@@ -77,6 +83,8 @@ data PushManagerEnv = PushManagerEnv
     pmProgressEmitIntervalNs :: Word64,
     -- | The number of pending (uncompleted) jobs.
     pmPendingJobCount :: TVar Int,
+    -- | Total number of queued store paths across all jobs.
+    pmQueuedStorePathCount :: TVar Int,
     -- | Manager for batching narinfo queries
     pmNarinfoQueryManager :: NarinfoQueryManager Protocol.PushRequestId,
     pmLogger :: Logger

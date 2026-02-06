@@ -152,6 +152,7 @@ library
     , exceptions
     , extra
     , filepath
+    , focus
     , fsnotify                >=0.4.1
     , generic-lens
     , hercules-ci-cnix-store  >=0.4
@@ -165,6 +166,7 @@ library
     , immortal
     , inline-c-cpp
     , katip
+    , list-t
     , lukko
     , lzma-conduit
     , megaparsec              >=7.0.0
@@ -190,6 +192,7 @@ library
     , stm
     , stm-chans
     , stm-conduit
+    , stm-containers
     , systemd
     , temporary
     , text

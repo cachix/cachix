@@ -29,16 +29,16 @@ newSocketStore = SocketStore <$> liftIO (newTVarIO mempty)
 newSocketId :: (MonadIO m) => m SocketId
 newSocketId = liftIO UUID.nextRandom
 
-addSocket :: (MonadUnliftIO m) => Network.Socket.Socket -> (SocketId -> Network.Socket.Socket -> m ()) -> SocketStore -> m ()
-addSocket socket handler (SocketStore st) = do
+addSocket :: (MonadUnliftIO m) => SocketStore -> Network.Socket.Socket -> (SocketId -> Network.Socket.Socket -> m ()) -> m ()
+addSocket (SocketStore st) socket handler = do
   socketId <- newSocketId
   sendLock <- liftIO $ newMVar ()
   handlerThread <- Async.async (handler socketId socket)
   publisherThreads <- liftIO $ newTVarIO HashMap.empty
   liftIO $ atomically $ modifyTVar' st $ HashMap.insert socketId (Socket {..})
 
-removeSocket :: (MonadIO m) => SocketId -> SocketStore -> m ()
-removeSocket socketId (SocketStore stvar) = do
+removeSocket :: (MonadIO m) => SocketStore -> SocketId -> m ()
+removeSocket (SocketStore stvar) socketId = do
   msocket <- liftIO $ atomically $ stateTVar stvar $ \st ->
     let msocket = HashMap.lookup socketId st
      in (msocket, HashMap.delete socketId st)
@@ -50,14 +50,14 @@ removeSocket socketId (SocketStore stvar) = do
     -- Cancel handler thread
     Async.uninterruptibleCancel (handlerThread sock)
 
-addPublisherThread :: (MonadIO m) => SocketId -> PushRequestId -> Async () -> SocketStore -> m ()
-addPublisherThread socketId pushId thread (SocketStore stvar) = liftIO $ atomically $ do
+addPublisherThread :: (MonadIO m) => SocketStore -> SocketId -> PushRequestId -> Async () -> m ()
+addPublisherThread (SocketStore stvar) socketId pushId thread = liftIO $ atomically $ do
   sockets <- readTVar stvar
   for_ (HashMap.lookup socketId sockets) $ \sock ->
     modifyTVar' (publisherThreads sock) $ HashMap.insert pushId thread
 
-cancelPublisherThread :: (MonadIO m) => SocketId -> PushRequestId -> SocketStore -> m ()
-cancelPublisherThread socketId pushId (SocketStore stvar) = do
+cancelPublisherThread :: (MonadIO m) => SocketStore -> SocketId -> PushRequestId -> m ()
+cancelPublisherThread (SocketStore stvar) socketId pushId = do
   mthread <- liftIO $ atomically $ do
     sockets <- readTVar stvar
     case HashMap.lookup socketId sockets of
@@ -71,8 +71,8 @@ toList (SocketStore st) = do
   hm <- liftIO $ readTVarIO st
   return $ HashMap.elems hm
 
-sendAll :: (MonadIO m) => SocketId -> LBS.ByteString -> SocketStore -> m ()
-sendAll socketId msg (SocketStore stvar) = do
+sendAll :: (MonadIO m) => SocketStore -> SocketId -> LBS.ByteString -> m ()
+sendAll (SocketStore stvar) socketId msg = do
   mSocket <- liftIO $ readTVarIO stvar
   case HashMap.lookup socketId mSocket of
     Just (Socket {socket, sendLock}) -> liftIO $ withMVar sendLock $ \_ -> Socket.LBS.sendAll socket msg

@@ -123,8 +123,7 @@ start daemonEnv daemonOptions daemonPushOptions daemonCacheName =
 
 -- | Run a daemon from a given configuration.
 run :: DaemonEnv -> IO (Either DaemonError ())
-run daemon = fmap join <$> runDaemon daemon $
-  Tracing.withDaemonSpan "cachix.daemon.run" Internal $ \_ -> do
+run daemon = fmap join <$> runDaemon daemon $ do
     Katip.logFM Katip.InfoS "Starting Cachix Daemon"
     DaemonEnv {..} <- ask
 

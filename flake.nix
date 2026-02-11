@@ -101,7 +101,14 @@
           };
         in
         {
-          cachix = hlib.justStaticExecutables cachix;
+          cachix = hlib.overrideCabal (hlib.justStaticExecutables cachix) (drv: {
+            postInstall = ''
+              ${drv.postInstall or ""}
+              remove-references-to -t ${cachix} $out/bin/cachix
+              remove-references-to -t ${pkgs.haskellPackages.hs-opentelemetry-sdk} $out/bin/cachix
+              remove-references-to -t ${pkgs.haskellPackages.hs-opentelemetry-api} $out/bin/cachix
+            '';
+          });
           release = pkgs.symlinkJoin {
             name = "release";
             paths = builtins.attrValues release;

@@ -21,6 +21,7 @@ import OpenTelemetry.Context.ThreadLocal (attachContext)
 import OpenTelemetry.Trace (InstrumentationLibrary (..), Span, SpanArguments (..), SpanKind (..), Tracer, createSpanWithoutCallStack, defaultSpanArguments, endSpan, getGlobalTracerProvider, inSpan', initializeGlobalTracerProvider, makeTracer, shutdownTracerProvider, tracerOptions)
 import Paths_cachix qualified as Paths
 import Protolude hiding (bracket, finally)
+import System.Environment (lookupEnv, setEnv)
 import UnliftIO (MonadUnliftIO, finally)
 
 class HasTracer env where
@@ -36,8 +37,13 @@ daemonInstrumentationLibrary =
     }
 
 withStandaloneTracing :: IO a -> IO a
-withStandaloneTracing action =
+withStandaloneTracing action = do
+  setDefaultEnv "OTEL_SERVICE_NAME" "cachix-daemon"
   bracket initializeGlobalTracerProvider shutdownTracerProvider (const action)
+  where
+    setDefaultEnv key value = do
+      existing <- lookupEnv key
+      when (isNothing existing) $ setEnv key value
 
 getDaemonTracer :: (MonadIO m) => m Tracer
 getDaemonTracer = do

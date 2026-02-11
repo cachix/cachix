@@ -33,7 +33,9 @@ import Data.Set qualified as Set
 import Data.Time (NominalDiffTime, UTCTime, addUTCTime, diffUTCTime, getCurrentTime)
 import Hercules.CNix.Store (StorePath, getStorePathHash)
 import Katip qualified
+import OpenTelemetry.Attributes.Map qualified as OTelAttributesMap
 import OpenTelemetry.Trace (SpanKind (..), ToAttribute (..), addAttribute)
+import OpenTelemetry.Trace.Core (NewLink (..), SpanContext, addLink, getSpanContext)
 import Protolude
 import UnliftIO.Async qualified as Async
 
@@ -74,7 +76,9 @@ data NarinfoRequest requestId = NarinfoRequest
     -- | Store paths to check
     qrStorePaths :: ![StorePath],
     -- | Cached existing paths
-    qrCachedPaths :: ![StorePath]
+    qrCachedPaths :: ![StorePath],
+    -- | Span context from the submitting request (for linking batch to jobs)
+    qrSpanContext :: !(Maybe SpanContext)
   }
 
 -- | Response to a narinfo query request
@@ -192,9 +196,10 @@ submitRequest manager@NarinfoQueryManager {nqmConfig, nqmState, nqmCachedTime} r
   Tracing.withDaemonSpan "cachix.daemon.narinfo.submit_request" Internal $ \otelSpan -> do
     addAttribute otelSpan "cachix.daemon.narinfo.request_id" requestId
     addAttribute otelSpan "cachix.daemon.narinfo.path_count" (length storePaths)
-    submitRequestIO manager requestId storePaths
+    spanCtx <- liftIO $ getSpanContext otelSpan
+    submitRequestIO manager requestId storePaths (Just spanCtx)
   where
-    submitRequestIO mgr reqId paths = do
+    submitRequestIO mgr reqId paths mSpanCtx = do
       -- Check cache for each path in a single pass
       (cachedExistingPaths, pathsToQuery') <- liftIO $ partitionM (lookupCache mgr) paths
 
@@ -205,7 +210,7 @@ submitRequest manager@NarinfoQueryManager {nqmConfig, nqmState, nqmCachedTime} r
         let isFirstRequest = Seq.null (qsPendingRequests batchState)
             needsNewTimeout = isFirstRequest && isNothing (qsTimeoutVar batchState) && nqoMaxWaitTime nqmConfig > 0
             updatedPaths = qsAccumulatedPaths batchState <> Set.fromList pathsToQuery'
-            newRequest = NarinfoRequest reqId paths cachedExistingPaths
+            newRequest = NarinfoRequest reqId paths cachedExistingPaths mSpanCtx
             newStartTime = case qsQueryStartTime batchState of
               Nothing -> Just now
               justTime -> justTime
@@ -372,6 +377,12 @@ processReadyBatch manager@NarinfoQueryManager {nqmCallback} processBatch ReadyBa
         pathCount = length rbAllPaths
     addAttribute otelSpan "cachix.daemon.narinfo.batch_size" pathCount
     addAttribute otelSpan "cachix.daemon.narinfo.request_count" requestCount
+
+    -- Link to all request spans (connects batch to originating push jobs)
+    liftIO $ forM_ rbRequests $ \NarinfoRequest {qrSpanContext} ->
+      for_ qrSpanContext $ \ctx ->
+        addLink otelSpan (NewLink ctx OTelAttributesMap.empty)
+
     case rbBatchStartTime of
       Nothing ->
         addAttribute otelSpan "cachix.daemon.narinfo.wait_time_ms" (0 :: Double)

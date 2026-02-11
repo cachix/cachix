@@ -82,6 +82,9 @@ import Hercules.CNix.Store (Store, parseStorePath, storePathToPath)
 import Katip qualified
 import ListT qualified
 import OpenTelemetry.Attributes.Map qualified as OTelAttributesMap
+import OpenTelemetry.Context (lookupSpan)
+import OpenTelemetry.Context qualified as Context
+import OpenTelemetry.Context.ThreadLocal (getContext)
 import OpenTelemetry.Trace
   ( Attribute,
     NewEvent (..),
@@ -95,6 +98,7 @@ import OpenTelemetry.Trace
     recordException,
     setStatus,
   )
+import OpenTelemetry.Trace.Core (NewLink (..), addLink, getSpanContext)
 import Protolude hiding (toS)
 import Protolude.Conv (toS)
 import Servant.Auth ()
@@ -165,28 +169,36 @@ addPushJob pushJob = do
   let pushId = PushJob.pushId pushJob
       storePathCount = length (Protocol.storePaths (PushJob.pushRequest pushJob))
 
-  Tracing.withDaemonSpan "cachix.daemon.push.add_job" Internal $ \otelSpan -> do
-    addAttribute otelSpan "cachix.daemon.push.id" pushId
-    addAttribute otelSpan "cachix.daemon.push.store_path_count" storePathCount
+  rootSpan <- Tracing.createDaemonSpan Context.empty "cachix.daemon.push" Internal
+  addAttribute rootSpan "cachix.daemon.push.id" pushId
+  addAttribute rootSpan "cachix.daemon.push.store_path_count" storePathCount
 
-    Katip.logLocM Katip.DebugS $ Katip.ls $ "Queued push job " <> (show pushId :: Text)
+  -- Link to the caller's active span (e.g. client_message in Daemon.hs)
+  callerCtx <- liftIO getContext
+  for_ (lookupSpan callerCtx) $ \callerSpan -> do
+    callerSpanCtx <- liftIO $ getSpanContext callerSpan
+    liftIO $ addLink rootSpan (NewLink callerSpanCtx OTelAttributesMap.empty)
 
-    let queueJob = do
-          StmMap.insert pushJob pushId pmPushJobs
-          StmSet.delete pushId pmFailedJobs
-          incrementTVar pmPendingJobCount
-          res <- tryWriteTask pmTaskQueue $ QueryMissingPaths pushId
-          case res of
-            Just True -> return True
-            _ -> return False
+  Katip.logLocM Katip.DebugS $ Katip.ls $ "Queued push job " <> (show pushId :: Text)
 
-    didQueue <- liftIO $ atomically queueJob
+  let pushJobWithSpan = pushJob {pushSpan = Just rootSpan}
+      queueJob = do
+        StmMap.insert pushJobWithSpan pushId pmPushJobs
+        StmSet.delete pushId pmFailedJobs
+        incrementTVar pmPendingJobCount
+        res <- tryWriteTask pmTaskQueue $ QueryMissingPaths pushId
+        case res of
+          Just True -> return True
+          _ -> return False
 
-    unless didQueue $ do
-      setStatus otelSpan (Error "Failed to queue push job")
-      Katip.logLocM Katip.WarningS "Failed to queue push job. Queue likely full."
+  didQueue <- liftIO $ atomically queueJob
 
-    return didQueue
+  unless didQueue $ do
+    setStatus rootSpan (Error "Failed to queue push job")
+    Tracing.endDaemonSpan rootSpan
+    Katip.logLocM Katip.WarningS "Failed to queue push job. Queue likely full."
+
+  return didQueue
 
 addPushJobFromRequest :: Protocol.PushRequest -> PushManager (Maybe Protocol.PushRequestId)
 addPushJobFromRequest pushRequest = do
@@ -260,11 +272,15 @@ queueSize = Set.size . PushJob.queue
 failPushJob :: Protocol.PushRequestId -> PushManager ()
 failPushJob pushId = do
   PushManagerEnv {..} <- ask
+  mSpan <- fmap (>>= pushSpan) (lookupPushJob pushId)
   timestamp <- liftIO getCurrentTime
   liftIO $ atomically $ do
     mjob <- modifyPushJobSTM pmPushJobs pmQueuedStorePathCount pushId $ PushJob.fail timestamp
     when (isJust mjob) (StmSet.insert pushId pmFailedJobs)
     decrementTVar pmPendingJobCount
+  for_ mSpan $ \rootSpan -> do
+    setStatus rootSpan (Error "Push job failed")
+    Tracing.endDaemonSpan rootSpan
 
 pendingJobCount :: PushManager Int
 pendingJobCount = do
@@ -349,6 +365,12 @@ resolvePushJob pushId closure = do
 
     Katip.logLocM Katip.DebugS $ Katip.ls statsText
 
+    when (skippedCount > 0) $ do
+      mjob <- lookupPushJob pushId
+      for_ (mjob >>= pushSpan) $ \rootSpan ->
+        liftIO $ addEvent rootSpan $
+          NewEvent "paths_skipped" (HashMap.fromList [("count", toAttribute skippedCount)]) Nothing
+
     timestamp <- liftIO getCurrentTime
     _ <- modifyPushJob pushId $ PushJob.populateQueue closure timestamp
 
@@ -375,6 +397,13 @@ resolvePushJob pushId closure = do
               ]
        in (statsText, totalCount, queuedCount, skippedCount)
 
+withPushJobSpan :: Protocol.PushRequestId -> Text -> SpanKind -> (Span -> PushManager a) -> PushManager a
+withPushJobSpan pushId name spanKind f = do
+  mjob <- lookupPushJob pushId
+  case mjob >>= pushSpan of
+    Just parentSpan -> Tracing.withChildSpanOf parentSpan name spanKind f
+    Nothing -> Tracing.withDaemonSpan name spanKind f
+
 handleTask :: Task -> PushManager ()
 handleTask task = do
   pushParams <- asks pmPushParams
@@ -388,7 +417,7 @@ handleTask task = do
 
 runQueryMissingPathsTask :: PushParams PushManager () -> Protocol.PushRequestId -> PushManager ()
 runQueryMissingPathsTask pushParams pushId =
-  Tracing.withDaemonSpan "cachix.daemon.push.query_missing_paths" Internal $ \otelSpan -> do
+  withPushJobSpan pushId "cachix.daemon.push.query_missing_paths" Internal $ \otelSpan -> do
     addAttribute otelSpan "cachix.daemon.push.id" pushId
     withException otelSpan resolveClosure failJob
   where
@@ -422,7 +451,7 @@ runQueryMissingPathsTask pushParams pushId =
 
 runHandleMissingPathsResponseTask :: PushParams PushManager () -> Protocol.PushRequestId -> NarinfoQuery.NarinfoResponse -> PushManager ()
 runHandleMissingPathsResponseTask pushParams pushId batchResponse =
-  Tracing.withDaemonSpan "cachix.daemon.push.handle_missing_paths_response" Internal $ \otelSpan -> do
+  withPushJobSpan pushId "cachix.daemon.push.handle_missing_paths_response" Internal $ \otelSpan -> do
     addAttribute otelSpan "cachix.daemon.push.id" pushId
     withException otelSpan processQueryResponse failJob
   where
@@ -457,11 +486,28 @@ runHandleMissingPathsResponseTask pushParams pushId batchResponse =
 
 runPushPathTask :: PushParams PushManager () -> FilePath -> PushManager ()
 runPushPathTask pushParams filePath = do
-  Tracing.withDaemonSpan "cachix.daemon.push.push_path" Internal $ \otelSpan -> do
-    addAttribute otelSpan "cachix.daemon.push.store_path" (toS filePath :: Text)
-    local (\env -> env {pmCurrentSpan = Just otelSpan}) $
-      withException otelSpan pushStorePath failStorePath
+  pushIds <- lookupStorePathIndex filePath
+  spans <- catMaybes <$> mapM getJobSpan (toList pushIds)
+
+  case spans of
+    (primarySpan : linkedSpans) ->
+      Tracing.withChildSpanOf primarySpan "cachix.daemon.push.push_path" Internal $ \otelSpan -> do
+        addAttribute otelSpan "cachix.daemon.push.store_path" (toS filePath :: Text)
+        for_ linkedSpans $ \s -> do
+          ctx <- liftIO $ getSpanContext s
+          liftIO $ addLink otelSpan (NewLink ctx OTelAttributesMap.empty)
+        local (\env -> env {pmCurrentSpan = Just otelSpan}) $
+          withException otelSpan pushStorePath failStorePath
+    [] ->
+      Tracing.withDaemonSpan "cachix.daemon.push.push_path" Internal $ \otelSpan -> do
+        addAttribute otelSpan "cachix.daemon.push.store_path" (toS filePath :: Text)
+        local (\env -> env {pmCurrentSpan = Just otelSpan}) $
+          withException otelSpan pushStorePath failStorePath
   where
+    getJobSpan pid = do
+      mjob <- lookupPushJob pid
+      pure (mjob >>= pushSpan)
+
     failStorePath err = do
       pushStorePathFailed filePath (toS (displayException err))
 
@@ -593,6 +639,16 @@ pushFinished pushJob@PushJob {pushId} = void $ runMaybeT $ do
           "finished in",
           show pushDuration
         ]
+
+  for_ (pushSpan pushJob) $ \rootSpan -> do
+    let PushResult {..} = PushJob.result pushJob
+    addAttribute rootSpan "cachix.daemon.push.duration_s" (realToFrac pushDuration :: Double)
+    addAttribute rootSpan "cachix.daemon.push.pushed_path_count" (Set.size prPushedPaths)
+    addAttribute rootSpan "cachix.daemon.push.failed_path_count" (Set.size prFailedPaths)
+    addAttribute rootSpan "cachix.daemon.push.skipped_path_count" (Set.size prSkippedPaths)
+    when (PushJob.isFailed pushJob) $
+      setStatus rootSpan (Error "Push job completed with failures")
+    Tracing.endDaemonSpan rootSpan
 
   sendPushEvent <- asks pmOnPushEvent
   liftIO $ do

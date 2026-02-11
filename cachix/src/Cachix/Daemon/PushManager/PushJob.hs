@@ -21,7 +21,8 @@ new pushRequest = do
         pushStatus = Queued,
         pushQueue = mempty,
         pushResult = mempty,
-        pushStats = newStats timestamp
+        pushStats = newStats timestamp,
+        pushSpan = Nothing
       }
 
 newStats :: UTCTime -> JobStats

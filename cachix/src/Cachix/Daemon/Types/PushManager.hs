@@ -1,5 +1,6 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeFamilies #-}
 
 module Cachix.Daemon.Types.PushManager
@@ -34,6 +35,7 @@ import Data.Time (UTCTime)
 import Katip qualified
 import OpenTelemetry.Trace (Span, Tracer)
 import Protolude
+import Text.Show qualified as TextShow
 import StmContainers.Map qualified as StmMap
 import StmContainers.Set qualified as StmSet
 
@@ -143,9 +145,29 @@ data PushJob = PushJob
     -- | Track whether paths were pushed, skipped, or failed to push.
     pushResult :: PushResult,
     -- | Timing stats for the push job.
-    pushStats :: JobStats
+    pushStats :: JobStats,
+    -- | Root span for this push job's lifecycle.
+    pushSpan :: Maybe Span
   }
-  deriving stock (Eq, Show)
+
+instance Eq PushJob where
+  a == b =
+    pushId a == pushId b
+      && pushRequest a == pushRequest b
+      && pushStatus a == pushStatus b
+      && pushQueue a == pushQueue b
+      && pushResult a == pushResult b
+      && pushStats a == pushStats b
+
+instance TextShow.Show PushJob where
+  showsPrec _ PushJob {..} =
+    TextShow.showString "PushJob {pushId = " . TextShow.shows pushId
+      . TextShow.showString ", pushRequest = " . TextShow.shows pushRequest
+      . TextShow.showString ", pushStatus = " . TextShow.shows pushStatus
+      . TextShow.showString ", pushQueue = " . TextShow.shows pushQueue
+      . TextShow.showString ", pushResult = " . TextShow.shows pushResult
+      . TextShow.showString ", pushStats = " . TextShow.shows pushStats
+      . TextShow.showString ", pushSpan = <span>}"
 
 data PushResult = PushResult
   { prPushedPaths :: Set FilePath,

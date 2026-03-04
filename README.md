@@ -68,13 +68,13 @@ Diagnostic commands:
 
 1. Install the Cachix client using Nix:
 
-```bash
-nix-env -iA cachix -f https://cachix.org/api/v1/install
-```
+  ```shell
+  nix-env -iA cachix -f https://cachix.org/api/v1/install
+  ```
 
-Also available as `pkgs.cachix` in [nixpkgs](https://github.com/NixOS/nixpkgs).
+  Also available as `pkgs.cachix` in [nixpkgs](https://github.com/NixOS/nixpkgs).
 
-2. Login via https://www.cachix.org/api/v1/login to start using the service
+2. Create an account at https://app.cachix.org to manage caches.
 
 ## Development
 

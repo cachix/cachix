@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE OverloadedLabels #-}
 
@@ -25,7 +26,11 @@ import Conduit
 import Control.Retry (defaultRetryStatus)
 import Data.Attoparsec.Text qualified
 import Data.Conduit.Combinators qualified as C
+#if MIN_VERSION_conduit_concurrent_map(0,1,4)
+import Data.Conduit.ConcurrentMap (concurrentMapM)
+#else
 import Data.Conduit.ConcurrentMap (concurrentMapM_)
+#endif
 import Data.Conduit.List qualified as CL
 import Data.Generics.Labels ()
 import Data.Text qualified as T
@@ -74,7 +79,11 @@ import' env pushOptions name s3uri = do
         .| CL.concat
         .| CL.map (^. object_key)
         .| CL.filter (T.isSuffixOf ".narinfo" . Amazonka.Data.Text.toText)
+#if MIN_VERSION_conduit_concurrent_map(0,1,4)
+        .| concurrentMapM (numJobs pushOptions) (numJobs pushOptions * 2) (uploadNarinfo awsEnv)
+#else
         .| concurrentMapM_ (numJobs pushOptions) (numJobs pushOptions * 2) (uploadNarinfo awsEnv)
+#endif
         .| CL.sinkNull
   putErrText "All done."
   where

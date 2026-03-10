@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE Rank2Types #-}
 
@@ -23,7 +24,11 @@ import Data.ByteArray.Encoding (Base (..), convertToBase)
 import Data.Conduit (ConduitT, handleC, (.|))
 import Data.Conduit.ByteString (ChunkSize, chunkStream)
 import Data.Conduit.Combinators qualified as CC
+#if MIN_VERSION_conduit_concurrent_map(0,1,4)
+import Data.Conduit.ConcurrentMap (concurrentMapM)
+#else
 import Data.Conduit.ConcurrentMap (concurrentMapM_)
+#endif
 import Data.List (lookup)
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.UUID (UUID)
@@ -67,7 +72,11 @@ uploadMultipart env authToken cacheName options = do
     Right (Multipart.CreateMultipartUploadResponse {narId, uploadId}) -> do
       handleC (abortMultipartUpload narId uploadId) $
         chunkStream (Just (chunkSize options))
+#if MIN_VERSION_conduit_concurrent_map(0,1,4)
+          .| concurrentMapM (numConcurrentChunks options) outputBufferSize (uploadPart narId uploadId)
+#else
           .| concurrentMapM_ (numConcurrentChunks options) outputBufferSize (uploadPart narId uploadId)
+#endif
           .| completeMultipartUpload narId uploadId
   where
     -- The size of the temporary output buffer.

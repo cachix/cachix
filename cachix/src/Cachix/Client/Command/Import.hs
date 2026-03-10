@@ -67,6 +67,8 @@ discoverAwsEnv maybeEndpoint maybeRegion = do
     <&> Amazonka.configureService s3Endpoint
       . maybe identity (#region .~) region
 
+-- Disabled due to CPP
+{- ORMOLU_DISABLE -}
 import' :: Env -> PushOptions -> Text -> URI -> IO ()
 import' env pushOptions name s3uri = do
   awsEnv <- discoverAwsEnv (URI.getQueryParam s3uri "endpoint") (URI.getQueryParam s3uri "region")
@@ -163,3 +165,5 @@ import' env pushOptions name s3uri = do
 
                             liftIO $ onDone strategy
                 | otherwise -> putErrText $ show err
+
+{- ORMOLU_ENABLE -}

@@ -54,6 +54,8 @@ data UploadMultipartResult = UploadMultipartResult
   }
   deriving stock (Eq, Show)
 
+-- Disabled due to CPP
+{- ORMOLU_DISABLE -}
 uploadMultipart ::
   forall m.
   (MonadUnliftIO m, MonadResource m) =>
@@ -133,3 +135,5 @@ uploadMultipart env authToken cacheName options = do
       let abortMultipartUploadRequest = API.abortMultipartUpload cachixClient authToken cacheName narId uploadId
       _ <- liftIO $ retryHttp $ withClientM abortMultipartUploadRequest env escalate
       return $ Left err
+
+{- ORMOLU_ENABLE -}

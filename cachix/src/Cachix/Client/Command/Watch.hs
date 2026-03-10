@@ -59,7 +59,7 @@ watchExec env watchExecMode pushOptions batchOptions cacheName cmd args = do
     Store ->
       watchExecStore env pushOptions cacheName cmd args
     Auto -> do
-      nixEnv <- InstallationMode.getNixEnv
+      nixEnv <- InstallationMode.getNixEnv (storeURI env)
 
       if InstallationMode.isTrusted nixEnv
         then watchExecDaemon env pushOptions batchOptions cacheName cmd args

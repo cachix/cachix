@@ -24,12 +24,12 @@ use env name useOptions = do
     Left err -> Push.handleCacheResponse name optionalAuthToken err
     Right binaryCache -> do
       () <- escalateAs UnsupportedNixVersion =<< assertNixVersion
-      nixEnv <- InstallationMode.getNixEnv
+      nixEnv <- InstallationMode.getNixEnv (storeURI env)
       InstallationMode.addBinaryCache (config env) binaryCache useOptions $
         InstallationMode.getInstallationMode nixEnv useOptions
 
 remove :: Env -> Text -> IO ()
 remove env name = do
-  nixEnv <- InstallationMode.getNixEnv
+  nixEnv <- InstallationMode.getNixEnv (storeURI env)
   InstallationMode.removeBinaryCache (Config.hostname $ config env) name $
     InstallationMode.getInstallationMode nixEnv InstallationMode.defaultUseOptions

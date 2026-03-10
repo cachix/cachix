@@ -1,6 +1,7 @@
 module Cachix.Client.Command.Doctor (daemonDoctor, doctor) where
 
 import Cachix.API qualified as API
+import Cachix.Client.CNix (extractStoreHash, withStoreFromMaybeURI)
 import Cachix.Client.Config qualified as Config
 import Cachix.Client.Env (Env (..))
 import Cachix.Client.OptionsParser (DaemonOptions (..), DoctorOptions (..))
@@ -14,6 +15,7 @@ import Control.Exception.Safe qualified as Exception
 import Data.Aeson qualified as Aeson
 import Data.ByteString qualified as BS
 import Data.Text qualified as T
+import Hercules.CNix.Store qualified as Store
 import Network.HTTP.Types (status401, status404)
 import Network.Socket qualified as Socket
 import Network.Socket.ByteString qualified as Socket.BS
@@ -305,21 +307,6 @@ storePathOk (Just StorePathCheckResult {..}) =
     NotInCache -> True -- Not an error, just informational
     StorePathCheckError _ -> False
 
--- | Extract the hash from a store path
--- Store paths look like: /nix/store/abc123...-name
--- The hash is the 32-character string after /nix/store/
-extractStoreHash :: Text -> Maybe Text
-extractStoreHash storePath =
-  let path = T.strip storePath
-      -- Handle both full paths and just hashes
-      normalized =
-        if "/nix/store/" `T.isPrefixOf` path
-          then T.drop 11 path -- Drop "/nix/store/"
-          else path
-   in if T.length normalized >= 32
-        then Just $ T.take 32 normalized
-        else Nothing
-
 checkStorePath :: Env -> DoctorOptions -> Text -> IO StorePathCheckResult
 checkStorePath env opts storePath = do
   maybeToken <- Config.getAuthTokenMaybe (config env)
@@ -332,7 +319,8 @@ checkStorePath env opts storePath = do
         Nothing -> case configuredCaches of
           (first' : _) -> Config.name first'
           [] -> "cachix" -- Default fallback
-  case extractStoreHash storePath of
+  storeDirectory <- withStoreFromMaybeURI (storeURI env) (fmap toS . Store.storeDir)
+  case extractStoreHash storeDirectory storePath of
     Nothing ->
       return
         StorePathCheckResult

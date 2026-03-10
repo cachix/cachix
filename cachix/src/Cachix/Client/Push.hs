@@ -46,7 +46,7 @@ where
 import Cachix.API qualified as API
 import Cachix.API.Error
 import Cachix.API.Signing (fingerprint, passthroughHashSink, passthroughHashSinkB16, passthroughSizeSink)
-import Cachix.Client.CNix (formatStorePathWarning, validateStorePath)
+import Cachix.Client.CNix (formatStorePathWarning, splitStorePath, validateStorePath)
 import Cachix.Client.Exception (CachixException (..))
 import Cachix.Client.Push.S3 qualified as Push.S3
 import Cachix.Client.Retry (retryAll, retryHttp)
@@ -475,7 +475,7 @@ Got:      ${piNarHash pathInfo}
   let references = fmap toS $ Set.toList $ piReferences pathInfo
   let fpReferences = fmap (\fp -> toS storeDir <> "/" <> fp) references
 
-  let (storeHash, storeSuffix) = splitStorePath storePathText
+  let (storeHash, storeSuffix) = splitStorePath (toS storeDir) storePathText
   let fp = fingerprint storePathText undNarHash undNarSize fpReferences
       sig = case pushParamsSecret pushParams of
         PushToken _ -> Nothing
@@ -542,9 +542,3 @@ mapConcurrentlyBounded bound action items = do
   qs <- QSem.newQSem bound
   let wrapped x = bracket_ (QSem.waitQSem qs) (QSem.signalQSem qs) (action x)
   mapConcurrently wrapped items
-
--------------------
--- Private terms --
-splitStorePath :: Text -> (Text, Text)
-splitStorePath storePath =
-  (T.take 32 (T.drop 11 storePath), T.drop 44 storePath)

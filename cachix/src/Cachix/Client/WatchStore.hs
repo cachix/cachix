@@ -8,19 +8,22 @@ import Cachix.Client.Push
 import Cachix.Client.PushQueue qualified as PushQueue
 import Control.Concurrent.STM.TBQueue qualified as TBQueue
 import Hercules.CNix.Store (Store)
-import Protolude
+import Hercules.CNix.Store qualified as Store
+import Protolude hiding (toS)
+import Protolude.Conv
 import System.FSNotify
 import System.Systemd.Daemon qualified as Systemd
 
 startWorkers :: Store -> Int -> PushParams IO () -> IO ()
 startWorkers store numWorkers pushParams = do
+  storeDirectory <- toS <$> Store.storeDir store
   void Systemd.notifyReady
-  withManager $ \mgr -> PushQueue.startWorkers numWorkers (producer store mgr) pushParams
+  withManager $ \mgr -> PushQueue.startWorkers numWorkers (producer storeDirectory store mgr) pushParams
 
-producer :: Store -> WatchManager -> PushQueue.Queue -> IO (IO ())
-producer store mgr queue = do
-  putErrText "Watching /nix/store for new store paths ..."
-  watchDir mgr "/nix/store" filterOnlyStorePaths (queueStorePathAction store queue)
+producer :: FilePath -> Store -> WatchManager -> PushQueue.Queue -> IO (IO ())
+producer storeDirectory store mgr queue = do
+  putErrText $ "Watching " <> toS storeDirectory <> " for new store paths ..."
+  watchDir mgr storeDirectory filterOnlyStorePaths (queueStorePathAction store queue)
 
 queueStorePathAction :: Store -> PushQueue.Queue -> Event -> IO ()
 queueStorePathAction store queue (Removed lockFile _ _) = do

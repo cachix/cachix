@@ -55,8 +55,8 @@ import Cachix.Client.Push as Client.Push
 import Cachix.Client.Retry (retryAll)
 import Cachix.Daemon.NarinfoQuery qualified as NarinfoQuery
 import Cachix.Daemon.Protocol qualified as Protocol
-import Cachix.Daemon.ShutdownLatch qualified as ShutdownLatch
 import Cachix.Daemon.PushManager.PushJob qualified as PushJob
+import Cachix.Daemon.ShutdownLatch qualified as ShutdownLatch
 import Cachix.Daemon.TaskQueue
 import Cachix.Daemon.Types.Log (Logger)
 import Cachix.Daemon.Types.PushEvent (PushEvent (..), PushEventMessage (..), newPushRetryStatus)
@@ -111,7 +111,8 @@ runPushManager env f = liftIO $ unPushManager f `runReaderT` env
 
 -- | Set the shutdown latch (rejecting new jobs), then wait for all
 -- in-flight jobs to complete with a timeout.
-drainPushManager :: TimeoutOptions -> PushManagerEnv -> IO ()
+-- Returns True if all jobs completed, False if timed out.
+drainPushManager :: TimeoutOptions -> PushManagerEnv -> IO Bool
 drainPushManager timeoutOptions PushManagerEnv {..} = do
   ShutdownLatch.initiateShutdown () pmShutdownLatch
   atomicallyWithTimeout timeoutOptions pmLastEventTimestamp $ do
@@ -595,21 +596,23 @@ decrementTVar :: TVar Int -> STM ()
 decrementTVar tvar = modifyTVar' tvar (subtract 1)
 
 -- | Run a transaction with a timeout.
+-- Returns True if the transaction completed, False if timed out.
 atomicallyWithTimeout ::
   TimeoutOptions ->
   -- | A TVar timestamp to compare against
   TVar UTCTime ->
   -- | The transaction to run
   STM () ->
-  IO ()
+  IO Bool
 atomicallyWithTimeout TimeoutOptions {..} timeVar transaction = do
   timeoutVar <- newTVarIO False
-  Async.race_
-    (updateShutdownTimeout timeoutVar)
-    (waitForGracefulShutdown timeoutVar)
+  Async.withAsync (updateShutdownTimeout timeoutVar) $ \_ ->
+    waitForGracefulShutdown timeoutVar
   where
     waitForGracefulShutdown timeout =
-      atomically $ transaction `orElse` checkShutdownTimeout timeout
+      atomically $
+        (transaction >> return True)
+          `orElse` (checkShutdownTimeout timeout >> return False)
 
     updateShutdownTimeout timeoutVar =
       forever $ do

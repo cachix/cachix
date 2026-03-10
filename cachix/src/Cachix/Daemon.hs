@@ -369,8 +369,10 @@ shutdownGracefully = do
               { PushManager.toTimeout = 60.0,
                 PushManager.toPollingInterval = 1.0
               }
-      liftIO $ PushManager.drainPushManager timeoutOptions daemonPushManager
-      Katip.logFM Katip.DebugS "Push manager drained."
+      drained <- liftIO $ PushManager.drainPushManager timeoutOptions daemonPushManager
+      if drained
+        then Katip.logFM Katip.DebugS "Push manager drained."
+        else Katip.logFM Katip.WarningS "Push manager drain timed out. Some jobs may not have completed."
 
     shutdownSubscriptions daemonSubscriptionManager subscriptionManagerThread = do
       Katip.logFM Katip.DebugS "Shutting down event manager..."

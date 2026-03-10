@@ -1,7 +1,8 @@
 module Cachix.Daemon.PushManager
   ( newPushManagerEnv,
     runPushManager,
-    stopPushManager,
+    drainPushManager,
+    closePushManager,
 
     -- * Push strategy
     newPushStrategy,
@@ -54,6 +55,7 @@ import Cachix.Client.Push as Client.Push
 import Cachix.Client.Retry (retryAll)
 import Cachix.Daemon.NarinfoQuery qualified as NarinfoQuery
 import Cachix.Daemon.Protocol qualified as Protocol
+import Cachix.Daemon.ShutdownLatch qualified as ShutdownLatch
 import Cachix.Daemon.PushManager.PushJob qualified as PushJob
 import Cachix.Daemon.TaskQueue
 import Cachix.Daemon.Types.Log (Logger)
@@ -100,17 +102,25 @@ newPushManagerEnv pushOptions batchOptions pmPushParams onPushEvent pmLogger = l
   let batchCallback requestId response = do
         atomically $ writeTask pmTaskQueue $ HandleMissingPathsResponse requestId response
   pmNarinfoQueryManager <- NarinfoQuery.new batchOptions batchCallback
+  pmShutdownLatch <- ShutdownLatch.newShutdownLatch
 
   return $ PushManagerEnv {..}
 
 runPushManager :: (MonadIO m) => PushManagerEnv -> PushManager a -> m a
 runPushManager env f = liftIO $ unPushManager f `runReaderT` env
 
-stopPushManager :: TimeoutOptions -> PushManagerEnv -> IO ()
-stopPushManager timeoutOptions PushManagerEnv {..} = do
+-- | Set the shutdown latch (rejecting new jobs), then wait for all
+-- in-flight jobs to complete with a timeout.
+drainPushManager :: TimeoutOptions -> PushManagerEnv -> IO ()
+drainPushManager timeoutOptions PushManagerEnv {..} = do
+  ShutdownLatch.initiateShutdown () pmShutdownLatch
   atomicallyWithTimeout timeoutOptions pmLastEventTimestamp $ do
     pendingJobs <- readTVar pmPendingJobCount
     check (pendingJobs <= 0)
+
+-- | Close the task queue so workers see it as closed and exit.
+closePushManager :: PushManagerEnv -> IO ()
+closePushManager PushManagerEnv {..} =
   atomically $ closeTaskQueue pmTaskQueue
 
 -- | Start the batch processor for narinfo queries
@@ -143,12 +153,16 @@ addPushJob pushJob = do
   Katip.logLocM Katip.DebugS $ Katip.ls $ "Queued push job " <> (show pushId :: Text)
 
   let queueJob = do
-        modifyTVar' pmPushJobs $ HashMap.insert pushId pushJob
-        incrementTVar pmPendingJobCount
-        res <- tryWriteTask pmTaskQueue $ QueryMissingPaths pushId
-        case res of
-          Just True -> return True
-          _ -> return False
+        shuttingDown <- ShutdownLatch.isShuttingDownSTM pmShutdownLatch
+        if shuttingDown
+          then return False
+          else do
+            modifyTVar' pmPushJobs $ HashMap.insert pushId pushJob
+            incrementTVar pmPendingJobCount
+            res <- tryWriteTask pmTaskQueue $ QueryMissingPaths pushId
+            case res of
+              Just True -> return True
+              _ -> return False
 
   didQueue <- liftIO $ atomically queueJob
 

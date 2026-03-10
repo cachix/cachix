@@ -329,16 +329,19 @@ shutdownGracefully :: Daemon (Either DaemonError ())
 shutdownGracefully = do
   DaemonEnv {..} <- ask
 
-  -- Stop the narinfo batch processor first (before closing the queue)
+  -- 1. Drain: set latch (reject new jobs), wait for in-flight jobs to complete
+  drainWithLogging daemonPushManager
+
+  -- 2. Stop the batch processor (safe: all jobs completed the full pipeline)
   liftIO $ PushManager.stopBatchProcessor daemonPushManager
 
-  -- Stop the push manager and wait for any remaining paths to be uploaded
-  shutdownPushManager daemonPushManager
+  -- 3. Close the task queue
+  liftIO $ PushManager.closePushManager daemonPushManager
 
-  -- Stop worker threads
+  -- 4. Stop worker threads (workers see closed queue and exit)
   withTakeMVar daemonWorkerThreads Worker.stopWorkers
 
-  -- Close all event subscriptions
+  -- 5. Close all event subscriptions
   withTakeMVar daemonSubscriptionManagerThread (shutdownSubscriptions daemonSubscriptionManager)
 
   failedJobs <-
@@ -348,27 +351,26 @@ shutdownGracefully = do
           then Right ()
           else Left DaemonPushFailure
 
-  -- Gracefully close open connections to clients
+  -- 6. Gracefully close open connections to clients
   Async.mapConcurrently_ (sayGoodbye daemonClients pushResult) =<< SocketStore.toList daemonClients
 
   return pushResult
   where
-    shutdownPushManager daemonPushManager = do
+    drainWithLogging daemonPushManager = do
       queuedStorePathCount <- PushManager.runPushManager daemonPushManager PushManager.queuedStorePathCount
       when (queuedStorePathCount > 0) $
         Katip.logFM Katip.InfoS $
           Katip.logStr $
             "Remaining store paths: " <> (show queuedStorePathCount :: Text)
 
-      Katip.logFM Katip.DebugS "Waiting for push manager to clear remaining jobs..."
-      -- Finish processing remaining push jobs
+      Katip.logFM Katip.DebugS "Waiting for push manager to drain remaining jobs..."
       let timeoutOptions =
             PushManager.TimeoutOptions
               { PushManager.toTimeout = 60.0,
                 PushManager.toPollingInterval = 1.0
               }
-      liftIO $ PushManager.stopPushManager timeoutOptions daemonPushManager
-      Katip.logFM Katip.DebugS "Push manager shut down."
+      liftIO $ PushManager.drainPushManager timeoutOptions daemonPushManager
+      Katip.logFM Katip.DebugS "Push manager drained."
 
     shutdownSubscriptions daemonSubscriptionManager subscriptionManagerThread = do
       Katip.logFM Katip.DebugS "Shutting down event manager..."

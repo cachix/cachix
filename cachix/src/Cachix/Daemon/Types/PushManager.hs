@@ -21,6 +21,7 @@ import Cachix.Daemon.Log qualified as Log
 import Cachix.Daemon.NarinfoQuery (NarinfoQueryManager)
 import Cachix.Daemon.NarinfoQuery qualified as NarinfoQuery
 import Cachix.Daemon.Protocol qualified as Protocol
+import Cachix.Daemon.ShutdownLatch (ShutdownLatch)
 import Cachix.Daemon.Types.Log (Logger)
 import Cachix.Daemon.Types.PushEvent (PushEvent (..))
 import Cachix.Daemon.Types.TaskQueue (TaskQueue)
@@ -79,6 +80,8 @@ data PushManagerEnv = PushManagerEnv
     pmPendingJobCount :: TVar Int,
     -- | Manager for batching narinfo queries
     pmNarinfoQueryManager :: NarinfoQueryManager Protocol.PushRequestId,
+    -- | Latch to coordinate graceful shutdown of the push pipeline
+    pmShutdownLatch :: ShutdownLatch () (),
     pmLogger :: Logger
   }
 

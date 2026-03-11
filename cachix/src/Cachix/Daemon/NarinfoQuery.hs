@@ -253,6 +253,10 @@ startBatchTimeout delay = do
   let delayMicros = ceiling (delay * 1000000) -- Convert to microseconds
   registerDelay delayMicros
 
+-- | Check if there are pending requests waiting to be processed
+hasPendingRequests :: QueryState requestId -> Bool
+hasPendingRequests = not . Seq.null . qsPendingRequests
+
 -- | Check if the current query has timed out
 isQueryTimedOut :: QueryState requestId -> STM Bool
 isQueryTimedOut queryState =
@@ -276,46 +280,42 @@ waitForBatchOrShutdown ::
 waitForBatchOrShutdown config stateVar = do
   queryState <- readTVar stateVar
 
-  -- Check for shutdown first
+  let extractBatch = do
+        let requests = qsPendingRequests queryState
+            allPaths = Set.toList (qsAccumulatedPaths queryState)
+            startTime = qsQueryStartTime queryState
+        writeTVar stateVar $
+          queryState
+            { qsPendingRequests = Seq.empty,
+              qsAccumulatedPaths = Set.empty,
+              qsQueryStartTime = Nothing,
+              qsTimeoutVar = Nothing
+            }
+        return $
+          Just
+            ReadyBatch
+              { rbRequests = requests,
+                rbAllPaths = allPaths,
+                rbBatchStartTime = startTime
+              }
+
   if not (qsRunning queryState)
-    then return Nothing
+    then
+      -- Shutting down: flush remaining requests as a final batch, or signal done
+      if hasPendingRequests queryState then extractBatch else return Nothing
     else do
-      -- Check if we have any pending requests
-      if Seq.null (qsPendingRequests queryState)
+      if not (hasPendingRequests queryState)
         then retry -- No work, wait for requests
         else do
           -- We have requests, check if batch is ready
           let pathCount = Set.size (qsAccumulatedPaths queryState)
               sizeReady = pathCount >= nqoMaxBatchSize config
-              -- If timeout is 0, process immediately
               immediateMode = nqoMaxWaitTime config <= 0
 
-          -- Check timeout condition
           timeoutReady <- isQueryTimedOut queryState
 
           if sizeReady || timeoutReady || immediateMode
-            then do
-              -- Batch is ready, extract data and clear state
-              let requests = qsPendingRequests queryState
-                  allPaths = Set.toList (qsAccumulatedPaths queryState)
-                  startTime = qsQueryStartTime queryState
-
-              -- Clear the batch state
-              writeTVar stateVar $
-                queryState
-                  { qsPendingRequests = Seq.empty,
-                    qsAccumulatedPaths = Set.empty,
-                    qsQueryStartTime = Nothing,
-                    qsTimeoutVar = Nothing
-                  }
-
-              return $
-                Just
-                  ReadyBatch
-                    { rbRequests = requests,
-                      rbAllPaths = allPaths,
-                      rbBatchStartTime = startTime
-                    }
+            then extractBatch
             else retry -- Not ready yet, wait for timeout or more requests
 
 -- | Time refresh thread that updates cached time every few seconds

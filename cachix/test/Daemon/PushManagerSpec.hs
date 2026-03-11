@@ -149,8 +149,9 @@ spec = do
 
     describe "graceful shutdown" $ do
       it "shuts down with no jobs" $
-        withPushManager $
-          stopPushManager timeoutOptions
+        withPushManager $ \pm -> do
+          drainPushManager timeoutOptions pm
+          closePushManager pm
 
       it "shuts down after jobs complete" $ withPushManager $ \pm -> do
         let paths = ["foo"]
@@ -165,13 +166,14 @@ spec = do
           return pushId
 
         startTime <- getCurrentTime
-        concurrently_ (stopPushManager longTimeoutOptions pm) $
+        concurrently_ (drainPushManager longTimeoutOptions pm) $
           runPushManager pm $
             for_ paths pushStorePathDone
         endTime <- getCurrentTime
 
         let elapsed = diffUTCTime endTime startTime
         elapsed `shouldSatisfy` (< 0.5)
+        closePushManager pm
 
       it "shuts down on job stall" $
         withPushManager $ \pm -> do
@@ -179,13 +181,15 @@ spec = do
             let request = Protocol.PushRequest {Protocol.storePaths = ["foo"], Protocol.subscribeToUpdates = False}
             addPushJobFromRequest request
 
-          stopPushManager timeoutOptions pm
+          drainPushManager timeoutOptions pm
+          closePushManager pm
 
   describe "STM" $
     describe "timeout" $ do
       it "times out a transaction after n seconds" $ do
         timestamp <- newTVarIO =<< getCurrentTime
-        atomicallyWithTimeout timeoutOptions timestamp retry
+        result <- atomicallyWithTimeout timeoutOptions timestamp retry
+        result `shouldBe` False
 
 withPushManager :: (PushManagerEnv -> IO a) -> IO a
 withPushManager f = do

@@ -69,6 +69,39 @@
         }@args:
         let
           hlib = pkgs.haskell.lib;
+          # CA derivation FFI bindings (hercules-ci/hercules-ci-agent#670)
+          hercules-ci-cnix-store-src =
+            let
+              src =
+                builtins.fetchGit {
+                  url = "https://github.com/hercules-ci/hercules-ci-agent";
+                  rev = "a8a8acd6c77179963da9814f82ca10e61425a0a0";
+                }
+                + "/hercules-ci-cnix-store";
+            in
+            pkgs.runCommand "hercules-ci-cnix-store-src" { } ''
+              cp -r ${src} $out
+              chmod -R u+w $out
+              cat > $out/include/hercules-ci-cnix/store.hxx << 'HEADER'
+              #pragma once
+
+              #include <nix/store/path-info.hh>
+              #include <nix/store/derived-path-map.hh>
+
+              typedef nix::ref<nix::Store> refStore;
+
+              typedef nix::Strings::iterator StringsIterator;
+              typedef nix::DerivationOutputs::iterator DerivationOutputsIterator;
+              typedef nix::StringPairs::iterator StringPairsIterator;
+              typedef nix::PathSet::iterator PathSetIterator;
+              typedef nix::ref<const nix::ValidPathInfo> refValidPathInfo;
+
+              typedef nix::DerivedPathMap<std::set<nix::OutputName, std::less<>>>::Map::iterator DerivationInputsIterator;
+              HEADER
+            '';
+          hercules-ci-cnix-store =
+            haskellPackages.callCabal2nix "hercules-ci-cnix-store" hercules-ci-cnix-store-src
+              { nix = pkgs.nix; };
           cachix-api = haskellPackages.callCabal2nix "cachix-api" ./cachix-api { };
           cachix =
             hlib.overrideCabal

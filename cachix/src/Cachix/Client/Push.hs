@@ -56,6 +56,7 @@ import Cachix.Types.BinaryCache qualified as BinaryCache
 import Cachix.Types.MultipartUpload qualified as Multipart
 import Cachix.Types.NarInfoCreate qualified as Api
 import Cachix.Types.NarInfoHash qualified as NarInfoHash
+import Cachix.Types.Realisation qualified as Realisation
 import Conduit (MonadUnliftIO)
 import Control.Concurrent.Async (mapConcurrently)
 import Control.Concurrent.QSem qualified as QSem
@@ -70,14 +71,18 @@ import Data.Conduit.Lzma qualified as Lzma (compress)
 import Data.Conduit.Zstd qualified as Zstd (compress)
 import Data.IORef
 import Data.List.Extra (chunksOf)
+import Data.Map qualified as Map
 import Data.Set qualified as Set
 import Data.String.Here (iTrim)
 import Data.Text qualified as T
 import Network.HTTP.Types (status401, status404)
 import Nix.C.Hash qualified as NixHash
 import Nix.C.Hash.Nix32 qualified as Nix32
+import Nix.C.Store.Derivation qualified as NixDrv
+import Nix.C.Store.PathInfo (ContentAddress (..))
 import Nix.C.Store.PathInfo qualified as NixPathInfo
-import Nix.C.Unsafe.Store (Store, StorePath)
+import Nix.C.Store.Realisation qualified as NixRealisation
+import Nix.C.Unsafe.Store (Derivation, Store, StorePath)
 import Nix.C.Unsafe.Store qualified as Store
 import Nix.NarInfo qualified as NarInfo
 import Protolude hiding (toS)
@@ -235,6 +240,7 @@ uploadStorePath pushParams storePath retrystatus = do
     Right (uploadResult, uploadNarDetails) -> do
       nic <- newNarInfoCreate pushParams storePath pathInfo uploadNarDetails
       completeNarUpload pushParams uploadResult nic
+      pushRealisations pushParams pathInfo
       onDone strategy
 
 -- | Push an entire closure
@@ -278,6 +284,121 @@ completeNarUpload pushParams Push.S3.UploadMultipartResult {..} nic = do
 
   liftIO $ void $ retryHttp $ withClientM completeMultipartUploadRequest clientEnv escalate
 
+-- | Push realisations for content-addressed paths.
+-- This is a no-op for non-CA paths (when 'piCa' is Nothing) or when
+-- the deriver is unavailable. Walks the derivation graph via the
+-- C API: for each output of the deriver and each output of each
+-- (statically-known) input derivation, query the local store for a
+-- realisation and push the collected list in one batch.
+pushRealisations ::
+  (MonadUnliftIO m) =>
+  PushParams n r ->
+  PathInfo ->
+  m ()
+pushRealisations pushParams pathInfo =
+  case (piCa pathInfo, piDeriver pathInfo) of
+    (Just _, Just deriver) | deriver /= unknownDeriver -> liftIO $ do
+      let store = pushParamsStore pushParams
+          cacheName = pushParamsName pushParams
+          authToken = getCacheAuthToken (pushParamsSecret pushParams)
+          clientEnv = pushParamsClientEnv pushParams
+      -- Build the full drv store path from store-dir + deriver basename.
+      storeDirFP <- OsPath.decodeFS =<< Store.storeDir store
+      let drvFullFP = storeDirFP <> "/" <> toS deriver
+      drvFullOs <- OsPath.encodeFS drvFullFP
+      eDrvSp <- try (Store.parseStorePath' store drvFullOs)
+      case eDrvSp of
+        Left (_ :: SomeException) -> pure () -- drv missing or unparseable
+        Right drvSp -> do
+          visitedDrvsRef <- newIORef Set.empty
+          visitedIdsRef <- newIORef Set.empty
+          realisations <- collectRealisations visitedDrvsRef visitedIdsRef store drvSp
+          unless (null realisations) $ do
+            let request = API.putRealisations cachixClient authToken cacheName realisations
+            void $ retryHttp $ withClientM request clientEnv escalate
+    _ -> pure ()
+
+-- | Walk the derivation input graph collecting any locally-recorded
+-- realisations. Each drv is parsed once (cycle detection). We do not
+-- populate 'rDependentRealisations'; the server tracks the graph
+-- separately when each path is pushed.
+collectRealisations ::
+  IORef (Set FilePath) -> -- visited drv full paths
+  IORef (Set ByteString) -> -- visited drv_output_ids
+  Store ->
+  StorePath ->
+  IO [Realisation.Realisation]
+collectRealisations visitedDrvsRef visitedIdsRef store drvSp = do
+  drvFP <- OsPath.decodeFS =<< Store.storeRealPath store drvSp
+  alreadySeen <- Set.member drvFP <$> readIORef visitedDrvsRef
+  if alreadySeen
+    then pure []
+    else do
+      modifyIORef' visitedDrvsRef (Set.insert drvFP)
+      eDrv <- try (Store.drvFromStorePath store drvSp)
+      case eDrv of
+        Left (_ :: SomeException) -> pure []
+        Right drv -> do
+          outputs <- NixDrv.derivationOutputs store drv drvSp
+          here <- fmap catMaybes $ forM outputs $ \(_outName, drvOutputId) -> do
+            already <- Set.member drvOutputId <$> readIORef visitedIdsRef
+            if already
+              then pure Nothing
+              else do
+                modifyIORef' visitedIdsRef (Set.insert drvOutputId)
+                NixRealisation.queryRealisation store drvOutputId >>= \case
+                  Nothing -> pure Nothing
+                  Just r -> Just <$> mkRealisation store drvOutputId r
+          -- Recurse into static input derivations. Dynamic inputs are
+          -- not surfaced by the C API, so we skip the input walk for
+          -- those cases (the realisations of statically-resolvable
+          -- inputs are still collected above for the current drv).
+          hasDynamic <- NixDrv.derivationHasDynamicInputs drv
+          deps <-
+            if hasDynamic
+              then pure []
+              else do
+                pairs <- NixDrv.derivationInputDrvOutputs store drv
+                let uniqueDrvPaths = Set.toList $ Set.fromList $ fmap fst pairs
+                fmap concat $ forM uniqueDrvPaths $ \drvPathBS -> do
+                  inputOs <- OsPath.encodeFS (toS drvPathBS :: FilePath)
+                  inputSpE <- try (Store.parseStorePath' store inputOs)
+                  case inputSpE of
+                    Left (_ :: SomeException) -> pure []
+                    Right inputSp ->
+                      collectRealisations visitedDrvsRef visitedIdsRef store inputSp
+          pure (here ++ deps)
+ where
+  mkRealisation
+    :: Store
+    -> ByteString
+    -> NixRealisation.Realisation
+    -> IO Realisation.Realisation
+  mkRealisation s drvOutputId r = do
+    outSp <- NixRealisation.realisationOutPath r
+    outBaseFP <-
+      OsPath.decodeFS . OsPath.takeFileName =<< Store.storeRealPath s outSp
+    sigs <- NixRealisation.realisationSignatures r
+    let decode = decodeUtf8With lenientDecode
+    pure
+      Realisation.Realisation
+        { Realisation.rId = decode drvOutputId,
+          Realisation.rOutPath = T.pack outBaseFP,
+          Realisation.rSignatures = fmap decode sigs,
+          Realisation.rDependentRealisations = mempty
+        }
+
+unknownDeriver :: Text
+unknownDeriver = "unknown-deriver"
+
+-- | Render the C-API 'ContentAddress' back to its textual narinfo form
+-- (e.g. @"text:sha256:..."@ or @"fixed:r:sha256:..."@).
+caToText :: ContentAddress -> Text
+caToText = \case
+  ContentAddressText t -> t
+  ContentAddressStructured method hash ->
+    method <> ":" <> NixPathInfo.hashToSRI hash
+
 data UploadNarDetails = UploadNarDetails
   { undNarSize :: Integer,
     undNarHash :: Text,
@@ -294,7 +415,8 @@ data PathInfo = PathInfo
     piNarHash :: Text,
     piNarSize :: Integer,
     piDeriver :: Maybe Text,
-    piReferences :: Set FilePath
+    piReferences :: Set FilePath,
+    piCa :: Maybe Text
   }
   deriving stock (Eq, Show)
 
@@ -307,6 +429,7 @@ newPathInfoFromStorePath store storePath = liftIO $ do
 
   let narHash = NixHash.hashToNix32 (NixPathInfo.pathInfoNarHash info)
       narSize = fromIntegral $ NixPathInfo.pathInfoNarSize info
+      ca = caToText <$> NixPathInfo.pathInfoCa info
 
   let getStorePathBaseName =
         (OsPath.decodeFS . OsPath.takeFileName)
@@ -324,7 +447,8 @@ newPathInfoFromStorePath store storePath = liftIO $ do
         piNarHash = narHash,
         piNarSize = narSize,
         piDeriver = deriver,
-        piReferences = Set.fromList refPaths
+        piReferences = Set.fromList refPaths,
+        piCa = ca
       }
 
 -- | Create a 'PathInfo' for a store path from an existing NarInfo.
@@ -336,7 +460,8 @@ newPathInfoFromNarInfo narInfo =
         piNarHash = NarInfo.narHash narInfo,
         piNarSize = NarInfo.narSize narInfo,
         piDeriver = NarInfo.deriver narInfo,
-        piReferences = NarInfo.references narInfo
+        piReferences = NarInfo.references narInfo,
+        piCa = NarInfo.ca narInfo
       }
 
 -- | A conduit that compresses and streams a NAR to a cache.
@@ -475,7 +600,7 @@ Got:      ${piNarHash pathInfo}
         |]
 
   let deriver =
-        fromMaybe "unknown-deriver" $
+        fromMaybe unknownDeriver $
           if omitDeriver strategy
             then Nothing
             else piDeriver pathInfo
@@ -499,7 +624,8 @@ Got:      ${piNarHash pathInfo}
             Api.cFileHash = undFileHash,
             Api.cReferences = references,
             Api.cDeriver = deriver,
-            Api.cSig = sig
+            Api.cSig = sig,
+            Api.cCa = piCa pathInfo
           }
 
   escalate $ Api.isNarInfoCreateValid nic

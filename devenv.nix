@@ -26,6 +26,7 @@
     pkgs.sqlite.dev
     pkgs.libgit2
     pkgs.pcre2
+
   ]
   ++ nixCApiPkgs
   ++ lib.optional pkgs.stdenv.hostPlatform.isx86 pkgs.libcpuid

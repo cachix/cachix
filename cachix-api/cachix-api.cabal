@@ -81,6 +81,7 @@ library
     Cachix.Types.NixCacheInfo
     Cachix.Types.Permission
     Cachix.Types.PinCreate
+    Cachix.Types.Realisation
     Cachix.Types.Servant
     Cachix.Types.Session
     Cachix.Types.SigningKeyCreate

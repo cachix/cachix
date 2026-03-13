@@ -12,8 +12,11 @@ allow-newer-deps:
 
 extra-deps:
 # not in stackage
-- cabal-pkg-config-version-hook-0.1.0.1@sha256:7b91d1494f696e3264ee82d536c9fb5ae69419a4663b7c0b7efe901ef2568a9b,961
-- hercules-ci-cnix-store-0.4.0.0@sha256:464e4fb53d862600a483ebe2cffaea97e86945ee7c2ee76aace307554f5b7162,4017
+# CA derivation FFI bindings (hercules-ci/hercules-ci-agent#670)
+- github: hercules-ci/hercules-ci-agent
+  commit: a8a8acd6c77179963da9814f82ca10e61425a0a0
+  subdirs:
+    - hercules-ci-cnix-store
 - lzma-conduit-1.2.3@sha256:d33d14a1e95b134f90ecd73636328ec9b0aa14a6d2666f905443523d90bd159f,1712
 - microlens-pro-0.2.0.4@sha256:af8fc5760d913704c5283e649dd90feaf6bddd739f9b75bf52495b7964830bea,3377
 

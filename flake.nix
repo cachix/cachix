@@ -60,13 +60,46 @@
         }@args:
         let
           hlib = pkgs.haskell.lib;
+          # CA derivation FFI bindings (hercules-ci/hercules-ci-agent#670)
+          hercules-ci-cnix-store-src =
+            let
+              src =
+                builtins.fetchGit {
+                  url = "https://github.com/hercules-ci/hercules-ci-agent";
+                  rev = "a8a8acd6c77179963da9814f82ca10e61425a0a0";
+                }
+                + "/hercules-ci-cnix-store";
+            in
+            pkgs.runCommand "hercules-ci-cnix-store-src" { } ''
+              cp -r ${src} $out
+              chmod -R u+w $out
+              cat > $out/include/hercules-ci-cnix/store.hxx << 'HEADER'
+              #pragma once
+
+              #include <nix/store/path-info.hh>
+              #include <nix/store/derived-path-map.hh>
+
+              typedef nix::ref<nix::Store> refStore;
+
+              typedef nix::Strings::iterator StringsIterator;
+              typedef nix::DerivationOutputs::iterator DerivationOutputsIterator;
+              typedef nix::StringPairs::iterator StringPairsIterator;
+              typedef nix::PathSet::iterator PathSetIterator;
+              typedef nix::ref<const nix::ValidPathInfo> refValidPathInfo;
+
+              typedef nix::DerivedPathMap<std::set<nix::OutputName, std::less<>>>::Map::iterator DerivationInputsIterator;
+              HEADER
+            '';
+          hercules-ci-cnix-store =
+            haskellPackages.callCabal2nix "hercules-ci-cnix-store" hercules-ci-cnix-store-src
+              { nix = pkgs.nix; };
           cachix-api = haskellPackages.callCabal2nix "cachix-api" ./cachix-api { };
           cachix =
             hlib.overrideCabal
               (haskellPackages.callCabal2nix "cachix" ./cachix {
-                inherit cachix-api;
+                inherit cachix-api hercules-ci-cnix-store;
                 hnix-store-core = haskellPackages.hnix-store-core_0_8_0_0 or haskellPackages.hnix-store-core;
-                nix = getNix args;
+                nix = pkgs.nix;
               })
               # Apply a fix for a bug in GHC 9.10.3 that fails to load libraries using weak references on macOS 26.
               # https://github.com/NixOS/nixpkgs/pull/469906

@@ -46,6 +46,7 @@ where
 import Cachix.API qualified as API
 import Cachix.API.Error
 import Cachix.API.Signing (fingerprint, passthroughHashSink, passthroughHashSinkB16, passthroughSizeSink)
+import Cachix.Client.CNix qualified as CNix
 import Cachix.Client.Exception (CachixException (..))
 import Cachix.Client.Push.S3 qualified as Push.S3
 import Cachix.Client.Retry (retryAll, retryHttp)
@@ -55,6 +56,7 @@ import Cachix.Types.BinaryCache qualified as BinaryCache
 import Cachix.Types.MultipartUpload qualified as Multipart
 import Cachix.Types.NarInfoCreate qualified as Api
 import Cachix.Types.NarInfoHash qualified as NarInfoHash
+import Cachix.Types.Realisation qualified as Realisation
 import Conduit (MonadUnliftIO)
 import Control.Concurrent.Async (mapConcurrently)
 import Control.Concurrent.QSem qualified as QSem
@@ -69,6 +71,7 @@ import Data.Conduit.Lzma qualified as Lzma (compress)
 import Data.Conduit.Zstd qualified as Zstd (compress)
 import Data.IORef
 import Data.List.Extra (chunksOf)
+import Data.Map qualified as Map
 import Data.Set qualified as Set
 import Data.String.Here (iTrim)
 import Data.Text qualified as T
@@ -231,6 +234,7 @@ uploadStorePath pushParams storePath retrystatus = do
     Right (uploadResult, uploadNarDetails) -> do
       nic <- newNarInfoCreate pushParams storePath pathInfo uploadNarDetails
       completeNarUpload pushParams uploadResult nic
+      pushRealisations pushParams pathInfo
       onDone strategy
 
 -- | Push an entire closure
@@ -274,6 +278,66 @@ completeNarUpload pushParams Push.S3.UploadMultipartResult {..} nic = do
 
   liftIO $ void $ retryHttp $ withClientM completeMultipartUploadRequest clientEnv escalate
 
+-- | Push realisations for content-addressed paths.
+-- This is a no-op for non-CA paths (when piCa is Nothing) or when the deriver is unavailable.
+pushRealisations ::
+  (MonadUnliftIO m) =>
+  PushParams n r ->
+  PathInfo ->
+  m ()
+pushRealisations pushParams pathInfo =
+  case (piCa pathInfo, piDeriver pathInfo) of
+    (Just _, Just deriver) | deriver /= unknownDeriver -> liftIO $ do
+      let store = pushParamsStore pushParams
+          cacheName = pushParamsName pushParams
+          authToken = getCacheAuthToken (pushParamsSecret pushParams)
+          clientEnv = pushParamsClientEnv pushParams
+      -- Convert deriver basename to a store path
+      storeDir' <- Store.storeDir store
+      maybeDrvStorePath <- CNix.followLinksToStorePath store (storeDir' <> "/" <> toS deriver)
+      for_ maybeDrvStorePath $ \drvStorePath -> do
+        -- Get derivation output ids (sha256:<hash>!<outputName>)
+        outputIds <- Store.getDerivationOutputIds store drvStorePath
+        -- Collect all realisations locally (with cycle detection), then push in one batch
+        visitedRef <- newIORef Set.empty
+        realisations <- collectRealisations visitedRef store (fmap fst outputIds)
+        unless (null realisations) $ do
+          let request = API.putRealisations cachixClient authToken cacheName realisations
+          void $ retryHttp $ withClientM request clientEnv escalate
+    _ -> pure ()
+
+-- | Recursively collect realisations for the given derivation output ids.
+-- Tracks visited ids to avoid cycles.
+collectRealisations ::
+  IORef (Set ByteString) ->
+  Store ->
+  [ByteString] ->
+  IO [Realisation.Realisation]
+collectRealisations visitedRef store drvOutputIds =
+  fmap concat $ forM drvOutputIds $ \drvOutputId -> do
+    visited <- readIORef visitedRef
+    if Set.member drvOutputId visited
+      then pure []
+      else do
+        modifyIORef' visitedRef (Set.insert drvOutputId)
+        result <- Store.queryRealisation store drvOutputId
+        case result of
+          Nothing -> pure []
+          Just (outPath, sigs, depReals) -> do
+            depRealisations <- collectRealisations visitedRef store (Map.keys depReals)
+            let decode = decodeUtf8With lenientDecode
+                realisation =
+                  Realisation.Realisation
+                    { Realisation.rId = decode drvOutputId,
+                      Realisation.rOutPath = decode outPath,
+                      Realisation.rSignatures = fmap decode sigs,
+                      Realisation.rDependentRealisations = Map.mapKeys decode (Map.map decode depReals)
+                    }
+            pure (realisation : depRealisations)
+
+unknownDeriver :: Text
+unknownDeriver = "unknown-deriver"
+
 data UploadNarDetails = UploadNarDetails
   { undNarSize :: Integer,
     undNarHash :: Text,
@@ -290,7 +354,8 @@ data PathInfo = PathInfo
     piNarHash :: Text,
     piNarSize :: Integer,
     piDeriver :: Maybe Text,
-    piReferences :: Set FilePath
+    piReferences :: Set FilePath,
+    piCa :: Maybe Text
   }
   deriving stock (Eq, Show)
 
@@ -308,6 +373,7 @@ newPathInfoFromStorePath store storePath = liftIO $ do
   references <-
     Store.validPathInfoReferences store pathInfo
       >>= mapM Store.getStorePathBaseName
+  ca <- Store.validPathInfoCA pathInfo
 
   return $
     PathInfo
@@ -315,7 +381,8 @@ newPathInfoFromStorePath store storePath = liftIO $ do
         piNarHash = decodeUtf8 narHash,
         piNarSize = narSize,
         piDeriver = fmap toS deriver,
-        piReferences = Set.fromList (fmap toS references)
+        piReferences = Set.fromList (fmap toS references),
+        piCa = fmap decodeUtf8 ca
       }
 
 -- | Create a 'PathInfo' for a store path from an existing NarInfo.
@@ -327,7 +394,8 @@ newPathInfoFromNarInfo narInfo =
         piNarHash = NarInfo.narHash narInfo,
         piNarSize = NarInfo.narSize narInfo,
         piDeriver = NarInfo.deriver narInfo,
-        piReferences = NarInfo.references narInfo
+        piReferences = NarInfo.references narInfo,
+        piCa = NarInfo.ca narInfo
       }
 
 -- | A conduit that compresses and streams a NAR to a cache.
@@ -464,7 +532,7 @@ Got:      ${piNarHash pathInfo}
         |]
 
   let deriver =
-        fromMaybe "unknown-deriver" $
+        fromMaybe unknownDeriver $
           if omitDeriver strategy
             then Nothing
             else piDeriver pathInfo
@@ -488,7 +556,8 @@ Got:      ${piNarHash pathInfo}
             Api.cFileHash = undFileHash,
             Api.cReferences = references,
             Api.cDeriver = deriver,
-            Api.cSig = sig
+            Api.cSig = sig,
+            Api.cCa = piCa pathInfo
           }
 
   escalate $ Api.isNarInfoCreateValid nic

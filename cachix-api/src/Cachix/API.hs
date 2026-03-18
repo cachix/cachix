@@ -11,6 +11,7 @@ where
 import qualified Cachix.Types.BinaryCache as BinaryCache
 import qualified Cachix.Types.ByteStringStreaming as ByteStringStreaming
 import Cachix.Types.ContentTypes
+import qualified Cachix.Types.DebugInfo as DebugInfo
 import qualified Cachix.Types.MultipartUpload as Multipart
 import Cachix.Types.NarFileName (NarFileName (..))
 import qualified Cachix.Types.NarInfo as NarInfo
@@ -177,7 +178,27 @@ data BinaryCacheAPI route = BinaryCacheAPI
           :> Capture "name" Text
           :> "pin"
           :> ReqBody '[JSON] PinCreate.PinCreate
-          :> Post '[JSON] NoContent
+          :> Post '[JSON] NoContent,
+    createDebugInfo ::
+      route
+        :- Summary "Register debug info entries for a NAR"
+          :> CachixAuth
+          :> "cache"
+          :> Capture "name" Text
+          :> "nar"
+          :> Capture "narHash" Text
+          :> "debuginfo"
+          :> ReqBody '[JSON] [DebugInfo.DebugInfoEntry]
+          :> Post '[JSON] NoContent,
+    getDebugInfo ::
+      route
+        :- Summary "Look up debug info by build ID"
+          :> CachixAuth
+          :> "cache"
+          :> Capture "name" Text
+          :> "debuginfo"
+          :> Capture "buildId" Text
+          :> Get '[JSON] DebugInfo.DebugInfoRedirect
   }
   deriving (Generic)
 

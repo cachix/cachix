@@ -23,6 +23,9 @@ module Cachix.Client.OptionsParser
     -- * Pin options
     PinOptions (..),
 
+    -- * DebugInfod options
+    DebugInfodOptions (..),
+
     -- * Doctor options
     DoctorOptions (..),
 
@@ -84,6 +87,7 @@ data CachixCommand
   = AuthToken (Maybe Text)
   | Config Config.Command
   | Daemon DaemonCommand
+  | DebugInfod DebugInfodOptions
   | Doctor DoctorOptions
   | GenerateKeypair BinaryCacheName
   | Push PushArguments
@@ -197,6 +201,14 @@ data DaemonPushOptions = DaemonPushOptions
   }
   deriving (Show)
 
+data DebugInfodOptions = DebugInfodOptions
+  { debugInfodCacheName :: BinaryCacheName,
+    debugInfodPort :: Int,
+    debugInfodCacheDir :: Maybe FilePath,
+    debugInfodExpiration :: Maybe Int
+  }
+  deriving (Show)
+
 data DoctorOptions = DoctorOptions
   { doctorCacheName :: Maybe BinaryCacheName,
     doctorStorePath :: Maybe Text
@@ -226,6 +238,7 @@ commandParser =
     <|> pushCommands
     <|> storePathCommands
     <|> daemonCommands
+    <|> debugInfodCommands
     <|> deployCommands
     <|> diagnosticCommands
   where
@@ -272,6 +285,14 @@ commandParser =
           [ commandGroup "Daemon commands:",
             hidden,
             command "daemon" $ infoH daemonCommand $ progDesc "Run a daemon that listens to push requests over a unix socket"
+          ]
+
+    debugInfodCommands =
+      subparser $
+        fold
+          [ commandGroup "Debug commands:",
+            hidden,
+            command "debuginfod" $ infoH debugInfodCommand $ progDesc "Start a local debuginfod server backed by a Cachix binary cache"
           ]
 
     deployCommands =
@@ -643,6 +664,37 @@ daemonPushOptionsParser =
       ( long "wait"
           <> help "Wait for the push operation to complete"
       )
+
+debugInfodCommand :: Parser CachixCommand
+debugInfodCommand =
+  DebugInfod
+    <$> ( DebugInfodOptions
+            <$> cacheNameParser
+            <*> portOption
+            <*> cacheDirOption
+            <*> expirationOption
+        )
+  where
+    portOption =
+      option auto $
+        long "port"
+          <> short 'p'
+          <> metavar "PORT"
+          <> help "Port to listen on"
+          <> showDefault
+          <> value 1949
+
+    cacheDirOption =
+      optional . strOption $
+        long "cache-dir"
+          <> metavar "DIR"
+          <> help "Directory to cache downloaded debug info"
+
+    expirationOption =
+      optional . option auto $
+        long "expiration"
+          <> metavar "SECONDS"
+          <> help "Cache expiration time in seconds (default: 86400)"
 
 deployCommand :: Parser CachixCommand
 deployCommand = DeployCommand <$> DeployOptions.parser

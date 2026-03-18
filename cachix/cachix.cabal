@@ -60,6 +60,7 @@ library
     Cachix.Client.Command
     Cachix.Client.Command.Cache
     Cachix.Client.Command.Config
+    Cachix.Client.Command.DebugInfod
     Cachix.Client.Command.Doctor
     Cachix.Client.Command.Import
     Cachix.Client.Command.Pin
@@ -76,6 +77,7 @@ library
     Cachix.Client.NixVersion
     Cachix.Client.OptionsParser
     Cachix.Client.Push
+    Cachix.Client.Push.DebugInfo
     Cachix.Client.Push.S3
     Cachix.Client.PushQueue
     Cachix.Client.Retry
@@ -111,6 +113,15 @@ library
     Cachix.Daemon.Types.SocketStore
     Cachix.Daemon.Types.TaskQueue
     Cachix.Daemon.Worker
+    Cachix.DebugInfod.BinaryCache
+    Cachix.DebugInfod.BuildId
+    Cachix.DebugInfod.Cache
+    Cachix.DebugInfod.Nar
+    Cachix.DebugInfod.Server
+    Cachix.DebugInfod.SourceSelection
+    Cachix.DebugInfod.StorePath
+    Cachix.DebugInfod.Types
+    Cachix.DebugInfod.Vfs
     Cachix.Deploy.Activate
     Cachix.Deploy.ActivateCommand
     Cachix.Deploy.Agent
@@ -186,6 +197,7 @@ library
     , servant-auth-client     >=0.3.3.0
     , servant-client          >=0.16
     , servant-conduit
+    , servant-server          >=0.16
     , stm
     , stm-chans
     , stm-conduit
@@ -202,6 +214,8 @@ library
     , uuid
     , vector
     , versions
+    , wai
+    , warp
     , websockets
     , wuss
 

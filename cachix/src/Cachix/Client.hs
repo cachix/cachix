@@ -37,6 +37,7 @@ main = displayConsoleRegions $ do
   case command of
     AuthToken token -> Command.authtoken env token
     Config configCommand -> Config.run cachixOptions configCommand
+    DebugInfod debugInfodOpts -> Command.debuginfod env debugInfodOpts
     Daemon (DaemonDoctor daemonOptions) -> Command.daemonDoctor env daemonOptions
     Daemon (DaemonRun daemonOptions pushOptions mcacheName) -> Daemon.start env daemonOptions pushOptions mcacheName
     Daemon (DaemonStop daemonOptions) -> Daemon.Client.stop env daemonOptions

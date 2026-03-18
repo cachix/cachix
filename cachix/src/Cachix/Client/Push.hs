@@ -215,6 +215,14 @@ uploadStorePath pushParams storePath retrystatus = do
   storePathText <- liftIO $ Store.storePathToPath store storePath
   let path = toS storePathText
 
+  -- DEBUG: print store info for diagnosing custom store path resolution
+  liftIO $ do
+    uri <- Store.storeUri store
+    dir <- Store.storeDir store
+    putErrText $ "DEBUG storeUri: " <> decodeUtf8With lenientDecode uri
+    putErrText $ "DEBUG storeDir: " <> decodeUtf8With lenientDecode dir
+    putErrText $ "DEBUG storePathToPath: " <> decodeUtf8With lenientDecode storePathText
+
   -- Validate the path is still valid (may have been GC'd since queued)
   liftIO (validateStorePath store storePath) >>= \case
     Right _ -> pure ()
@@ -224,7 +232,8 @@ uploadStorePath pushParams storePath retrystatus = do
 
   onAttempt strategy retrystatus narSize
 
-  realPath <- liftIO $ storePathToRealPath store storePath
+  realPath <- liftIO $ storePathToRealPath Nothing store storePath
+  liftIO $ putErrText $ "DEBUG realPath: " <> toS realPath
   eresult <-
     runConduitRes $
       streamNarIO narEffectsIO realPath Data.Conduit.yield

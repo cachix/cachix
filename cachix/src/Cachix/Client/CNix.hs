@@ -71,48 +71,52 @@ extractStoreHash storeDirectory input =
 -- | Get the real filesystem path for a store path.
 --
 -- For the default store, this is the same as @storePathToPath@.
--- For local stores with a custom root (e.g. @local?root=\/tmp\/hello@),
--- this returns the physical path (e.g. @\/tmp\/hello\/nix\/store\/hash-name@).
+-- For local stores with a custom root (e.g. @\/tmp\/hello@ or
+-- @local?root=\/tmp\/hello@), this returns the physical path
+-- (e.g. @\/tmp\/hello\/nix\/store\/hash-name@).
 --
 -- Only local stores are supported. Non-local store URIs are not expected
 -- to have a meaningful filesystem path.
-storePathToRealPath :: Store -> StorePath -> IO FilePath
-storePathToRealPath store storePath = do
+storePathToRealPath :: Maybe Text -> Store -> StorePath -> IO FilePath
+storePathToRealPath storeURI store storePath = do
   logicalPath <- toS <$> Store.storePathToPath store storePath
-  storeRoot <- getStoreRoot store
-  pure $ case storeRoot of
+  pure $ case parseStoreRoot storeURI of
     Nothing -> logicalPath
     Just root -> root </> makeRelative "/" logicalPath
 
--- | Extract the root directory from a local store's URI.
+-- | Parse the store root from a Nix store URI as provided by the user.
 --
--- Returns @Nothing@ for the default store (no custom root).
--- Parses the @root@ query parameter from URIs like @local?root=\/tmp\/hello@.
-getStoreRoot :: Store -> IO (Maybe FilePath)
-getStoreRoot store = do
-  uri <- toS <$> Store.storeUri store
-  pure $ parseStoreRoot uri
-
--- | Parse the store root from a Nix store URI.
+-- Accepts:
 --
--- Nix store URIs for local stores look like @local@ or @local?root=\/tmp\/hello@.
--- We parse these as relative URI references to extract the @root@ query parameter.
+--   * Bare absolute paths: @\/tmp\/hello@
+--   * Local store URIs with a root parameter: @local?root=\/tmp\/hello@
 --
--- >>> parseStoreRoot "local"
+-- Returns @Nothing@ for the default store or non-local store URIs.
+--
+-- >>> parseStoreRoot Nothing
 -- Nothing
--- >>> parseStoreRoot "local?root=/tmp/hello"
+-- >>> parseStoreRoot (Just "/tmp/hello")
 -- Just "/tmp/hello"
--- >>> parseStoreRoot "local?root=/tmp/hello&real=/somewhere"
+-- >>> parseStoreRoot (Just "local?root=/tmp/hello")
 -- Just "/tmp/hello"
--- >>> parseStoreRoot "daemon"
+-- >>> parseStoreRoot (Just "local?root=/tmp/hello&real=/somewhere")
+-- Just "/tmp/hello"
+-- >>> parseStoreRoot (Just "local")
 -- Nothing
-parseStoreRoot :: Text -> Maybe FilePath
-parseStoreRoot uri = do
-  ref <- either (const Nothing) Just $ URI.parseRelativeRef URI.laxURIParserOptions (toS uri)
-  guard (URI.rrPath ref == "local")
-  let params = URI.queryPairs (URI.rrQuery ref)
-  root <- lookup "root" params
-  pure (toS root)
+-- >>> parseStoreRoot (Just "daemon")
+-- Nothing
+parseStoreRoot :: Maybe Text -> Maybe FilePath
+parseStoreRoot Nothing = Nothing
+parseStoreRoot (Just uri)
+  -- Bare absolute path, e.g. /tmp/hello
+  | "/" `T.isPrefixOf` uri = Just (toS uri)
+  -- URI with query params, e.g. local?root=/tmp/hello
+  | otherwise = do
+      ref <- either (const Nothing) Just $ URI.parseRelativeRef URI.laxURIParserOptions (toS uri)
+      guard (URI.rrPath ref == "local")
+      let params = URI.queryPairs (URI.rrQuery ref)
+      root <- lookup "root" params
+      pure (toS root)
 
 -- | Open a Nix store, using the given URI if provided, or the default store.
 withStoreFromMaybeURI :: Maybe Text -> (Store -> IO a) -> IO a

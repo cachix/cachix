@@ -12,7 +12,7 @@ module Cachix.Client.Command.Push
 where
 
 import Cachix.API qualified as API
-import Cachix.Client.CNix (logStorePathWarning, resolveStorePaths)
+import Cachix.Client.CNix (logStorePathWarning, resolveStorePaths, withStoreFromMaybeURI)
 import Cachix.Client.Config qualified as Config
 import Cachix.Client.Env (Env (..))
 import Cachix.Client.Exception (CachixException (..))
@@ -31,7 +31,7 @@ import Data.Conduit qualified as Conduit
 import Data.String.Here
 import Data.Text qualified as T
 import Hercules.CNix (StorePath)
-import Hercules.CNix.Store (Store, storePathToPath, withStore)
+import Hercules.CNix.Store (Store, storePathToPath)
 import Network.HTTP.Types (status401, status404)
 import Protolude hiding (toS)
 import Protolude.Conv
@@ -144,7 +144,7 @@ withPushParams' env pushOpts name pushSecret m = do
   let compressionMethod =
         fromMaybe BinaryCache.ZSTD (head $ catMaybes [Options.compressionMethod pushOpts, compressionMethodBackend])
 
-  withStore $ \store ->
+  withStoreFromMaybeURI (storeURI env) $ \store ->
     m
       PushParams
         { pushParamsName = name,

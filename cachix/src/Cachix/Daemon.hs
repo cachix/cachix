@@ -39,7 +39,8 @@ import Control.Concurrent.STM.TMChan
 import Control.Exception.Safe (catchAny)
 import Data.IORef (IORef, atomicModifyIORef', newIORef)
 import Data.Text qualified as T
-import Hercules.CNix.Store (Store, withStore)
+import Cachix.Client.CNix (withStoreFromMaybeURI)
+import Hercules.CNix.Store (Store)
 import Hercules.CNix.Util qualified as CNix.Util
 import Katip qualified
 import Network.Socket qualified as Socket
@@ -110,7 +111,7 @@ new daemonEnv nixStore daemonOptions daemonLogHandle daemonPushOptions daemonCac
 -- Equivalent to running 'withStore', new', and 'run', together with some signal handling.
 start :: Env -> DaemonOptions -> PushOptions -> BinaryCacheName -> IO ()
 start daemonEnv daemonOptions daemonPushOptions daemonCacheName =
-  withStore $ \store -> do
+  withStoreFromMaybeURI (storeURI daemonEnv) $ \store -> do
     daemon <- new daemonEnv store daemonOptions Nothing daemonPushOptions daemonCacheName
     void $ runDaemon daemon installSignalHandlers
     result <- run daemon

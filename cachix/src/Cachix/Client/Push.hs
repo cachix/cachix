@@ -46,7 +46,7 @@ where
 import Cachix.API qualified as API
 import Cachix.API.Error
 import Cachix.API.Signing (fingerprint, passthroughHashSink, passthroughHashSinkB16, passthroughSizeSink)
-import Cachix.Client.CNix (formatStorePathWarning, splitStorePath, validateStorePath)
+import Cachix.Client.CNix (formatStorePathWarning, splitStorePath, storePathToRealPath, validateStorePath)
 import Cachix.Client.Exception (CachixException (..))
 import Cachix.Client.Push.S3 qualified as Push.S3
 import Cachix.Client.Retry (retryAll, retryHttp)
@@ -224,9 +224,10 @@ uploadStorePath pushParams storePath retrystatus = do
 
   onAttempt strategy retrystatus narSize
 
+  realPath <- liftIO $ storePathToRealPath store storePath
   eresult <-
     runConduitRes $
-      streamNarIO narEffectsIO (toS storePathText) Data.Conduit.yield
+      streamNarIO narEffectsIO realPath Data.Conduit.yield
         .| streamUploadNar pushParams storePath narSize retrystatus
 
   case eresult of

@@ -18,6 +18,9 @@ module Cachix.Client.CNix
     filterInvalidStorePaths,
     followLinksToStorePath,
 
+    -- * Store path filesystem mapping
+    storePathToRealPath,
+
     -- * Store connection
     withStoreFromMaybeURI,
 
@@ -32,9 +35,12 @@ import Data.Text qualified as T
 import Hercules.CNix.Store (Store, StorePath)
 import Hercules.CNix.Store qualified as Store
 import Language.C.Inline.Cpp.Exception
+import Data.List (lookup)
 import Protolude hiding (toS)
 import Protolude.Conv
 import System.Console.Pretty (Color (..), Style (..), color, style)
+import System.FilePath ((</>), makeRelative)
+import URI.ByteString qualified as URI
 
 -- | Split a store path into its hash and suffix components.
 --
@@ -61,6 +67,52 @@ extractStoreHash storeDirectory input =
           let (storeHash, _) = splitStorePath storeDirectory path
            in guard (T.length storeHash == 32) $> storeHash
         else guard (T.length path >= 32) $> T.take 32 path
+
+-- | Get the real filesystem path for a store path.
+--
+-- For the default store, this is the same as @storePathToPath@.
+-- For local stores with a custom root (e.g. @local?root=\/tmp\/hello@),
+-- this returns the physical path (e.g. @\/tmp\/hello\/nix\/store\/hash-name@).
+--
+-- Only local stores are supported. Non-local store URIs are not expected
+-- to have a meaningful filesystem path.
+storePathToRealPath :: Store -> StorePath -> IO FilePath
+storePathToRealPath store storePath = do
+  logicalPath <- toS <$> Store.storePathToPath store storePath
+  storeRoot <- getStoreRoot store
+  pure $ case storeRoot of
+    Nothing -> logicalPath
+    Just root -> root </> makeRelative "/" logicalPath
+
+-- | Extract the root directory from a local store's URI.
+--
+-- Returns @Nothing@ for the default store (no custom root).
+-- Parses the @root@ query parameter from URIs like @local?root=\/tmp\/hello@.
+getStoreRoot :: Store -> IO (Maybe FilePath)
+getStoreRoot store = do
+  uri <- toS <$> Store.storeUri store
+  pure $ parseStoreRoot uri
+
+-- | Parse the store root from a Nix store URI.
+--
+-- Nix store URIs for local stores look like @local@ or @local?root=\/tmp\/hello@.
+-- We parse these as relative URI references to extract the @root@ query parameter.
+--
+-- >>> parseStoreRoot "local"
+-- Nothing
+-- >>> parseStoreRoot "local?root=/tmp/hello"
+-- Just "/tmp/hello"
+-- >>> parseStoreRoot "local?root=/tmp/hello&real=/somewhere"
+-- Just "/tmp/hello"
+-- >>> parseStoreRoot "daemon"
+-- Nothing
+parseStoreRoot :: Text -> Maybe FilePath
+parseStoreRoot uri = do
+  ref <- either (const Nothing) Just $ URI.parseRelativeRef URI.laxURIParserOptions (toS uri)
+  guard (URI.rrPath ref == "local")
+  let params = URI.queryPairs (URI.rrQuery ref)
+  root <- lookup "root" params
+  pure (toS root)
 
 -- | Open a Nix store, using the given URI if provided, or the default store.
 withStoreFromMaybeURI :: Maybe Text -> (Store -> IO a) -> IO a

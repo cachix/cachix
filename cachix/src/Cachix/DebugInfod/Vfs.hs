@@ -1,18 +1,15 @@
 module Cachix.DebugInfod.Vfs
   ( RestrictedPath (..),
     ResolvedPath,
-    StorePathResolver,
-    resolve,
     resolveInsideRoot,
     resolvedPath,
     splitComponents,
+    readSymlinkSafe,
   )
 where
 
-import Cachix.DebugInfod.StorePath qualified as StorePath
 import GHC.IO.Exception (IOErrorType (InvalidArgument))
 import Protolude hiding (toS)
-import Protolude.Conv
 import System.Directory (doesDirectoryExist)
 import System.FilePath (takeDirectory, (</>))
 import System.IO.Error (IOError, ioeGetErrorType, isDoesNotExistError, userError)
@@ -31,10 +28,6 @@ data RestrictedPath = RestrictedPath
 newtype ResolvedPath = ResolvedPath FilePath
   deriving (Show, Eq)
 
--- | Callback to fetch a store path output. Returns a RestrictedPath rooted
--- at the fetched output directory. Returns Nothing if unavailable.
-type StorePathResolver = StorePath.StorePath -> IO (Maybe RestrictedPath)
-
 maxSymlinkDepth :: Int
 maxSymlinkDepth = 20
 
@@ -43,10 +36,9 @@ resolvedPath :: ResolvedPath -> FilePath
 resolvedPath (ResolvedPath p) = p
 
 -- | Resolve all symlinks in a RestrictedPath.
--- Symlinks must either stay within the root or point to /nix/store/ paths
--- (which are resolved via the callback).
-resolve :: RestrictedPath -> StorePathResolver -> IO (Maybe ResolvedPath)
-resolve rp resolver = resolveLoop (restrictedRoot rp) (restrictedInner rp) 0
+-- Errors if any symlink points to a /nix/store/ path (use fetchStoreFile for those).
+resolveInsideRoot :: RestrictedPath -> IO (Maybe ResolvedPath)
+resolveInsideRoot rp = resolveLoop (restrictedRoot rp) (restrictedInner rp) 0
   where
     resolveLoop :: FilePath -> FilePath -> Int -> IO (Maybe ResolvedPath)
     resolveLoop root toBeResolved depth = do
@@ -88,30 +80,19 @@ resolve rp resolver = resolveLoop (restrictedRoot rp) (restrictedInner rp) 0
               let base = takeDirectory next
                   joined = foldl' (</>) (base </> target) rest
               if "/nix/store/" `isPrefixOf` joined
-                then case StorePath.parseStorePath (toS joined) of
-                  Left err ->
-                    throwIO $
-                      userError $
-                        restrictedInner rp <> " resolves to malformed store path: " <> toS err
-                  Right sp -> do
-                    result <- resolver sp
-                    case result of
-                      Nothing -> pure Nothing
-                      Just newRp ->
-                        let rel = StorePath.storePathRelative sp
-                            newInner
-                              | null rel = restrictedRoot newRp
-                              | otherwise = restrictedRoot newRp </> rel
-                         in resolveLoop (restrictedRoot newRp) newInner (depth + 1)
+                then
+                  throwIO $
+                    userError $
+                      "not allowed to point to store path from " <> restrictedInner rp
                 else resolveLoop root joined (depth + 1)
 
--- | Like 'resolve' but errors if any symlink points to a store path.
-resolveInsideRoot :: RestrictedPath -> IO (Maybe ResolvedPath)
-resolveInsideRoot rp =
-  resolve rp $ \sp ->
-    throwIO $
-      userError $
-        "not allowed to point to store path " <> show sp
+-- | Read a symlink target, returning Nothing on errors.
+readSymlinkSafe :: FilePath -> IO (Maybe FilePath)
+readSymlinkSafe path = do
+  result <- try @IOError $ readSymbolicLink path
+  pure $ case result of
+    Right target -> Just target
+    Left _ -> Nothing
 
 -- Internal
 

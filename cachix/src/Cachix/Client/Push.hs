@@ -47,6 +47,7 @@ import Cachix.API qualified as API
 import Cachix.API.Error
 import Cachix.API.Signing (fingerprint, passthroughHashSink, passthroughHashSinkB16, passthroughSizeSink)
 import Cachix.Client.Exception (CachixException (..))
+import Cachix.Client.Push.DebugInfo qualified as Push.DebugInfo
 import Cachix.Client.Push.S3 qualified as Push.S3
 import Cachix.Client.Retry (retryAll, retryHttp)
 import Cachix.Client.Secrets
@@ -231,6 +232,13 @@ uploadStorePath pushParams storePath retrystatus = do
     Right (uploadResult, uploadNarDetails) -> do
       nic <- newNarInfoCreate pushParams storePath pathInfo uploadNarDetails
       completeNarUpload pushParams uploadResult nic
+      liftIO $
+        Push.DebugInfo.scanAndUploadDebugInfo
+          (pushParamsClientEnv pushParams)
+          (getCacheAuthToken (pushParamsSecret pushParams))
+          (pushParamsName pushParams)
+          (Api.cFileHash nic)
+          (toS storePathText)
       onDone strategy
 
 -- | Push an entire closure

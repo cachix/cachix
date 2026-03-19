@@ -31,7 +31,6 @@ debuginfod env opts = do
       xdgCache <- getXdgDirectory XdgCache "cachix/debuginfod"
       pure (xdgCache </> toS cacheName)
   fc <- Cache.newFetcherCache (cacheDir </> "debuginfo") expiration
-  sc <- Cache.newFetcherCache (cacheDir </> "store") expiration
   let debugEnv =
         DebugInfodEnv
           { envCacheBaseUrl = cacheUrl,
@@ -39,7 +38,6 @@ debuginfod env opts = do
             envHttpManager = manager,
             envClientEnv = clientenv env,
             envCacheName = cacheName,
-            envFetcherCache = fc,
-            envStoreCache = sc
+            envFetcherCache = fc
           }
   Server.runServer debugEnv port

@@ -36,6 +36,5 @@ data DebugInfodEnv = DebugInfodEnv
     envHttpManager :: Manager,
     envClientEnv :: ClientEnv,
     envCacheName :: Text,
-    envFetcherCache :: FetcherCache,
-    envStoreCache :: FetcherCache
+    envFetcherCache :: FetcherCache
   }

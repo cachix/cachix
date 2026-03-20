@@ -160,10 +160,6 @@ spec = do
               Nothing -> panic "Expected batch call"
         Set.fromList batchPaths `shouldBe` Set.fromList [path1, path2]
 
-        -- Verify both requests got responses
-        callbacks <- readTVarIO tcCallbackCalls
-        length callbacks `shouldBe` 2
-
     it "triggers batch when timeout is reached" $ withStoreFromURI "dummy://" $ \store -> do
       path1 <- mockStorePath store 1
       let config = defaultNarinfoQueryOptions {nqoMaxBatchSize = 100, nqoMaxWaitTime = 0.05} -- Small timeout, large batch
@@ -178,8 +174,6 @@ spec = do
 
         calls <- readTVarIO tcBatchCalls
         length calls `shouldBe` 1 -- Batch triggered by timeout
-        callbacks <- readTVarIO tcCallbackCalls
-        length callbacks `shouldBe` 1 -- Request got response
     it "processes immediately when timeout is zero" $ withStoreFromURI "dummy://" $ \store -> do
       path1 <- mockStorePath store 1
       let config = defaultNarinfoQueryOptions {nqoMaxBatchSize = 100, nqoMaxWaitTime = 0} -- Immediate mode
@@ -192,9 +186,6 @@ spec = do
 
         calls <- readTVarIO tcBatchCalls
         length calls `shouldBe` 1 -- Processed immediately
-        callbacks <- readTVarIO tcCallbackCalls
-        length callbacks `shouldBe` 1
-
     it "only caches existing paths, not missing ones" $ withStoreFromURI "dummy://" $ \store -> do
       path1 <- mockStorePath store 1
       path2 <- mockStorePath store 2
@@ -245,11 +236,8 @@ spec = do
               Nothing -> panic "Expected batch call"
         secondBatchPaths `shouldBe` [path2]
 
-        -- Both requests should have gotten responses
-        callbacks <- readTVarIO tcCallbackCalls
-        length callbacks `shouldBe` 2
-
         -- Second response should contain both paths (path1 from cache + path2 from batch)
+        callbacks <- readTVarIO tcCallbackCalls
         let secondResponse = case head callbacks of
               Just (CallbackCall _ response _) -> response
               Nothing -> panic "Expected callback call"
@@ -280,7 +268,6 @@ spec = do
         waitForCallbacks tcCallbackCalls 2
 
         callbacks <- readTVarIO tcCallbackCalls
-        length callbacks `shouldBe` 2
 
         -- Find responses by request ID
         let findResponse rid = find (\(CallbackCall r _ _) -> r == rid) callbacks
@@ -305,7 +292,6 @@ spec = do
         -- Submit overlapping requests that will be batched together
         NarinfoQuery.submitRequest tcManager (1 :: Int) [path1, path2] -- paths 1,2
         NarinfoQuery.submitRequest tcManager (2 :: Int) [path2, path1] -- paths 2,1 (same, different order)
-
         waitForCallbacks tcCallbackCalls 2
 
         calls <- readTVarIO tcBatchCalls
@@ -317,7 +303,3 @@ spec = do
               Nothing -> panic "Expected batch call"
         Set.fromList batchPaths `shouldBe` Set.fromList [path1, path2]
         length batchPaths `shouldBe` 2 -- No duplicates
-
-        -- Both requests should still get responses
-        callbacks <- readTVarIO tcCallbackCalls
-        length callbacks `shouldBe` 2

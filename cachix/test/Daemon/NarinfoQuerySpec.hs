@@ -80,17 +80,13 @@ data TestContext requestId = TestContext
 
 -- Helper to start batch processor asynchronously with its own Katip context
 startQueryProcessorAsync :: NarinfoQueryManager requestId -> ([StorePath] -> IO ([StorePath], [StorePath])) -> IO ()
-startQueryProcessorAsync manager batchProcessor = do
-  started <- newEmptyMVar
+startQueryProcessorAsync manager batchProcessor =
   void $ Async.async $ do
     handleScribe <- Katip.mkHandleScribe Katip.ColorIfTerminal stderr (Katip.permitItem Katip.InfoS) Katip.V0
     let makeLogEnv = Katip.registerScribe "stderr" handleScribe Katip.defaultScribeSettings =<< Katip.initLogEnv "test" "test"
     bracket makeLogEnv Katip.closeScribes $ \le ->
-      Katip.runKatipContextT le () mempty $ do
-        liftIO $ putMVar started ()
+      Katip.runKatipContextT le () mempty $
         NarinfoQuery.start manager (liftIO . batchProcessor)
-  -- Wait for the processor to start before returning
-  takeMVar started
 
 -- Test setup helper that encapsulates common initialization
 withTestManager ::
@@ -128,6 +124,13 @@ waitForSTM timeoutMicros condition = do
   when (isNothing result) $
     expectationFailure "Timeout waiting for STM condition"
 
+-- | Wait for at least @n@ callbacks to be recorded, with a 5s timeout.
+waitForCallbacks :: TVar [CallbackCall requestId] -> Int -> IO ()
+waitForCallbacks callsVar n =
+  waitForSTM 5_000_000 $ do
+    cbs <- readTVar callsVar
+    return $ length cbs >= n
+
 spec :: Spec
 spec = do
   -- Initialize the CNix library
@@ -142,19 +145,17 @@ spec = do
       withTestManager config $ \TestContext {..} -> do
         atomically $ writeTVar tcResponsesQueue [(Set.fromList [path1, path2, path3], Set.empty)]
 
-        -- Submit first request (1 path) - should not trigger
+        -- Submit both requests - second one reaches size threshold (2 paths total)
         NarinfoQuery.submitRequest tcManager (1 :: Int) [path1]
-        threadDelay 10000
-
-        calls1 <- readTVarIO tcBatchCalls
-        length calls1 `shouldBe` 0 -- No batch yet
-
-        -- Submit second request (1 more unique path) - should trigger batch (2 paths total)
         NarinfoQuery.submitRequest tcManager (2 :: Int) [path2]
-        threadDelay 20000 -- Wait for batch processing
-        calls2 <- readTVarIO tcBatchCalls
-        length calls2 `shouldBe` 1 -- One batch triggered
-        let batchPaths = case head calls2 of
+
+        -- Wait for the batch to be processed and both callbacks to arrive
+        waitForCallbacks tcCallbackCalls 2
+
+        -- Verify exactly one batch with both paths
+        calls <- readTVarIO tcBatchCalls
+        length calls `shouldBe` 1
+        let batchPaths = case head calls of
               Just (BatchCall paths _) -> paths
               Nothing -> panic "Expected batch call"
         Set.fromList batchPaths `shouldBe` Set.fromList [path1, path2]
@@ -172,8 +173,9 @@ spec = do
         -- Submit request that won't reach size threshold
         NarinfoQuery.submitRequest tcManager (1 :: Int) [path1]
 
-        -- Wait for timeout to trigger
-        threadDelay 60000 -- 60ms > 50ms timeout
+        -- Wait for timeout-triggered batch and callback
+        waitForCallbacks tcCallbackCalls 1
+
         calls <- readTVarIO tcBatchCalls
         length calls `shouldBe` 1 -- Batch triggered by timeout
         callbacks <- readTVarIO tcCallbackCalls
@@ -185,7 +187,9 @@ spec = do
         atomically $ writeTVar tcResponsesQueue [(Set.fromList [path1], Set.empty)]
 
         NarinfoQuery.submitRequest tcManager (1 :: Int) [path1]
-        threadDelay 20000 -- Short wait
+
+        waitForCallbacks tcCallbackCalls 1
+
         calls <- readTVarIO tcBatchCalls
         length calls `shouldBe` 1 -- Processed immediately
         callbacks <- readTVarIO tcCallbackCalls
@@ -203,7 +207,8 @@ spec = do
 
         -- Submit all three paths
         NarinfoQuery.submitRequest tcManager (1 :: Int) [path1, path2, path3]
-        threadDelay 20000
+
+        waitForCallbacks tcCallbackCalls 1
 
         -- Check what's in cache - only existing paths should be cached
         cached1 <- NarinfoQuery.lookupCache tcManager path1
@@ -222,11 +227,13 @@ spec = do
 
         -- First request - path1 will be cached
         NarinfoQuery.submitRequest tcManager (1 :: Int) [path1]
-        threadDelay 20000
+
+        waitForCallbacks tcCallbackCalls 1
 
         -- Second request - path1 from cache, path2 goes to batch
         NarinfoQuery.submitRequest tcManager (2 :: Int) [path1, path2]
-        threadDelay 20000
+
+        waitForCallbacks tcCallbackCalls 2
 
         -- Should have 2 batch calls (one for each unique uncached path)
         calls <- readTVarIO tcBatchCalls
@@ -270,9 +277,7 @@ spec = do
         NarinfoQuery.submitRequest tcManager (2 :: Int) [path3, path4, path5]
 
         -- Wait until both callbacks are received (deterministic, no timing dependency)
-        waitForSTM 5_000_000 $ do
-          cbs <- readTVar tcCallbackCalls
-          return $ length cbs >= 2
+        waitForCallbacks tcCallbackCalls 2
 
         callbacks <- readTVarIO tcCallbackCalls
         length callbacks `shouldBe` 2
@@ -300,7 +305,9 @@ spec = do
         -- Submit overlapping requests that will be batched together
         NarinfoQuery.submitRequest tcManager (1 :: Int) [path1, path2] -- paths 1,2
         NarinfoQuery.submitRequest tcManager (2 :: Int) [path2, path1] -- paths 2,1 (same, different order)
-        threadDelay 120000 -- Wait 120ms, longer than 100ms timeout
+
+        waitForCallbacks tcCallbackCalls 2
+
         calls <- readTVarIO tcBatchCalls
         length calls `shouldBe` 1
 

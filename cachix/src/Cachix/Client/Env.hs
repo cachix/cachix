@@ -28,7 +28,8 @@ import System.Directory (canonicalizePath)
 data Env = Env
   { cachixoptions :: Config.CachixOptions,
     clientenv :: ClientEnv,
-    config :: Config
+    config :: Config,
+    storeURI :: Maybe Text
   }
 
 mkEnv :: Options.Flags -> IO Env
@@ -47,7 +48,8 @@ mkEnv flags = do
     Env
       { cachixoptions = cachixOptions,
         clientenv = clientEnv,
-        config = cfg
+        config = cfg,
+        storeURI = Options.storeURI flags
       }
 
 customManagerSettings :: ManagerSettings

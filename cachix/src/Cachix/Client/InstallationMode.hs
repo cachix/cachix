@@ -16,6 +16,7 @@ module Cachix.Client.InstallationMode
   )
 where
 
+import Cachix.Client.CNix (withStoreFromMaybeURI)
 import Cachix.Client.Config (Config)
 import Cachix.Client.Config qualified as Config
 import Cachix.Client.Exception (CachixException (..))
@@ -26,6 +27,7 @@ import Cachix.Types.BinaryCache qualified as BinaryCache
 import Data.Maybe qualified
 import Data.String.Here
 import Data.Text qualified as T
+import Hercules.CNix.Store qualified as Store
 import Protolude hiding (toS)
 import Protolude.Conv (toS)
 import System.Directory (Permissions, createDirectoryIfMissing, doesFileExist, getPermissions, writable)
@@ -37,7 +39,8 @@ import Prelude (String)
 data NixEnv = NixEnv
   { isTrusted :: Bool,
     isRoot :: Bool,
-    isNixOS :: Bool
+    isNixOS :: Bool,
+    storeDir :: FilePath
   }
 
 -- NOTE: update the list of options for --mode argument in OptionsParser.hs
@@ -78,17 +81,19 @@ toString WriteNixOS = "nixos"
 toString UntrustedRequiresSudo = "untrusted-requires-sudo"
 toString UntrustedNixOS = "untrusted-nixos"
 
-getNixEnv :: IO NixEnv
-getNixEnv = do
+getNixEnv :: Maybe Text -> IO NixEnv
+getNixEnv maybeStoreURI = withStoreFromMaybeURI maybeStoreURI $ \store -> do
+  storeDirectory <- toS <$> Store.storeDir store
   user <- getUser
   ncs <- NixConf.resolveIncludes =<< NixConf.readWithDefault NixConf.Global
-  isTrusted <- isTrustedUser $ concatMap (NixConf.readLines NixConf.isTrustedUsers) ncs
+  isTrusted <- isTrustedUser storeDirectory $ concatMap (NixConf.readLines NixConf.isTrustedUsers) ncs
   isNixOS <- doesFileExist "/run/current-system/nixos-version"
   return $
     NixEnv
       { isRoot = user == "root",
         isTrusted = isTrusted,
-        isNixOS = isNixOS
+        isNixOS = isNixOS,
+        storeDir = storeDirectory
       }
 
 getInstallationMode :: NixEnv -> UseOptions -> InstallationMode
@@ -292,11 +297,11 @@ addPrivateBinaryCacheNetRC config bc nixconf = do
   putErrText $ "Configured private read access credentials in " <> toS filename
   pure filename
 
-isTrustedUser :: [Text] -> IO Bool
-isTrustedUser users = do
+isTrustedUser :: FilePath -> [Text] -> IO Bool
+isTrustedUser storeDirectory users = do
   user <- getUser
   -- to detect single user installations
-  permissions <- getPermissions "/nix/store"
+  permissions <- getPermissions storeDirectory
   isInAGroup <- userInAnyGroup user
   return $ writable permissions || user `elem` users || isInAGroup
   where

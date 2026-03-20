@@ -46,7 +46,7 @@ where
 import Cachix.API qualified as API
 import Cachix.API.Error
 import Cachix.API.Signing (fingerprint, passthroughHashSink, passthroughHashSinkB16, passthroughSizeSink)
-import Cachix.Client.CNix (formatStorePathWarning, validateStorePath)
+import Cachix.Client.CNix (formatStorePathWarning, splitStorePath, storePathToRealPath, validateStorePath)
 import Cachix.Client.Exception (CachixException (..))
 import Cachix.Client.Push.S3 qualified as Push.S3
 import Cachix.Client.Retry (retryAll, retryHttp)
@@ -215,6 +215,14 @@ uploadStorePath pushParams storePath retrystatus = do
   storePathText <- liftIO $ Store.storePathToPath store storePath
   let path = toS storePathText
 
+  -- DEBUG: print store info for diagnosing custom store path resolution
+  liftIO $ do
+    uri <- Store.storeUri store
+    dir <- Store.storeDir store
+    putErrText $ "DEBUG storeUri: " <> decodeUtf8With lenientDecode uri
+    putErrText $ "DEBUG storeDir: " <> decodeUtf8With lenientDecode dir
+    putErrText $ "DEBUG storePathToPath: " <> decodeUtf8With lenientDecode storePathText
+
   -- Validate the path is still valid (may have been GC'd since queued)
   liftIO (validateStorePath store storePath) >>= \case
     Right _ -> pure ()
@@ -224,9 +232,11 @@ uploadStorePath pushParams storePath retrystatus = do
 
   onAttempt strategy retrystatus narSize
 
+  realPath <- liftIO $ storePathToRealPath Nothing store storePath
+  liftIO $ putErrText $ "DEBUG realPath: " <> toS realPath
   eresult <-
     runConduitRes $
-      streamNarIO narEffectsIO (toS storePathText) Data.Conduit.yield
+      streamNarIO narEffectsIO realPath Data.Conduit.yield
         .| streamUploadNar pushParams storePath narSize retrystatus
 
   case eresult of
@@ -475,7 +485,7 @@ Got:      ${piNarHash pathInfo}
   let references = fmap toS $ Set.toList $ piReferences pathInfo
   let fpReferences = fmap (\fp -> toS storeDir <> "/" <> fp) references
 
-  let (storeHash, storeSuffix) = splitStorePath storePathText
+  let (storeHash, storeSuffix) = splitStorePath (toS storeDir) storePathText
   let fp = fingerprint storePathText undNarHash undNarSize fpReferences
       sig = case pushParamsSecret pushParams of
         PushToken _ -> Nothing
@@ -542,9 +552,3 @@ mapConcurrentlyBounded bound action items = do
   qs <- QSem.newQSem bound
   let wrapped x = bracket_ (QSem.waitQSem qs) (QSem.signalQSem qs) (action x)
   mapConcurrently wrapped items
-
--------------------
--- Private terms --
-splitStorePath :: Text -> (Text, Text)
-splitStorePath storePath =
-  (T.take 32 (T.drop 11 storePath), T.drop 44 storePath)

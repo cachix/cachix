@@ -77,7 +77,8 @@ enableDisableFlag defaultValue flagName helpText =
 data Flags = Flags
   { configPath :: Config.ConfigPath,
     hostname :: Maybe URI,
-    verbose :: Bool
+    verbose :: Bool,
+    storeURI :: Maybe Text
   }
 
 data CachixCommand
@@ -253,8 +254,8 @@ commandParser =
         fold
           [ commandGroup "Push commands:",
             command "push" $ infoH pushCommand $ progDesc "Upload Nix store paths to a binary cache",
-            command "watch-exec" $ infoH watchExecCommand $ progDesc "Run a command while watching /nix/store for newly added store paths and upload them to a binary cache",
-            command "watch-store" $ infoH watchStoreCommand $ progDesc "Watch /nix/store for newly added store paths and upload them to a binary cache",
+            command "watch-exec" $ infoH watchExecCommand $ progDesc "Run a command while watching the Nix store for newly added store paths and upload them to a binary cache",
+            command "watch-store" $ infoH watchStoreCommand $ progDesc "Watch the Nix store for newly added store paths and upload them to a binary cache",
             command "import" $ infoH importCommand $ progDesc "Import the contents of a binary cache from an S3-compatible object storage service into Cachix"
           ]
 
@@ -292,8 +293,14 @@ commandParser =
 
 flagParser :: Config.ConfigPath -> Parser Flags
 flagParser defaultConfigPath =
-  Flags <$> configPath <*> (host <|> hostname) <*> verbose
+  Flags <$> configPath <*> (host <|> hostname) <*> verbose <*> storeURIOption
   where
+    storeURIOption =
+      optional . strOption $
+        long "store"
+          <> metavar "STORE-URI"
+          <> help "Nix store URI (default: auto-detect from Nix configuration)"
+
     defaultHostname = URI.serialize URI.defaultCachixURI
 
     hostOpts =

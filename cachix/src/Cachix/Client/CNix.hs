@@ -1,5 +1,9 @@
 module Cachix.Client.CNix
-  ( -- * Store path validation
+  ( -- * Store path parsing
+    splitStorePath,
+    extractStoreHash,
+
+    -- * Store path validation
     StorePathError (..),
     resolveStorePath,
     resolveStorePaths,
@@ -14,6 +18,12 @@ module Cachix.Client.CNix
     filterInvalidStorePaths,
     followLinksToStorePath,
 
+    -- * Store path filesystem mapping
+    storePathToRealPath,
+
+    -- * Store connection
+    withStoreFromMaybeURI,
+
     -- * Error handling
     NixError (..),
     catchNixError,
@@ -21,11 +31,97 @@ module Cachix.Client.CNix
   )
 where
 
+import Data.Text qualified as T
 import Hercules.CNix.Store (Store, StorePath)
 import Hercules.CNix.Store qualified as Store
 import Language.C.Inline.Cpp.Exception
-import Protolude
+import Data.List (lookup)
+import Protolude hiding (toS)
+import Protolude.Conv
 import System.Console.Pretty (Color (..), Style (..), color, style)
+import System.FilePath ((</>), makeRelative)
+import URI.ByteString qualified as URI
+
+-- | Split a store path into its hash and suffix components.
+--
+-- >>> splitStorePath "/nix/store" "/nix/store/abc...-foo"
+-- ("abc...", "foo")
+splitStorePath :: FilePath -> Text -> (Text, Text)
+splitStorePath storeDirectory storePathText =
+  let prefixLen = length storeDirectory + 1
+      rest = T.drop prefixLen storePathText
+      storeHash = T.take 32 rest
+      storeSuffix = T.drop 33 rest
+   in (storeHash, storeSuffix)
+
+-- | Extract the hash from a store path or bare hash.
+--
+-- Accepts full store paths (e.g. @\/nix\/store\/abc...-name@) or bare
+-- 32-character hashes.
+extractStoreHash :: FilePath -> Text -> Maybe Text
+extractStoreHash storeDirectory input =
+  let path = T.strip input
+      prefix = toS storeDirectory <> "/"
+   in if prefix `T.isPrefixOf` path
+        then
+          let (storeHash, _) = splitStorePath storeDirectory path
+           in guard (T.length storeHash == 32) $> storeHash
+        else guard (T.length path >= 32) $> T.take 32 path
+
+-- | Get the real filesystem path for a store path.
+--
+-- For the default store, this is the same as @storePathToPath@.
+-- For local stores with a custom root (e.g. @\/tmp\/hello@ or
+-- @local?root=\/tmp\/hello@), this returns the physical path
+-- (e.g. @\/tmp\/hello\/nix\/store\/hash-name@).
+--
+-- Only local stores are supported. Non-local store URIs are not expected
+-- to have a meaningful filesystem path.
+storePathToRealPath :: Maybe Text -> Store -> StorePath -> IO FilePath
+storePathToRealPath storeURI store storePath = do
+  logicalPath <- toS <$> Store.storePathToPath store storePath
+  pure $ case parseStoreRoot storeURI of
+    Nothing -> logicalPath
+    Just root -> root </> makeRelative "/" logicalPath
+
+-- | Parse the store root from a Nix store URI as provided by the user.
+--
+-- Accepts:
+--
+--   * Bare absolute paths: @\/tmp\/hello@
+--   * Local store URIs with a root parameter: @local?root=\/tmp\/hello@
+--
+-- Returns @Nothing@ for the default store or non-local store URIs.
+--
+-- >>> parseStoreRoot Nothing
+-- Nothing
+-- >>> parseStoreRoot (Just "/tmp/hello")
+-- Just "/tmp/hello"
+-- >>> parseStoreRoot (Just "local?root=/tmp/hello")
+-- Just "/tmp/hello"
+-- >>> parseStoreRoot (Just "local?root=/tmp/hello&real=/somewhere")
+-- Just "/tmp/hello"
+-- >>> parseStoreRoot (Just "local")
+-- Nothing
+-- >>> parseStoreRoot (Just "daemon")
+-- Nothing
+parseStoreRoot :: Maybe Text -> Maybe FilePath
+parseStoreRoot Nothing = Nothing
+parseStoreRoot (Just uri)
+  -- Bare absolute path, e.g. /tmp/hello
+  | "/" `T.isPrefixOf` uri = Just (toS uri)
+  -- URI with query params, e.g. local?root=/tmp/hello
+  | otherwise = do
+      ref <- either (const Nothing) Just $ URI.parseRelativeRef URI.laxURIParserOptions (toS uri)
+      guard (URI.rrPath ref == "local")
+      let params = URI.queryPairs (URI.rrQuery ref)
+      root <- lookup "root" params
+      pure (toS root)
+
+-- | Open a Nix store, using the given URI if provided, or the default store.
+withStoreFromMaybeURI :: Maybe Text -> (Store -> IO a) -> IO a
+withStoreFromMaybeURI Nothing f = Store.withStore f
+withStoreFromMaybeURI (Just uri) f = Store.withStoreFromURI (toS uri) f
 
 -- | Error when resolving a store path
 data StorePathError

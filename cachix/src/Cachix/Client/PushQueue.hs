@@ -23,7 +23,9 @@ import Control.Concurrent.STM.Lock qualified as Lock
 import Control.Concurrent.STM.TBQueue qualified as TBQueue
 import Data.Set qualified as S
 import Hercules.CNix.Store (StorePath)
-import Protolude
+import Hercules.CNix.Store qualified as Store
+import Protolude hiding (toS)
+import Protolude.Conv
 import System.Posix.Signals qualified as Signals
 import System.Systemd.Daemon qualified as Systemd
 
@@ -59,6 +61,8 @@ worker pushParams workerState = forever $ do
 -- NOTE: producer should return an `IO ()` that should be a blocking operation for terminating it
 startWorkers :: Int -> (Queue -> IO (IO ())) -> Push.PushParams IO () -> IO ()
 startWorkers numWorkers mkProducer pushParams = do
+  storeDirectory <- toS <$> Store.storeDir (Push.pushParamsStore pushParams)
+
   -- start query worker
   (newQueryQueue, newPushQueue, newLock) <-
     atomically $
@@ -75,7 +79,7 @@ startWorkers numWorkers mkProducer pushParams = do
   -- Gracefully shutdown the workers on interrupt
   let handler =
         Signals.CatchOnce $
-          exitOnceQueueIsEmpty stopProducerCallback pushWorker queryWorker queryWorkerState pushWorkerState
+          exitOnceQueueIsEmpty storeDirectory stopProducerCallback pushWorker queryWorker queryWorkerState pushWorkerState
   for_ [Signals.sigINT, Signals.sigTERM] $ \signal ->
     Signals.installHandler signal handler Nothing
 
@@ -110,10 +114,10 @@ queryLoop workerState pushqueue pushParams = do
   queryLoop (workerState {alreadyQueued = S.union missingStorePathsSet alreadyQueuedSet}) pushqueue pushParams
 
 -- | Stop watching the store and push all pending store paths.
-exitOnceQueueIsEmpty :: IO () -> Async () -> Async () -> QueryWorkerState -> PushWorkerState -> IO ()
-exitOnceQueueIsEmpty stopProducerCallback pushWorker queryWorker queryWorkerState pushWorkerState =
+exitOnceQueueIsEmpty :: FilePath -> IO () -> Async () -> Async () -> QueryWorkerState -> PushWorkerState -> IO ()
+exitOnceQueueIsEmpty storeDirectory stopProducerCallback pushWorker queryWorker queryWorkerState pushWorkerState =
   join . once $ do
-    putErrText "Stopped watching /nix/store and waiting for queue to empty ..."
+    putErrText $ "Stopped watching " <> toS storeDirectory <> " and waiting for queue to empty ..."
 
     -- Skip uploading the remaining paths when run in an interruptible mask to avoid hanging on IO.
     getMaskingState >>= \case

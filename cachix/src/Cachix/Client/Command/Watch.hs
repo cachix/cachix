@@ -31,7 +31,7 @@ import Data.Conduit.TMChan qualified as C
 import Data.Generics.Labels ()
 import Data.Text.IO (hGetLine)
 import GHC.IO.Handle (hDuplicate, hDuplicateTo)
-import Hercules.CNix.Store (withStore)
+import Cachix.Client.CNix (withStoreFromMaybeURI)
 import Protolude hiding (toS)
 import Protolude.Conv
 import Servant.Conduit ()
@@ -59,7 +59,7 @@ watchExec env watchExecMode pushOptions batchOptions cacheName cmd args = do
     Store ->
       watchExecStore env pushOptions cacheName cmd args
     Auto -> do
-      nixEnv <- InstallationMode.getNixEnv
+      nixEnv <- InstallationMode.getNixEnv (storeURI env)
 
       if InstallationMode.isTrusted nixEnv
         then watchExecDaemon env pushOptions batchOptions cacheName cmd args
@@ -78,7 +78,7 @@ watchExecDaemon env pushOpts batchOptions cacheName cmd args = do
   envSocketPath <- lookupEnv "CACHIX_DAEMON_SOCKET"
   Daemon.PostBuildHook.withSetup envSocketPath $ \hookEnv ->
     withTempFile (Daemon.PostBuildHook.tempDir hookEnv) "daemon-log-capture" $ \_ logHandle ->
-      withStore $ \store -> do
+      withStoreFromMaybeURI (storeURI env) $ \store -> do
         let daemonOptions =
               DaemonOptions
                 { daemonAllowRemoteStop = False,

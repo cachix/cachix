@@ -150,7 +150,7 @@ spec = do
     describe "graceful shutdown" $ do
       it "shuts down with no jobs" $
         withPushManager $ \pm -> do
-          drainPushManager timeoutOptions pm
+          _ <- drainPushManager timeoutOptions pm
           closePushManager pm
 
       it "shuts down after jobs complete" $ withPushManager $ \pm -> do
@@ -181,7 +181,7 @@ spec = do
             let request = Protocol.PushRequest {Protocol.storePaths = ["foo"], Protocol.subscribeToUpdates = False}
             addPushJobFromRequest request
 
-          drainPushManager timeoutOptions pm
+          _ <- drainPushManager timeoutOptions pm
           closePushManager pm
 
   describe "STM" $

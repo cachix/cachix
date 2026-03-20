@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [1.11.0] - 2026-03-20
+
+### Added
+
+- daemon: add `--keep-alive-interval` and `--keep-alive-timeout` CLI options (set interval to 0 to disable keep-alive)
+- daemon: emit `PushStorePathSkipped` events for paths already present in the cache
+- daemon: emit `PushStorePathInvalid` events for paths that fail validation
+- daemon: detect and warn when graceful shutdown fails
+
+### Changed
+
+- daemon: serialize socket writes per client to prevent interleaved messages under load
+- daemon: use a priority queue for pong, exit, and error messages so they are never blocked by a full progress queue
+- daemon: drop progress events when client receive queue is full instead of blocking
+- daemon: throttle progress events using monotonic time instead of byte thresholds
+- daemon: keep-alive defaults changed from 2s/20s to 30s/180s
+
+### Fixed
+
+- daemon: fall back to system temp directory when `RUNNER_TEMP` would exceed the Unix socket path length limit
+- daemon: fix shutdown order to ensure queued paths are not dropped
+- daemon: fix immediate exit on second SIGINT
+- daemon: fix progress event reporting incorrect delta bytes
+
 ## [1.10.1] - 2026-01-13
 
 ### Fixed

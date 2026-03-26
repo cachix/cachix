@@ -302,11 +302,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1774505671,
-        "narHash": "sha256-zv52RyDsSSYwXC7Edv7BxZ+DMzKdW+/RsZhaztTtyDM=",
+        "lastModified": 1774551687,
+        "narHash": "sha256-Q0x21f72bOO+66tM69peHYUJr8bsiCgR0w7Xb8NZcyI=",
         "owner": "cachix",
         "repo": "hs-nix-c-api",
-        "rev": "32f0713f6c71d28bb1df417ff9bf2a77ebdf3102",
+        "rev": "1e7ada5e34a1886eea101eff40890cd8cf1cb607",
         "type": "github"
       },
       "original": {

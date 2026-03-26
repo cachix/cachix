@@ -2,7 +2,7 @@
   pkgs,
   lib,
   ghcVersion,
-  getNix,
+  nixCApiPkgs,
   ...
 }:
 
@@ -17,7 +17,6 @@
     pkgs.zlib
     pkgs.boost
     pkgs.libsodium
-    (getNix { inherit pkgs; })
 
     # Required by nix-util
     pkgs.libblake3
@@ -28,6 +27,7 @@
     pkgs.libgit2
     pkgs.pcre2
   ]
+  ++ nixCApiPkgs
   ++ lib.optional pkgs.stdenv.hostPlatform.isx86 pkgs.libcpuid
   ++ [
 

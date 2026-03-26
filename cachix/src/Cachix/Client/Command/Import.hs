@@ -34,7 +34,7 @@ import Data.Conduit.ConcurrentMap (concurrentMapM_)
 import Data.Conduit.List qualified as CL
 import Data.Generics.Labels ()
 import Data.Text qualified as T
-import Hercules.CNix.Store (parseStorePath)
+import Nix.Unsafe.Store (parseStorePath')
 import Lens.Micro
 import Network.HTTP.Client qualified as HTTP
 import Network.HTTP.Types (status404)
@@ -130,7 +130,7 @@ import' env pushOptions name s3uri = do
             narinfoResponse <- liftIO $ narinfoExists pushParams (toS storeHash)
             let storePathText = NarInfo.storePath narInfo
                 store = pushParamsStore pushParams
-            storePath <- liftIO $ parseStorePath store (toS storePathText)
+            storePath <- liftIO $ parseStorePath' store (toS storePathText)
             let strategy = pushParamsStrategy pushParams storePath
 
             case narinfoResponse of

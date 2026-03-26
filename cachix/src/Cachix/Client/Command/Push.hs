@@ -30,8 +30,7 @@ import Data.ByteString qualified as BS
 import Data.Conduit qualified as Conduit
 import Data.String.Here
 import Data.Text qualified as T
-import Hercules.CNix (StorePath)
-import Hercules.CNix.Store (Store, storePathToPath, withStore)
+import Nix.Unsafe.Store (Store, StorePath, storeRealPath, withStore)
 import Network.HTTP.Types (status401, status404)
 import Protolude hiding (toS)
 import Protolude.Conv
@@ -94,7 +93,7 @@ pushStrategy store authToken opts name compressionMethod storePath =
 
     showUploadProgress retryStatus size = do
       let hSize = toS $ humanSize $ fromIntegral size
-      path <- liftIO $ decodeUtf8With lenientDecode <$> storePathToPath store storePath
+      path <- liftIO $ decodeUtf8With lenientDecode <$> storeRealPath store storePath
 
       isTerminal <- liftIO $ hIsTerminalDevice stderr
       isCI <- liftIO $ (== Just "true") <$> lookupEnv "CI"
@@ -144,7 +143,7 @@ withPushParams' env pushOpts name pushSecret m = do
   let compressionMethod =
         fromMaybe BinaryCache.ZSTD (head $ catMaybes [Options.compressionMethod pushOpts, compressionMethodBackend])
 
-  withStore $ \store ->
+  withStore "auto" $ \store ->
     m
       PushParams
         { pushParamsName = name,

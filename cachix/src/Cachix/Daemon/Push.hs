@@ -19,7 +19,7 @@ import Cachix.Daemon.Types (PushManager)
 import Cachix.Types.BinaryCache (BinaryCache, BinaryCacheName)
 import Cachix.Types.BinaryCache qualified as BinaryCache
 import Data.Set qualified as Set
-import Hercules.CNix.Store (Store)
+import Nix.Unsafe.Store (Store)
 import Protolude hiding (toS)
 import Servant.Auth ()
 import Servant.Auth.Client

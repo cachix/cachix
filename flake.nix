@@ -8,6 +8,10 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    hs-nix-c-api = {
+      url = "github:cachix/hs-nix-c-api";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     git-hooks = {
       url = "github:cachix/git-hooks.nix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -45,18 +49,22 @@
       # Keep in sync with stack.yaml
       ghcVersion = "910";
 
-      # Try to use the same Nix version as cnix-store, if available.
-      getNix =
-        {
-          pkgs,
-          haskellPackages ? pkgs.haskellPackages,
-        }:
-        haskellPackages.hercules-ci-cnix-store.nixPackage or pkgs.nix;
+      # Nix C API packages from hs-nix-c-api's Nix fork.
+      getNixCApiPkgs = system:
+        with inputs.hs-nix-c-api.inputs.nix.packages.${system}; [
+          nix-util-c
+          nix-store-c
+          nix-expr-c
+          nix-fetchers-c
+          nix-flake-c
+          nix-main-c
+        ];
 
       customHaskellPackages =
         {
           pkgs,
           haskellPackages ? pkgs.haskellPackages,
+          hs-nix-c-api ? inputs.hs-nix-c-api.packages.${pkgs.system}.hs-nix-c-api,
         }@args:
         let
           hlib = pkgs.haskell.lib;
@@ -64,14 +72,14 @@
           cachix =
             hlib.overrideCabal
               (haskellPackages.callCabal2nix "cachix" ./cachix {
-                inherit cachix-api;
+                inherit cachix-api hs-nix-c-api;
                 hnix-store-core = haskellPackages.hnix-store-core_0_8_0_0 or haskellPackages.hnix-store-core;
-                nix = getNix args;
               })
-              # Apply a fix for a bug in GHC 9.10.3 that fails to load libraries using weak references on macOS 26.
-              # https://github.com/NixOS/nixpkgs/pull/469906
               (
                 old: {
+                  pkg-configDepends = getNixCApiPkgs pkgs.system;
+                  # Apply a fix for a bug in GHC 9.10.3 that fails to load libraries using weak references on macOS 26.
+                  # https://github.com/NixOS/nixpkgs/pull/469906
                   preBuild = ''
                     DYLD_INSERT_LIBRARIES="''${DYLD_INSERT_LIBRARIES:+$DYLD_INSERT_LIBRARIES:}$(pkg-config --variable=libdir nix-store)/libnixstore.dylib:$(pkg-config --variable=libdir nix-util)/libnixutil.dylib"
                     export DYLD_INSERT_LIBRARIES
@@ -129,7 +137,7 @@
           default = inputs.devenv.lib.mkShell {
             inherit inputs pkgs;
             modules = [
-              ({ _module.args = { inherit ghcVersion getNix; }; })
+              ({ _module.args = { inherit ghcVersion; nixCApiPkgs = getNixCApiPkgs system; }; })
               ./devenv.nix
             ];
           };

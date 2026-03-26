@@ -7,7 +7,7 @@ import Cachix.Client.CNix (logStorePathWarning, resolveStorePath)
 import Cachix.Client.Push
 import Cachix.Client.PushQueue qualified as PushQueue
 import Control.Concurrent.STM.TBQueue qualified as TBQueue
-import Hercules.CNix.Store (Store)
+import Nix.Unsafe.Store (Store)
 import Protolude
 import System.FSNotify
 import System.Systemd.Daemon qualified as Systemd

@@ -77,8 +77,7 @@ import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Time (UTCTime, diffUTCTime, getCurrentTime, secondsToNominalDiffTime)
 import GHC.Clock (getMonotonicTimeNSec)
-import Hercules.CNix (StorePath)
-import Hercules.CNix.Store (Store, parseStorePath, storePathToPath)
+import Nix.Unsafe.Store (Store, StorePath, parseStorePath', storeRealPath)
 import Katip qualified
 import Protolude hiding (toS)
 import Protolude.Conv (toS)
@@ -413,7 +412,7 @@ runPushPathTask pushParams filePath = do
         Katip.logLocM Katip.DebugS $ Katip.ls $ "Pushing store path " <> filePath
 
         let store = pushParamsStore pushParams
-        storePath <- liftIO $ parseStorePath store (toS filePath)
+        storePath <- liftIO $ parseStorePath' store (toS filePath)
 
         retryAll $ uploadStorePath pushParams storePath
 
@@ -426,20 +425,20 @@ newPushStrategy ::
   (StorePath -> PushStrategy PushManager ())
 newPushStrategy store authToken opts cacheName compressionMethod storePath =
   let onAlreadyPresent = do
-        sp <- liftIO $ storePathToPath store storePath
+        sp <- liftIO $ storeRealPath store storePath
         Katip.logFM Katip.InfoS $ Katip.ls $ "Skipping " <> (toS sp :: Text)
         -- TODO: needs another event type here
         pushStorePathDone (toS sp)
 
       onError err = do
         let errText = toS (displayException err)
-        sp <- liftIO $ storePathToPath store storePath
+        sp <- liftIO $ storeRealPath store storePath
         Katip.katipAddContext (Katip.sl "error" errText) $
           Katip.logFM Katip.InfoS (Katip.ls $ "Failed to push " <> (toS sp :: Text))
         pushStorePathFailed (toS sp) errText
 
       onAttempt retryStatus size = do
-        sp <- liftIO $ storePathToPath store storePath
+        sp <- liftIO $ storeRealPath store storePath
         let retryContext =
               if rsIterNumber retryStatus > 0
                 then Katip.katipAddContext (Katip.sl "retry" (rsIterNumber retryStatus))
@@ -451,7 +450,7 @@ newPushStrategy store authToken opts cacheName compressionMethod storePath =
         pushStorePathAttempt (toS sp) size retryStatus
 
       onUncompressedNARStream _ size = do
-        sp <- liftIO $ storePathToPath store storePath
+        sp <- liftIO $ storeRealPath store storePath
         progressEmitIntervalNs <- asks pmProgressEmitIntervalNs
         lastEmitNsRef <- liftIO $ newIORef =<< getMonotonicTimeNSec
         currentBytesRef <- liftIO $ newIORef (0 :: Int64)
@@ -475,7 +474,7 @@ newPushStrategy store authToken opts cacheName compressionMethod storePath =
           C.yield chunk
 
       onDone = do
-        sp <- liftIO $ storePathToPath store storePath
+        sp <- liftIO $ storeRealPath store storePath
         Katip.logFM Katip.InfoS $ Katip.ls $ "Pushed " <> (toS sp :: Text)
         pushStorePathDone (toS sp)
    in PushStrategy
@@ -573,7 +572,7 @@ pushStorePathFailed storePath errMsg = do
 
 storeToFilePath :: (MonadIO m) => Store -> StorePath -> m FilePath
 storeToFilePath store storePath = do
-  fp <- liftIO $ storePathToPath store storePath
+  fp <- liftIO $ storeRealPath store storePath
   pure $ toS fp
 
 withException :: (E.MonadCatch m) => m a -> (SomeException -> m a) -> m a

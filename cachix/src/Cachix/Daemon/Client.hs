@@ -19,7 +19,7 @@ import Data.ByteString.Char8 qualified as BS8
 import Data.IORef
 import Data.Text qualified as T
 import Data.Time.Clock
-import Hercules.CNix.Store qualified as Store
+import Nix.Unsafe.Store qualified as Store
 import Network.Socket qualified as Socket
 import Network.Socket.ByteString qualified as Socket.BS
 import Network.Socket.ByteString.Lazy qualified as Socket.LBS
@@ -132,10 +132,10 @@ push _env daemonOptions daemonPushOptions cliPaths = do
       -- This avoids hangs in cases where stdin is non-interactive but unused by caller.
       (_, paths) -> return paths
 
-  storePaths <- Store.withStore $ \store -> do
+  storePaths <- Store.withStore "auto" $ \store -> do
     (errors, validPaths) <- resolveStorePaths store inputStorePaths
     for_ errors $ uncurry logStorePathWarning
-    mapM (fmap (toS . BS8.unpack) . Store.storePathToPath store) validPaths
+    mapM (fmap (toS . BS8.unpack) . Store.storeRealPath store) validPaths
 
   withDaemonConn (daemonSocketPath daemonOptions) $ \sock -> do
     let shouldWait = Options.shouldWait daemonPushOptions

@@ -63,8 +63,9 @@
       customHaskellPackages =
         {
           pkgs,
+          system,
           haskellPackages ? pkgs.haskellPackages,
-          hs-nix-c-api ? inputs.hs-nix-c-api.packages.${pkgs.system}.hs-nix-c-api,
+          hs-nix-c-api ? inputs.hs-nix-c-api.packages.${system}.hs-nix-c-api,
         }@args:
         let
           hlib = pkgs.haskell.lib;
@@ -77,7 +78,7 @@
               })
               (
                 old: {
-                  pkg-configDepends = getNixCApiPkgs pkgs.system;
+                  pkg-configDepends = getNixCApiPkgs system;
                   # Apply a fix for a bug in GHC 9.10.3 that fails to load libraries using weak references on macOS 26.
                   # https://github.com/NixOS/nixpkgs/pull/469906
                   preBuild = ''
@@ -99,7 +100,7 @@
         let
           pkgs = nixpkgs.legacyPackages.${system};
           hlib = pkgs.haskell.lib;
-          inherit (customHaskellPackages { inherit pkgs; })
+          inherit (customHaskellPackages { inherit pkgs system; })
             cachix
             cachix-api
             ;

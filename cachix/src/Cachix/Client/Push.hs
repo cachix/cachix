@@ -302,9 +302,8 @@ newPathInfoFromStorePath store storePath = liftIO $ do
   path <- Store.storeRealPath store storePath
   info <- Store.queryPathInfoJson store storePath NixPathInfo.PathInfoJsonFormatV2
 
-  let narHash = case NixPathInfo.pathInfoNarHash info of
-        NixPathInfo.HashStructured algo val -> hashAlgoText algo <> ":" <> val
-        NixPathInfo.HashSRI t -> t
+  let NixPathInfo.Hash algo digest = NixPathInfo.pathInfoNarHash info
+      narHash = NixPathInfo.hashAlgoText algo <> ":" <> System.Nix.Base32.encode digest
       narSize = fromIntegral $ NixPathInfo.pathInfoNarSize info
 
   return $
@@ -315,14 +314,6 @@ newPathInfoFromStorePath store storePath = liftIO $ do
         piDeriver = NixPathInfo.pathInfoDeriver info,
         piReferences = Set.fromList (fmap toS (NixPathInfo.pathInfoReferences info))
       }
-
-hashAlgoText :: NixPathInfo.HashAlgo -> Text
-hashAlgoText NixPathInfo.MD5 = "md5"
-hashAlgoText NixPathInfo.SHA1 = "sha1"
-hashAlgoText NixPathInfo.SHA256 = "sha256"
-hashAlgoText NixPathInfo.SHA512 = "sha512"
-hashAlgoText NixPathInfo.BLAKE3 = "blake3"
-hashAlgoText (NixPathInfo.HashAlgoUnknown t) = t
 
 -- | Create a 'PathInfo' for a store path from an existing NarInfo.
 newPathInfoFromNarInfo :: (Applicative m) => NarInfo.SimpleNarInfo -> m PathInfo

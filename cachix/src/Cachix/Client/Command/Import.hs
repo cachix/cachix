@@ -74,19 +74,20 @@ import' env pushOptions name s3uri = do
   awsEnv <- discoverAwsEnv (URI.getQueryParam s3uri "endpoint") (URI.getQueryParam s3uri "region")
   putErrText $ "Importing narinfos/nars using " <> show (numJobs pushOptions) <> " workers from " <> URI.serialize s3uri <> " to " <> name
   putErrText ""
-  Amazonka.runResourceT $
-    runConduit $
-      Amazonka.paginate awsEnv (Amazonka.S3.newListObjectsV2 bucketName)
-        .| CL.mapMaybe (^. listObjectsV2Response_contents)
-        .| CL.concat
-        .| CL.map (^. object_key)
-        .| CL.filter (T.isSuffixOf ".narinfo" . Amazonka.Data.Text.toText)
+  withPushParams env pushOptions name $ \pushParams ->
+    Amazonka.runResourceT $
+      runConduit $
+        Amazonka.paginate awsEnv (Amazonka.S3.newListObjectsV2 bucketName)
+          .| CL.mapMaybe (^. listObjectsV2Response_contents)
+          .| CL.concat
+          .| CL.map (^. object_key)
+          .| CL.filter (T.isSuffixOf ".narinfo" . Amazonka.Data.Text.toText)
 #if MIN_VERSION_conduit_concurrent_map(0,1,4)
-        .| concurrentMapM (numJobs pushOptions) (numJobs pushOptions * 2) (uploadNarinfo awsEnv)
+          .| concurrentMapM (numJobs pushOptions) (numJobs pushOptions * 2) (uploadNarinfo awsEnv pushParams)
 #else
-        .| concurrentMapM_ (numJobs pushOptions) (numJobs pushOptions * 2) (uploadNarinfo awsEnv)
+          .| concurrentMapM_ (numJobs pushOptions) (numJobs pushOptions * 2) (uploadNarinfo awsEnv pushParams)
 #endif
-        .| CL.sinkNull
+          .| CL.sinkNull
   putErrText "All done."
   where
     bucketName :: Amazonka.S3.BucketName
@@ -107,8 +108,8 @@ import' env pushOptions name s3uri = do
       | "sha256:" `T.isPrefixOf` s = return $ T.drop 7 s
       | otherwise = throwM $ ImportUnsupportedHash $ "file hash " <> s <> " is unsupported. Leave us feedback at https://github.com/cachix/cachix/issues/601"
 
-    uploadNarinfo :: Amazonka.Env -> Amazonka.S3.ObjectKey -> ResourceT IO ()
-    uploadNarinfo awsEnv entry = liftIO $ do
+    uploadNarinfo :: Amazonka.Env -> PushParams IO () -> Amazonka.S3.ObjectKey -> ResourceT IO ()
+    uploadNarinfo awsEnv pushParams entry = liftIO $ do
       let storeHash = T.dropEnd 8 $ Amazonka.Data.Text.toText entry
 
       -- get narinfo
@@ -126,7 +127,7 @@ import' env pushOptions name s3uri = do
             return $ parsedNarInfo {NarInfo.fileHash = fileHash}
 
           -- stream nar and narinfo
-          liftIO $ withPushParams env pushOptions name $ \pushParams -> do
+          do
             narinfoResponse <- liftIO $ narinfoExists pushParams (toS storeHash)
             let storePathText = NarInfo.storePath narInfo
                 store = pushParamsStore pushParams

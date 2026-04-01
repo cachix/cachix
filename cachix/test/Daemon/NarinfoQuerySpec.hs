@@ -8,11 +8,12 @@ import Cachix.Daemon.NarinfoQuery qualified as NarinfoQuery
 import Control.Concurrent.STM
 import Data.Set qualified as Set
 import Data.Time (UTCTime, getCurrentTime)
-import Nix.Unsafe.Init qualified as NixInit
-import Nix.Unsafe.Store (Store, StorePath, withStore)
-import Nix.Unsafe.Store qualified as Store
 import Katip qualified
+import Nix.C.Unsafe.Init qualified as NixInit
+import Nix.C.Unsafe.Store (Store, StorePath, withStore)
+import Nix.C.Unsafe.Store qualified as Store
 import Protolude
+import System.OsPath qualified as OsPath
 import Test.Hspec
 import UnliftIO.Async qualified as Async
 import UnliftIO.Timeout (timeout)
@@ -20,8 +21,9 @@ import UnliftIO.Timeout (timeout)
 -- Create a mock StorePath for testing
 mockStorePath :: Store -> Int -> IO StorePath
 mockStorePath store i = do
-  let pathText = "/nix/store/" <> show i <> "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-mock"
-  Store.parseStorePath' store (encodeUtf8 pathText)
+  let pathText = "/nix/store/" <> show i <> "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-mock" :: [Char]
+  osPath <- OsPath.encodeFS pathText
+  Store.parseStorePath' store osPath
 
 -- Test data structure to track batch processor calls
 data BatchCall = BatchCall

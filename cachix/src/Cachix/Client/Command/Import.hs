@@ -34,14 +34,15 @@ import Data.Conduit.ConcurrentMap (concurrentMapM_)
 import Data.Conduit.List qualified as CL
 import Data.Generics.Labels ()
 import Data.Text qualified as T
-import Nix.Unsafe.Store (parseStorePath')
 import Lens.Micro
 import Network.HTTP.Client qualified as HTTP
 import Network.HTTP.Types (status404)
+import Nix.C.Unsafe.Store (parseStorePath')
 import Nix.NarInfo qualified as NarInfo
 import Protolude hiding (toS)
 import Protolude.Conv
 import Servant.API (NoContent (..))
+import System.OsPath qualified as OsPath
 import URI.ByteString qualified as UBS
 
 discoverAwsEnv :: Maybe ByteString -> Maybe ByteString -> IO Amazonka.Env
@@ -131,7 +132,8 @@ import' env pushOptions name s3uri = do
             narinfoResponse <- liftIO $ narinfoExists pushParams (toS storeHash)
             let storePathText = NarInfo.storePath narInfo
                 store = pushParamsStore pushParams
-            storePath <- liftIO $ parseStorePath' store (toS storePathText)
+            osPath <- liftIO $ OsPath.encodeFS (toS storePathText)
+            storePath <- liftIO $ parseStorePath' store osPath
             let strategy = pushParamsStrategy pushParams storePath
 
             case narinfoResponse of

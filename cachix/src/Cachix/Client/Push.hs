@@ -73,10 +73,10 @@ import Data.List.Extra (chunksOf)
 import Data.Set qualified as Set
 import Data.String.Here (iTrim)
 import Data.Text qualified as T
-import Nix.Unsafe.Store (Store, StorePath)
-import Nix.Unsafe.Store qualified as Store
-import Nix.Store.PathInfo qualified as NixPathInfo
 import Network.HTTP.Types (status401, status404)
+import Nix.C.Store.PathInfo qualified as NixPathInfo
+import Nix.C.Unsafe.Store (Store, StorePath)
+import Nix.C.Unsafe.Store qualified as Store
 import Nix.NarInfo qualified as NarInfo
 import Protolude hiding (toS)
 import Protolude.Conv
@@ -87,6 +87,7 @@ import Servant.Client.Streaming
 import Servant.Conduit ()
 import System.Nix.Base32 qualified
 import System.Nix.Nar
+import System.OsPath qualified as OsPath
 
 -- | A secret for authenticating with a cache.
 data PushSecret
@@ -210,8 +211,8 @@ uploadStorePath pushParams storePath retrystatus = do
   let store = pushParamsStore pushParams
       strategy = pushParamsStrategy pushParams storePath
 
-  storePathText <- liftIO $ Store.storeRealPath store storePath
-  let path = toS storePathText
+  storePathOS <- liftIO $ Store.storeRealPath store storePath
+  path <- liftIO $ OsPath.decodeFS storePathOS
 
   -- Validate the path is still valid (may have been GC'd since queued)
   liftIO (validateStorePath store storePath) >>= \case
@@ -224,7 +225,7 @@ uploadStorePath pushParams storePath retrystatus = do
 
   eresult <-
     runConduitRes $
-      streamNarIO narEffectsIO (toS storePathText) Data.Conduit.yield
+      streamNarIO narEffectsIO path Data.Conduit.yield
         .| streamUploadNar pushParams storePath narSize retrystatus
 
   case eresult of
@@ -298,7 +299,8 @@ data PathInfo = PathInfo
 -- | Create a 'PathInfo' for a store path by querying the Nix store.
 newPathInfoFromStorePath :: (MonadIO m) => Store -> StorePath -> m PathInfo
 newPathInfoFromStorePath store storePath = liftIO $ do
-  path <- Store.storeRealPath store storePath
+  osPath <- Store.storeRealPath store storePath
+  path <- OsPath.decodeFS osPath
   info <- Store.queryPathInfoJson store storePath NixPathInfo.PathInfoJsonFormatV2
 
   let NixPathInfo.Hash algo digest = NixPathInfo.pathInfoNarHash info
@@ -307,7 +309,7 @@ newPathInfoFromStorePath store storePath = liftIO $ do
 
   return $
     PathInfo
-      { piPath = toS path,
+      { piPath = path,
         piNarHash = narHash,
         piNarSize = narSize,
         piDeriver = NixPathInfo.pathInfoDeriver info,
@@ -440,8 +442,10 @@ newNarInfoCreate ::
 newNarInfoCreate pushParams storePath pathInfo UploadNarDetails {..} = do
   let store = pushParamsStore pushParams
   let strategy = pushParamsStrategy pushParams storePath
-  storeDir <- liftIO $ Store.storeDir store
-  storePathText <- liftIO $ toS <$> Store.storeRealPath store storePath
+  storeDirOS <- liftIO $ Store.storeDir store
+  storeDir <- liftIO $ OsPath.decodeFS storeDirOS
+  storePathOS <- liftIO $ Store.storeRealPath store storePath
+  storePathText <- liftIO $ toS <$> OsPath.decodeFS storePathOS
 
   when (undNarHash /= piNarHash pathInfo) $
     throwM $

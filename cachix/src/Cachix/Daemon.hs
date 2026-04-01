@@ -39,10 +39,10 @@ import Control.Concurrent.STM.TMChan
 import Control.Exception.Safe (catchAny, tryAny)
 import Data.IORef (IORef, atomicModifyIORef', newIORef)
 import Data.Text qualified as T
-import Nix.Unsafe.Store (Store, withStore)
 import Katip qualified
 import Network.Socket qualified as Socket
 import Network.Socket.ByteString qualified as Socket.BS
+import Nix.C.Unsafe.Store (Store, withStore)
 import Protolude hiding (bracket)
 import System.Environment (lookupEnv)
 import System.IO.Error (isResourceVanishedError)

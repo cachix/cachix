@@ -33,7 +33,7 @@ import Data.Conduit.TMChan qualified as C
 import Data.Generics.Labels ()
 import Data.Text.IO (hGetLine)
 import GHC.IO.Handle (hDuplicate, hDuplicateTo)
-import Nix.Unsafe.Store (withStore)
+import Nix.C.Unsafe.Store (withStore)
 import Protolude hiding (toS)
 import Protolude.Conv
 import Servant.Conduit ()

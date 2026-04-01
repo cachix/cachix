@@ -22,7 +22,7 @@ import Control.Concurrent.STM (TVar, modifyTVar', newTVarIO, readTVar)
 import Control.Concurrent.STM.Lock qualified as Lock
 import Control.Concurrent.STM.TBQueue qualified as TBQueue
 import Data.Set qualified as S
-import Nix.Unsafe.Store (StorePath)
+import Nix.C.Unsafe.Store (StorePath)
 import Protolude
 import System.Posix.Signals qualified as Signals
 import System.Systemd.Daemon qualified as Systemd

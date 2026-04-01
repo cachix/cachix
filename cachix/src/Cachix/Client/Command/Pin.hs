@@ -11,11 +11,12 @@ import Cachix.Client.Retry (retryHttp)
 import Cachix.Client.Servant
 import Cachix.Types.PinCreate qualified as PinCreate
 import Data.Text qualified as T
-import Nix.Unsafe.Store (storeRealPath, withStore)
+import Nix.C.Unsafe.Store (storeRealPath, withStore)
 import Protolude hiding (toS)
 import Protolude.Conv
 import Servant.Client.Streaming
 import System.Directory (doesFileExist)
+import System.OsPath qualified as OsPath
 
 pin :: Env -> PinOptions -> IO ()
 pin env pinOpts = do
@@ -26,7 +27,9 @@ pin env pinOpts = do
       Left err -> do
         putErrText $ formatStorePathWarning filePath err
         exitFailure
-      Right sp -> storeRealPath store sp
+      Right sp -> do
+        osPath <- storeRealPath store sp
+        OsPath.decodeFS osPath
   traverse_ (validateArtifact (toS storePath)) (pinArtifacts pinOpts)
   let pinCreate =
         PinCreate.PinCreate

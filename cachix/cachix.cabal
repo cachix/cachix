@@ -151,10 +151,9 @@ library
     , either
     , exceptions
     , extra
-    , filepath
+    , filepath                >=1.4.200
     , fsnotify                >=0.4.1
     , generic-lens
-    , hs-nix-c-api
     , here
     , hnix-store-core         >=0.8
     , hnix-store-nar
@@ -163,7 +162,6 @@ library
     , http-conduit
     , http-types
     , immortal
-    , directory
     , katip
     , lukko
     , lzma-conduit
@@ -172,6 +170,7 @@ library
     , microlens
     , netrc
     , network
+    , nix-bindings
     , nix-narinfo
     , optparse-applicative
     , pqueue
@@ -271,11 +270,11 @@ test-suite cachix-test
     , dhall
     , directory
     , extra
-    , filepath
-    , hs-nix-c-api
+    , filepath             >=1.4.200
     , here
     , hspec
     , katip
+    , nix-bindings
     , protolude
     , retry
     , servant-auth-client

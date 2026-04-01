@@ -20,12 +20,13 @@ module Cachix.Client.CNix
   )
 where
 
-import Nix.Context (NixError (..))
-import Nix.Unsafe.Store (Store, StorePath)
-import Nix.Unsafe.Store qualified as Store
+import Nix.C.Context (NixError (..))
+import Nix.C.Unsafe.Store (Store, StorePath)
+import Nix.C.Unsafe.Store qualified as Store
 import Protolude
 import System.Console.Pretty (Color (..), Style (..), color, style)
 import System.Directory (canonicalizePath)
+import System.OsPath qualified as OsPath
 
 -- | Error when resolving a store path
 data StorePathError
@@ -49,7 +50,8 @@ resolveStorePath store fp = do
   where
     tryResolve = do
       resolved <- canonicalizePath fp
-      (Right <$> Store.parseStorePath' store (encodeUtf8 (toS resolved :: Text)))
+      osPath <- OsPath.encodeFS resolved
+      (Right <$> Store.parseStorePath' store osPath)
         `catchNixError` (pure . Left)
 
 -- | Resolve multiple file paths to validated store paths.
@@ -88,8 +90,8 @@ logStorePathWarning path err =
 -- Like 'logStorePathWarning' but for when you have a 'StorePath' instead of a 'FilePath'.
 logStorePathWarning' :: Store -> StorePath -> StorePathError -> IO ()
 logStorePathWarning' store storePath err = do
-  pathBytes <- Store.storeRealPath store storePath
-  let path = toS (decodeUtf8With lenientDecode pathBytes :: Text)
+  osPath <- Store.storeRealPath store storePath
+  path <- OsPath.decodeFS osPath
   logStorePathWarning path err
 
 -- | Validate that an existing store path is still valid in the Nix store.

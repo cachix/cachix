@@ -1,7 +1,7 @@
 packages:
   */*.cabal
-  ../hs-nix-c-api/hs-nix-c-api
-  ../hs-nix-c-api/hs-nix-c-api-sys
+  ../nix-bindings-haskell/nix-bindings
+  ../nix-bindings-haskell/nix-bindings-sys
 
 allow-newer: lzma-conduit:*
 

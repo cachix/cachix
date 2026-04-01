@@ -30,8 +30,8 @@ import Control.Monad.IO.Unlift (MonadUnliftIO)
 import Data.Sequence qualified as Seq
 import Data.Set qualified as Set
 import Data.Time (NominalDiffTime, UTCTime, addUTCTime, diffUTCTime, getCurrentTime)
-import Nix.Unsafe.Store (StorePath, storePathHash)
 import Katip qualified
+import Nix.C.Unsafe.Store (StorePath, storePathHash)
 import Protolude
 import UnliftIO.Async qualified as Async
 

@@ -30,8 +30,8 @@ import Data.ByteString qualified as BS
 import Data.Conduit qualified as Conduit
 import Data.String.Here
 import Data.Text qualified as T
-import Nix.Unsafe.Store (Store, StorePath, storeRealPath, withStore)
 import Network.HTTP.Types (status401, status404)
+import Nix.C.Unsafe.Store (Store, StorePath, storeRealPath, withStore)
 import Protolude hiding (toS)
 import Protolude.Conv
 import Servant.Auth ()
@@ -42,6 +42,7 @@ import System.Console.AsciiProgress
 import System.Console.Pretty
 import System.Environment (lookupEnv)
 import System.IO (hIsTerminalDevice)
+import System.OsPath qualified as OsPath
 
 push :: Env -> PushOptions -> BinaryCacheName -> [Text] -> IO ()
 push env opts name cliPaths = do
@@ -93,7 +94,7 @@ pushStrategy store authToken opts name compressionMethod storePath =
 
     showUploadProgress retryStatus size = do
       let hSize = toS $ humanSize $ fromIntegral size
-      path <- liftIO $ decodeUtf8With lenientDecode <$> storeRealPath store storePath
+      path <- liftIO $ toS <$> (OsPath.decodeFS =<< storeRealPath store storePath)
 
       isTerminal <- liftIO $ hIsTerminalDevice stderr
       isCI <- liftIO $ (== Just "true") <$> lookupEnv "CI"

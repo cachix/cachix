@@ -8,8 +8,8 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    hs-nix-c-api = {
-      url = "github:cachix/hs-nix-c-api";
+    nix-bindings-haskell = {
+      url = "github:cachix/nix-bindings-haskell";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     git-hooks = {
@@ -49,9 +49,9 @@
       # Keep in sync with stack.yaml
       ghcVersion = "910";
 
-      # Nix C API packages from hs-nix-c-api's Nix fork.
-      getNixCApiPkgs = system:
-        with inputs.hs-nix-c-api.inputs.nix.packages.${system}; [
+      # Nix C API packages from nix-bindings-haskell's Nix fork.
+      getNixCApiPkgs =
+        system: with inputs.nix-bindings-haskell.inputs.nix.packages.${system}; [
           nix-util-c
           nix-store-c
           nix-expr-c
@@ -65,7 +65,7 @@
           pkgs,
           system,
           haskellPackages ? pkgs.haskellPackages,
-          hs-nix-c-api ? inputs.hs-nix-c-api.packages.${system}.hs-nix-c-api,
+          nix-bindings ? inputs.nix-bindings-haskell.packages.${system}.nix-bindings,
         }@args:
         let
           hlib = pkgs.haskell.lib;
@@ -73,22 +73,20 @@
           cachix =
             hlib.overrideCabal
               (haskellPackages.callCabal2nix "cachix" ./cachix {
-                inherit cachix-api hs-nix-c-api;
+                inherit cachix-api nix-bindings;
                 hnix-store-core = haskellPackages.hnix-store-core_0_8_0_0 or haskellPackages.hnix-store-core;
               })
-              (
-                old: {
-                  pkg-configDepends = getNixCApiPkgs system;
-                  # Apply a fix for a bug in GHC 9.10.3 that fails to load libraries using weak references on macOS 26.
-                  # https://github.com/NixOS/nixpkgs/pull/469906
-                  preBuild = ''
-                    DYLD_INSERT_LIBRARIES="''${DYLD_INSERT_LIBRARIES:+$DYLD_INSERT_LIBRARIES:}$(pkg-config --variable=libdir nix-store)/libnixstore.dylib:$(pkg-config --variable=libdir nix-util)/libnixutil.dylib"
-                    export DYLD_INSERT_LIBRARIES
-                    echo "DYLD_INSERT_LIBRARIES=$DYLD_INSERT_LIBRARIES"
-                  ''
-                  + (old.preBuild or "");
-                }
-              );
+              (old: {
+                pkg-configDepends = getNixCApiPkgs system;
+                # Apply a fix for a bug in GHC 9.10.3 that fails to load libraries using weak references on macOS 26.
+                # https://github.com/NixOS/nixpkgs/pull/469906
+                preBuild = ''
+                  DYLD_INSERT_LIBRARIES="''${DYLD_INSERT_LIBRARIES:+$DYLD_INSERT_LIBRARIES:}$(pkg-config --variable=libdir nix-store)/libnixstore.dylib:$(pkg-config --variable=libdir nix-util)/libnixutil.dylib"
+                  export DYLD_INSERT_LIBRARIES
+                  echo "DYLD_INSERT_LIBRARIES=$DYLD_INSERT_LIBRARIES"
+                ''
+                + (old.preBuild or "");
+              });
         in
         {
           inherit cachix cachix-api;
@@ -138,7 +136,12 @@
           default = inputs.devenv.lib.mkShell {
             inherit inputs pkgs;
             modules = [
-              ({ _module.args = { inherit ghcVersion; nixCApiPkgs = getNixCApiPkgs system; }; })
+              ({
+                _module.args = {
+                  inherit ghcVersion;
+                  nixCApiPkgs = getNixCApiPkgs system;
+                };
+              })
               ./devenv.nix
             ];
           };

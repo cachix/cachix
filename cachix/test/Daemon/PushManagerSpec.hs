@@ -18,8 +18,8 @@ import Control.Monad (fail)
 import Control.Retry (defaultRetryStatus)
 import Data.Set qualified as Set
 import Data.Time (diffUTCTime, getCurrentTime)
-import Nix.Unsafe.Init qualified as NixInit
-import Nix.Unsafe.Store (Store, withStore)
+import Nix.C.Unsafe.Init qualified as NixInit
+import Nix.C.Unsafe.Store (Store, withStore)
 import Protolude
 import Servant.Auth.Client (Token (Token))
 import System.IO.Temp (withSystemTempDirectory)

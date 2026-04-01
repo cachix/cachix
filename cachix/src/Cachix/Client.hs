@@ -20,7 +20,7 @@ import Cachix.Daemon.Client qualified as Daemon.Client
 import Cachix.Deploy.ActivateCommand as ActivateCommand
 import Cachix.Deploy.Agent qualified as AgentCommand
 import Cachix.Deploy.OptionsParser qualified as DeployOptions
-import Nix.Unsafe.Init qualified as NixInit
+import Nix.C.Unsafe.Init qualified as NixInit
 import Protolude
 import System.Console.AsciiProgress (displayConsoleRegions)
 import System.Posix.Signals qualified as Signal

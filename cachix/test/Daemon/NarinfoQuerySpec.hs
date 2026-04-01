@@ -8,10 +8,12 @@ import Cachix.Daemon.NarinfoQuery qualified as NarinfoQuery
 import Control.Concurrent.STM
 import Data.Set qualified as Set
 import Data.Time (UTCTime, getCurrentTime)
-import Hercules.CNix qualified as CNix
-import Hercules.CNix.Store (Store, StorePath, withStoreFromURI)
 import Katip qualified
+import Nix.C.Unsafe.Init qualified as NixInit
+import Nix.C.Unsafe.Store (Store, StorePath, withStore)
+import Nix.C.Unsafe.Store qualified as Store
 import Protolude
+import System.OsPath qualified as OsPath
 import Test.Hspec
 import UnliftIO.Async qualified as Async
 import UnliftIO.Timeout (timeout)
@@ -19,8 +21,9 @@ import UnliftIO.Timeout (timeout)
 -- Create a mock StorePath for testing
 mockStorePath :: Store -> Int -> IO StorePath
 mockStorePath store i = do
-  let pathText = "/nix/store/" <> show i <> "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-mock"
-  CNix.parseStorePath store (encodeUtf8 pathText)
+  let pathText = "/nix/store/" <> show i <> "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-mock" :: [Char]
+  osPath <- OsPath.encodeFS pathText
+  Store.parseStorePath' store osPath
 
 -- Test data structure to track batch processor calls
 data BatchCall = BatchCall
@@ -134,10 +137,10 @@ waitForCallbacks callsVar n =
 spec :: Spec
 spec = do
   -- Initialize the CNix library
-  runIO CNix.init
+  runIO NixInit.initNix
 
   describe "Batching" $ do
-    it "triggers batch when size threshold is reached" $ withStoreFromURI "dummy://" $ \store -> do
+    it "triggers batch when size threshold is reached" $ withStore "dummy://" $ \store -> do
       path1 <- mockStorePath store 1
       path2 <- mockStorePath store 2
       path3 <- mockStorePath store 3
@@ -160,7 +163,7 @@ spec = do
               Nothing -> panic "Expected batch call"
         Set.fromList batchPaths `shouldBe` Set.fromList [path1, path2]
 
-    it "triggers batch when timeout is reached" $ withStoreFromURI "dummy://" $ \store -> do
+    it "triggers batch when timeout is reached" $ withStore "dummy://" $ \store -> do
       path1 <- mockStorePath store 1
       let config = defaultNarinfoQueryOptions {nqoMaxBatchSize = 100, nqoMaxWaitTime = 0.05} -- Small timeout, large batch
       withTestManager config $ \TestContext {..} -> do
@@ -174,7 +177,7 @@ spec = do
 
         calls <- readTVarIO tcBatchCalls
         length calls `shouldBe` 1 -- Batch triggered by timeout
-    it "processes immediately when timeout is zero" $ withStoreFromURI "dummy://" $ \store -> do
+    it "processes immediately when timeout is zero" $ withStore "dummy://" $ \store -> do
       path1 <- mockStorePath store 1
       let config = defaultNarinfoQueryOptions {nqoMaxBatchSize = 100, nqoMaxWaitTime = 0} -- Immediate mode
       withTestManager config $ \TestContext {..} -> do
@@ -186,7 +189,7 @@ spec = do
 
         calls <- readTVarIO tcBatchCalls
         length calls `shouldBe` 1 -- Processed immediately
-    it "only caches existing paths, not missing ones" $ withStoreFromURI "dummy://" $ \store -> do
+    it "only caches existing paths, not missing ones" $ withStore "dummy://" $ \store -> do
       path1 <- mockStorePath store 1
       path2 <- mockStorePath store 2
       path3 <- mockStorePath store 3
@@ -209,7 +212,7 @@ spec = do
         cached1 `shouldBe` True -- Existing path cached
         cached2 `shouldBe` True -- Existing path cached
         cached3 `shouldBe` False -- Missing path not cached
-    it "bypasses batch processor for cached paths" $ withStoreFromURI "dummy://" $ \store -> do
+    it "bypasses batch processor for cached paths" $ withStore "dummy://" $ \store -> do
       path1 <- mockStorePath store 1
       path2 <- mockStorePath store 2
       let config = defaultNarinfoQueryOptions {nqoMaxWaitTime = 0}
@@ -243,7 +246,7 @@ spec = do
               Nothing -> panic "Expected callback call"
         NarinfoQuery.nrAllPaths secondResponse `shouldBe` Set.fromList [path1, path2]
 
-    it "distributes correct paths to each request" $ withStoreFromURI "dummy://" $ \store -> do
+    it "distributes correct paths to each request" $ withStore "dummy://" $ \store -> do
       path1 <- mockStorePath store 1
       path2 <- mockStorePath store 2
       path3 <- mockStorePath store 3
@@ -282,7 +285,7 @@ spec = do
         NarinfoQuery.nrAllPaths response2 `shouldBe` Set.fromList [path3, path4, path5]
         NarinfoQuery.nrMissingPaths response2 `shouldBe` Set.fromList [path4]
 
-    it "deduplicates paths across requests in same batch" $ withStoreFromURI "dummy://" $ \store -> do
+    it "deduplicates paths across requests in same batch" $ withStore "dummy://" $ \store -> do
       path1 <- mockStorePath store 1
       path2 <- mockStorePath store 2
       let config = defaultNarinfoQueryOptions {nqoMaxBatchSize = 3, nqoMaxWaitTime = 0.1}

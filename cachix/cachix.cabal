@@ -151,10 +151,9 @@ library
     , either
     , exceptions
     , extra
-    , filepath
+    , filepath                >=1.4.200
     , fsnotify                >=0.4.1
     , generic-lens
-    , hercules-ci-cnix-store  >=0.4
     , here
     , hnix-store-core         >=0.8
     , hnix-store-nar
@@ -163,7 +162,6 @@ library
     , http-conduit
     , http-types
     , immortal
-    , inline-c-cpp
     , katip
     , lukko
     , lzma-conduit
@@ -172,6 +170,7 @@ library
     , microlens
     , netrc
     , network
+    , nix-bindings
     , nix-narinfo
     , optparse-applicative
     , pqueue
@@ -206,8 +205,7 @@ library
     , websockets
     , wuss
 
-  -- These versions are pinned in hercules-ci-cnix-store
-  pkgconfig-depends: nix-store
+  pkgconfig-depends: nix-store-c
 
 executable cachix
   import:          defaults
@@ -272,11 +270,11 @@ test-suite cachix-test
     , dhall
     , directory
     , extra
-    , filepath
-    , hercules-ci-cnix-store
+    , filepath             >=1.4.200
     , here
     , hspec
     , katip
+    , nix-bindings
     , protolude
     , retry
     , servant-auth-client

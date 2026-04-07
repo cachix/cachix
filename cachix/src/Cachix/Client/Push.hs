@@ -74,6 +74,8 @@ import Data.Set qualified as Set
 import Data.String.Here (iTrim)
 import Data.Text qualified as T
 import Network.HTTP.Types (status401, status404)
+import Nix.C.Hash qualified as NixHash
+import Nix.C.Hash.Nix32 qualified as Nix32
 import Nix.C.Store.PathInfo qualified as NixPathInfo
 import Nix.C.Unsafe.Store (Store, StorePath)
 import Nix.C.Unsafe.Store qualified as Store
@@ -85,7 +87,6 @@ import Servant.Auth ()
 import Servant.Auth.Client
 import Servant.Client.Streaming
 import Servant.Conduit ()
-import System.Nix.Base32 qualified
 import System.Nix.Nar
 import System.OsPath qualified as OsPath
 
@@ -174,7 +175,7 @@ pushSingleStorePath ::
   -- | r is determined by the 'PushStrategy'
   m r
 pushSingleStorePath pushParams storePath = retryAll $ \retrystatus -> do
-  storeHash <- liftIO $ encodeUtf8 . System.Nix.Base32.encode <$> Store.storePathHash storePath
+  storeHash <- liftIO $ encodeUtf8 . Nix32.encode <$> Store.storePathHash storePath
   let strategy = pushParamsStrategy pushParams storePath
   res <- liftIO $ narinfoExists pushParams storeHash
   case res of
@@ -302,19 +303,28 @@ newPathInfoFromStorePath :: (MonadIO m) => Store -> StorePath -> m PathInfo
 newPathInfoFromStorePath store storePath = liftIO $ do
   osPath <- Store.storeRealPath store storePath
   path <- OsPath.decodeFS osPath
-  info <- Store.queryPathInfoJson store storePath NixPathInfo.PathInfoJsonFormatV2
+  info <- Store.queryPathInfo store storePath
 
-  let NixPathInfo.Hash algo digest = NixPathInfo.pathInfoNarHash info
-      narHash = NixPathInfo.hashAlgoText algo <> ":" <> System.Nix.Base32.encode digest
+  let narHash = NixHash.hashToNix32 (NixPathInfo.pathInfoNarHash info)
       narSize = fromIntegral $ NixPathInfo.pathInfoNarSize info
+
+  let getStorePathBaseName =
+        (OsPath.decodeFS . OsPath.takeFileName)
+          <=< Store.storeRealPath store
+
+  -- Convert StorePath references to basenames
+  refPaths <- for (NixPathInfo.pathInfoReferences info) getStorePathBaseName
+
+  -- Convert deriver StorePath to basename
+  deriver <- for (NixPathInfo.pathInfoDeriver info) (fmap toS . getStorePathBaseName)
 
   return $
     PathInfo
       { piPath = path,
         piNarHash = narHash,
         piNarSize = narSize,
-        piDeriver = NixPathInfo.pathInfoDeriver info,
-        piReferences = Set.fromList (fmap toS (NixPathInfo.pathInfoReferences info))
+        piDeriver = deriver,
+        piReferences = Set.fromList refPaths
       }
 
 -- | Create a 'PathInfo' for a store path from an existing NarInfo.
@@ -371,7 +381,7 @@ streamUploadNar pushParams storePath storePathSize retrystatus = do
 
   for result $ \uploadResult -> liftIO $ do
     narSize <- readIORef narSizeRef
-    narHash <- ("sha256:" <>) . System.Nix.Base32.encode <$> readIORef narHashRef
+    narHash <- ("sha256:" <>) . Nix32.encode <$> readIORef narHashRef
     fileSize <- readIORef fileSizeRef
     fileHash <- readIORef fileHashRef
 
@@ -515,7 +525,7 @@ queryNarInfoBulk pushParams paths = do
 
   pathsAndHashes <- liftIO $
     for paths $ \path -> do
-      hash' <- System.Nix.Base32.encode <$> Store.storePathHash path
+      hash' <- Nix32.encode <$> Store.storePathHash path
       pure (hash', path)
   let hashes = fmap fst pathsAndHashes
   let processBatch hashesChunk = retryHttp $ liftIO $ do

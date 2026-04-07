@@ -11,22 +11,25 @@ import Cachix.Client.Retry (retryHttp)
 import Cachix.Client.Servant
 import Cachix.Types.PinCreate qualified as PinCreate
 import Data.Text qualified as T
-import Hercules.CNix.Store (storePathToPath, withStore)
+import Nix.C.Unsafe.Store (storeRealPath, withStore)
 import Protolude hiding (toS)
 import Protolude.Conv
 import Servant.Client.Streaming
 import System.Directory (doesFileExist)
+import System.OsPath qualified as OsPath
 
 pin :: Env -> PinOptions -> IO ()
 pin env pinOpts = do
   authToken <- Config.getAuthTokenRequired (config env)
-  storePath <- withStore $ \store -> do
+  storePath <- withStore "auto" $ \store -> do
     let filePath = toS (pinStorePath pinOpts)
     resolveStorePath store filePath >>= \case
       Left err -> do
         putErrText $ formatStorePathWarning filePath err
         exitFailure
-      Right sp -> storePathToPath store sp
+      Right sp -> do
+        osPath <- storeRealPath store sp
+        OsPath.decodeFS osPath
   traverse_ (validateArtifact (toS storePath)) (pinArtifacts pinOpts)
   let pinCreate =
         PinCreate.PinCreate

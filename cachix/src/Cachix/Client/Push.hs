@@ -73,11 +73,12 @@ import Data.List.Extra (chunksOf)
 import Data.Set qualified as Set
 import Data.String.Here (iTrim)
 import Data.Text qualified as T
-import Hercules.CNix (StorePath)
-import Hercules.CNix.Std.Set qualified as Std.Set
-import Hercules.CNix.Store (Store)
-import Hercules.CNix.Store qualified as Store
 import Network.HTTP.Types (status401, status404)
+import Nix.C.Hash qualified as NixHash
+import Nix.C.Hash.Nix32 qualified as Nix32
+import Nix.C.Store.PathInfo qualified as NixPathInfo
+import Nix.C.Unsafe.Store (Store, StorePath)
+import Nix.C.Unsafe.Store qualified as Store
 import Nix.NarInfo qualified as NarInfo
 import Protolude hiding (toS)
 import Protolude.Conv
@@ -86,8 +87,8 @@ import Servant.Auth ()
 import Servant.Auth.Client
 import Servant.Client.Streaming
 import Servant.Conduit ()
-import System.Nix.Base32 qualified
 import System.Nix.Nar
+import System.OsPath qualified as OsPath
 
 -- | A secret for authenticating with a cache.
 data PushSecret
@@ -174,7 +175,7 @@ pushSingleStorePath ::
   -- | r is determined by the 'PushStrategy'
   m r
 pushSingleStorePath pushParams storePath = retryAll $ \retrystatus -> do
-  storeHash <- liftIO $ Store.getStorePathHash storePath
+  storeHash <- liftIO $ encodeUtf8 . Nix32.encode <$> Store.storePathHash storePath
   let strategy = pushParamsStrategy pushParams storePath
   res <- liftIO $ narinfoExists pushParams storeHash
   case res of
@@ -212,8 +213,8 @@ uploadStorePath pushParams storePath retrystatus = do
   let store = pushParamsStore pushParams
       strategy = pushParamsStrategy pushParams storePath
 
-  storePathText <- liftIO $ Store.storePathToPath store storePath
-  let path = toS storePathText
+  storePathOS <- liftIO $ Store.storeRealPath store storePath
+  path <- liftIO $ OsPath.decodeFS storePathOS
 
   -- Validate the path is still valid (may have been GC'd since queued)
   liftIO (validateStorePath store storePath) >>= \case
@@ -226,7 +227,7 @@ uploadStorePath pushParams storePath retrystatus = do
 
   eresult <-
     runConduitRes $
-      streamNarIO narEffectsIO (toS storePathText) Data.Conduit.yield
+      streamNarIO narEffectsIO path Data.Conduit.yield
         .| streamUploadNar pushParams storePath narSize retrystatus
 
   case eresult of
@@ -300,25 +301,30 @@ data PathInfo = PathInfo
 -- | Create a 'PathInfo' for a store path by querying the Nix store.
 newPathInfoFromStorePath :: (MonadIO m) => Store -> StorePath -> m PathInfo
 newPathInfoFromStorePath store storePath = liftIO $ do
-  pathInfo <- Store.queryPathInfo store storePath
+  osPath <- Store.storeRealPath store storePath
+  path <- OsPath.decodeFS osPath
+  info <- Store.queryPathInfo store storePath
 
-  path <- Store.storePathToPath store storePath
-  narHash <- Store.validPathInfoNarHash32 pathInfo
-  let narSize = fromIntegral $ Store.validPathInfoNarSize pathInfo
-  deriver <-
-    Store.validPathInfoDeriver store pathInfo
-      >>= mapM Store.getStorePathBaseName
-  references <-
-    Store.validPathInfoReferences store pathInfo
-      >>= mapM Store.getStorePathBaseName
+  let narHash = NixHash.hashToNix32 (NixPathInfo.pathInfoNarHash info)
+      narSize = fromIntegral $ NixPathInfo.pathInfoNarSize info
+
+  let getStorePathBaseName =
+        (OsPath.decodeFS . OsPath.takeFileName)
+          <=< Store.storeRealPath store
+
+  -- Convert StorePath references to basenames
+  refPaths <- for (NixPathInfo.pathInfoReferences info) getStorePathBaseName
+
+  -- Convert deriver StorePath to basename
+  deriver <- for (NixPathInfo.pathInfoDeriver info) (fmap toS . getStorePathBaseName)
 
   return $
     PathInfo
-      { piPath = toS path,
-        piNarHash = decodeUtf8 narHash,
+      { piPath = path,
+        piNarHash = narHash,
         piNarSize = narSize,
-        piDeriver = fmap toS deriver,
-        piReferences = Set.fromList (fmap toS references)
+        piDeriver = deriver,
+        piReferences = Set.fromList refPaths
       }
 
 -- | Create a 'PathInfo' for a store path from an existing NarInfo.
@@ -375,7 +381,7 @@ streamUploadNar pushParams storePath storePathSize retrystatus = do
 
   for result $ \uploadResult -> liftIO $ do
     narSize <- readIORef narSizeRef
-    narHash <- ("sha256:" <>) . System.Nix.Base32.encode <$> readIORef narHashRef
+    narHash <- ("sha256:" <>) . Nix32.encode <$> readIORef narHashRef
     fileSize <- readIORef fileSizeRef
     fileHash <- readIORef fileHashRef
 
@@ -447,8 +453,10 @@ newNarInfoCreate ::
 newNarInfoCreate pushParams storePath pathInfo UploadNarDetails {..} = do
   let store = pushParamsStore pushParams
   let strategy = pushParamsStrategy pushParams storePath
-  storeDir <- Store.storeDir store
-  storePathText <- liftIO $ toS <$> Store.storePathToPath store storePath
+  storeDirOS <- liftIO $ Store.storeDir store
+  storeDir <- liftIO $ OsPath.decodeFS storeDirOS
+  storePathOS <- liftIO $ Store.storeRealPath store storePath
+  storePathText <- liftIO $ toS <$> OsPath.decodeFS storePathOS
 
   when (undNarHash /= piNarHash pathInfo) $
     throwM $
@@ -508,9 +516,8 @@ getMissingPathsForClosure pushParams inputPaths = do
 computeClosure :: (MonadIO m) => Store -> [StorePath] -> m [StorePath]
 computeClosure store inputPaths =
   liftIO $ do
-    inputSet <- Std.Set.fromListFP inputPaths
-    closure <- Store.computeFSClosure store Store.defaultClosureParams inputSet
-    Std.Set.toListFP closure
+    closureLists <- mapM (Store.computeFSClosure store) inputPaths
+    pure $ Set.toList $ Set.fromList $ concat closureLists
 
 queryNarInfoBulk :: (MonadIO m, MonadMask m) => PushParams n r -> [StorePath] -> m ([StorePath], [StorePath])
 queryNarInfoBulk pushParams paths = do
@@ -518,7 +525,7 @@ queryNarInfoBulk pushParams paths = do
 
   pathsAndHashes <- liftIO $
     for paths $ \path -> do
-      hash' <- decodeUtf8With lenientDecode <$> Store.getStorePathHash path
+      hash' <- Nix32.encode <$> Store.storePathHash path
       pure (hash', path)
   let hashes = fmap fst pathsAndHashes
   let processBatch hashesChunk = retryHttp $ liftIO $ do

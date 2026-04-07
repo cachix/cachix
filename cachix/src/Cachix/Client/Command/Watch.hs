@@ -31,7 +31,7 @@ import Data.Conduit.TMChan qualified as C
 import Data.Generics.Labels ()
 import Data.Text.IO (hGetLine)
 import GHC.IO.Handle (hDuplicate, hDuplicateTo)
-import Hercules.CNix.Store (withStore)
+import Nix.C.Unsafe.Store (withStore)
 import Protolude hiding (toS)
 import Protolude.Conv
 import Servant.Conduit ()
@@ -78,7 +78,7 @@ watchExecDaemon env pushOpts batchOptions cacheName cmd args = do
   envSocketPath <- lookupEnv "CACHIX_DAEMON_SOCKET"
   Daemon.PostBuildHook.withSetup envSocketPath $ \hookEnv ->
     withTempFile (Daemon.PostBuildHook.tempDir hookEnv) "daemon-log-capture" $ \_ logHandle ->
-      withStore $ \store -> do
+      withStore "auto" $ \store -> do
         let daemonOptions =
               DaemonOptions
                 { daemonAllowRemoteStop = False,

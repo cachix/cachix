@@ -359,11 +359,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1775037660,
-        "narHash": "sha256-GYKwHpJwlv3i+SYaOWqjBiD5Re/IgsunjjSqtd8Y+os=",
+        "lastModified": 1775604664,
+        "narHash": "sha256-OGdllLqWyWfR91tK+Kt1ndmVg2P/Q6EDvePHB7gvmxE=",
         "owner": "cachix",
         "repo": "nix-bindings-haskell",
-        "rev": "bb622e49d00115afcf7d82774cd60c0e5d9a385d",
+        "rev": "5c7ff694e8bce836eecf6679e0d19c481520dd06",
         "type": "github"
       },
       "original": {
@@ -382,16 +382,16 @@
         "nixpkgs-regression": "nixpkgs-regression"
       },
       "locked": {
-        "lastModified": 1774493711,
-        "narHash": "sha256-xQqNVk6qjWrsG8KnKH/O7Dl5leYSucnZtxRihKz0aGw=",
+        "lastModified": 1775584026,
+        "narHash": "sha256-mNMlEs5VpSy14fZBepBKyK9E+9Pdxgod9zVr0n7wgHQ=",
         "owner": "cachix",
         "repo": "nix",
-        "rev": "029becbe2fc65eb252facd2322610f8ac5b1dd15",
+        "rev": "528fc271dc73d550b3899d4ce8651b3c8ab5970c",
         "type": "github"
       },
       "original": {
         "owner": "cachix",
-        "ref": "feat-query-path-info-json",
+        "ref": "feat-query-path-info",
         "repo": "nix",
         "type": "github"
       }

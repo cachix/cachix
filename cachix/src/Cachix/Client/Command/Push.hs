@@ -24,6 +24,7 @@ import Cachix.Client.Secrets
 import Cachix.Client.Servant
 import Cachix.Types.BinaryCache (BinaryCacheName)
 import Cachix.Types.BinaryCache qualified as BinaryCache
+import Control.Concurrent (forkIO, myThreadId, threadDelay, throwTo)
 import Control.Exception.Safe (throwM)
 import Control.Retry (RetryStatus (rsIterNumber))
 import Data.ByteString qualified as BS
@@ -33,7 +34,7 @@ import Data.Text qualified as T
 import Hercules.CNix (StorePath)
 import Hercules.CNix.Store (Store, storePathToPath, withStore)
 import Network.HTTP.Types (status401, status404)
-import Protolude hiding (toS)
+import Protolude hiding (toS, throwTo)
 import Protolude.Conv
 import Servant.Auth ()
 import Servant.Auth.Client
@@ -43,6 +44,8 @@ import System.Console.AsciiProgress
 import System.Console.Pretty
 import System.Environment (lookupEnv)
 import System.IO (hIsTerminalDevice)
+import System.Posix.Process (getParentProcessID)
+import System.Posix.Types (ProcessID)
 
 push :: Env -> PushOptions -> BinaryCacheName -> [Text] -> IO ()
 push env opts name cliPaths = do
@@ -57,6 +60,12 @@ push env opts name cliPaths = do
       -- that may or may not be written to by the caller.
       -- This is somewhat like the behavior of `cat` for example.
       (_, paths) -> return paths
+  -- Exit when the parent process dies to avoid orphaned cachix processes
+  -- spinning on dead connections (see parentWatchdog).
+  when hasStdin $ do
+    parentPid <- getParentProcessID
+    mainTid <- myThreadId
+    void $ forkIO $ parentWatchdog mainTid parentPid
   withPushParams env opts name $ \pushParams -> do
     (errors, validPaths) <- liftIO $ resolveStorePaths (pushParamsStore pushParams) (map toS inputStorePaths)
     liftIO $ forM_ errors $ uncurry logStorePathWarning
@@ -237,3 +246,17 @@ getPushSecretRequired config name = do
 -- This is safe to use when printing from multiple threads, unlike hPutStrLn which may fail to insert the newline at the right place.
 appendErrText :: (MonadIO m) => Text -> m ()
 appendErrText = hPutStr stderr
+
+-- | Exit the process when the parent dies.
+--
+-- When reading from a pipe (e.g. @nix-build | cachix push@), the parent may be
+-- killed while uploads are in-flight. HTTP requests hang on dead connections and
+-- the process spins at 100% CPU. This watchdog polls 'getParentProcessID' and
+-- exits when it changes (i.e. the process has been re-parented).
+parentWatchdog :: ThreadId -> ProcessID -> IO ()
+parentWatchdog mainTid originalParent = forever $ do
+  threadDelay 5_000_000
+  currentParent <- getParentProcessID
+  when (currentParent /= originalParent) $ do
+    putErrText "cachix: parent process died, exiting"
+    throwTo mainTid ExitSuccess

@@ -424,7 +424,8 @@ streamCopy pushParams storePath claimedFileSize retrystatus compressionMethod = 
         Push.S3.UploadMultipartOptions
           { Push.S3.numConcurrentChunks = numConcurrentChunks strategy,
             Push.S3.chunkSize = chunkSize strategy,
-            -- TODO: why is this not part of the strategy?
+            -- This comes from the source NAR, not PushConfig, because
+            -- streamCopy re-uploads a pre-compressed NAR as-is.
             Push.S3.compressionMethod = compressionMethod,
             Push.S3.uploadTimeout = fromIntegral (uploadTimeout strategy) * 1_000_000_000
           }

@@ -16,7 +16,7 @@ import Network.HTTP.Client
   ( ManagerSettings,
     managerModifyRequest,
     managerResponseTimeout,
-    responseTimeoutNone,
+    responseTimeoutMicro,
   )
 import Network.HTTP.Client.TLS (newTlsManagerWith, tlsManagerSettings)
 import Network.HTTP.Simple (setRequestHeader)
@@ -53,7 +53,9 @@ mkEnv flags = do
 customManagerSettings :: ManagerSettings
 customManagerSettings =
   tlsManagerSettings
-    { managerResponseTimeout = responseTimeoutNone,
+    { -- 5 minutes: covers connection establishment and response headers.
+      -- Upload body liveness is handled separately by the upload watchdog.
+      managerResponseTimeout = responseTimeoutMicro (5 * 60 * 1_000_000),
       -- managerModifyRequest :: Request -> IO Request
       managerModifyRequest = return . setRequestHeader "User-Agent" [toS cachixVersion]
     }

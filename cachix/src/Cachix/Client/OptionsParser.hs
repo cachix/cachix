@@ -16,6 +16,7 @@ module Cachix.Client.OptionsParser
     defaultOmitDeriver,
     defaultKeepAliveInterval,
     defaultKeepAliveTimeout,
+    defaultUploadTimeout,
 
     -- * Watch exec
     WatchExecMode (..),
@@ -130,7 +131,9 @@ data PushOptions = PushOptions
     -- | The number of store paths to process concurrently.
     numJobs :: Int,
     -- | Omit the derivation from the store path metadata.
-    omitDeriver :: Bool
+    omitDeriver :: Bool,
+    -- | Seconds of upload inactivity before declaring a stall.
+    uploadTimeout :: Int
   }
   deriving (Show)
 
@@ -164,6 +167,10 @@ defaultKeepAliveInterval = 30
 defaultKeepAliveTimeout :: Int
 defaultKeepAliveTimeout = 180
 
+-- | 5 minutes, matching rclone's --timeout default.
+defaultUploadTimeout :: Int
+defaultUploadTimeout = 300
+
 defaultPushOptions :: PushOptions
 defaultPushOptions =
   PushOptions
@@ -172,7 +179,8 @@ defaultPushOptions =
       chunkSize = defaultChunkSize,
       numConcurrentChunks = defaultNumConcurrentChunks,
       numJobs = defaultNumJobs,
-      omitDeriver = defaultOmitDeriver
+      omitDeriver = defaultOmitDeriver,
+      uploadTimeout = defaultUploadTimeout
     }
 
 data DaemonCommand
@@ -355,6 +363,7 @@ pushOptionsParser =
     <*> numConcurrentChunks
     <*> numJobs
     <*> omitDeriver
+    <*> uploadTimeout
   where
     compressionLevel =
       option (auto >>= validateCompressionLevel) $
@@ -428,6 +437,14 @@ pushOptionsParser =
       switch $
         long "omit-deriver"
           <> help "Do not publish which derivations built the store paths."
+
+    uploadTimeout =
+      option auto $
+        long "upload-timeout"
+          <> metavar "SECONDS"
+          <> help "Seconds of upload inactivity before declaring a connection stalled and retrying."
+          <> showDefault
+          <> value defaultUploadTimeout
 
 pushCommand :: Parser CachixCommand
 pushCommand = toPushCommand <$> pushOptionsParser <*> cacheNameParser <*> pushArgumentsParser

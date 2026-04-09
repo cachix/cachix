@@ -484,12 +484,14 @@ newPushStrategy store authToken opts cacheName compressionMethod storePath =
           onError = onError,
           onAttempt = onAttempt,
           onUncompressedNARStream = onUncompressedNARStream,
+          onUpload = \_ -> pass,
           onDone = onDone,
           Client.Push.compressionMethod = compressionMethod,
           Client.Push.compressionLevel = Client.OptionsParser.compressionLevel opts,
           Client.Push.chunkSize = Client.OptionsParser.chunkSize opts,
           Client.Push.numConcurrentChunks = Client.OptionsParser.numConcurrentChunks opts,
-          Client.Push.omitDeriver = Client.OptionsParser.omitDeriver opts
+          Client.Push.omitDeriver = Client.OptionsParser.omitDeriver opts,
+          Client.Push.uploadTimeout = Client.OptionsParser.uploadTimeout opts
         }
 
 -- Push events

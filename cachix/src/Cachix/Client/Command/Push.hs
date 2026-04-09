@@ -78,12 +78,14 @@ pushStrategy store authToken opts name compressionMethod storePath =
       onError = throwM,
       onAttempt = \_ _ -> pass,
       onUncompressedNARStream = showUploadProgress,
+      onUpload = \_ -> pass,
       onDone = pass,
       Push.compressionMethod = compressionMethod,
       Push.compressionLevel = Options.compressionLevel opts,
       Push.chunkSize = Options.chunkSize opts,
       Push.numConcurrentChunks = Options.numConcurrentChunks opts,
-      Push.omitDeriver = Options.omitDeriver opts
+      Push.omitDeriver = Options.omitDeriver opts,
+      Push.uploadTimeout = Options.uploadTimeout opts
     }
   where
     retryText :: RetryStatus -> Text

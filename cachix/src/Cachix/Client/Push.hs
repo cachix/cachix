@@ -13,6 +13,11 @@ module Cachix.Client.Push
     PushSecret (..),
     getAuthTokenFromPushSecret,
     PushStrategy (..),
+
+    -- * Upload progress
+    module Cachix.Client.Push.UploadProgress,
+
+    -- * Compression
     defaultWithXzipCompressor,
     defaultWithXzipCompressorWithLevel,
     defaultWithZstdCompressor,
@@ -48,6 +53,7 @@ import Cachix.API.Error
 import Cachix.API.Signing (fingerprint, passthroughHashSink, passthroughHashSinkB16, passthroughSizeSink)
 import Cachix.Client.CNix (formatStorePathWarning, validateStorePath)
 import Cachix.Client.Exception (CachixException (..))
+import Cachix.Client.Push.UploadProgress
 import Cachix.Client.Push.S3 qualified as Push.S3
 import Cachix.Client.Retry (retryAll, retryHttp)
 import Cachix.Client.Secrets
@@ -57,6 +63,7 @@ import Cachix.Types.MultipartUpload qualified as Multipart
 import Cachix.Types.NarInfoCreate qualified as Api
 import Cachix.Types.NarInfoHash qualified as NarInfoHash
 import Conduit (MonadUnliftIO)
+import Control.Monad.IO.Unlift (askRunInIO)
 import Control.Concurrent.Async (mapConcurrently)
 import Control.Concurrent.QSem qualified as QSem
 import Control.Exception.Safe (MonadCatch, MonadMask, throwM)
@@ -135,6 +142,8 @@ data PushStrategy m r = PushStrategy
     -- | A conduit to inspect the NAR stream before compression.
     -- This is useful for tracking progress and computing hashes. The conduit must not modify the stream.
     onUncompressedNARStream :: RetryStatus -> Int64 -> ConduitT ByteString ByteString (ResourceT m) (),
+    -- | A callback that fires periodically during upload to report progress and detect stalls.
+    onUpload :: UploadProgress -> m (),
     -- | An action to run when authentication fails.
     on401 :: ClientError -> m r,
     -- | An action to run when an error occurs.
@@ -150,7 +159,9 @@ data PushStrategy m r = PushStrategy
     -- | The number of chunks to upload concurrently.
     numConcurrentChunks :: Int,
     -- | Whether to mit the deriver from the narinfo.
-    omitDeriver :: Bool
+    omitDeriver :: Bool,
+    -- | Seconds of upload inactivity before declaring a connection stalled.
+    uploadTimeout :: Int
   }
 
 defaultWithXzipCompressor :: (MonadIO m) => (ConduitT ByteString ByteString m () -> b) -> b
@@ -355,13 +366,17 @@ streamUploadNar pushParams storePath storePathSize retrystatus = do
         Push.S3.UploadMultipartOptions
           { Push.S3.numConcurrentChunks = numConcurrentChunks strategy,
             Push.S3.chunkSize = chunkSize strategy,
-            Push.S3.compressionMethod = compressionMethod strategy
+            Push.S3.compressionMethod = compressionMethod strategy,
+            Push.S3.uploadTimeout = fromIntegral (uploadTimeout strategy) * 1_000_000_000
           }
 
   narSizeRef <- liftIO $ newIORef 0
   fileSizeRef <- liftIO $ newIORef 0
   narHashRef <- liftIO $ newIORef ("" :: ByteString)
   fileHashRef <- liftIO $ newIORef ("" :: ByteString)
+
+  runInIO <- lift askRunInIO
+  let onUploadIO = runInIO . lift . onUpload strategy
 
   result <- withCompressor $ \compressor ->
     awaitForever Data.Conduit.yield
@@ -371,7 +386,7 @@ streamUploadNar pushParams storePath storePathSize retrystatus = do
       .| compressor
       .| passthroughSizeSink fileSizeRef
       .| passthroughHashSinkB16 fileHashRef
-      .| Push.S3.uploadMultipart clientEnv authToken cacheName uploadOptions
+      .| Push.S3.uploadMultipart clientEnv authToken cacheName onUploadIO uploadOptions
 
   for result $ \uploadResult -> liftIO $ do
     narSize <- readIORef narSizeRef
@@ -410,8 +425,12 @@ streamCopy pushParams storePath claimedFileSize retrystatus compressionMethod = 
           { Push.S3.numConcurrentChunks = numConcurrentChunks strategy,
             Push.S3.chunkSize = chunkSize strategy,
             -- TODO: why is this not part of the strategy?
-            Push.S3.compressionMethod = compressionMethod
+            Push.S3.compressionMethod = compressionMethod,
+            Push.S3.uploadTimeout = fromIntegral (uploadTimeout strategy) * 1_000_000_000
           }
+
+  runInIO <- lift askRunInIO
+  let onUploadIO = runInIO . lift . onUpload strategy
 
   fileSizeRef <- liftIO $ newIORef 0
   fileHashRef <- liftIO $ newIORef ("" :: ByteString)
@@ -421,7 +440,7 @@ streamCopy pushParams storePath claimedFileSize retrystatus compressionMethod = 
       .| onUncompressedNARStream strategy retrystatus claimedFileSize
       .| passthroughSizeSink fileSizeRef
       .| passthroughHashSinkB16 fileHashRef
-      .| Push.S3.uploadMultipart clientEnv authToken cacheName uploadOptions
+      .| Push.S3.uploadMultipart clientEnv authToken cacheName onUploadIO uploadOptions
 
   for result $ \uploadResult -> liftIO $ do
     fileSize <- readIORef fileSizeRef

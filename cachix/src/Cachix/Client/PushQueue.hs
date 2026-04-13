@@ -49,8 +49,9 @@ worker pushParams workerState = forever $ do
       Left err -> logStorePathWarning' store storePath err
       Right validStorePath -> do
         (_, missingPaths) <- getMissingPathsForClosure pushParams [validStorePath]
-        for_ missingPaths $ \missingPath ->
-          retryAll $ Push.uploadStorePath pushParams missingPath
+        for_ missingPaths $ \missingPath -> do
+          strategy <- Push.pushParamsStrategy pushParams missingPath
+          retryAll $ Push.uploadStorePath pushParams strategy missingPath
   where
     inProgressModify f =
       atomically $ modifyTVar' (inProgress workerState) f

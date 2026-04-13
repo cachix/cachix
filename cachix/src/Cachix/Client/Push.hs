@@ -127,7 +127,7 @@ data PushParams m r = PushParams
       -- Paths to push to the cache
       m [StorePath],
     -- | Hooks into different stages of the single path push process.
-    pushParamsStrategy :: StorePath -> PushStrategy m r,
+    pushParamsStrategy :: StorePath -> m (PushStrategy m r),
     -- | cachix base url, connection manager, see 'Cachix.Client.URI.defaultCachixBaseUrl', 'Servant.Client.mkClientEnv'
     pushParamsClientEnv :: ClientEnv,
     pushParamsStore :: Store
@@ -142,6 +142,9 @@ data PushStrategy m r = PushStrategy
     -- | A conduit to inspect the NAR stream before compression.
     -- This is useful for tracking progress and computing hashes. The conduit must not modify the stream.
     onUncompressedNARStream :: RetryStatus -> Int64 -> ConduitT ByteString ByteString (ResourceT m) (),
+    -- | A sink to observe the compressed NAR stream after compression.
+    -- This is useful for tracking the compression ratio. The sink cannot modify the stream.
+    onCompressedNARStream :: ConduitT ByteString Void (ResourceT m) (),
     -- | A callback that fires periodically during upload to report progress and detect stalls.
     onUpload :: UploadProgress -> m (),
     -- | An action to run when authentication fails.
@@ -186,12 +189,12 @@ pushSingleStorePath ::
   m r
 pushSingleStorePath pushParams storePath = retryAll $ \retrystatus -> do
   storeHash <- liftIO $ Store.getStorePathHash storePath
-  let strategy = pushParamsStrategy pushParams storePath
+  strategy <- pushParamsStrategy pushParams storePath
   res <- liftIO $ narinfoExists pushParams storeHash
   case res of
     Right NoContent -> onAlreadyPresent strategy -- we're done as store path is already in the cache
     Left err
-      | isErr err status404 -> uploadStorePath pushParams storePath retrystatus
+      | isErr err status404 -> uploadStorePath pushParams strategy storePath retrystatus
       | isErr err status401 -> on401 strategy err
       | otherwise -> onError strategy err
 
@@ -215,13 +218,13 @@ uploadStorePath ::
   (MonadUnliftIO m, MonadCatch m) =>
   -- | details for pushing to cache
   PushParams m r ->
+  PushStrategy m r ->
   StorePath ->
   RetryStatus ->
   -- | r is determined by the 'PushStrategy'
   m r
-uploadStorePath pushParams storePath retrystatus = do
+uploadStorePath pushParams strategy storePath retrystatus = do
   let store = pushParamsStore pushParams
-      strategy = pushParamsStrategy pushParams storePath
 
   storePathText <- liftIO $ Store.storePathToPath store storePath
   let path = toS storePathText
@@ -238,12 +241,12 @@ uploadStorePath pushParams storePath retrystatus = do
   eresult <-
     runConduitRes $
       streamNarIO narEffectsIO (toS storePathText) Data.Conduit.yield
-        .| streamUploadNar pushParams storePath narSize retrystatus
+        .| streamUploadNar pushParams strategy narSize retrystatus
 
   case eresult of
     Left e -> onError strategy e
     Right (uploadResult, uploadNarDetails) -> do
-      nic <- newNarInfoCreate pushParams storePath pathInfo uploadNarDetails
+      nic <- newNarInfoCreate pushParams strategy storePath pathInfo uploadNarDetails
       completeNarUpload pushParams uploadResult nic
       onDone strategy
 
@@ -264,8 +267,9 @@ pushClosure ::
 pushClosure traversal pushParams inputStorePaths = do
   (allPaths, missingPaths) <- getMissingPathsForClosure pushParams inputStorePaths
   paths <- pushOnClosureAttempt pushParams allPaths missingPaths
-  flip traversal paths $ \storePath ->
-    retryAll $ uploadStorePath pushParams storePath
+  flip traversal paths $ \storePath -> do
+    strategy <- pushParamsStrategy pushParams storePath
+    retryAll $ uploadStorePath pushParams strategy storePath
 
 completeNarUpload ::
   (MonadUnliftIO m) =>
@@ -298,6 +302,7 @@ data UploadNarDetails = UploadNarDetails
 
 -- | A simplified type for ValidPathInfo.
 -- Can be constructed either from an existing NarInfo, or by querying the Nix store.
+--
 -- Only includes the common fields between remote and local path infos.
 data PathInfo = PathInfo
   { piPath :: FilePath,
@@ -348,17 +353,16 @@ newPathInfoFromNarInfo narInfo =
 streamUploadNar ::
   (MonadUnliftIO m) =>
   PushParams m r ->
-  StorePath ->
+  PushStrategy m r ->
   Int64 ->
   RetryStatus ->
   ConduitT ByteString Void (ResourceT m) (Either ClientError (Push.S3.UploadMultipartResult, UploadNarDetails))
-streamUploadNar pushParams storePath storePathSize retrystatus = do
+streamUploadNar pushParams strategy storePathSize retrystatus = do
   let cacheName = pushParamsName pushParams
       authToken = getCacheAuthToken (pushParamsSecret pushParams)
       clientEnv = pushParamsClientEnv pushParams
 
-  let strategy = pushParamsStrategy pushParams storePath
-      withCompressor = case compressionMethod strategy of
+  let withCompressor = case compressionMethod strategy of
         BinaryCache.XZ -> defaultWithXzipCompressorWithLevel (compressionLevel strategy)
         BinaryCache.ZSTD -> defaultWithZstdCompressorWithLevel (compressionLevel strategy)
 
@@ -384,6 +388,7 @@ streamUploadNar pushParams storePath storePathSize retrystatus = do
       .| passthroughHashSink narHashRef
       .| onUncompressedNARStream strategy retrystatus storePathSize
       .| compressor
+      .| passthroughSink (onCompressedNARStream strategy) (\() -> pure ())
       .| passthroughSizeSink fileSizeRef
       .| passthroughHashSinkB16 fileHashRef
       .| Push.S3.uploadMultipart clientEnv authToken cacheName onUploadIO uploadOptions
@@ -409,16 +414,15 @@ streamUploadNar pushParams storePath storePathSize retrystatus = do
 streamCopy ::
   (MonadUnliftIO m) =>
   PushParams m r ->
-  StorePath ->
+  PushStrategy m r ->
   Int64 ->
   RetryStatus ->
   BinaryCache.CompressionMethod ->
   ConduitT ByteString Void (ResourceT m) (Either ClientError (Push.S3.UploadMultipartResult, UploadNarDetails))
-streamCopy pushParams storePath claimedFileSize retrystatus compressionMethod = do
+streamCopy pushParams strategy claimedFileSize retrystatus compressionMethod = do
   let cacheName = pushParamsName pushParams
       authToken = getCacheAuthToken (pushParamsSecret pushParams)
       clientEnv = pushParamsClientEnv pushParams
-      strategy = pushParamsStrategy pushParams storePath
 
   let uploadOptions =
         Push.S3.UploadMultipartOptions
@@ -439,6 +443,7 @@ streamCopy pushParams storePath claimedFileSize retrystatus compressionMethod = 
   result <-
     awaitForever Data.Conduit.yield
       .| onUncompressedNARStream strategy retrystatus claimedFileSize
+      .| passthroughSink (onCompressedNARStream strategy) (\() -> pure ())
       .| passthroughSizeSink fileSizeRef
       .| passthroughHashSinkB16 fileHashRef
       .| Push.S3.uploadMultipart clientEnv authToken cacheName onUploadIO uploadOptions
@@ -460,13 +465,13 @@ streamCopy pushParams storePath claimedFileSize retrystatus compressionMethod = 
 newNarInfoCreate ::
   (MonadIO m, MonadCatch m) =>
   PushParams n r ->
+  PushStrategy n r ->
   StorePath ->
   PathInfo ->
   UploadNarDetails ->
   m Api.NarInfoCreate
-newNarInfoCreate pushParams storePath pathInfo UploadNarDetails {..} = do
+newNarInfoCreate pushParams strategy storePath pathInfo UploadNarDetails {..} = do
   let store = pushParamsStore pushParams
-  let strategy = pushParamsStrategy pushParams storePath
   storeDir <- Store.storeDir store
   storePathText <- liftIO $ toS <$> Store.storePathToPath store storePath
 

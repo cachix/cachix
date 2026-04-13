@@ -414,8 +414,9 @@ runPushPathTask pushParams filePath = do
 
         let store = pushParamsStore pushParams
         storePath <- liftIO $ parseStorePath store (toS filePath)
+        strategy <- pushParamsStrategy pushParams storePath
 
-        retryAll $ uploadStorePath pushParams storePath
+        retryAll $ uploadStorePath pushParams strategy storePath
 
 newPushStrategy ::
   Store ->
@@ -423,8 +424,16 @@ newPushStrategy ::
   PushOptions ->
   Text ->
   BinaryCache.CompressionMethod ->
-  (StorePath -> PushStrategy PushManager ())
-newPushStrategy store authToken opts cacheName compressionMethod storePath =
+  StorePath ->
+  PushManager (PushStrategy PushManager ())
+newPushStrategy store authToken opts cacheName compressionMethod storePath = do
+  uncompressedBytesRef <- liftIO $ newIORef (0 :: Int64)
+  compressedBytesRef <- liftIO $ newIORef (0 :: Int64)
+  uploadedBytesRef <- liftIO $ newIORef (0 :: Int64)
+  narSizeRef <- liftIO $ newIORef (0 :: Int64)
+  lastEmittedBytesRef <- liftIO $ newIORef (0 :: Int64)
+  lastEmitNsRef <- liftIO $ newIORef =<< getMonotonicTimeNSec
+
   let onAlreadyPresent = do
         sp <- liftIO $ storePathToPath store storePath
         Katip.logFM Katip.InfoS $ Katip.ls $ "Skipping " <> (toS sp :: Text)
@@ -439,6 +448,7 @@ newPushStrategy store authToken opts cacheName compressionMethod storePath =
         pushStorePathFailed (toS sp) errText
 
       onAttempt retryStatus size = do
+        liftIO $ writeIORef narSizeRef size
         sp <- liftIO $ storePathToPath store storePath
         let retryContext =
               if rsIterNumber retryStatus > 0
@@ -450,49 +460,63 @@ newPushStrategy store authToken opts cacheName compressionMethod storePath =
               "Pushing " <> (toS sp :: Text)
         pushStorePathAttempt (toS sp) size retryStatus
 
-      onUncompressedNARStream _ size = do
-        sp <- liftIO $ storePathToPath store storePath
-        progressEmitIntervalNs <- asks pmProgressEmitIntervalNs
-        lastEmitNsRef <- liftIO $ newIORef =<< getMonotonicTimeNSec
-        currentBytesRef <- liftIO $ newIORef (0 :: Int64)
-        lastEmittedBytesRef <- liftIO $ newIORef (0 :: Int64)
+      onUncompressedNARStream _ _ =
         C.awaitForever $ \chunk -> do
-          let newBytes = fromIntegral (BS.length chunk)
-          currentBytes <- liftIO $ atomicModifyIORef' currentBytesRef (\b -> (b + newBytes, b + newBytes))
-          lastEmitNs <- liftIO $ readIORef lastEmitNsRef
-          nowNs <- liftIO getMonotonicTimeNSec
-
-          when (nowNs - lastEmitNs >= progressEmitIntervalNs || currentBytes == size) $ do
-            liftIO $ writeIORef lastEmitNsRef nowNs
-            lastEmitted <- liftIO $ readIORef lastEmittedBytesRef
-            let emitBytes = currentBytes - lastEmitted
-            liftIO $ writeIORef lastEmittedBytesRef currentBytes
-            when (emitBytes > 0) $
-              lift $
-                lift $
-                  pushStorePathProgress (toS sp) currentBytes emitBytes
-
+          liftIO $ atomicModifyIORef' uncompressedBytesRef (\b -> (b + fromIntegral (BS.length chunk), ()))
           C.yield chunk
+
+      onCompressedNARStream =
+        C.awaitForever $ \chunk ->
+          liftIO $ atomicModifyIORef' compressedBytesRef (\b -> (b + fromIntegral (BS.length chunk), ()))
+
+      onUpload progress = do
+        totalUploaded <- liftIO $ atomicModifyIORef' uploadedBytesRef (\b -> let b' = b + bytes progress in (b', b'))
+        compressedSeen <- liftIO $ readIORef compressedBytesRef
+        uncompressedSeen <- liftIO $ readIORef uncompressedBytesRef
+        narSize <- liftIO $ readIORef narSizeRef
+
+        let estimatedProgress :: Int64
+            estimatedProgress
+              | compressedSeen > 0 && uncompressedSeen > 0 =
+                  min narSize $ round $
+                    fromIntegral totalUploaded
+                    * fromIntegral uncompressedSeen
+                    / (fromIntegral compressedSeen :: Double)
+              | otherwise = 0
+
+        progressEmitIntervalNs <- asks pmProgressEmitIntervalNs
+        nowNs <- liftIO getMonotonicTimeNSec
+        lastEmitNs <- liftIO $ readIORef lastEmitNsRef
+
+        when (nowNs - lastEmitNs >= progressEmitIntervalNs || estimatedProgress == narSize) $ do
+          liftIO $ writeIORef lastEmitNsRef nowNs
+          sp <- liftIO $ storePathToPath store storePath
+          delta <- liftIO $ atomicModifyIORef' lastEmittedBytesRef $ \lastEmitted ->
+            let d = estimatedProgress - lastEmitted
+            in if d > 0 then (estimatedProgress, d) else (lastEmitted, 0)
+          when (delta > 0) $
+            pushStorePathProgress (toS sp) estimatedProgress delta
 
       onDone = do
         sp <- liftIO $ storePathToPath store storePath
         Katip.logFM Katip.InfoS $ Katip.ls $ "Pushed " <> (toS sp :: Text)
         pushStorePathDone (toS sp)
-   in PushStrategy
-        { onAlreadyPresent = onAlreadyPresent,
-          on401 = liftIO . handleCacheResponse cacheName authToken,
-          onError = onError,
-          onAttempt = onAttempt,
-          onUncompressedNARStream = onUncompressedNARStream,
-          onUpload = \_ -> pass,
-          onDone = onDone,
-          Client.Push.compressionMethod = compressionMethod,
-          Client.Push.compressionLevel = Client.OptionsParser.compressionLevel opts,
-          Client.Push.chunkSize = Client.OptionsParser.chunkSize opts,
-          Client.Push.numConcurrentChunks = Client.OptionsParser.numConcurrentChunks opts,
-          Client.Push.omitDeriver = Client.OptionsParser.omitDeriver opts,
-          Client.Push.uploadTimeout = Client.OptionsParser.uploadTimeout opts
-        }
+  return $ PushStrategy
+    { onAlreadyPresent = onAlreadyPresent,
+      on401 = liftIO . handleCacheResponse cacheName authToken,
+      onError = onError,
+      onAttempt = onAttempt,
+      onUncompressedNARStream = onUncompressedNARStream,
+      onCompressedNARStream = onCompressedNARStream,
+      onUpload = onUpload,
+      onDone = onDone,
+      Client.Push.compressionMethod = compressionMethod,
+      Client.Push.compressionLevel = Client.OptionsParser.compressionLevel opts,
+      Client.Push.chunkSize = Client.OptionsParser.chunkSize opts,
+      Client.Push.numConcurrentChunks = Client.OptionsParser.numConcurrentChunks opts,
+      Client.Push.omitDeriver = Client.OptionsParser.omitDeriver opts,
+      Client.Push.uploadTimeout = Client.OptionsParser.uploadTimeout opts
+    }
 
 -- Push events
 

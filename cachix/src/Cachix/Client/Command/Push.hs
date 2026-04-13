@@ -28,6 +28,7 @@ import Control.Exception.Safe (throwM)
 import Control.Retry (RetryStatus (rsIterNumber))
 import Data.ByteString qualified as BS
 import Data.Conduit qualified as Conduit
+import Data.IORef
 import Data.String.Here
 import Data.Text qualified as T
 import Hercules.CNix (StorePath)
@@ -70,44 +71,31 @@ push env opts name cliPaths = do
       (_, 0) -> putErrText "Nothing to push - all store paths are already on Cachix."
       _ -> putErrText "\nAll done."
 
-pushStrategy :: Store -> Maybe Token -> PushOptions -> Text -> BinaryCache.CompressionMethod -> StorePath -> PushStrategy IO ()
-pushStrategy store authToken opts name compressionMethod storePath =
-  PushStrategy
-    { onAlreadyPresent = pass,
-      on401 = handleCacheResponse name authToken,
-      onError = throwM,
-      onAttempt = \_ _ -> pass,
-      onUncompressedNARStream = showUploadProgress,
-      onUpload = \_ -> pass,
-      onDone = pass,
-      Push.compressionMethod = compressionMethod,
-      Push.compressionLevel = Options.compressionLevel opts,
-      Push.chunkSize = Options.chunkSize opts,
-      Push.numConcurrentChunks = Options.numConcurrentChunks opts,
-      Push.omitDeriver = Options.omitDeriver opts,
-      Push.uploadTimeout = Options.uploadTimeout opts
-    }
-  where
-    retryText :: RetryStatus -> Text
-    retryText retryStatus =
-      if rsIterNumber retryStatus == 0
-        then ""
-        else color Yellow $ "retry #" <> show (rsIterNumber retryStatus) <> " "
+pushStrategy :: Store -> Maybe Token -> PushOptions -> Text -> BinaryCache.CompressionMethod -> StorePath -> IO (PushStrategy IO ())
+pushStrategy store authToken opts name compressionMethod storePath = do
+  uncompressedBytesRef <- newIORef (0 :: Int64)
+  compressedBytesRef <- newIORef (0 :: Int64)
+  uploadedBytesRef <- newIORef (0 :: Int64)
+  lastTickRef <- newIORef (0 :: Int64)
+  narSizeRef <- newIORef (0 :: Int64)
+  progressBarRef <- newIORef (Nothing :: Maybe ProgressBar)
+  return $ PushStrategy
+      { onAlreadyPresent = pass,
+        on401 = handleCacheResponse name authToken,
+        onError = throwM,
+        onAttempt = \retryStatus size -> do
+          writeIORef narSizeRef size
+          path <- decodeUtf8With lenientDecode <$> storePathToPath store storePath
+          let hSize = toS $ humanSize $ fromIntegral size
 
-    showUploadProgress retryStatus size = do
-      let hSize = toS $ humanSize $ fromIntegral size
-      path <- liftIO $ decodeUtf8With lenientDecode <$> storePathToPath store storePath
+          isTerminal <- hIsTerminalDevice stderr
+          isCI <- (== Just "true") <$> lookupEnv "CI"
 
-      isTerminal <- liftIO $ hIsTerminalDevice stderr
-      isCI <- liftIO $ (== Just "true") <$> lookupEnv "CI"
-      onTick <-
-        if isTerminal && not isCI
-          then do
-            let bar = color Blue "[:bar] " <> toS (retryText retryStatus) <> toS path <> " (:percent of " <> hSize <> ")"
-                barLength = T.length $ T.replace ":percent" "  0%" (T.replace "[:bar]" "" (toS bar))
-
-            progressBar <-
-              liftIO $
+          if isTerminal && not isCI
+            then do
+              let bar = color Blue "[:bar] " <> toS (retryText retryStatus) <> toS path <> " (:percent of " <> hSize <> ")"
+                  barLength = T.length $ T.replace ":percent" "  0%" (T.replace "[:bar]" "" (toS bar))
+              progressBar <-
                 newProgressBar
                   def
                     { pgTotal = fromIntegral size,
@@ -116,16 +104,54 @@ pushStrategy store authToken opts name compressionMethod storePath =
                       pgOnCompletion = Just $ color Green "✓ " <> toS path <> " (" <> hSize <> ")",
                       pgFormat = bar
                     }
-
-            return $ liftIO . tickN progressBar . BS.length
-          else do
-            -- we append newline instead of putStrLn due to https://github.com/haskell/text/issues/242
-            appendErrText $ retryText retryStatus <> "Pushing " <> path <> " (" <> toS hSize <> ")\n"
-            return $ const pass
-
-      Conduit.awaitForever $ \chunk -> do
-        Conduit.yield chunk
-        onTick chunk
+              writeIORef progressBarRef (Just progressBar)
+            else
+              appendErrText $ retryText retryStatus <> "Pushing " <> path <> " (" <> toS hSize <> ")\n",
+        onUncompressedNARStream = \_ _ ->
+          Conduit.awaitForever $ \chunk -> do
+            liftIO $ atomicModifyIORef' uncompressedBytesRef (\b -> (b + fromIntegral (BS.length chunk), ()))
+            Conduit.yield chunk,
+        onCompressedNARStream =
+          Conduit.awaitForever $ \chunk ->
+            liftIO $ atomicModifyIORef' compressedBytesRef (\b -> (b + fromIntegral (BS.length chunk), ())),
+        onUpload = \progress -> do
+          totalUploaded <- atomicModifyIORef' uploadedBytesRef (\b -> let b' = b + bytes progress in (b', b'))
+          compressedSeen <- readIORef compressedBytesRef
+          uncompressedSeen <- readIORef uncompressedBytesRef
+          narSize <- readIORef narSizeRef
+          -- Estimate progress in uncompressed scale using the rolling compression ratio.
+          -- ratio = compressedSeen / uncompressedSeen
+          -- estimatedTotal = narSize * ratio
+          -- progress = totalUploaded / estimatedTotal * narSize
+          --          = totalUploaded * uncompressedSeen / compressedSeen
+          let estimatedProgress :: Int64
+              estimatedProgress
+                | compressedSeen > 0 && uncompressedSeen > 0 =
+                    min narSize $ round $
+                      fromIntegral totalUploaded
+                      * fromIntegral uncompressedSeen
+                      / (fromIntegral compressedSeen :: Double)
+                | otherwise = 0
+          delta <- atomicModifyIORef' lastTickRef $ \lastTick ->
+            let d = max 0 (estimatedProgress - lastTick)
+            in if d > 0 then (estimatedProgress, d) else (lastTick, 0)
+          when (delta > 0) $ do
+            mpb <- readIORef progressBarRef
+            forM_ mpb $ \pb -> tickN pb (fromIntegral delta),
+        onDone = pass,
+        Push.compressionMethod = compressionMethod,
+        Push.compressionLevel = Options.compressionLevel opts,
+        Push.chunkSize = Options.chunkSize opts,
+        Push.numConcurrentChunks = Options.numConcurrentChunks opts,
+        Push.omitDeriver = Options.omitDeriver opts,
+        Push.uploadTimeout = Options.uploadTimeout opts
+      }
+  where
+    retryText :: RetryStatus -> Text
+    retryText retryStatus =
+      if rsIterNumber retryStatus == 0
+        then ""
+        else color Yellow $ "retry #" <> show (rsIterNumber retryStatus) <> " "
 
 withPushParams :: Env -> PushOptions -> BinaryCacheName -> (PushParams IO () -> IO ()) -> IO ()
 withPushParams env pushOpts name m = do

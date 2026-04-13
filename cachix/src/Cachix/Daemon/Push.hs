@@ -45,7 +45,7 @@ newPushParams store clientEnv binaryCache pushSecret pushOptions = do
       pushParamsClientEnv = clientEnv,
       pushOnClosureAttempt = \full missing -> do
         let already = Set.toList $ Set.difference (Set.fromList full) (Set.fromList missing)
-        mapM_ (onAlreadyPresent . pushStrategy) already
+        mapM_ (\sp -> pushStrategy sp >>= onAlreadyPresent) already
         return missing,
       pushParamsStrategy = pushStrategy,
       pushParamsStore = store

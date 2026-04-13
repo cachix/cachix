@@ -131,7 +131,7 @@ import' env pushOptions name s3uri = do
             let storePathText = NarInfo.storePath narInfo
                 store = pushParamsStore pushParams
             storePath <- liftIO $ parseStorePath store (toS storePathText)
-            let strategy = pushParamsStrategy pushParams storePath
+            strategy <- pushParamsStrategy pushParams storePath
 
             case narinfoResponse of
               Right NoContent -> onAlreadyPresent strategy
@@ -150,7 +150,7 @@ import' env pushOptions name s3uri = do
                         res <-
                           runConduit $
                             narStream
-                              .| streamCopy pushParams storePath fileSize defaultRetryStatus compressionMethod
+                              .| streamCopy pushParams strategy fileSize defaultRetryStatus compressionMethod
 
                         case res of
                           Left uploadErr ->
@@ -160,7 +160,7 @@ import' env pushOptions name s3uri = do
                             -- Copy over details about the NAR from the narinfo.
                             let newNarDetails = uploadNarDetails {undNarSize = NarInfo.narSize narInfo, undNarHash = NarInfo.narHash narInfo}
 
-                            nic <- newNarInfoCreate pushParams storePath pathInfo newNarDetails
+                            nic <- newNarInfoCreate pushParams strategy storePath pathInfo newNarDetails
                             completeNarUpload pushParams uploadResult nic
 
                             liftIO $ onDone strategy

@@ -161,6 +161,7 @@ library
     , http-client
     , http-client-tls
     , http-conduit
+    , http-media
     , http-types
     , immortal
     , inline-c-cpp

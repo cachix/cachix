@@ -12,6 +12,8 @@ import Control.Concurrent.Async qualified as Async
 import Control.Exception.Safe (Handler (..))
 import Control.Monad.Catch (MonadCatch, MonadMask, handleJust, throwM)
 import Control.Retry
+import Data.Aeson qualified as Aeson
+import Data.ByteString.Lazy qualified as LBS
 import Data.List (lookup)
 import Data.Time
   ( UTCTime,
@@ -24,7 +26,8 @@ import Data.Time
   )
 import GHC.Read (Read (readPrec))
 import Network.HTTP.Client qualified as HTTP
-import Network.HTTP.Types.Header (Header, hRetryAfter)
+import Network.HTTP.Media qualified as Media
+import Network.HTTP.Types.Header (Header, hContentType, hRetryAfter)
 import Network.HTTP.Types.Status qualified as HTTP
 import Protolude hiding (Handler (..), handleJust)
 import Servant.Client (ClientError (..))
@@ -100,15 +103,21 @@ retryHttpWith policy = recoveringDynamic policy handlers . const
     retryClientExceptions _ = Handler clientExceptionToRetryHandler
 
     httpExceptionToRetryHandler :: HTTP.HttpException -> m RetryAction
-    httpExceptionToRetryHandler ex@(HTTP.HttpExceptionRequest _ (HTTP.StatusCodeException response _))
+    httpExceptionToRetryHandler ex@(HTTP.HttpExceptionRequest _ (HTTP.StatusCodeException response body))
       | shouldRetryHttpException ex =
-          overrideDelayWithRetryAfter (lookupRetryAfter (HTTP.responseHeaders response))
+          let headers = HTTP.responseHeaders response
+           in overrideDelayWithRetryAfter $
+                lookupRetryAfter headers
+                  <|> lookupRetryAfterBody headers (LBS.fromStrict body)
     httpExceptionToRetryHandler ex = return . toRetryAction . shouldRetryHttpException $ ex
 
     clientExceptionToRetryHandler :: ClientError -> m RetryAction
     clientExceptionToRetryHandler (FailureResponse _req res)
       | shouldRetryHttpStatusCode (Servant.responseStatusCode res) =
-          overrideDelayWithRetryAfter (lookupRetryAfter (toList (Servant.responseHeaders res)))
+          let headers = toList (Servant.responseHeaders res)
+           in overrideDelayWithRetryAfter $
+                lookupRetryAfter headers
+                  <|> lookupRetryAfterBody headers (Servant.responseBody res)
     clientExceptionToRetryHandler (ConnectionError ex) =
       case fromException ex of
         Just httpException -> httpExceptionToRetryHandler httpException
@@ -143,6 +152,31 @@ overrideDelayWithRetryAfter (Just (RetryAfterDate date)) = do
 
 lookupRetryAfter :: [Header] -> Maybe RetryAfter
 lookupRetryAfter = readMaybe . decodeUtf8 <=< lookup hRetryAfter
+
+-- | Parse 'retry_after' (in seconds) from an @application/problem+json@ body.
+--
+-- 'retry_after' is not part of RFC 9457 (which only standardizes the fields
+-- @type@, @status@, @title@, @detail@, @instance@), but Cloudflare returns it
+-- as an extension member on origin 5xx error pages instead of the canonical
+-- 'Retry-After' HTTP header. Honoring it lets us back off the right amount
+-- during transient origin outages.
+lookupRetryAfterBody :: [Header] -> LBS.ByteString -> Maybe RetryAfter
+lookupRetryAfterBody headers body = do
+  ct <- lookup hContentType headers
+  -- Some origins serve problem-details bodies with the bare @application/json@
+  -- content type, so accept that too.
+  _ <- Media.matchContent acceptableContentTypes ct
+  pd <- Aeson.decode' body
+  RetryAfterSeconds <$> problemRetryAfter pd
+  where
+    acceptableContentTypes =
+      ["application" Media.// "problem+json", "application" Media.// "json"]
+
+newtype ProblemDetails = ProblemDetails {problemRetryAfter :: Maybe Int}
+
+instance Aeson.FromJSON ProblemDetails where
+  parseJSON = Aeson.withObject "ProblemDetails" $ \o ->
+    ProblemDetails <$> o Aeson..:? "retry_after"
 
 -- | Determine whether the HTTP exception is worth retrying.
 --

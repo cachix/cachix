@@ -3,7 +3,6 @@ module Cachix.Client.Retry
     retryAllWithPolicy,
     retryHttp,
     retryHttpWith,
-    endlessRetryPolicy,
     endlessConstantRetryPolicy,
   )
 where
@@ -32,20 +31,29 @@ import Servant.Client (ClientError (..))
 import Servant.Client qualified as Servant
 import Text.ParserCombinators.ReadPrec qualified as ReadPrec (lift)
 
-defaultRetryPolicy :: RetryPolicy
-defaultRetryPolicy =
-  exponentialBackoff (1000 * 1000) <> limitRetries 5
+-- | Per-HTTP-request policy. Wall-time bounded so the user-visible delay is
+-- predictable regardless of how many attempts fit. Jittered exponential
+-- backoff to avoid thundering-herd on shared origins (CDN incidents).
+httpRetryPolicy :: (MonadIO m) => RetryPolicyM m
+httpRetryPolicy =
+  limitRetriesByCumulativeDelay (90 * 1000 * 1000) $
+    capDelay (15 * 1000 * 1000) $
+      fullJitterBackoff (1000 * 1000)
+
+-- | Whole-operation policy used by 'retryAll'. Small attempt count with a
+-- short delay, since each attempt re-runs the entire operation (e.g. a full
+-- NAR re-upload). Compounds with 'httpRetryPolicy' on HTTP errors, so
+-- keep this tight to bound worst-case wall time per store path.
+retryAllPolicy :: RetryPolicy
+retryAllPolicy =
+  constantDelay (5 * 1000 * 1000) <> limitRetries 3
 
 endlessConstantRetryPolicy :: RetryPolicy
 endlessConstantRetryPolicy =
   constantDelay (1000 * 1000)
 
-endlessRetryPolicy :: RetryPolicy
-endlessRetryPolicy =
-  exponentialBackoff (1000 * 1000)
-
 retryAll :: (MonadIO m, MonadMask m) => (RetryStatus -> m a) -> m a
-retryAll = retryAllWithPolicy defaultRetryPolicy
+retryAll = retryAllWithPolicy retryAllPolicy
 
 retryAllWithPolicy :: (MonadIO m, MonadMask m) => RetryPolicyM m -> (RetryStatus -> m a) -> m a
 retryAllWithPolicy policy f =
@@ -74,7 +82,7 @@ unwrapLinkedThreadException e
   | otherwise = Nothing
 
 retryHttp :: (MonadIO m, MonadMask m) => m a -> m a
-retryHttp = retryHttpWith defaultRetryPolicy
+retryHttp = retryHttpWith httpRetryPolicy
 
 -- | Retry policy for HTTP requests.
 --

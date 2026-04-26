@@ -24,7 +24,7 @@ import Data.Time
   )
 import GHC.Read (Read (readPrec))
 import Network.HTTP.Client qualified as HTTP
-import Network.HTTP.Types.Header (hRetryAfter)
+import Network.HTTP.Types.Header (Header, hRetryAfter)
 import Network.HTTP.Types.Status qualified as HTTP
 import Protolude hiding (Handler (..), handleJust)
 import Servant.Client (ClientError (..))
@@ -100,14 +100,15 @@ retryHttpWith policy = recoveringDynamic policy handlers . const
     retryClientExceptions _ = Handler clientExceptionToRetryHandler
 
     httpExceptionToRetryHandler :: HTTP.HttpException -> m RetryAction
-    httpExceptionToRetryHandler (HTTP.HttpExceptionRequest _ (HTTP.StatusCodeException response _))
-      | statusMayHaveRetryHeader (HTTP.responseStatus response) = overrideDelayWithRetryAfter response
+    httpExceptionToRetryHandler ex@(HTTP.HttpExceptionRequest _ (HTTP.StatusCodeException response _))
+      | shouldRetryHttpException ex =
+          overrideDelayWithRetryAfter (lookupRetryAfter (HTTP.responseHeaders response))
     httpExceptionToRetryHandler ex = return . toRetryAction . shouldRetryHttpException $ ex
 
     clientExceptionToRetryHandler :: ClientError -> m RetryAction
     clientExceptionToRetryHandler (FailureResponse _req res)
       | shouldRetryHttpStatusCode (Servant.responseStatusCode res) =
-          return ConsultPolicy
+          overrideDelayWithRetryAfter (lookupRetryAfter (toList (Servant.responseHeaders res)))
     clientExceptionToRetryHandler (ConnectionError ex) =
       case fromException ex of
         Just httpException -> httpExceptionToRetryHandler httpException
@@ -125,25 +126,23 @@ instance Read RetryAfter where
       parseSeconds = RetryAfterSeconds <$> readPrec
       parseWebDate = ReadPrec.lift $ RetryAfterDate <$> readPTime True defaultTimeLocale rfc822DateFormat
 
-overrideDelayWithRetryAfter :: (MonadIO m) => HTTP.Response a -> m RetryAction
-overrideDelayWithRetryAfter response =
-  case lookupRetryAfter response of
-    Nothing ->
-      return ConsultPolicy
-    Just (RetryAfterSeconds seconds) ->
-      return $ ConsultPolicyOverrideDelay (seconds * 1000 * 1000)
-    Just (RetryAfterDate date) -> do
-      seconds <- secondsFromNow date
-      return $
-        if seconds > 0
-          then ConsultPolicyOverrideDelay (seconds * 1000 * 1000)
-          else ConsultPolicy
+overrideDelayWithRetryAfter :: (MonadIO m) => Maybe RetryAfter -> m RetryAction
+overrideDelayWithRetryAfter Nothing = return ConsultPolicy
+overrideDelayWithRetryAfter (Just (RetryAfterSeconds seconds)) =
+  return $ ConsultPolicyOverrideDelay (seconds * 1000 * 1000)
+overrideDelayWithRetryAfter (Just (RetryAfterDate date)) = do
+  seconds <- secondsFromNow date
+  return $
+    if seconds > 0
+      then ConsultPolicyOverrideDelay (seconds * 1000 * 1000)
+      else ConsultPolicy
   where
-    secondsFromNow date = do
+    secondsFromNow d = do
       now <- liftIO getCurrentTime
-      return $ ceiling $ nominalDiffTimeToSeconds (date `diffUTCTime` now)
+      return $ ceiling $ nominalDiffTimeToSeconds (d `diffUTCTime` now)
 
-    lookupRetryAfter = readMaybe . decodeUtf8 <=< lookup hRetryAfter . HTTP.responseHeaders
+lookupRetryAfter :: [Header] -> Maybe RetryAfter
+lookupRetryAfter = readMaybe . decodeUtf8 <=< lookup hRetryAfter
 
 -- | Determine whether the HTTP exception is worth retrying.
 --
@@ -175,6 +174,3 @@ shouldRetryHttpStatusCode :: HTTP.Status -> Bool
 shouldRetryHttpStatusCode code | code == HTTP.tooManyRequests429 = True
 shouldRetryHttpStatusCode code | HTTP.statusIsServerError code = True
 shouldRetryHttpStatusCode _ = False
-
-statusMayHaveRetryHeader :: HTTP.Status -> Bool
-statusMayHaveRetryHeader = flip elem [HTTP.tooManyRequests429, HTTP.serviceUnavailable503]

@@ -12,7 +12,7 @@ import Cachix.Client.OptionsParser as Client.OptionsParser
   ( PushOptions (..),
   )
 import Cachix.Client.Push as Client.Push
-import Cachix.Client.Retry (retryHttp)
+import Cachix.Client.Retry (retryClientM)
 import Cachix.Client.Servant
 import Cachix.Daemon.PushManager qualified as PushManager
 import Cachix.Daemon.Types (PushManager)
@@ -56,7 +56,7 @@ getBinaryCache env authToken name = do
   -- Self-signed caches might not have a token, which is why this code is so weird.
   -- In practice, public self-signed caches don't need one and private ones always need a token.
   let token = fromMaybe (Token "") authToken
-  res <- retryHttp $ (`runClientM` clientenv env) $ API.getCache cachixClient token name
+  res <- retryClientM (clientenv env) $ API.getCache cachixClient token name
   case res of
     Left err -> handleCacheResponse name authToken err
     Right binaryCache -> pure binaryCache

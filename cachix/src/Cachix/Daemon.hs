@@ -19,7 +19,7 @@ import Cachix.Client.Env as Env
 import Cachix.Client.OptionsParser (DaemonOptions, PushOptions, daemonNarinfoQueryOptions)
 import Cachix.Client.OptionsParser qualified as Options
 import Cachix.Client.Push
-import Cachix.Client.Retry (retryHttp)
+import Cachix.Client.Retry (retryClientM)
 import Cachix.Client.Servant (cachixClient)
 import Cachix.Daemon.EventLoop qualified as EventLoop
 import Cachix.Daemon.Listen as Listen
@@ -45,7 +45,6 @@ import Katip qualified
 import Network.Socket qualified as Socket
 import Network.Socket.ByteString qualified as Socket.BS
 import Protolude hiding (bracket)
-import Servant.Client.Streaming (runClientM)
 import System.Environment (lookupEnv)
 import System.IO.Error (isResourceVanishedError)
 import System.Posix.Process (getProcessID)
@@ -185,7 +184,7 @@ run daemon = fmap join <$> runDaemon daemon $ do
           authResult <- case maybeToken of
             Nothing -> pure $ Left "No auth token configured"
             Just token -> do
-              res <- liftIO $ retryHttp $ (`runClientM` clientenv daemonEnv) $ API.getCache cachixClient token daemonCacheName
+              res <- liftIO $ retryClientM (clientenv daemonEnv) $ API.getCache cachixClient token daemonCacheName
               pure $ case res of
                 Right _ -> Right ()
                 Left err -> Left (show err)

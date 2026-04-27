@@ -49,7 +49,7 @@ import Cachix.API.Signing (fingerprint, passthroughHashSink, passthroughHashSink
 import Cachix.Client.CNix (formatStorePathWarning, validateStorePath)
 import Cachix.Client.Exception (CachixException (..))
 import Cachix.Client.Push.S3 qualified as Push.S3
-import Cachix.Client.Retry (retryAll, retryHttp)
+import Cachix.Client.Retry (retryAll, retryClientM, retryHttp)
 import Cachix.Client.Secrets
 import Cachix.Client.Servant
 import Cachix.Types.BinaryCache qualified as BinaryCache
@@ -188,13 +188,12 @@ narinfoExists :: PushParams m r -> ByteString -> IO (Either ClientError NoConten
 narinfoExists pushParams storeHash = do
   let cacheName = pushParamsName pushParams
       authToken = getCacheAuthToken (pushParamsSecret pushParams)
-  retryHttp $
-    (`runClientM` pushParamsClientEnv pushParams) $
-      API.narinfoHead
-        cachixClient
-        authToken
-        cacheName
-        (NarInfoHash.NarInfoHash (decodeUtf8With lenientDecode storeHash))
+  retryClientM (pushParamsClientEnv pushParams) $
+    API.narinfoHead
+      cachixClient
+      authToken
+      cacheName
+      (NarInfoHash.NarInfoHash (decodeUtf8With lenientDecode storeHash))
 
 getCacheAuthToken :: PushSecret -> Token
 getCacheAuthToken (PushToken token) = token

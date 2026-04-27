@@ -7,14 +7,13 @@ import Cachix.Client.Config qualified as Config
 import Cachix.Client.Env (Env (..))
 import Cachix.Client.Exception (CachixException (..))
 import Cachix.Client.OptionsParser (PinOptions (..))
-import Cachix.Client.Retry (retryHttp)
+import Cachix.Client.Retry (retryClientM)
 import Cachix.Client.Servant
 import Cachix.Types.PinCreate qualified as PinCreate
 import Data.Text qualified as T
 import Hercules.CNix.Store (storePathToPath, withStore)
 import Protolude hiding (toS)
 import Protolude.Conv
-import Servant.Client.Streaming
 import System.Directory (doesFileExist)
 
 pin :: Env -> PinOptions -> IO ()
@@ -36,9 +35,8 @@ pin env pinOpts = do
             keep = pinKeep pinOpts
           }
   void $
-    escalate <=< retryHttp $
-      (`runClientM` clientenv env) $
-        API.createPin cachixClient authToken (pinCacheName pinOpts) pinCreate
+    escalate
+      =<< retryClientM (clientenv env) (API.createPin cachixClient authToken (pinCacheName pinOpts) pinCreate)
   where
     validateArtifact :: Text -> Text -> IO ()
     validateArtifact storePath artifact = do

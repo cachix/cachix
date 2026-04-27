@@ -8,18 +8,17 @@ import Cachix.Client.Env (Env (..))
 import Cachix.Client.Exception (CachixException (..))
 import Cachix.Client.InstallationMode qualified as InstallationMode
 import Cachix.Client.NixVersion (assertNixVersion)
-import Cachix.Client.Retry (retryHttp)
+import Cachix.Client.Retry (retryClientM)
 import Cachix.Client.Servant
 import Protolude hiding (toS)
 import Servant.Auth.Client
-import Servant.Client.Streaming
 
 use :: Env -> Text -> InstallationMode.UseOptions -> IO ()
 use env name useOptions = do
   optionalAuthToken <- Config.getAuthTokenMaybe (config env)
   let token = fromMaybe (Token "") optionalAuthToken
   -- 1. get cache public key
-  res <- retryHttp $ (`runClientM` clientenv env) $ API.getCache cachixClient token name
+  res <- retryClientM (clientenv env) $ API.getCache cachixClient token name
   case res of
     Left err -> Push.handleCacheResponse name optionalAuthToken err
     Right binaryCache -> do

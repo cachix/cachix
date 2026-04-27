@@ -12,7 +12,7 @@ where
 
 import Cachix.API qualified as API
 import Cachix.API.Error
-import Cachix.Client.Retry (retryHttp)
+import Cachix.Client.Retry (retryClientM, retryHttp)
 import Cachix.Client.Servant (cachixClient)
 import Cachix.Types.BinaryCache
 import Cachix.Types.MultipartUpload qualified as Multipart
@@ -93,7 +93,7 @@ uploadMultipart env authToken cacheName options = do
     createMultipartUpload :: ConduitT ByteString Void m (Either ClientError Multipart.CreateMultipartUploadResponse)
     createMultipartUpload = do
       let createNarRequest = API.createNar cachixClient authToken cacheName (Just (compressionMethod options))
-      liftIO $ retryHttp $ runClientM createNarRequest env
+      liftIO $ retryClientM env createNarRequest
 
     uploadPart :: UUID -> Text -> (Int, ByteString) -> m (Maybe Multipart.CompletedPart)
     uploadPart narId uploadId (partNumber, !part) = do

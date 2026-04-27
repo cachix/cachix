@@ -19,7 +19,7 @@ import Cachix.Client.Exception (CachixException (..))
 import Cachix.Client.HumanSize (humanSize)
 import Cachix.Client.OptionsParser as Options (PushOptions (..))
 import Cachix.Client.Push as Push
-import Cachix.Client.Retry (retryHttp)
+import Cachix.Client.Retry (retryClientM)
 import Cachix.Client.Secrets
 import Cachix.Client.Servant
 import Cachix.Types.BinaryCache (BinaryCacheName)
@@ -137,7 +137,7 @@ withPushParams' env pushOpts name pushSecret m = do
   compressionMethodBackend <- case pushSecret of
     PushSigningKey {} -> pure Nothing
     PushToken token -> do
-      res <- retryHttp $ (`runClientM` clientenv env) $ API.getCache cachixClient token name
+      res <- retryClientM (clientenv env) $ API.getCache cachixClient token name
       case res of
         Left err -> handleCacheResponse name authToken err
         Right binaryCache -> pure (Just $ BinaryCache.preferredCompressionMethod binaryCache)

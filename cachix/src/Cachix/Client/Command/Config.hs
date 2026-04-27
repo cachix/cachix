@@ -7,7 +7,7 @@ import Cachix.API qualified as API
 import Cachix.API.Error
 import Cachix.Client.Config qualified as Config
 import Cachix.Client.Env (Env (..))
-import Cachix.Client.Retry (retryHttp)
+import Cachix.Client.Retry (retryClientM)
 import Cachix.Client.Secrets
   ( SigningKey (SigningKey),
     exportSigningKey,
@@ -23,7 +23,6 @@ import Protolude hiding (toS)
 import Protolude.Conv
 import Servant.API (NoContent (..))
 import Servant.Auth.Client
-import Servant.Client.Streaming
 
 -- TODO: check that token actually authenticates!
 authtoken :: Env -> Maybe Text -> IO ()
@@ -42,9 +41,8 @@ generateKeypair env name = do
       bcc = Config.BinaryCacheConfig name signingKey
   -- we first validate if key can be added to the binary cache
   (_ :: NoContent) <-
-    escalate <=< retryHttp $
-      (`runClientM` clientenv env) $
-        API.createKey cachixClient authToken name signingKeyCreate
+    escalate
+      =<< retryClientM (clientenv env) (API.createKey cachixClient authToken name signingKeyCreate)
   -- if key was successfully added, write it to the config
   -- TODO: warn if binary cache with the same key already exists
   let cfg = config env & Config.setBinaryCaches [bcc]

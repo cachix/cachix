@@ -4,7 +4,7 @@ import Cachix.API qualified as API
 import Cachix.Client.Config qualified as Config
 import Cachix.Client.Env (Env (..))
 import Cachix.Client.OptionsParser (DaemonOptions (..), DoctorOptions (..))
-import Cachix.Client.Retry (retryHttp)
+import Cachix.Client.Retry (retryClientM)
 import Cachix.Client.Servant (cachixClient, isErr)
 import Cachix.Daemon.Listen (getSocketPath)
 import Cachix.Daemon.Protocol qualified as Protocol
@@ -21,7 +21,7 @@ import Network.Socket.ByteString.Lazy qualified as Socket.LBS
 import Protolude hiding (toS)
 import Protolude.Conv
 import Servant.Auth.Client
-import Servant.Client.Streaming (ClientError, runClientM)
+import Servant.Client.Streaming (ClientError)
 import System.Directory (doesFileExist)
 import System.Environment (lookupEnv)
 import System.Timeout (timeout)
@@ -220,7 +220,7 @@ checkCache env cacheName configuredCaches = do
   let hasSigningKey = any (\c -> Config.name c == cacheName && not (T.null (Config.secretKey c))) configuredCaches
 
   -- Try to get cache info (validates auth and connectivity)
-  cacheRes <- retryHttp $ (`runClientM` clientenv env) $ API.getCache cachixClient token cacheName
+  cacheRes <- retryClientM (clientenv env) $ API.getCache cachixClient token cacheName
 
   case cacheRes of
     Right bc ->
@@ -343,7 +343,7 @@ checkStorePath env opts storePath = do
           }
     Just storeHash -> do
       -- Use narinfoBulk to check if the path exists
-      result <- retryHttp $ (`runClientM` clientenv env) $ API.narinfoBulk cachixClient token cacheName [storeHash]
+      result <- retryClientM (clientenv env) $ API.narinfoBulk cachixClient token cacheName [storeHash]
       case result of
         Right missingHashes ->
           let status = if storeHash `elem` missingHashes then NotInCache else InCache

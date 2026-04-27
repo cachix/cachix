@@ -2,6 +2,9 @@
 
 This document describes the socket protocol for communicating with the Cachix Daemon.
 
+The on-wire representation is currently Aeson's default serialization, which isn't great.
+This makes it somewhat difficult to implement for clients in other languages.
+
 ## Overview
 
 The Cachix Daemon accepts connections on a Unix domain socket and communicates via newline-delimited JSON messages. Clients can push store paths to a binary cache, monitor push progress, and coordinate daemon shutdown.
@@ -22,20 +25,34 @@ The Cachix Daemon accepts connections on a Unix domain socket and communicates v
 
 ## Message Format
 
-All messages are JSON objects terminated with a newline character. The protocol uses Haskell's `Aeson` library encoding, which means union types are encoded as:
+All messages are JSON objects terminated with a newline character. The protocol uses Haskell's `Aeson` library default encoding (`TaggedObject`) for sum types. The shape of `contents` depends on how many fields the constructor has:
 
-```json
-{
-  "tag": "ConstructorName",
-  "contents": { /* optional data */ }
-}
-```
+- **0 fields** (nullary): only the `tag` is present.
 
-For simple variants without data, only the `tag` field is present:
+  ```json
+  { "tag": "ConstructorName" }
+  ```
 
-```json
-{ "tag": "ConstructorName" }
-```
+- **1 field** (unary): `contents` holds the value directly. **It is _not_ wrapped in an array.**
+
+  ```json
+  { "tag": "ConstructorName", "contents": "value" }
+  ```
+
+- **2+ fields**: `contents` is a positional array.
+
+  ```json
+  { "tag": "ConstructorName", "contents": ["a", "b"] }
+  ```
+
+- **Record fields** (named): the fields are inlined as an object on `contents`.
+
+  ```json
+  { "tag": "ConstructorName", "contents": { "field": "value" } }
+  ```
+
+> [!IMPORTANT]
+> The 1-field rule is a common stumbling block when porting clients to other languages. A unary event such as `PushStorePathDone "/nix/store/..."` serializes with `contents` as a string, not as a one-element array. Earlier revisions of this document showed the array form; that was incorrect.
 
 ## Client → Daemon Messages
 
@@ -219,17 +236,30 @@ Upload progress for a store path.
 - `contents[2]` (integer): Bytes uploaded since the last progress event (delta)
 
 #### PushStorePathDone
-Store path successfully pushed.
+Store path successfully pushed. Single-argument constructor: `contents` is the path string itself, not an array.
 
 ```json
 {
   "tag": "PushStorePathDone",
-  "contents": ["/nix/store/abc123-package-1.0"]
+  "contents": "/nix/store/abc123-package-1.0"
 }
 ```
 
 **Fields**:
-- `contents[0]` (string): Store path that was pushed
+- `contents` (string): Store path that was pushed
+
+#### PushStorePathSkipped
+Store path was already present in the binary cache; no upload was performed. Emitted instead of `PushStorePathDone` for cache hits. Single-argument constructor: `contents` is the path string.
+
+```json
+{
+  "tag": "PushStorePathSkipped",
+  "contents": "/nix/store/abc123-package-1.0"
+}
+```
+
+**Fields**:
+- `contents` (string): Store path that was already cached
 
 #### PushStorePathFailed
 Failed to push a store path after all retries.
@@ -248,8 +278,25 @@ Failed to push a store path after all retries.
 - `contents[0]` (string): Store path that failed
 - `contents[1]` (string): Error message
 
+#### PushStorePathInvalid
+Store path was rejected before upload (e.g., not signed, not in store, or otherwise invalid).
+
+```json
+{
+  "tag": "PushStorePathInvalid",
+  "contents": [
+    "/nix/store/abc123-package-1.0",
+    "path is not valid"
+  ]
+}
+```
+
+**Fields**:
+- `contents[0]` (string): Store path that was rejected
+- `contents[1]` (string): Reason
+
 #### PushFinished
-All store paths have been processed (succeeded or failed).
+All store paths in the request have been processed (succeeded, skipped, failed, or rejected). Emitted exactly once per `ClientPushRequest`. Clients should treat this as the authoritative end-of-request signal — per-path events are not guaranteed for cache hits.
 
 ```json
 { "tag": "PushFinished" }
@@ -296,6 +343,29 @@ Client                           Daemon
   |                               |
   | <--- DaemonPushEvent ------   |
   |      (PushStorePathDone)      |
+  |                               |
+  | <--- DaemonPushEvent ------   |
+  |      (PushFinished)           |
+  |                               |
+```
+
+### Push with Cache Hits
+
+When the daemon determines a path is already in the cache, the path generates a `PushStorePathSkipped` event instead of the `Attempt` / `Progress` / `Done` sequence. `PushFinished` is still emitted once per request.
+
+```
+Client                           Daemon
+  |                               |
+  |-- ClientPushRequest --------> |
+  |                               |
+  | <--- DaemonPushEvent ------   |
+  |      (PushStarted)            |
+  |                               |
+  | <--- DaemonPushEvent ------   |
+  |      (PushStorePathSkipped)   |
+  |                               |
+  | <--- DaemonPushEvent ------   |
+  |      (PushStorePathSkipped)   |
   |                               |
   | <--- DaemonPushEvent ------   |
   |      (PushFinished)           |

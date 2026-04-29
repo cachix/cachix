@@ -55,6 +55,9 @@ import UnliftIO.Async qualified as Async
 import UnliftIO.Exception (bracket)
 
 -- | Configure a new daemon. Use 'run' to start it.
+--
+-- The caller must provide a logger with scribes already registered (e.g. by
+-- wrapping the call in 'Log.withLogger').
 new ::
   -- | The Cachix environment.
   Env ->
@@ -62,21 +65,15 @@ new ::
   Store ->
   -- | Daemon-specific options.
   DaemonOptions ->
-  -- | An optional handle to output logs to.
-  Maybe Handle ->
+  -- | A logger with registered scribes.
+  Log.Logger ->
   -- | Push options, like compression settings and number of jobs.
   PushOptions ->
   -- | The name of the binary cache to push to.
   BinaryCacheName ->
   -- | The configured daemon environment.
   IO DaemonEnv
-new daemonEnv nixStore daemonOptions daemonLogHandle daemonPushOptions daemonCacheName = do
-  let daemonLogLevel =
-        if Config.verbose (Env.cachixoptions daemonEnv)
-          then Debug
-          else Info
-  daemonLogger <- Log.new "cachix.daemon" daemonLogHandle daemonLogLevel
-
+new daemonEnv nixStore daemonOptions daemonLogger daemonPushOptions daemonCacheName = do
   daemonEventLoop <- EventLoop.new
   daemonPid <- getProcessID
 
@@ -111,9 +108,15 @@ new daemonEnv nixStore daemonOptions daemonLogHandle daemonPushOptions daemonCac
 start :: Env -> DaemonOptions -> PushOptions -> BinaryCacheName -> IO ()
 start daemonEnv daemonOptions daemonPushOptions daemonCacheName =
   withStore $ \store -> do
-    daemon <- new daemonEnv store daemonOptions Nothing daemonPushOptions daemonCacheName
-    void $ runDaemon daemon installSignalHandlers
-    result <- run daemon
+    let logLevel =
+          if Config.verbose (Env.cachixoptions daemonEnv)
+            then Debug
+            else Info
+    logger <- Log.new "cachix.daemon" Nothing logLevel
+    result <- Log.withLogger logger $ \registeredLogger -> do
+      daemon <- new daemonEnv store daemonOptions registeredLogger daemonPushOptions daemonCacheName
+      void $ runDaemon daemon installSignalHandlers
+      run daemon
     exitWith (toExitCode result)
 
 -- | Run a daemon from a given configuration.

@@ -105,11 +105,12 @@ instance Katip.KatipContext Daemon where
   localKatipNamespace f (Daemon m) = Daemon (local (\s -> s {daemonLogger = Log.localKatipNamespace f (daemonLogger s)}) m)
 
 -- | Run a pre-configured daemon.
+--
+-- The caller is responsible for setting up logging (e.g. via 'Log.withLogger')
+-- before calling this function. The 'daemonLogger' in the environment must
+-- already have its scribes registered.
 runDaemon :: DaemonEnv -> Daemon a -> IO (Either DaemonError a)
-runDaemon env f = tryDaemon $ do
-  Log.withLogger (daemonLogger env) $ \logger -> do
-    let pushManagerEnv = (daemonPushManager env) {pmLogger = logger}
-    unDaemon f `runReaderT` env {daemonLogger = logger, daemonPushManager = pushManagerEnv}
+runDaemon env f = tryDaemon $ unDaemon f `runReaderT` env
   where
     tryDaemon :: IO a -> IO (Either DaemonError a)
     tryDaemon a =

@@ -7,6 +7,7 @@ module Cachix.Client.Command.Watch
 where
 
 import Cachix.Client.Command.Push
+import Cachix.Client.Config qualified as Config
 import Cachix.Client.Env (Env (..))
 import Cachix.Client.InstallationMode qualified as InstallationMode
 import Cachix.Client.OptionsParser
@@ -19,6 +20,7 @@ import Cachix.Client.OptionsParser
 import Cachix.Client.Push
 import Cachix.Client.WatchStore qualified as WatchStore
 import Cachix.Daemon qualified as Daemon
+import Cachix.Daemon.Log qualified as Daemon.Log
 import Cachix.Daemon.NarinfoQuery (NarinfoQueryOptions)
 import Cachix.Daemon.PostBuildHook qualified as Daemon.PostBuildHook
 import Cachix.Daemon.Progress qualified as Daemon.Progress
@@ -87,9 +89,14 @@ watchExecDaemon env pushOpts batchOptions cacheName cmd args = do
                   daemonKeepAliveInterval = defaultKeepAliveInterval,
                   daemonKeepAliveTimeout = defaultKeepAliveTimeout
                 }
-        daemon <- Daemon.new env store daemonOptions (Just logHandle) pushOpts cacheName
+        let logLevel =
+              if Config.verbose (cachixoptions env)
+                then Daemon.Log.Debug
+                else Daemon.Log.Info
+        logger <- Daemon.Log.new "cachix.daemon" (Just logHandle) logLevel
+        exitCode <- Daemon.Log.withLogger logger $ \registeredLogger -> do
+          daemon <- Daemon.new env store daemonOptions registeredLogger pushOpts cacheName
 
-        exitCode <-
           bracket (startDaemonThread daemon) (shutdownDaemonThread daemon logHandle) $ \_ -> do
             processEnv <- getEnvironment
             let newProcessEnv = Daemon.PostBuildHook.modifyEnv (Daemon.PostBuildHook.envVar hookEnv) processEnv

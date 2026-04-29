@@ -93,7 +93,7 @@ watchExecDaemon env pushOpts batchOptions cacheName cmd args = do
               if Config.verbose (cachixoptions env)
                 then Daemon.Log.Debug
                 else Daemon.Log.Info
-        logger <- Daemon.Log.new "cachix.daemon" (Just logHandle) logLevel
+        logger <- Daemon.Log.new Daemon.Log.namespace (Just logHandle) logLevel
         exitCode <- Daemon.Log.withLogger logger $ \registeredLogger -> do
           daemon <- Daemon.new env store daemonOptions registeredLogger pushOpts cacheName
 

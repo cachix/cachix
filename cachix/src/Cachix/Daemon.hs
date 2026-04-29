@@ -74,6 +74,8 @@ new ::
   -- | The configured daemon environment.
   IO DaemonEnv
 new daemonEnv nixStore daemonOptions daemonLogger daemonPushOptions daemonCacheName = do
+  Log.logMsg daemonLogger Katip.InfoS "Starting Cachix Daemon"
+
   daemonEventLoop <- EventLoop.new
   daemonPid <- getProcessID
 
@@ -112,7 +114,7 @@ start daemonEnv daemonOptions daemonPushOptions daemonCacheName =
           if Config.verbose (Env.cachixoptions daemonEnv)
             then Debug
             else Info
-    logger <- Log.new "cachix.daemon" Nothing logLevel
+    logger <- Log.new Log.namespace Nothing logLevel
     result <- Log.withLogger logger $ \registeredLogger -> do
       daemon <- new daemonEnv store daemonOptions registeredLogger daemonPushOptions daemonCacheName
       void $ runDaemon daemon installSignalHandlers
@@ -122,7 +124,6 @@ start daemonEnv daemonOptions daemonPushOptions daemonCacheName =
 -- | Run a daemon from a given configuration.
 run :: DaemonEnv -> IO (Either DaemonError ())
 run daemon = fmap join <$> runDaemon daemon $ do
-  Katip.logFM Katip.InfoS "Starting Cachix Daemon"
   DaemonEnv {..} <- ask
 
   printConfiguration

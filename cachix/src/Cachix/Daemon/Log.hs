@@ -1,6 +1,8 @@
 module Cachix.Daemon.Log
   ( new,
     withLogger,
+    namespace,
+    logMsg,
     getKatipNamespace,
     getKatipContext,
     getKatipLogEnv,
@@ -22,12 +24,22 @@ import Katip.Format.Time qualified as Katip.Format
 import Katip.Scribes.Handle (brackets, colorBySeverity, getKeys)
 import Protolude
 
+-- | The default namespace for the Cachix daemon logger.
+namespace :: Katip.Namespace
+namespace = "cachix.daemon"
+
 new :: (MonadIO m) => Katip.Namespace -> Maybe Handle -> LogLevel -> m Logger
 new logLabel logHandle logLevel = do
   logKLogEnv <- liftIO $ Katip.initLogEnv logLabel ""
-  let logKNamespace = mempty
+  let logKNamespace = logLabel
   let logKContext = mempty
   return $ Logger {..}
+
+-- | Log a single message using a 'Logger' from outside the 'Katip' monad.
+logMsg :: (MonadIO m) => Logger -> Katip.Severity -> Katip.LogStr -> m ()
+logMsg logger sev msg =
+  Katip.runKatipT (logKLogEnv logger) $
+    Katip.logMsg (logKNamespace logger) sev msg
 
 withLogger :: (MonadIO m, E.MonadMask m) => Logger -> (Logger -> m a) -> m a
 withLogger logger@(Logger {..}) f = do

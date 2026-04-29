@@ -109,12 +109,14 @@ newPushManagerEnv pushOptions batchOptions pmPushParams onPushEvent pmLogger = l
 runPushManager :: (MonadIO m) => PushManagerEnv -> PushManager a -> m a
 runPushManager env f = liftIO $ unPushManager f `runReaderT` env
 
--- | Set the shutdown latch (rejecting new jobs), then wait for all
--- in-flight jobs to complete with a timeout.
--- Returns True if all jobs completed, False if timed out.
+-- | Set the shutdown latch (rejecting new jobs), then wait for all in-flight jobs to complete with an idle timeout.
+--
+-- Returns True if all jobs completed, False if no progress was observed within the timeout window.
 drainPushManager :: TimeoutOptions -> PushManagerEnv -> IO Bool
 drainPushManager timeoutOptions PushManagerEnv {..} = do
   ShutdownLatch.initiateShutdown () pmShutdownLatch
+  -- Reset the last event timestamp to start off the countdown from here
+  updateTimestampTVar pmLastEventTimestamp
   atomicallyWithTimeout timeoutOptions pmLastEventTimestamp $ do
     pendingJobs <- readTVar pmPendingJobCount
     check (pendingJobs <= 0)

@@ -23,7 +23,6 @@ import Cachix.Daemon.Types
   )
 import Cachix.Daemon.Types.EventLoop (EventLoop)
 import Cachix.Daemon.Types.SocketStore (SocketId, SocketStore)
-import Control.Exception.Safe (catchAny)
 import Control.Monad.Catch qualified as E
 import Data.Aeson qualified as Aeson
 import Data.ByteString qualified as BS
@@ -117,7 +116,7 @@ decodeMessage bs =
 
 serverBye :: SocketId -> SocketStore -> Either DaemonError () -> IO ()
 serverBye socketId socketStore exitResult =
-  SocketStore.sendAll socketId (Protocol.newMessage (DaemonExit exitStatus)) socketStore `catchAny` (\_ -> return ())
+  SocketStore.sendAll socketId (Protocol.newMessage (DaemonExit exitStatus)) socketStore
   where
     exitStatus = DaemonExitStatus {exitCode, exitMessage}
     exitCode = toExitCodeInt exitResult

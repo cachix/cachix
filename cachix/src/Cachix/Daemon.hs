@@ -36,7 +36,7 @@ import Cachix.Daemon.Worker qualified as Worker
 import Cachix.Types.BinaryCache (BinaryCacheName)
 import Cachix.Types.BinaryCache qualified as BinaryCache
 import Control.Concurrent.STM.TMChan
-import Control.Exception.Safe (catchAny)
+import Control.Exception.Safe (catchAny, tryAny)
 import Data.IORef (IORef, atomicModifyIORef', newIORef)
 import Data.Text qualified as T
 import Hercules.CNix.Store (Store, withStore)
@@ -49,6 +49,7 @@ import System.Environment (lookupEnv)
 import System.IO.Error (isResourceVanishedError)
 import System.Posix.Process (getProcessID)
 import System.Posix.Signals qualified as Signal
+import System.Timeout (timeout)
 import UnliftIO (MonadUnliftIO, withRunInIO)
 import UnliftIO.Async qualified as Async
 import UnliftIO.Exception (bracket)
@@ -340,18 +341,7 @@ shutdownGracefully = do
       Katip.logStr
         ("Failed " <> show (length stuck) <> " stuck jobs after drain timeout." :: Text)
 
-  -- 2. Stop the batch processor (safe: all jobs completed the full pipeline)
-  liftIO $ PushManager.stopBatchProcessor daemonPushManager
-
-  -- 3. Close the task queue
-  liftIO $ PushManager.closePushManager daemonPushManager
-
-  -- 4. Stop worker threads (workers see closed queue and exit)
-  withTakeMVar daemonWorkerThreads Worker.stopWorkers
-
-  -- 5. Close all event subscriptions
-  withTakeMVar daemonSubscriptionManagerThread (shutdownSubscriptions daemonSubscriptionManager)
-
+  -- 2. Compute the exit result now so clients see the real exit code, even if worker cleanup below blocks on a stuck upload.
   failedJobs <-
     PushManager.runPushManager daemonPushManager PushManager.getFailedPushJobs
   let pushResult =
@@ -359,8 +349,18 @@ shutdownGracefully = do
           then Right ()
           else Left DaemonPushFailure
 
-  -- 6. Gracefully close open connections to clients
+  -- 3. Stop the batch processor and close the task queue so workers exit after their current task.
+  liftIO $ PushManager.stopBatchProcessor daemonPushManager
+  liftIO $ PushManager.closePushManager daemonPushManager
+
+  -- 4. Disconnect clients with a goodbye message that includes the push result
   Async.mapConcurrently_ (sayGoodbye daemonClients pushResult) =<< SocketStore.toList daemonClients
+
+  -- 5. Stop worker threads (workers see closed queue and exit after current task)
+  withTakeMVar daemonWorkerThreads Worker.stopWorkers
+
+  -- 6. Close all event subscriptions
+  withTakeMVar daemonSubscriptionManagerThread (shutdownSubscriptions daemonSubscriptionManager)
 
   return pushResult
   where
@@ -391,19 +391,55 @@ shutdownGracefully = do
 
     sayGoodbye socketStore exitResult socket = do
       let clientSock = SocketStore.socket socket
-      let clientThread = SocketStore.handlerThread socket
-      let clientSocketId = SocketStore.socketId socket
+          clientThread = SocketStore.handlerThread socket
+          clientSocketId = SocketStore.socketId socket
+
+      -- Stop the handler first so we have exclusive read access to the socket
+      -- below. sendAll uses an independent sendLock, so the bye message still
+      -- goes out cleanly.
       Async.cancel clientThread
 
-      -- Wave goodbye to the client that requested the shutdown
-      liftIO $ Listen.serverBye clientSocketId socketStore exitResult
-      liftIO $ Socket.shutdown clientSock Socket.ShutdownBoth `catchAny` (\_ -> return ())
-      -- Wait for the other end to disconnect
-      ebs <- liftIO $ try $ Socket.BS.recv clientSock 4096
-      case ebs of
-        Left err | isResourceVanishedError err -> Katip.logFM Katip.DebugS "Client did not disconnect cleanly."
-        Left err -> Katip.logFM Katip.DebugS $ Katip.ls $ "Client socket threw an error: " <> displayException err
-        Right _ -> Katip.logFM Katip.DebugS "Client disconnected."
+      sendResult <-
+        liftIO $
+          tryAny $
+            Listen.serverBye clientSocketId socketStore exitResult
+      case sendResult of
+        Left err ->
+          Katip.logFM Katip.WarningS $
+            Katip.ls $
+              "Failed to send DaemonExit: " <> displayException err
+        Right () -> pure ()
+
+      -- Half-close the write side. Pending bytes (the bye message) flush to
+      -- the client; the client reads them, then sees EOF.
+      liftIO $ safeShutdown clientSock Socket.ShutdownSend
+
+      -- Bounded wait for the client to read the bye message and close its end.
+      mDisconnect <-
+        liftIO $
+          timeout disconnectTimeoutUs $
+            try $
+              Socket.BS.recv clientSock 4096
+      case mDisconnect of
+        Nothing ->
+          Katip.logFM Katip.DebugS "Client did not disconnect within timeout."
+        Just (Left err)
+          | isResourceVanishedError err ->
+              Katip.logFM Katip.DebugS "Client did not disconnect cleanly."
+        Just (Left err) ->
+          Katip.logFM Katip.DebugS $
+            Katip.ls $
+              "Client socket threw an error: " <> displayException err
+        Just (Right _) ->
+          Katip.logFM Katip.DebugS "Client disconnected."
+
+      liftIO $ safeShutdown clientSock Socket.ShutdownBoth
+
+    safeShutdown sock mode =
+      Socket.shutdown sock mode `catchAny` \_ -> pure ()
+
+    disconnectTimeoutUs :: Int
+    disconnectTimeoutUs = 5_000_000
 
 withTakeMVar :: (MonadUnliftIO m) => MVar a -> (a -> m ()) -> m ()
 withTakeMVar mvar f = do

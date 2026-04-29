@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
+## [1.11.1] - 2026-04-29
+
+### Added
+
+- client: support reading the retry_after field in "problem details" response bodies
+
+### Changed
+
+- client: increase the default number of retries for HTTP requests
+- client: always check for the Retry-After header in error responses, not just for certain status codes
+
+### Fixed
+
+- client: add missing retries to backend endpoints to help handle intermittent network issues
 
 ## [1.11.0] - 2026-03-20
 

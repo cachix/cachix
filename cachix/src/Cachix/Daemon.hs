@@ -356,8 +356,11 @@ shutdownGracefully = do
   -- 4. Disconnect clients with a goodbye message that includes the push result
   Async.mapConcurrently_ (sayGoodbye daemonClients pushResult) =<< SocketStore.toList daemonClients
 
-  -- 5. Stop worker threads (workers see closed queue and exit after current task)
-  withTakeMVar daemonWorkerThreads Worker.stopWorkers
+  -- 5. Stop worker threads. If drain succeeded, workers are idle and exit
+  --    immediately on the closed queue. If drain timed out, workers are stuck
+  --    mid-upload; interrupt them so the daemon process can exit promptly.
+  withTakeMVar daemonWorkerThreads $
+    if drained then Worker.stopWorkers else Worker.abortWorkers
 
   -- 6. Close all event subscriptions
   withTakeMVar daemonSubscriptionManagerThread (shutdownSubscriptions daemonSubscriptionManager)

@@ -1,6 +1,7 @@
 module Cachix.Daemon.Worker
   ( startWorkers,
     stopWorkers,
+    abortWorkers,
     startWorker,
     stopWorker,
     Immortal.Thread,
@@ -43,6 +44,12 @@ stopWorker :: (MonadIO m) => Immortal.Thread -> m ()
 stopWorker worker = liftIO $ do
   Immortal.mortalize worker
   Immortal.wait worker
+
+-- | Stop workers by interrupting their current task with an async exception.
+abortWorkers :: (Katip.KatipContext m) => [Immortal.Thread] -> m ()
+abortWorkers workers = do
+  Katip.logFM Katip.WarningS "Aborting workers."
+  liftIO $ Async.mapConcurrently_ Immortal.stop workers
 
 logWorkerException :: (Exception e, Katip.KatipContext m) => Either e () -> m ()
 logWorkerException (Left err) =

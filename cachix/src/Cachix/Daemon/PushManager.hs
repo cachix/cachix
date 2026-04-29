@@ -208,30 +208,49 @@ withPushJob pushId f =
     handleMissingPushJob =
       Katip.logLocM Katip.ErrorS $ Katip.ls $ "Push job " <> (show pushId :: Text) <> " not found"
 
-modifyPushJob :: Protocol.PushRequestId -> (PushJob -> PushJob) -> PushManager (Maybe PushJob)
-modifyPushJob pushId f = do
-  pushJobs <- asks pmPushJobs
-  liftIO $ atomically $ modifyPushJobSTM pushJobs pushId f
+-- | Apply an update to many push jobs atomically. After the update, a job
+-- transitions to a terminal state if either the update made it processed
+-- directly or it leaves 'pushQueue' empty. Returns the jobs that transitioned
+-- to a terminal state in this call.
+--
+-- Mark, completion check, and pending-counter decrement happen in one STM
+-- transaction so concurrent workers cannot race past the empty-queue check.
+applyPushJobUpdates ::
+  (Foldable t) =>
+  t Protocol.PushRequestId ->
+  (UTCTime -> PushJob -> PushJob) ->
+  PushManager [PushJob]
+applyPushJobUpdates pushIds update = do
+  PushManagerEnv {pmPushJobs, pmPendingJobCount} <- ask
+  ts <- liftIO getCurrentTime
+  liftIO $ atomically $ do
+    jobs <- readTVar pmPushJobs
+    let (jobs', finished) = foldl' (step ts) (jobs, []) pushIds
+    writeTVar pmPushJobs jobs'
+    modifyTVar' pmPendingJobCount (subtract (length finished))
+    pure finished
+  where
+    step ts (!jobs, acc) pushId =
+      case HashMap.lookup pushId jobs of
+        Just job
+          | not (PushJob.isProcessed job) ->
+              let job' = transitionIfDone ts (update ts job)
+                  jobs' = HashMap.insert pushId job' jobs
+               in if PushJob.isProcessed job'
+                    then (jobs', job' : acc)
+                    else (jobs', acc)
+        _ -> (jobs, acc)
 
-modifyPushJobSTM :: PushJobStore -> Protocol.PushRequestId -> (PushJob -> PushJob) -> STM (Maybe PushJob)
-modifyPushJobSTM pushJobs pushId f =
-  stateTVar pushJobs $ \jobs -> do
-    let pj = HashMap.adjust f pushId jobs
-    (HashMap.lookup pushId pj, pj)
-
-modifyPushJobs :: (Foldable f) => f Protocol.PushRequestId -> (PushJob -> PushJob) -> PushManager ()
-modifyPushJobs pushIds f = do
-  pushJobs <- asks pmPushJobs
-  liftIO $ atomically $ modifyTVar' pushJobs $ \pushJobs' ->
-    foldl' (flip (HashMap.adjust f)) pushJobs' pushIds
+    transitionIfDone ts job
+      | PushJob.isProcessed job = job
+      | Set.null (PushJob.pushQueue job) =
+          if PushJob.hasFailedPaths job
+            then PushJob.fail ts job
+            else PushJob.complete ts job
+      | otherwise = job
 
 failPushJob :: Protocol.PushRequestId -> PushManager ()
-failPushJob pushId = do
-  PushManagerEnv {..} <- ask
-  timestamp <- liftIO getCurrentTime
-  liftIO $ atomically $ do
-    _ <- modifyPushJobSTM pmPushJobs pushId $ PushJob.fail timestamp
-    decrementTVar pmPendingJobCount
+failPushJob pushId = void $ applyPushJobUpdates [pushId] PushJob.fail
 
 pendingJobCount :: PushManager Int
 pendingJobCount = do
@@ -265,21 +284,6 @@ lookupStorePathIndex storePath = do
   references <- liftIO $ readTVarIO storePathIndex
   return $ fromMaybe Seq.empty (HashMap.lookup storePath references)
 
-checkPushJobCompleted :: Protocol.PushRequestId -> PushManager ()
-checkPushJobCompleted pushId = do
-  PushManagerEnv {..} <- ask
-  mpushJob <- lookupPushJob pushId
-  for_ mpushJob $ \pushJob ->
-    when (Set.null $ pushQueue pushJob) $ do
-      timestamp <- liftIO getCurrentTime
-      liftIO $ atomically $ do
-        _ <- modifyPushJobSTM pmPushJobs pushId $ \pushJob' ->
-          if PushJob.hasFailedPaths pushJob'
-            then PushJob.fail timestamp pushJob'
-            else PushJob.complete timestamp pushJob'
-        decrementTVar pmPendingJobCount
-      pushFinished pushJob
-
 queuedStorePathCount :: PushManager Integer
 queuedStorePathCount = do
   pmPushJobs <- asks pmPushJobs
@@ -292,19 +296,16 @@ resolvePushJob :: Protocol.PushRequestId -> PushJob.ResolvedClosure FilePath -> 
 resolvePushJob pushId closure = do
   Katip.logLocM Katip.DebugS $ Katip.ls $ showClosureStats closure
 
-  timestamp <- liftIO getCurrentTime
-  _ <- modifyPushJob pushId $ PushJob.populateQueue closure timestamp
+  finishedJobs <- applyPushJobUpdates [pushId] (PushJob.populateQueue closure)
 
   withPushJob pushId $ \pushJob -> do
     pushStarted pushJob
-    -- Emit PushStorePathSkipped events for paths already present in the cache
     let skippedPaths = Set.difference (PushJob.rcAllPaths closure) (PushJob.rcMissingPaths closure)
     forM_ skippedPaths $ \path ->
       sendStorePathEvent [pushId] (PushStorePathSkipped path)
-    -- Create STM action for each path and then run everything atomically
     queueStorePaths pushId $ Set.toList (PushJob.rcMissingPaths closure)
-    -- Check if the job is already completed, i.e. all paths have been skipped.
-    checkPushJobCompleted pushId
+
+  for_ finishedJobs pushFinished
   where
     showClosureStats :: PushJob.ResolvedClosure FilePath -> Text
     showClosureStats PushJob.ResolvedClosure {..} =
@@ -550,23 +551,17 @@ pushStorePathProgress storePath currentBytes newBytes = do
 pushStorePathDone :: FilePath -> PushManager ()
 pushStorePathDone storePath = do
   pushIds <- lookupStorePathIndex storePath
-  modifyPushJobs pushIds (PushJob.markStorePathPushed storePath)
-
+  finishedJobs <- applyPushJobUpdates pushIds (\_ -> PushJob.markStorePathPushed storePath)
   sendStorePathEvent pushIds (PushStorePathDone storePath)
-
-  mapM_ checkPushJobCompleted pushIds
-
+  for_ finishedJobs pushFinished
   removeStorePath storePath
 
 pushStorePathFailed :: FilePath -> Text -> PushManager ()
 pushStorePathFailed storePath errMsg = do
   pushIds <- lookupStorePathIndex storePath
-  modifyPushJobs pushIds (PushJob.markStorePathFailed storePath)
-
+  finishedJobs <- applyPushJobUpdates pushIds (\_ -> PushJob.markStorePathFailed storePath)
   sendStorePathEvent pushIds (PushStorePathFailed storePath errMsg)
-
-  mapM_ checkPushJobCompleted pushIds
-
+  for_ finishedJobs pushFinished
   removeStorePath storePath
 
 -- Helpers

@@ -329,7 +329,16 @@ shutdownGracefully = do
   DaemonEnv {..} <- ask
 
   -- 1. Drain: set latch (reject new jobs), wait for in-flight jobs to complete
-  drainWithLogging daemonPushManager
+  drained <- drainWithLogging daemonPushManager
+
+  -- Fail any remaining jobs that didn't finish after the drain timeout
+  unless drained $ do
+    stuck <-
+      PushManager.runPushManager daemonPushManager $
+        PushManager.failPendingJobs "Daemon stopped before this path finished uploading"
+    Katip.logFM Katip.WarningS $
+      Katip.logStr
+        ("Failed " <> show (length stuck) <> " stuck jobs after drain timeout." :: Text)
 
   -- 2. Stop the batch processor (safe: all jobs completed the full pipeline)
   liftIO $ PushManager.stopBatchProcessor daemonPushManager
@@ -372,6 +381,7 @@ shutdownGracefully = do
       if drained
         then Katip.logFM Katip.DebugS "Push manager drained."
         else Katip.logFM Katip.WarningS "Push manager drain timed out. Some jobs may not have completed."
+      pure drained
 
     shutdownSubscriptions daemonSubscriptionManager subscriptionManagerThread = do
       Katip.logFM Katip.DebugS "Shutting down event manager..."

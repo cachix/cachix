@@ -20,6 +20,7 @@ module Cachix.Daemon.PushManager
     -- * Query
     filterPushJobs,
     getFailedPushJobs,
+    failPendingJobs,
 
     -- * Store paths
     queueStorePaths,
@@ -254,6 +255,26 @@ applyPushJobUpdates pushIds update = do
 failPushJob :: Protocol.PushRequestId -> PushManager ()
 failPushJob pushId = void $ applyPushJobUpdates [pushId] PushJob.fail
 
+-- | Mark every non-terminal job as failed and emit failure events for any
+-- paths still in their queues. Failed jobs stay in 'pmPushJobs' so a later
+-- 'getFailedPushJobs' call sees them and the daemon exits with the right
+-- code; the natural path removes jobs via 'pushFinished'.
+failPendingJobs :: Text -> PushManager [PushJob]
+failPendingJobs reason = do
+  pmPushJobs <- asks pmPushJobs
+  allIds <- HashMap.keys <$> liftIO (readTVarIO pmPushJobs)
+  failed <- applyPushJobUpdates allIds PushJob.fail
+
+  ts <- liftIO getCurrentTime
+  sendPushEvent <- asks pmOnPushEvent
+  for_ failed $ \job -> do
+    let pid = PushJob.pushId job
+    for_ (PushJob.pushQueue job) $ \path ->
+      sendStorePathEventAt ts [pid] (PushStorePathFailed path reason)
+    liftIO $ sendPushEvent pid (PushEvent ts pid PushFinished)
+
+  pure failed
+
 pendingJobCount :: PushManager Int
 pendingJobCount = do
   pmPendingJobCount <- asks pmPendingJobCount
@@ -303,8 +324,9 @@ resolvePushJob pushId closure = do
   withPushJob pushId $ \pushJob -> do
     pushStarted pushJob
     let skippedPaths = Set.difference (PushJob.rcAllPaths closure) (PushJob.rcMissingPaths closure)
+    ts <- liftIO getCurrentTime
     forM_ skippedPaths $ \path ->
-      sendStorePathEvent [pushId] (PushStorePathSkipped path)
+      sendStorePathEventAt ts [pushId] (PushStorePathSkipped path)
     queueStorePaths pushId $ Set.toList (PushJob.rcMissingPaths closure)
 
   for_ finishedJobs pushFinished
@@ -361,8 +383,9 @@ runQueryMissingPathsTask pushParams pushId =
         liftIO $ for_ errors $ uncurry logStorePathWarning
 
         -- Emit PushStorePathInvalid events for invalid paths
+        ts <- liftIO getCurrentTime
         forM_ errors $ \(path, err) ->
-          sendStorePathEvent [pushId] (PushStorePathInvalid path (formatStorePathError err))
+          sendStorePathEventAt ts [pushId] (PushStorePathInvalid path (formatStorePathError err))
 
         paths <- computeClosure store validPaths
 
@@ -535,6 +558,10 @@ pushFinished pushJob@PushJob {pushId} = void $ runMaybeT $ do
 sendStorePathEvent :: (Foldable f) => f Protocol.PushRequestId -> PushEventMessage -> PushManager ()
 sendStorePathEvent pushIds msg = do
   timestamp <- liftIO getCurrentTime
+  sendStorePathEventAt timestamp pushIds msg
+
+sendStorePathEventAt :: (Foldable f) => UTCTime -> f Protocol.PushRequestId -> PushEventMessage -> PushManager ()
+sendStorePathEventAt timestamp pushIds msg = do
   sendPushEvent <- asks pmOnPushEvent
   liftIO $ forM_ pushIds $ \pushId ->
     sendPushEvent pushId (PushEvent timestamp pushId msg)

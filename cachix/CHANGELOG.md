@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Fixed
 
 - client: add missing retries to backend endpoints to help handle intermittent network issues
+- daemon: remove risk of race conditions when checking for job completion
+- daemon: fail any pending jobs on shutdown timeout
 
 ## [1.11.0] - 2026-03-20
 

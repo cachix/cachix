@@ -88,7 +88,7 @@ new daemonEnv nixStore daemonOptions daemonLogger daemonPushOptions daemonCacheN
 
   daemonPushSecret <- Command.Push.getPushSecretRequired (config daemonEnv) daemonCacheName
   let authToken = getAuthTokenFromPushSecret daemonPushSecret
-  daemonBinaryCache <- Push.getBinaryCache daemonEnv authToken daemonCacheName
+  daemonBinaryCache <- Push.getBinaryCache daemonLogger daemonEnv authToken daemonCacheName
 
   daemonSubscriptionManagerThread <- newEmptyMVar
   daemonSubscriptionManager <- Subscription.newSubscriptionManager

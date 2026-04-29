@@ -14,12 +14,14 @@ import Cachix.Client.OptionsParser as Client.OptionsParser
 import Cachix.Client.Push as Client.Push
 import Cachix.Client.Retry (retryClientM)
 import Cachix.Client.Servant
+import Cachix.Daemon.Log qualified as Log
 import Cachix.Daemon.PushManager qualified as PushManager
 import Cachix.Daemon.Types (PushManager)
 import Cachix.Types.BinaryCache (BinaryCache, BinaryCacheName)
 import Cachix.Types.BinaryCache qualified as BinaryCache
 import Data.Set qualified as Set
 import Hercules.CNix.Store (Store)
+import Katip qualified
 import Protolude hiding (toS)
 import Servant.Auth ()
 import Servant.Auth.Client
@@ -51,8 +53,9 @@ newPushParams store clientEnv binaryCache pushSecret pushOptions = do
       pushParamsStore = store
     }
 
-getBinaryCache :: Env -> Maybe Token -> BinaryCacheName -> IO BinaryCache
-getBinaryCache env authToken name = do
+getBinaryCache :: Log.Logger -> Env -> Maybe Token -> BinaryCacheName -> IO BinaryCache
+getBinaryCache logger env authToken name = do
+  Log.logMsg logger Katip.DebugS $ "Fetching cache info for " <> Katip.ls name
   -- Self-signed caches might not have a token, which is why this code is so weird.
   -- In practice, public self-signed caches don't need one and private ones always need a token.
   let token = fromMaybe (Token "") authToken

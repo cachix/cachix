@@ -76,10 +76,9 @@ import Data.Set qualified as Set
 import Data.String.Here (iTrim)
 import Data.Text qualified as T
 import Network.HTTP.Types (status401, status404)
-import Nix.C.Hash qualified as NixHash
 import Nix.C.Hash.Nix32 qualified as Nix32
 import Nix.C.Store.Derivation qualified as NixDrv
-import Nix.C.Store.PathInfo (ContentAddress (..))
+import Nix.C.Store.PathInfo (ContentAddress (..), PathInfoJsonFormat (..))
 import Nix.C.Store.PathInfo qualified as NixPathInfo
 import Nix.C.Store.Realisation qualified as NixRealisation
 import Nix.C.Unsafe.Store (Derivation, Store, StorePath)
@@ -368,25 +367,25 @@ collectRealisations visitedDrvsRef visitedIdsRef store drvSp = do
                     Right inputSp ->
                       collectRealisations visitedDrvsRef visitedIdsRef store inputSp
           pure (here ++ deps)
- where
-  mkRealisation
-    :: Store
-    -> ByteString
-    -> NixRealisation.Realisation
-    -> IO Realisation.Realisation
-  mkRealisation s drvOutputId r = do
-    outSp <- NixRealisation.realisationOutPath r
-    outBaseFP <-
-      OsPath.decodeFS . OsPath.takeFileName =<< Store.storeRealPath s outSp
-    sigs <- NixRealisation.realisationSignatures r
-    let decode = decodeUtf8With lenientDecode
-    pure
-      Realisation.Realisation
-        { Realisation.rId = decode drvOutputId,
-          Realisation.rOutPath = T.pack outBaseFP,
-          Realisation.rSignatures = fmap decode sigs,
-          Realisation.rDependentRealisations = mempty
-        }
+  where
+    mkRealisation ::
+      Store ->
+      ByteString ->
+      NixRealisation.Realisation ->
+      IO Realisation.Realisation
+    mkRealisation s drvOutputId r = do
+      outSp <- NixRealisation.realisationOutPath r
+      outBaseFP <-
+        OsPath.decodeFS . OsPath.takeFileName =<< Store.storeRealPath s outSp
+      sigs <- NixRealisation.realisationSignatures r
+      let decode = decodeUtf8With lenientDecode
+      pure
+        Realisation.Realisation
+          { Realisation.rId = decode drvOutputId,
+            Realisation.rOutPath = T.pack outBaseFP,
+            Realisation.rSignatures = fmap decode sigs,
+            Realisation.rDependentRealisations = mempty
+          }
 
 unknownDeriver :: Text
 unknownDeriver = "unknown-deriver"
@@ -425,21 +424,14 @@ newPathInfoFromStorePath :: (MonadIO m) => Store -> StorePath -> m PathInfo
 newPathInfoFromStorePath store storePath = liftIO $ do
   osPath <- Store.storeRealPath store storePath
   path <- OsPath.decodeFS osPath
-  info <- Store.queryPathInfo store storePath
+  -- V3 returns basenames for references and deriver, which is what we want.
+  info <- Store.queryPathInfoJson store storePath PathInfoJsonFormatV3
 
-  let narHash = NixHash.hashToNix32 (NixPathInfo.pathInfoNarHash info)
+  let narHash = NixPathInfo.hashToNix32 (NixPathInfo.pathInfoNarHash info)
       narSize = fromIntegral $ NixPathInfo.pathInfoNarSize info
       ca = caToText <$> NixPathInfo.pathInfoCa info
-
-  let getStorePathBaseName =
-        (OsPath.decodeFS . OsPath.takeFileName)
-          <=< Store.storeRealPath store
-
-  -- Convert StorePath references to basenames
-  refPaths <- for (NixPathInfo.pathInfoReferences info) getStorePathBaseName
-
-  -- Convert deriver StorePath to basename
-  deriver <- for (NixPathInfo.pathInfoDeriver info) (fmap toS . getStorePathBaseName)
+      refPaths = fmap (toS :: Text -> FilePath) (NixPathInfo.pathInfoReferences info)
+      deriver = NixPathInfo.pathInfoDeriver info
 
   return $
     PathInfo

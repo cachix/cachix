@@ -9,7 +9,7 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     nix-bindings-haskell = {
-      url = "github:cachix/nix-bindings-haskell";
+      url = "github:cachix/nix-bindings-haskell/ca-derivations";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     git-hooks = {

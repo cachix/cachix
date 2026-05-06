@@ -161,11 +161,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1733312601,
-        "narHash": "sha256-4pDvzqnegAfRkPwO3wmwBhVi/Sye1mzps0zHWYnP88c=",
+        "lastModified": 1775087534,
+        "narHash": "sha256-91qqW8lhL7TLwgQWijoGBbiD4t7/q75KTi8NxjVmSmA=",
         "owner": "hercules-ci",
         "repo": "flake-parts",
-        "rev": "205b12d8b7cd4802fbcb8e8ef6a0f1408781a4f9",
+        "rev": "3107b77cd68437b9a76194f0f7f9c55f2329ca5b",
         "type": "github"
       },
       "original": {
@@ -227,19 +227,14 @@
           "nix-bindings-haskell",
           "nix",
           "nixpkgs"
-        ],
-        "nixpkgs-stable": [
-          "nix-bindings-haskell",
-          "nix",
-          "nixpkgs"
         ]
       },
       "locked": {
-        "lastModified": 1734279981,
-        "narHash": "sha256-NdaCraHPp8iYMWzdXAt5Nv6sA3MUzlCiGiR586TCwo0=",
+        "lastModified": 1776796298,
+        "narHash": "sha256-PcRvlWayisPSjd0UcRQbhG8Oqw78AcPE6x872cPRHN8=",
         "owner": "cachix",
         "repo": "git-hooks.nix",
-        "rev": "aa9f40c906904ebd83da78e7f328cd8aeaeae785",
+        "rev": "3cfd774b0a530725a077e17354fbdb87ea1c4aad",
         "type": "github"
       },
       "original": {
@@ -359,15 +354,16 @@
         ]
       },
       "locked": {
-        "lastModified": 1775604664,
-        "narHash": "sha256-OGdllLqWyWfR91tK+Kt1ndmVg2P/Q6EDvePHB7gvmxE=",
+        "lastModified": 1778088650,
+        "narHash": "sha256-Ctw/xEQ+8QaIbzruWCO9cN9sVs5AWhSt85+baZTI3YA=",
         "owner": "cachix",
         "repo": "nix-bindings-haskell",
-        "rev": "5c7ff694e8bce836eecf6679e0d19c481520dd06",
+        "rev": "316baf1ac87d90f4de8c4db29ed66b21cab792ec",
         "type": "github"
       },
       "original": {
         "owner": "cachix",
+        "ref": "ca-derivations",
         "repo": "nix-bindings-haskell",
         "type": "github"
       }
@@ -382,16 +378,16 @@
         "nixpkgs-regression": "nixpkgs-regression"
       },
       "locked": {
-        "lastModified": 1775584026,
-        "narHash": "sha256-mNMlEs5VpSy14fZBepBKyK9E+9Pdxgod9zVr0n7wgHQ=",
+        "lastModified": 1778079741,
+        "narHash": "sha256-qAj6qezumCDIAD2T6LUDWBQDsBCoMZ9y92FBjRKgV6c=",
         "owner": "cachix",
         "repo": "nix",
-        "rev": "528fc271dc73d550b3899d4ce8651b3c8ab5970c",
+        "rev": "03c770ab058ffd70184f2539fe49bc70fbf9b763",
         "type": "github"
       },
       "original": {
         "owner": "cachix",
-        "ref": "feat-query-path-info",
+        "ref": "cachix",
         "repo": "nix",
         "type": "github"
       }

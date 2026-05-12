@@ -179,20 +179,21 @@ data BinaryCacheAPI route = BinaryCacheAPI
           :> "pin"
           :> ReqBody '[JSON] PinCreate.PinCreate
           :> Post '[JSON] NoContent,
-    getRealisation ::
+    getBuildTrace ::
       route
         :- CachixAuth
           :> "cache"
           :> Capture "name" Text
-          :> "realisations"
-          :> Capture "drvOutputId" Text
+          :> "build-trace-v2"
+          :> Capture "drvName" Text
+          :> Capture "outputDoi" Text
           :> Get '[JSON] Realisation.Realisation,
-    putRealisations ::
+    putBuildTraces ::
       route
         :- CachixAuth
           :> "cache"
           :> Capture "name" Text
-          :> "realisations"
+          :> "build-trace-v2"
           :> ReqBody '[JSON] [Realisation.Realisation]
           :> Post '[JSON] NoContent
   }

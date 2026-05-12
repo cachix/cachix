@@ -71,7 +71,6 @@ import Data.Conduit.Lzma qualified as Lzma (compress)
 import Data.Conduit.Zstd qualified as Zstd (compress)
 import Data.IORef
 import Data.List.Extra (chunksOf)
-import Data.Map qualified as Map
 import Data.Set qualified as Set
 import Data.String.Here (iTrim)
 import Data.Text qualified as T
@@ -239,7 +238,7 @@ uploadStorePath pushParams storePath retrystatus = do
     Right (uploadResult, uploadNarDetails) -> do
       nic <- newNarInfoCreate pushParams storePath pathInfo uploadNarDetails
       completeNarUpload pushParams uploadResult nic
-      pushRealisations pushParams pathInfo
+      pushBuildTraces pushParams pathInfo
       onDone strategy
 
 -- | Push an entire closure
@@ -283,18 +282,18 @@ completeNarUpload pushParams Push.S3.UploadMultipartResult {..} nic = do
 
   liftIO $ void $ retryHttp $ withClientM completeMultipartUploadRequest clientEnv escalate
 
--- | Push realisations for content-addressed paths.
+-- | Push build traces for content-addressed paths.
 -- This is a no-op for non-CA paths (when 'piCa' is Nothing) or when
 -- the deriver is unavailable. Walks the derivation graph via the
 -- C API: for each output of the deriver and each output of each
 -- (statically-known) input derivation, query the local store for a
 -- realisation and push the collected list in one batch.
-pushRealisations ::
+pushBuildTraces ::
   (MonadUnliftIO m) =>
   PushParams n r ->
   PathInfo ->
   m ()
-pushRealisations pushParams pathInfo =
+pushBuildTraces pushParams pathInfo =
   case (piCa pathInfo, piDeriver pathInfo) of
     (Just _, Just deriver) | deriver /= unknownDeriver -> liftIO $ do
       let store = pushParamsStore pushParams
@@ -311,23 +310,21 @@ pushRealisations pushParams pathInfo =
         Right drvSp -> do
           visitedDrvsRef <- newIORef Set.empty
           visitedIdsRef <- newIORef Set.empty
-          realisations <- collectRealisations visitedDrvsRef visitedIdsRef store drvSp
-          unless (null realisations) $ do
-            let request = API.putRealisations cachixClient authToken cacheName realisations
+          buildTraces <- collectBuildTraces visitedDrvsRef visitedIdsRef store drvSp
+          unless (null buildTraces) $ do
+            let request = API.putBuildTraces cachixClient authToken cacheName buildTraces
             void $ retryHttp $ withClientM request clientEnv escalate
     _ -> pure ()
 
 -- | Walk the derivation input graph collecting any locally-recorded
--- realisations. Each drv is parsed once (cycle detection). We do not
--- populate 'rDependentRealisations'; the server tracks the graph
--- separately when each path is pushed.
-collectRealisations ::
+-- realisations. Each drv is parsed once (cycle detection).
+collectBuildTraces ::
   IORef (Set FilePath) -> -- visited drv full paths
   IORef (Set ByteString) -> -- visited drv_output_ids
   Store ->
   StorePath ->
   IO [Realisation.Realisation]
-collectRealisations visitedDrvsRef visitedIdsRef store drvSp = do
+collectBuildTraces visitedDrvsRef visitedIdsRef store drvSp = do
   drvFP <- OsPath.decodeFS =<< Store.storeRealPath store drvSp
   alreadySeen <- Set.member drvFP <$> readIORef visitedDrvsRef
   if alreadySeen
@@ -347,7 +344,7 @@ collectRealisations visitedDrvsRef visitedIdsRef store drvSp = do
                 modifyIORef' visitedIdsRef (Set.insert drvOutputId)
                 NixRealisation.queryRealisation store drvOutputId >>= \case
                   Nothing -> pure Nothing
-                  Just r -> Just <$> mkRealisation store drvOutputId r
+                  Just r -> Just <$> mkBuildTrace store drvOutputId r
           -- Recurse into static input derivations. Dynamic inputs are
           -- not surfaced by the C API, so we skip the input walk for
           -- those cases (the realisations of statically-resolvable
@@ -365,26 +362,39 @@ collectRealisations visitedDrvsRef visitedIdsRef store drvSp = do
                   case inputSpE of
                     Left (_ :: SomeException) -> pure []
                     Right inputSp ->
-                      collectRealisations visitedDrvsRef visitedIdsRef store inputSp
+                      collectBuildTraces visitedDrvsRef visitedIdsRef store inputSp
           pure (here ++ deps)
   where
-    mkRealisation ::
+    -- \| The C binding emits ids of the form @\<storeDir\>/\<drvName\>^\<outputName\>@.
+    -- Split on the last @^@ then take the basename of the LHS to get @\<drvName\>@.
+    mkBuildTrace ::
       Store ->
       ByteString ->
       NixRealisation.Realisation ->
       IO Realisation.Realisation
-    mkRealisation s drvOutputId r = do
+    mkBuildTrace s drvOutputId r = do
       outSp <- NixRealisation.realisationOutPath r
       outBaseFP <-
         OsPath.decodeFS . OsPath.takeFileName =<< Store.storeRealPath s outSp
       sigs <- NixRealisation.realisationSignatures r
       let decode = decodeUtf8With lenientDecode
+          (drvFullPathT, outputNameT) =
+            case T.breakOnEnd "^" (decode drvOutputId) of
+              (left, right) | not (T.null left) -> (T.dropEnd 1 left, right)
+              _ -> ("", "")
+          drvNameT = T.takeWhileEnd (/= '/') drvFullPathT
       pure
         Realisation.Realisation
-          { Realisation.rId = decode drvOutputId,
-            Realisation.rOutPath = T.pack outBaseFP,
-            Realisation.rSignatures = fmap decode sigs,
-            Realisation.rDependentRealisations = mempty
+          { Realisation.key =
+              Realisation.DrvOutput
+                { Realisation.drvPath = drvNameT,
+                  Realisation.outputName = outputNameT
+                },
+            Realisation.value =
+              Realisation.UnkeyedRealisation
+                { Realisation.outPath = T.pack outBaseFP,
+                  Realisation.signatures = fmap decode sigs
+                }
           }
 
 unknownDeriver :: Text

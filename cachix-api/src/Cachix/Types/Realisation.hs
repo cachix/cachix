@@ -1,7 +1,7 @@
 module Cachix.Types.Realisation
-  ( Realisation (..),
-    splitDrvOutputId,
-    mkDrvOutputId,
+  ( DrvOutput (..),
+    UnkeyedRealisation (..),
+    Realisation (..),
   )
 where
 
@@ -14,58 +14,61 @@ import Data.Aeson
     (.=),
   )
 import Data.Swagger (ToSchema)
-import qualified Data.Text as T
 import Protolude
 
--- | A Nix realisation mapping a derivation output to its content-addressed store path.
+-- | A build-trace key: a derivation store path and one of its output names.
 --
--- JSON format matches what Nix expects at @realisations\/\<id\>.doi@:
---
--- @
--- { "id": "sha256:\<hash\>!\<outputName\>"
--- , "outPath": "\<storePathBaseName\>"
--- , "signatures": [...]
--- , "dependentRealisations": { "sha256:\<hash\>!\<out\>": "\<storePathBaseName\>", ... }
--- }
--- @
-data Realisation = Realisation
-  { -- | Derivation output id, e.g. "sha256:<hash>!<outputName>"
-    rId :: Text,
-    -- | Store path base name of the output
-    rOutPath :: Text,
-    -- | Signatures for this realisation
-    rSignatures :: [Text],
-    -- | Map from dependent derivation output ids to their store path base names
-    rDependentRealisations :: Map Text Text
+-- Matches Nix's @DrvOutput@ in the @build-trace-v2@ wire format. @drvPath@ is
+-- the basename of the derivation store path (e.g. @abc...-foo.drv@), not a hash.
+data DrvOutput = DrvOutput
+  { drvPath :: Text,
+    outputName :: Text
+  }
+  deriving (Eq, Ord, Show, Generic, NFData, ToSchema)
+
+-- | The body of a realisation: which store path this output resolved to, plus signatures.
+data UnkeyedRealisation = UnkeyedRealisation
+  { outPath :: Text,
+    signatures :: [Text]
   }
   deriving (Eq, Show, Generic, NFData, ToSchema)
 
--- | Split a derivation output id "sha256:<hash>!<outputName>" into (drvHash, outputName).
--- Returns Nothing if there is no "!" separator.
-splitDrvOutputId :: Text -> Maybe (Text, Text)
-splitDrvOutputId t =
-  case T.breakOn "!" t of
-    (_, rest) | T.null rest -> Nothing
-    (drvHash, rest) -> Just (drvHash, T.drop 1 rest)
+-- | A full realisation entry as served at
+-- @build-trace-v2\/\<drvName\>\/\<outputName\>.doi@.
+--
+-- JSON wire format:
+--
+-- @
+-- { "key":   { "drvPath": "abc...-foo.drv", "outputName": "out" }
+-- , "value": { "outPath": "xyz...-foo",      "signatures": ["..."] }
+-- }
+-- @
+data Realisation = Realisation
+  { key :: DrvOutput,
+    value :: UnkeyedRealisation
+  }
+  deriving (Eq, Show, Generic, NFData, ToSchema)
 
--- | Construct a derivation output id from drvHash and outputName.
-mkDrvOutputId :: Text -> Text -> Text
-mkDrvOutputId drvHash outputName = drvHash <> "!" <> outputName
+instance ToJSON DrvOutput where
+  toJSON DrvOutput {drvPath, outputName} =
+    object ["drvPath" .= drvPath, "outputName" .= outputName]
+
+instance FromJSON DrvOutput where
+  parseJSON = withObject "DrvOutput" $ \o ->
+    DrvOutput <$> o .: "drvPath" <*> o .: "outputName"
+
+instance ToJSON UnkeyedRealisation where
+  toJSON UnkeyedRealisation {outPath, signatures} =
+    object ["outPath" .= outPath, "signatures" .= signatures]
+
+instance FromJSON UnkeyedRealisation where
+  parseJSON = withObject "UnkeyedRealisation" $ \o ->
+    UnkeyedRealisation <$> o .: "outPath" <*> o .: "signatures"
 
 instance ToJSON Realisation where
-  toJSON Realisation {..} =
-    object
-      [ "id" .= rId,
-        "outPath" .= rOutPath,
-        "signatures" .= rSignatures,
-        "dependentRealisations" .= rDependentRealisations
-      ]
+  toJSON Realisation {key, value} =
+    object ["key" .= key, "value" .= value]
 
 instance FromJSON Realisation where
   parseJSON = withObject "Realisation" $ \o ->
-    Realisation
-      <$> o
-      .: "id"
-      <*> o .: "outPath"
-      <*> o .: "signatures"
-      <*> o .: "dependentRealisations"
+    Realisation <$> o .: "key" <*> o .: "value"

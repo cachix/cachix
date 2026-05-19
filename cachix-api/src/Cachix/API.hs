@@ -179,6 +179,9 @@ data BinaryCacheAPI route = BinaryCacheAPI
           :> "pin"
           :> ReqBody '[JSON] PinCreate.PinCreate
           :> Post '[JSON] NoContent,
+    -- | GET returns the bare 'UnkeyedRealisation' (outPath + signatures);
+    -- Nix's substituter parses @build-trace-v2\/\<drv\>\/\<output\>.doi@ as a
+    -- build-trace value for the key implied by the URL.
     getBuildTrace ::
       route
         :- CachixAuth
@@ -187,7 +190,7 @@ data BinaryCacheAPI route = BinaryCacheAPI
           :> "build-trace-v2"
           :> Capture "drvName" Text
           :> Capture "outputDoi" Text
-          :> Get '[JSON] Realisation.Realisation,
+          :> Get '[JSON] Realisation.UnkeyedRealisation,
     putBuildTraces ::
       route
         :- CachixAuth

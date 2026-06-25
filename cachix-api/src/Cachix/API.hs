@@ -47,7 +47,8 @@ data BinaryCacheAPI route = BinaryCacheAPI
           :> "cache"
           :> Capture "name" Text
           :> Capture "narinfohash" NarInfoHash.NarInfoHash
-          :> Get '[XNixNarInfo, JSON] (Headers '[Header "Cache-Control" Text] NarInfo.CachixNarInfo),
+          :> Header "If-None-Match" Text
+          :> Get '[XNixNarInfo, JSON] (Headers '[Header "ETag" Text, Header "Cache-Control" Text] NarInfo.CachixNarInfo),
     narinfoHead ::
       route
         :- CachixAuth

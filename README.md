@@ -11,7 +11,7 @@
 
 ## [Cachix](https://cachix.org) - Nix binary cache hosting: Never build software twice.
 
-[![Test](https://github.com/cachix/cachix/workflows/Test/badge.svg)](https://github.com/cachix/cachix/actions)
+[![Build](https://github.com/cachix/cachix/actions/workflows/build.yml/badge.svg)](https://github.com/cachix/cachix/actions)
 [![Hackage](https://img.shields.io/hackage/v/cachix.svg)](https://hackage.haskell.org/package/cachix)
 
 ```

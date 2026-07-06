@@ -402,11 +402,28 @@ unknownDeriver = "unknown-deriver"
 
 -- | Render the C-API 'ContentAddress' back to its textual narinfo form
 -- (e.g. @"text:sha256:..."@ or @"fixed:r:sha256:..."@).
+--
+-- This reproduces Nix's @ContentAddress::render()@
+-- (@renderPrefixModern(method) + hash.to_string(Nix32, true)@): the narinfo
+-- @CA:@ grammar only accepts @text:@ and @fixed:@ prefixes with a
+-- @<algo>:<base32>@ hash, not the structured path-info method name (@nar@ /
+-- @flat@) or an SRI hash. 'NixPathInfo.hashToNix32' already renders
+-- @"<algo>:<base32>"@; we only need to map the method to its narinfo prefix.
 caToText :: ContentAddress -> Text
 caToText = \case
   ContentAddressText t -> t
   ContentAddressStructured method hash ->
-    method <> ":" <> NixPathInfo.hashToSRI hash
+    narInfoMethodPrefix method <> NixPathInfo.hashToNix32 hash
+  where
+    -- Mirrors Nix's renderPrefixModern: Text -> "text:", and the fixed-output
+    -- ingestion methods nest under "fixed:" (flat -> "", nar -> "r:", git ->
+    -- "git:").
+    narInfoMethodPrefix = \case
+      "text" -> "text:"
+      "flat" -> "fixed:"
+      "nar" -> "fixed:r:"
+      "git" -> "fixed:git:"
+      other -> "fixed:" <> other <> ":"
 
 data UploadNarDetails = UploadNarDetails
   { undNarSize :: Integer,

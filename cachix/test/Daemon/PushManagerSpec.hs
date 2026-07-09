@@ -18,7 +18,8 @@ import Control.Monad (fail)
 import Control.Retry (defaultRetryStatus)
 import Data.Set qualified as Set
 import Data.Time (diffUTCTime, getCurrentTime)
-import Hercules.CNix qualified as CNix
+import Nix.C.Unsafe.Init qualified as NixInit
+import Nix.C.Unsafe.Store (Store, withStore)
 import Protolude
 import Servant.Auth.Client (Token (Token))
 import System.IO.Temp (withSystemTempDirectory)
@@ -193,7 +194,7 @@ spec = do
 
 withPushManager :: (PushManagerEnv -> IO a) -> IO a
 withPushManager f = do
-  CNix.init
+  NixInit.initNix
   withTempStore $ \store -> do
     logger <- liftIO $ Log.new "daemon" Nothing Log.Debug
     cachixOptions <- Env.defaultCachixOptions
@@ -208,10 +209,10 @@ withPushManager f = do
 inPushManager :: PushManager a -> IO a
 inPushManager f = withPushManager (`runPushManager` f)
 
-withTempStore :: (CNix.Store -> IO a) -> IO a
+withTempStore :: (Store -> IO a) -> IO a
 withTempStore f =
   withSystemTempDirectory "cnix-test-store" $ \d ->
-    CNix.withStoreFromURI (toS d) f
+    withStore (encodeUtf8 (toS d :: Text)) f
 
 newBinaryCache :: BinaryCache.BinaryCacheName -> BinaryCache.BinaryCache
 newBinaryCache name =

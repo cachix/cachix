@@ -1,7 +1,7 @@
 module Main (main) where
 
 import Cachix.Client qualified as CC
-import Cachix.Client.CNix (handleCppExceptions)
+import Cachix.Client.CNix (handleNixExceptions)
 import Cachix.Client.Exception (CachixException)
 import Control.Exception.Safe (Handler (..), catches, displayException)
 import GHC.IO.Encoding
@@ -17,7 +17,7 @@ main = do
   handleExceptions CC.main
 
 handleExceptions :: IO () -> IO ()
-handleExceptions f = f `catches` [Handler handleCachixExceptions, Handler handleCppExceptions]
+handleExceptions f = f `catches` [Handler handleCachixExceptions, Handler handleNixExceptions]
 
 handleCachixExceptions :: CachixException -> IO ()
 handleCachixExceptions e = do

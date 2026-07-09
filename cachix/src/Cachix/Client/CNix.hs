@@ -15,17 +15,18 @@ module Cachix.Client.CNix
     followLinksToStorePath,
 
     -- * Error handling
-    NixError (..),
     catchNixError,
-    handleCppExceptions,
+    handleNixExceptions,
   )
 where
 
-import Hercules.CNix.Store (Store, StorePath)
-import Hercules.CNix.Store qualified as Store
-import Language.C.Inline.Cpp.Exception
+import Nix.C.Context (NixError (..))
+import Nix.C.Unsafe.Store (Store, StorePath)
+import Nix.C.Unsafe.Store qualified as Store
 import Protolude
 import System.Console.Pretty (Color (..), Style (..), color, style)
+import System.Directory (canonicalizePath)
+import System.OsPath qualified as OsPath
 
 -- | Error when resolving a store path
 data StorePathError
@@ -42,14 +43,15 @@ data StorePathError
 -- Follows symlinks and validates the resulting store path.
 resolveStorePath :: Store -> FilePath -> IO (Either StorePathError StorePath)
 resolveStorePath store fp = do
-  let pathBytes = encodeUtf8 (toS fp :: Text)
-  resolveResult <- tryResolve pathBytes
+  resolveResult <- tryResolve
   case resolveResult of
-    Left err -> pure $ Left (StorePathNotFound (msg err))
+    Left err -> pure $ Left (StorePathNotFound (nixErrorMsg err))
     Right storePath -> validateStorePath store storePath
   where
-    tryResolve pathBytes =
-      (Right <$> Store.followLinksToStorePath store pathBytes)
+    tryResolve = do
+      resolved <- canonicalizePath fp
+      osPath <- OsPath.encodeFS resolved
+      (Right <$> Store.parseStorePath' store osPath)
         `catchNixError` (pure . Left)
 
 -- | Resolve multiple file paths to validated store paths.
@@ -88,8 +90,8 @@ logStorePathWarning path err =
 -- Like 'logStorePathWarning' but for when you have a 'StorePath' instead of a 'FilePath'.
 logStorePathWarning' :: Store -> StorePath -> StorePathError -> IO ()
 logStorePathWarning' store storePath err = do
-  pathBytes <- Store.storePathToPath store storePath
-  let path = toS (decodeUtf8With lenientDecode pathBytes :: Text)
+  osPath <- Store.storeRealPath store storePath
+  path <- OsPath.decodeFS osPath
   logStorePathWarning path err
 
 -- | Validate that an existing store path is still valid in the Nix store.
@@ -100,7 +102,7 @@ validateStorePath :: Store -> StorePath -> IO (Either StorePathError StorePath)
 validateStorePath store storePath = do
   result <- tryValidate
   case result of
-    Left err -> pure $ Left (StorePathError (msg err))
+    Left err -> pure $ Left (StorePathError (nixErrorMsg err))
     Right True -> pure $ Right storePath
     Right False -> pure $ Left StorePathNotValid
   where
@@ -130,61 +132,29 @@ filterInvalidStorePaths store =
 --
 -- Returns Nothing if the path is invalid.
 followLinksToStorePath :: Store -> ByteString -> IO (Maybe StorePath)
-followLinksToStorePath store storePath =
-  (Just <$> Store.followLinksToStorePath store storePath)
-    `catchNixError` \e -> do
-      logNixError storePath e
+followLinksToStorePath store storePathBS = do
+  let filePath = toS (decodeUtf8With lenientDecode storePathBS :: Text)
+  resolveStorePath store filePath >>= \case
+    Right sp -> return (Just sp)
+    Left err -> do
+      logStorePathWarning filePath err
       return Nothing
 
-data NixError = NixError
-  { typ :: Maybe Text,
-    msg :: Text
-  }
-  deriving (Show)
+-- | Extract a human-readable message from a NixError.
+nixErrorMsg :: NixError -> Text
+nixErrorMsg (NixCError _ msg _info) = decodeUtf8With lenientDecode msg
+nixErrorMsg (NixTypeMismatch expected actual) = "type mismatch: expected " <> show expected <> ", got " <> show actual
+nixErrorMsg (NixMissingAttr name) = "missing attribute: " <> decodeUtf8With lenientDecode name
+nixErrorMsg (NixIndexOutOfBounds idx) = "index out of bounds: " <> show idx
 
 -- | Capture and handle Nix errors
 catchNixError :: IO a -> (NixError -> IO a) -> IO a
 catchNixError f onError =
-  handleJust selectNixError onError f
-  where
-    selectNixError (CppStdException _eptr msg typ) =
-      Just $
-        NixError
-          { typ = decodeUtf8With lenientDecode <$> typ,
-            msg = decodeUtf8With lenientDecode msg
-          }
-    selectNixError _ = Nothing
+  f `catch` onError
 
--- | Pretty-print a Nix error.
---
--- There might not be a valid store path at this point.
-logNixError :: ByteString -> NixError -> IO ()
-logNixError storePath (NixError {..}) =
-  case typ of
-    Just "nix::BadStorePath" -> logBadPath storePath
-    _ -> putErrText $ color Red $ style Bold $ "Nix " <> msg
-
--- | Print a warning when the path is invalid.
---
--- There are two use-cases when this should be used:
--- 1. Converting a file path to a store path.
--- 2. Filtering out a store path that is not valid.
-logBadPath :: ByteString -> IO ()
-logBadPath path =
-  putErrText $ color Yellow $ "Warning: " <> decodeUtf8With lenientDecode path <> " is not valid, skipping"
-
--- | Pretty-print unhandled C++ exceptions from Nix.
-handleCppExceptions :: CppException -> IO ()
-handleCppExceptions e = do
+-- | Pretty-print unhandled Nix exceptions.
+handleNixExceptions :: NixError -> IO ()
+handleNixExceptions e = do
   putErrText ""
-
-  case e of
-    CppStdException _eptr msg _t ->
-      putErrText $ color Red $ style Bold $ "Nix " <> decodeUtf8With lenientDecode msg
-    CppNonStdException _eptr mmsg -> do
-      let msg = fromMaybe "unknown exception" mmsg
-      putErrText $ color Red $ style Bold $ "C++ exception: " <> decodeUtf8With lenientDecode msg
-    CppHaskellException he ->
-      putErrText $ color Red $ style Bold $ "Haskell exception: " <> toS (displayException he)
-
+  putErrText $ color Red $ style Bold $ "Nix error: " <> nixErrorMsg e
   exitFailure

@@ -30,8 +30,8 @@ import Control.Monad.IO.Unlift (MonadUnliftIO)
 import Data.Sequence qualified as Seq
 import Data.Set qualified as Set
 import Data.Time (NominalDiffTime, UTCTime, addUTCTime, diffUTCTime, getCurrentTime)
-import Hercules.CNix.Store (StorePath, getStorePathHash)
 import Katip qualified
+import Nix.C.Unsafe.Store (StorePath, storePathHash)
 import Protolude
 import UnliftIO.Async qualified as Async
 
@@ -140,7 +140,7 @@ new nqmConfig nqmCallback = liftIO $ do
 -- | Check if a path exists in the cache and is not stale
 lookupCache :: (MonadIO m) => NarinfoQueryManager requestId -> StorePath -> m Bool
 lookupCache NarinfoQueryManager {nqmCache, nqmCachedTime} path = liftIO $ do
-  pathHash <- getStorePathHash path
+  pathHash <- storePathHash path
   now <- readTVarIO nqmCachedTime
   cache <- readTVarIO nqmCache
   return $ TTLCache.lookup now pathHash cache
@@ -149,7 +149,7 @@ lookupCache NarinfoQueryManager {nqmCache, nqmCachedTime} path = liftIO $ do
 updateCache :: (MonadIO m) => NarinfoQueryManager requestId -> Set StorePath -> m ()
 updateCache NarinfoQueryManager {nqmCache, nqmConfig, nqmCachedTime} paths = liftIO $ do
   -- Convert paths to hashes
-  pathHashes <- mapM getStorePathHash (Set.toList paths)
+  pathHashes <- mapM storePathHash (Set.toList paths)
   now <- readTVarIO nqmCachedTime
   let ttl = nqoCacheTTL nqmConfig
   when (ttl > 0) $ do

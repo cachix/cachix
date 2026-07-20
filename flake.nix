@@ -61,9 +61,11 @@
         (builtins.fromTOML (builtins.readFile (inputs.secretspec + "/Cargo.toml")))
         .workspace.package.version;
 
-      # The native resolver behind the secretspec Haskell SDK, statically
-      # linked into cachix. Only the archive is installed so that
-      # -lsecretspec_ffi resolves to it instead of the co-built cdylib.
+      # The native resolver behind the secretspec Haskell SDK. Only the cdylib
+      # is installed: the GHC RTS linker aborts loading the Rust staticlib
+      # during Template Haskell on aarch64 (CHECK(bssBegin <= bssEnd) in
+      # rts/linker/Elf.c), while the shared library is loaded by the system
+      # dynamic linker and ends up in the closure like any other C library.
       getSecretspecFfi =
         pkgs:
         pkgs.rustPlatform.buildRustPackage {
@@ -72,11 +74,11 @@
           src = inputs.secretspec;
           cargoLock.lockFile = inputs.secretspec + "/Cargo.lock";
           buildAndTestSubdir = "secretspec-ffi";
-          # Embed libdbus so the archive has no runtime dbus dependency.
+          # Embed libdbus so the library has no runtime dbus dependency.
           buildFeatures = nixpkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [ "vendored-dbus" ];
           doCheck = false;
           postInstall = ''
-            rm -f $out/lib/libsecretspec_ffi.so $out/lib/libsecretspec_ffi.dylib
+            rm -f $out/lib/libsecretspec_ffi.a
           '';
         };
 

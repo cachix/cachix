@@ -23,6 +23,7 @@ data CachixException
   | ImportUnsupportedHash Text
   | RemoveCacheUnsupported Text
   | InvalidStorePath Text
+  | SecretSpecError Text
   deriving (Show, Typeable)
 
 instance Exception CachixException where
@@ -46,3 +47,4 @@ instance Exception CachixException where
   displayException (ImportUnsupportedHash s) = toS s
   displayException (RemoveCacheUnsupported s) = toS s
   displayException (InvalidStorePath s) = toS s
+  displayException (SecretSpecError s) = toS s

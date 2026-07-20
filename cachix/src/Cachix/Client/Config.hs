@@ -27,6 +27,7 @@ where
 
 import Cachix.Client.Config.Orphans ()
 import Cachix.Client.Exception (CachixException (..))
+import Cachix.Client.SecretSpec qualified as SecretSpec
 import Cachix.Client.URI as URI
 import Control.Exception.Safe qualified as Safe
 import Data.Either.Extra (eitherToMaybe)
@@ -146,13 +147,20 @@ getAuthTokenRequired config = do
     Just authtoken -> return authtoken
     Nothing -> throwIO $ NoConfig $ toS noAuthTokenError
 
--- get auth token from env variable or fallback to config
+-- get auth token from env variable, fallback to config, then secretspec.
+-- secretspec comes last so a manifest can never override an existing setup and
+-- providers are only queried when cachix would otherwise have no token.
 getAuthTokenMaybe :: Config -> IO (Maybe Token)
 getAuthTokenMaybe config = do
   maybeAuthToken <- lookupEnv "CACHIX_AUTH_TOKEN"
   case maybeAuthToken of
     Just token -> return $ Just $ Token (toS token)
-    Nothing -> return $ getAuthTokenFromConfig config
+    Nothing ->
+      case getAuthTokenFromConfig config of
+        Just token -> return $ Just token
+        Nothing -> do
+          maybeSecret <- SecretSpec.getSecret "CACHIX_AUTH_TOKEN"
+          return $ Token . toS <$> maybeSecret
 
 noAuthTokenError :: Text
 noAuthTokenError =
@@ -169,6 +177,12 @@ b) Via configuration file:
 
 $ cachix authtoken <token...>
   |]
+    <> secretspecOption
+  where
+    secretspecOption
+      | SecretSpec.supported =
+          "\n\nc) Via secretspec (https://secretspec.dev), by declaring CACHIX_AUTH_TOKEN in your project's secretspec.toml, or storing it once for all projects with:\n\n$ cachix authtoken --secretspec <token...>"
+      | otherwise = ""
 
 -- Setters
 

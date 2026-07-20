@@ -33,6 +33,7 @@ module Cachix.Client.OptionsParser
 
     -- * Misc
     BinaryCacheName,
+    UseSecretSpec,
     getOpts,
   )
 where
@@ -81,11 +82,11 @@ data Flags = Flags
   }
 
 data CachixCommand
-  = AuthToken (Maybe Text)
+  = AuthToken (Maybe Text) UseSecretSpec
   | Config Config.Command
   | Daemon DaemonCommand
   | Doctor DoctorOptions
-  | GenerateKeypair BinaryCacheName
+  | GenerateKeypair BinaryCacheName UseSecretSpec
   | Push PushArguments
   | Import PushOptions Text URI
   | Pin PinOptions
@@ -335,7 +336,7 @@ cacheNameParser :: Parser BinaryCacheName
 cacheNameParser = strArgument (metavar "CACHE-NAME")
 
 authTokenCommand :: Parser CachixCommand
-authTokenCommand = AuthToken <$> (stdinFlag <|> (Just <$> authTokenArg))
+authTokenCommand = AuthToken <$> (stdinFlag <|> (Just <$> authTokenArg)) <*> secretspecSwitch
   where
     stdinFlag = flag' Nothing (long "stdin" <> help "Read the auth token from stdin")
     authTokenArg = strArgument (metavar "AUTH-TOKEN")
@@ -344,7 +345,18 @@ configCommand :: ParserInfo CachixCommand
 configCommand = Config <$> Config.parser
 
 generateKeypairCommand :: Parser CachixCommand
-generateKeypairCommand = GenerateKeypair <$> cacheNameParser
+generateKeypairCommand = GenerateKeypair <$> cacheNameParser <*> secretspecSwitch
+
+-- | Store the secret via secretspec (https://secretspec.dev) instead of the
+-- cachix configuration file.
+type UseSecretSpec = Bool
+
+secretspecSwitch :: Parser UseSecretSpec
+secretspecSwitch =
+  switch
+    ( long "secretspec"
+        <> help "Store the secret via secretspec (https://secretspec.dev) in your default provider, under the \"cachix\" project namespace, instead of the cachix configuration file"
+    )
 
 pushOptionsParser :: Parser PushOptions
 pushOptionsParser =

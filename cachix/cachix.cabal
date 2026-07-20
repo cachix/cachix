@@ -26,6 +26,14 @@ source-repository head
   location: https://github.com/cachix/cachix
   subdir:   cachix
 
+flag secretspec
+  description:
+    Resolve CACHIX_AUTH_TOKEN via secretspec (https://secretspec.dev).
+    Requires the libsecretspec_ffi.a native library at link time.
+
+  default:     False
+  manual:      True
+
 common defaults
   build-depends:      base >=4.7 && <5
   default-extensions:
@@ -80,6 +88,7 @@ library
     Cachix.Client.PushQueue
     Cachix.Client.Retry
     Cachix.Client.Secrets
+    Cachix.Client.SecretSpec
     Cachix.Client.Servant
     Cachix.Client.URI
     Cachix.Client.Version
@@ -206,6 +215,10 @@ library
     , versions
     , websockets
     , wuss
+
+  if flag(secretspec)
+    build-depends: secretspec >=0.16 && <0.17
+    cpp-options:   -DUSE_SECRETSPEC
 
   -- These versions are pinned in hercules-ci-cnix-store
   pkgconfig-depends: nix-store

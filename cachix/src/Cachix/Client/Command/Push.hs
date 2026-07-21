@@ -199,7 +199,7 @@ getPushSecret config name = do
   maybeSigningKey <-
     case maybeSigningKeyEnv <|> maybeSigningKeyConfig of
       Just signingKey -> return $ Just signingKey
-      Nothing -> SecretSpec.getSecret "CACHIX_SIGNING_KEY"
+      Nothing -> SecretSpec.getSigningKey name
 
   case maybeSigningKey of
     Just signingKey ->
@@ -227,7 +227,7 @@ and if missing also looked up from ~/.config/cachix/cachix.dhall
     secretspecHint :: Text
     secretspecHint
       | SecretSpec.supported =
-          "\n\nWith secretspec (https://secretspec.dev) they can also be declared in your project's secretspec.toml, or stored once for all projects via cachix authtoken --secretspec and cachix generate-keypair --secretspec."
+          "\n\nWith secretspec (https://secretspec.dev) they can also be declared in your project's secretspec.toml, or stored once for all projects: cachix authtoken and cachix generate-keypair store credentials via secretspec by default when it is configured."
       | otherwise = ""
 
 -- | Like 'getPushSecret', but throws a fatal error if the secret is not found.

@@ -7,7 +7,8 @@ import Cachix.API qualified as API
 import Cachix.API.Error
 import Cachix.Client.Config qualified as Config
 import Cachix.Client.Env (Env (..))
-import Cachix.Client.OptionsParser (UseSecretSpec)
+import Cachix.Client.Exception (CachixException (..))
+import Cachix.Client.OptionsParser (AuthTokenSource (..), SecretStore (..))
 import Cachix.Client.Retry (retryClientM)
 import Cachix.Client.SecretSpec qualified as SecretSpec
 import Cachix.Client.Secrets
@@ -26,19 +27,52 @@ import Protolude.Conv
 import Servant.API (NoContent (..))
 import Servant.Auth.Client
 
+-- | Pick the secret destination: honor an explicit flag, otherwise use
+-- secretspec exactly when it is usable on this machine.
+resolveSecretStore :: SecretStore -> IO Bool
+resolveSecretStore StoreSecretSpec = return True
+resolveSecretStore StoreConfigFile = return False
+resolveSecretStore StoreAuto = do
+  configured <- SecretSpec.isConfigured
+  when (SecretSpec.supported && not configured) $
+    putErrText "Tip: configure secretspec (https://secretspec.dev) to store cachix credentials in your password manager instead of a plaintext file."
+  return configured
+
 -- TODO: check that token actually authenticates!
-authtoken :: Env -> Maybe Text -> UseSecretSpec -> IO ()
-authtoken Env {cachixoptions} (Just token) useSecretspec
-  | useSecretspec = SecretSpec.setSecret "CACHIX_AUTH_TOKEN" token
-  | otherwise = do
-      let configPath = Config.configPath cachixoptions
+authtoken :: Env -> AuthTokenSource -> SecretStore -> IO ()
+authtoken env source store = do
+  useSecretspec <- resolveSecretStore store
+  if useSecretspec
+    then do
+      maybeToken <- case source of
+        TokenArg token -> return $ Just token
+        TokenStdin -> Just . T.strip <$> T.IO.getContents
+        -- the secretspec CLI prompts for the value with hidden input
+        TokenPrompt -> return Nothing
+      SecretSpec.setAuthToken maybeToken
+      -- The configuration file takes precedence on reads, so a token left
+      -- behind there would shadow the one just stored.
+      clearConfigAuthToken env
+    else do
+      token <- case source of
+        TokenArg token -> return token
+        TokenStdin -> T.strip <$> T.IO.getContents
+        TokenPrompt -> throwIO $ NoInput "Provide the auth token as an argument or via --stdin."
+      let configPath = Config.configPath (cachixoptions env)
       config <- Config.getConfig configPath
       Config.writeConfig configPath $ config {Config.authToken = Token (toS token)}
-authtoken env Nothing useSecretspec =
-  (\token -> authtoken env (Just (T.strip token)) useSecretspec) =<< T.IO.getContents
 
-generateKeypair :: Env -> Text -> UseSecretSpec -> IO ()
-generateKeypair env name useSecretspec = do
+clearConfigAuthToken :: Env -> IO ()
+clearConfigAuthToken env = do
+  let configPath = Config.configPath (cachixoptions env)
+  config <- Config.getConfig configPath
+  when (Config.authToken config /= Token "") $ do
+    putStrLn ("Moving the auth token out of " <> toS configPath <> ", which would take precedence over secretspec." :: Text)
+    Config.writeConfig configPath $ config {Config.authToken = Token ""}
+
+generateKeypair :: Env -> Text -> SecretStore -> IO ()
+generateKeypair env name store = do
+  useSecretspec <- resolveSecretStore store
   authToken <- Config.getAuthTokenRequired (config env)
   (PublicKey pk, sk) <- createKeypair
   let signingKey = exportSigningKey $ SigningKey sk
@@ -51,7 +85,10 @@ generateKeypair env name useSecretspec = do
   -- if key was successfully added, store it locally
   if useSecretspec
     then do
-      SecretSpec.setSecret "CACHIX_SIGNING_KEY" signingKey
+      SecretSpec.setSigningKey name (Just signingKey)
+      -- A stale key for this cache in the configuration file would take
+      -- precedence over the one just stored and no longer match the cache.
+      clearConfigSigningKey env name
       putStrLn
         ( [iTrim|
 Secret signing key has been stored via secretspec under the "cachix" project
@@ -96,3 +133,12 @@ IMPORTANT: Make sure to make a backup for the signing key above, as you have the
   |] ::
             Text
         )
+
+clearConfigSigningKey :: Env -> Text -> IO ()
+clearConfigSigningKey env cacheName = do
+  let configPath = Config.configPath (cachixoptions env)
+  cfg <- Config.getConfig configPath
+  let remaining = filter (\bc -> Config.name bc /= cacheName) (Config.binaryCaches cfg)
+  when (length remaining /= length (Config.binaryCaches cfg)) $ do
+    putStrLn ("Moving the signing key for " <> cacheName <> " out of " <> toS configPath <> ", which would take precedence over secretspec." :: Text)
+    Config.writeConfig configPath $ cfg {Config.binaryCaches = remaining}

@@ -35,7 +35,7 @@ main = displayConsoleRegions $ do
 
   let cachixOptions = cachixoptions env
   case command of
-    AuthToken token useSecretspec -> Command.authtoken env token useSecretspec
+    AuthToken source store -> Command.authtoken env source store
     Config configCommand -> Config.run cachixOptions configCommand
     Daemon (DaemonDoctor daemonOptions) -> Command.daemonDoctor env daemonOptions
     Daemon (DaemonRun daemonOptions pushOptions mcacheName) -> Daemon.start env daemonOptions pushOptions mcacheName
@@ -45,7 +45,7 @@ main = displayConsoleRegions $ do
     DeployCommand (DeployOptions.Agent opts) -> AgentCommand.run cachixOptions opts
     DeployCommand (DeployOptions.Activate opts) -> ActivateCommand.run env opts
     Doctor doctorOptions -> Command.doctor env doctorOptions
-    GenerateKeypair name useSecretspec -> Command.generateKeypair env name useSecretspec
+    GenerateKeypair name store -> Command.generateKeypair env name store
     Import pushOptions name uri -> Command.import' env pushOptions name uri
     Pin pingArgs -> Command.pin env pingArgs
     Push (PushPaths opts name cliPaths) -> Command.push env opts name cliPaths

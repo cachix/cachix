@@ -159,7 +159,7 @@ getAuthTokenMaybe config = do
       case getAuthTokenFromConfig config of
         Just token -> return $ Just token
         Nothing -> do
-          maybeSecret <- SecretSpec.getSecret "CACHIX_AUTH_TOKEN"
+          maybeSecret <- SecretSpec.getAuthToken
           return $ Token . toS <$> maybeSecret
 
 noAuthTokenError :: Text
@@ -181,7 +181,7 @@ $ cachix authtoken <token...>
   where
     secretspecOption
       | SecretSpec.supported =
-          "\n\nc) Via secretspec (https://secretspec.dev), by declaring CACHIX_AUTH_TOKEN in your project's secretspec.toml, or storing it once for all projects with:\n\n$ cachix authtoken --secretspec <token...>"
+          "\n\nc) Via secretspec (https://secretspec.dev), by declaring CACHIX_AUTH_TOKEN in your project's secretspec.toml. When secretspec is configured, `cachix authtoken` stores the token there by default (run it without arguments for a hidden prompt)."
       | otherwise = ""
 
 -- Setters

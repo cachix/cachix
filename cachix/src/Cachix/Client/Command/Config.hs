@@ -17,6 +17,7 @@ import Cachix.Client.Secrets
   )
 import Cachix.Client.Servant
 import Cachix.Types.SigningKeyCreate qualified as SigningKeyCreate
+import Control.Exception.Safe qualified as Safe
 import Crypto.Sign.Ed25519 (PublicKey (PublicKey), createKeypair)
 import Data.ByteString.Base64 qualified as B64
 import Data.String.Here
@@ -26,22 +27,53 @@ import Protolude hiding (toS)
 import Protolude.Conv
 import Servant.API (NoContent (..))
 import Servant.Auth.Client
+import System.IO (hFlush, hIsTerminalDevice)
 
 -- | Pick the secret destination: honor an explicit flag, otherwise use
--- secretspec exactly when it is usable on this machine.
-resolveSecretStore :: SecretStore -> IO Bool
-resolveSecretStore StoreSecretSpec = return True
-resolveSecretStore StoreConfigFile = return False
-resolveSecretStore StoreAuto = do
+-- secretspec when it is usable on this machine. When the secretspec CLI is
+-- installed but unconfigured, interactive runs offer to set it up on the
+-- spot; everything else falls back to the configuration file with a tip.
+resolveSecretStore :: Bool -> SecretStore -> IO Bool
+resolveSecretStore _ StoreSecretSpec = return True
+resolveSecretStore _ StoreConfigFile = return False
+resolveSecretStore allowPrompt StoreAuto = do
   configured <- SecretSpec.isConfigured
-  when (SecretSpec.supported && not configured) $
-    putErrText "Tip: configure secretspec (https://secretspec.dev) to store cachix credentials in your password manager instead of a plaintext file."
-  return configured
+  if configured
+    then return True
+    else offerSecretSpecSetup allowPrompt
+
+offerSecretSpecSetup :: Bool -> IO Bool
+offerSecretSpecSetup allowPrompt
+  | not SecretSpec.supported = return False
+  | otherwise = do
+      cliPresent <- SecretSpec.cliAvailable
+      interactive <- hIsTerminalDevice stdin
+      if cliPresent && interactive && allowPrompt
+        then do
+          wantsSetup <- promptYesNo "secretspec is installed but not configured. Configure it now to store cachix credentials in your password manager?"
+          if wantsSetup
+            then do
+              initialized <- SecretSpec.configInit
+              if initialized
+                then SecretSpec.isConfigured
+                else return False
+            else return False
+        else do
+          putErrText "Tip: configure secretspec (https://secretspec.dev) to store cachix credentials in your password manager instead of a plaintext file."
+          return False
+
+promptYesNo :: Text -> IO Bool
+promptYesNo question = do
+  putStr (question <> " [Y/n] ")
+  hFlush stdout
+  answer <- Safe.handleIO (\_ -> return "n") T.IO.getLine
+  return $ T.toLower (T.strip answer) `elem` ["", "y", "yes"]
 
 -- TODO: check that token actually authenticates!
 authtoken :: Env -> AuthTokenSource -> SecretStore -> IO ()
 authtoken env source store = do
-  useSecretspec <- resolveSecretStore store
+  -- reading the token from stdin rules out prompting on it
+  useSecretspec <- resolveSecretStore (source /= TokenStdin) store
   if useSecretspec
     then do
       maybeToken <- case source of
@@ -72,7 +104,6 @@ clearConfigAuthToken env = do
 
 generateKeypair :: Env -> Text -> SecretStore -> IO ()
 generateKeypair env name store = do
-  useSecretspec <- resolveSecretStore store
   authToken <- Config.getAuthTokenRequired (config env)
   (PublicKey pk, sk) <- createKeypair
   let signingKey = exportSigningKey $ SigningKey sk
@@ -82,6 +113,9 @@ generateKeypair env name store = do
   (_ :: NoContent) <-
     escalate
       =<< retryClientM (clientenv env) (API.createKey cachixClient authToken name signingKeyCreate)
+  -- decide where to store only after the key was accepted, so the setup
+  -- prompt is never spent on a request that then fails
+  useSecretspec <- resolveSecretStore True store
   -- if key was successfully added, store it locally
   if useSecretspec
     then do

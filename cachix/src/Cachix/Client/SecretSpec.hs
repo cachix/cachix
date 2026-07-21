@@ -19,7 +19,9 @@
 -- resolution finds nothing, 'isConfigured' is False, and storing fails.
 module Cachix.Client.SecretSpec
   ( supported,
+    cliAvailable,
     isConfigured,
+    configInit,
     getAuthToken,
     getSigningKey,
     setAuthToken,
@@ -47,10 +49,17 @@ import System.Process qualified as Process
 -- | Whether this build of cachix was compiled with secretspec support.
 supported :: Bool
 
+-- | Whether the secretspec CLI is on PATH.
+cliAvailable :: IO Bool
+
 -- | Whether secretspec can be used as a credential store on this machine: the
 -- build supports it, the secretspec CLI is on PATH, and a default provider is
 -- configured (SECRETSPEC_PROVIDER or the user configuration file).
 isConfigured :: IO Bool
+
+-- | Run @secretspec config init@ interactively (inheriting the terminal) to
+-- let the user pick a default provider. Returns whether it succeeded.
+configInit :: IO Bool
 
 -- | Resolve CACHIX_AUTH_TOKEN, first from the project's secretspec.toml, then
 -- from the embedded "cachix" namespace. Any resolution failure (no manifest,
@@ -73,6 +82,8 @@ setSigningKey :: Text -> Maybe Text -> IO ()
 #ifdef USE_SECRETSPEC
 supported = True
 
+cliAvailable = isJust <$> findExecutable "secretspec"
+
 isConfigured = do
   maybeExecutable <- findExecutable "secretspec"
   case maybeExecutable of
@@ -82,6 +93,14 @@ isConfigured = do
       case maybeProvider of
         Just _ -> return True
         Nothing -> doesFileExist =<< getXdgDirectory XdgConfig ("secretspec" </> "config.toml")
+
+configInit = do
+  maybeExecutable <- findExecutable "secretspec"
+  case maybeExecutable of
+    Nothing -> return False
+    Just executable -> do
+      exitCode <- Process.rawSystem executable ["config", "init"]
+      return $ exitCode == ExitSuccess
 
 getAuthToken = getSecret AuthTokenSecret
 
@@ -108,8 +127,12 @@ getSecret secret = do
   case projectSecret of
     Just value -> return $ Just value
     Nothing ->
+      -- The embedded namespace is profile-independent: the manifest declares
+      -- only [profiles.default], and pinning the profile keeps a stored
+      -- credential reachable whatever SECRETSPEC_PROFILE or the user's
+      -- configured default profile happen to be.
       withEmbeddedManifest secret $ \manifestPath ->
-        resolveSecret (secretName secret) (SecretSpec.withPath (toS manifestPath))
+        resolveSecret (secretName secret) (SecretSpec.withPath (toS manifestPath) . SecretSpec.withProfile "default")
 
 setSecret :: EmbeddedSecret -> Maybe Text -> IO ()
 setSecret secret maybeValue = do
@@ -129,7 +152,9 @@ setSecret secret maybeValue = do
         -- rawSystem inherits stdio, so the CLI's prompts and confirmations
         -- reach the user, and unlike callProcess a failure does not echo the
         -- argument vector holding the secret value.
-        exitCode <- Process.rawSystem executable (["--file", manifestPath, "set", toS (secretName secret)] <> valueArgs <> reasonArgs)
+        -- The profile is pinned for the same reason resolution pins it: the
+        -- embedded manifest only declares [profiles.default].
+        exitCode <- Process.rawSystem executable (["--file", manifestPath, "set", toS (secretName secret)] <> valueArgs <> ["--profile", "default"] <> reasonArgs)
         case exitCode of
           ExitSuccess -> return ()
           ExitFailure code ->
@@ -197,7 +222,11 @@ CACHIX_SIGNING_KEY = { description = "Cachix binary cache signing key", required
 #else
 supported = False
 
+cliAvailable = return False
+
 isConfigured = return False
+
+configInit = return False
 
 getAuthToken = return Nothing
 

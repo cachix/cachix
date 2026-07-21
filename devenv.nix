@@ -3,6 +3,7 @@
   lib,
   ghcVersion,
   getNix,
+  secretspecFfi,
   ...
 }:
 
@@ -11,6 +12,9 @@
 
   packages = [
     pkgs.pkg-config
+
+    # secretspec Haskell SDK native archive, for `cabal build -f secretspec`
+    secretspecFfi
 
     # Dependencies
     pkgs.xz
@@ -28,6 +32,7 @@
     pkgs.libgit2
     pkgs.pcre2
   ]
+  ++ lib.optional pkgs.stdenv.hostPlatform.isLinux pkgs.libseccomp.dev
   ++ lib.optional pkgs.stdenv.hostPlatform.isx86 pkgs.libcpuid
   ++ [
 

@@ -33,6 +33,8 @@ module Cachix.Client.OptionsParser
 
     -- * Misc
     BinaryCacheName,
+    AuthTokenSource (..),
+    SecretStore (..),
     getOpts,
   )
 where
@@ -81,11 +83,11 @@ data Flags = Flags
   }
 
 data CachixCommand
-  = AuthToken (Maybe Text)
+  = AuthToken AuthTokenSource SecretStore
   | Config Config.Command
   | Daemon DaemonCommand
   | Doctor DoctorOptions
-  | GenerateKeypair BinaryCacheName
+  | GenerateKeypair BinaryCacheName SecretStore
   | Push PushArguments
   | Import PushOptions Text URI
   | Pin PinOptions
@@ -335,16 +337,49 @@ cacheNameParser :: Parser BinaryCacheName
 cacheNameParser = strArgument (metavar "CACHE-NAME")
 
 authTokenCommand :: Parser CachixCommand
-authTokenCommand = AuthToken <$> (stdinFlag <|> (Just <$> authTokenArg))
+authTokenCommand = AuthToken <$> sourceParser <*> secretStoreParser
   where
-    stdinFlag = flag' Nothing (long "stdin" <> help "Read the auth token from stdin")
-    authTokenArg = strArgument (metavar "AUTH-TOKEN")
+    sourceParser =
+      flag' TokenStdin (long "stdin" <> help "Read the auth token from stdin")
+        <|> (TokenArg <$> strArgument (metavar "AUTH-TOKEN"))
+        <|> pure TokenPrompt
 
 configCommand :: ParserInfo CachixCommand
 configCommand = Config <$> Config.parser
 
 generateKeypairCommand :: Parser CachixCommand
-generateKeypairCommand = GenerateKeypair <$> cacheNameParser
+generateKeypairCommand = GenerateKeypair <$> cacheNameParser <*> secretStoreParser
+
+-- | Where the auth token comes from. 'TokenPrompt' delegates to secretspec's
+-- hidden prompt and is only usable when storing via secretspec.
+data AuthTokenSource
+  = TokenArg Text
+  | TokenStdin
+  | TokenPrompt
+  deriving (Show, Eq)
+
+-- | Where authtoken and generate-keypair store the secret. The default
+-- 'StoreAuto' picks secretspec (https://secretspec.dev) when it is configured
+-- and the cachix configuration file otherwise.
+data SecretStore
+  = StoreAuto
+  | StoreSecretSpec
+  | StoreConfigFile
+  deriving (Show, Eq)
+
+secretStoreParser :: Parser SecretStore
+secretStoreParser =
+  flag'
+    StoreSecretSpec
+    ( long "secretspec"
+        <> help "Store the secret via secretspec (https://secretspec.dev) in your default provider, under the \"cachix\" project namespace (the default when secretspec is configured)"
+    )
+    <|> flag'
+      StoreConfigFile
+      ( long "no-secretspec"
+          <> help "Store the secret in the cachix configuration file even when secretspec is configured"
+      )
+    <|> pure StoreAuto
 
 pushOptionsParser :: Parser PushOptions
 pushOptionsParser =

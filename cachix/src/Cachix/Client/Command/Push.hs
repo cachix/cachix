@@ -20,6 +20,7 @@ import Cachix.Client.HumanSize (humanSize)
 import Cachix.Client.OptionsParser as Options (PushOptions (..))
 import Cachix.Client.Push as Push
 import Cachix.Client.Retry (retryClientM)
+import Cachix.Client.SecretSpec qualified as SecretSpec
 import Cachix.Client.Secrets
 import Cachix.Client.Servant
 import Cachix.Types.BinaryCache (BinaryCacheName)
@@ -195,7 +196,12 @@ getPushSecret config name = do
   maybeSigningKeyEnv <- toS <<$>> lookupEnv "CACHIX_SIGNING_KEY"
   let maybeSigningKeyConfig = Config.secretKey <$> head (getBinaryCache config)
 
-  case maybeSigningKeyEnv <|> maybeSigningKeyConfig of
+  maybeSigningKey <-
+    case maybeSigningKeyEnv <|> maybeSigningKeyConfig of
+      Just signingKey -> return $ Just signingKey
+      Nothing -> SecretSpec.getSigningKey name
+
+  case maybeSigningKey of
     Just signingKey ->
       return $ PushSigningKey (fromMaybe (Token "") maybeAuthToken) <$> parseSigningKeyLenient signingKey
     Nothing -> case maybeAuthToken of
@@ -214,9 +220,15 @@ Neither auth token nor signing key are present.
 
 They are looked up via $CACHIX_AUTH_TOKEN and $CACHIX_SIGNING_KEY,
 and if missing also looked up from ~/.config/cachix/cachix.dhall
-
-Read https://mycache.cachix.org for instructions how to push to your binary cache.
     |]
+        <> secretspecHint
+        <> "\n\nRead https://mycache.cachix.org for instructions how to push to your binary cache."
+
+    secretspecHint :: Text
+    secretspecHint
+      | SecretSpec.supported =
+          "\n\nWith secretspec (https://secretspec.dev) they can also be declared in your project's secretspec.toml, or stored once for all projects: cachix authtoken and cachix generate-keypair store credentials via secretspec by default when it is configured."
+      | otherwise = ""
 
 -- | Like 'getPushSecret', but throws a fatal error if the secret is not found.
 getPushSecretRequired ::

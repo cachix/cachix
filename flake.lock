@@ -248,7 +248,25 @@
         "devenv": "devenv",
         "flake-compat": "flake-compat",
         "git-hooks": "git-hooks",
-        "nixpkgs": "nixpkgs"
+        "nixpkgs": "nixpkgs",
+        "secretspec": "secretspec"
+      }
+    },
+    "secretspec": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1784338621,
+        "narHash": "sha256-TL9S/NFwL9q7h6ImGosGpB7T08HhDFy1v04YLLvVsto=",
+        "owner": "cachix",
+        "repo": "secretspec",
+        "rev": "454546d7cca26f604eea8e8bf85673d7d01d400d",
+        "type": "github"
+      },
+      "original": {
+        "owner": "cachix",
+        "ref": "v0.16.0",
+        "repo": "secretspec",
+        "type": "github"
       }
     },
     "treefmt-nix": {

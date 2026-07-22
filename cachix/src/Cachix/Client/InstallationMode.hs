@@ -4,6 +4,7 @@ module Cachix.Client.InstallationMode
   ( InstallationMode (..),
     NixEnv (..),
     getNixEnv,
+    requireNixEnv,
     getInstallationMode,
     addBinaryCache,
     removeBinaryCache,
@@ -16,11 +17,13 @@ module Cachix.Client.InstallationMode
   )
 where
 
+import Cachix.API.Error (escalateAs)
 import Cachix.Client.Config (Config)
 import Cachix.Client.Config qualified as Config
 import Cachix.Client.Exception (CachixException (..))
 import Cachix.Client.NetRc qualified as NetRc
 import Cachix.Client.NixConf qualified as NixConf
+import Cachix.Client.NixVersion (assertNixVersion)
 import Cachix.Client.URI qualified as URI
 import Cachix.Types.BinaryCache qualified as BinaryCache
 import Data.Maybe qualified
@@ -81,7 +84,12 @@ toString UntrustedNixOS = "untrusted-nixos"
 getNixEnv :: IO NixEnv
 getNixEnv = do
   user <- getUser
-  ncs <- NixConf.resolveIncludes =<< NixConf.readWithDefault NixConf.Global
+  -- The global nix.conf is only inspected for trusted users here, never
+  -- written back, so an unreadable file can safely degrade to an empty one.
+  globalConf <-
+    NixConf.read NixConf.Global
+      >>= maybe (NixConf.new <$> NixConf.getFilename NixConf.Global) pure
+  ncs <- NixConf.resolveIncludes globalConf
   isTrusted <- isTrustedUser $ concatMap (NixConf.readLines NixConf.isTrustedUsers) ncs
   isNixOS <- doesFileExist "/run/current-system/nixos-version"
   return $
@@ -90,6 +98,13 @@ getNixEnv = do
         isTrusted = isTrusted,
         isNixOS = isNixOS
       }
+
+-- | Assert the installed Nix is new enough, then resolve the environment
+-- both `cachix use` and `cachix remove` need before touching nix.conf.
+requireNixEnv :: IO NixEnv
+requireNixEnv = do
+  () <- escalateAs UnsupportedNixVersion =<< assertNixVersion
+  getNixEnv
 
 getInstallationMode :: NixEnv -> UseOptions -> InstallationMode
 getInstallationMode nixenv useOptions
@@ -136,72 +151,163 @@ b) Run the following command to add your user as trusted
 |]
 addBinaryCache config bc useOptions WriteNixOS =
   nixosBinaryCache config bc useOptions
+-- A custom output directory (--output-directory) is a fully cachix-generated
+-- artifact meant to be shipped elsewhere, so its nix.conf stays
+-- self-contained instead of splitting the caches into a fragment.
+addBinaryCache config bc _ (Install ncl@(NixConf.Custom _)) = do
+  nixConf <- NixConf.readWithDefault ncl
+  unless (BinaryCache.isPublic bc) $ void $ addPrivateBinaryCacheNetRC config bc ncl
+  _ <- writeIfChanged nixConf (nixConf {NixConf.nixConfLines = NixConf.addCacheStandalone bc (NixConf.nixConfLines nixConf)})
+  putStrLn $ "Configured " <> BinaryCache.uri bc <> " binary cache in " <> toS (NixConf.nixConfPath nixConf)
 addBinaryCache config bc _ (Install ncl) = do
-  (input, output) <- prepareNixConf ncl
+  (nixConf, fragment) <- resolveNixConfAndFragment ncl
   netrcLocMaybe <- forM (guard $ not (BinaryCache.isPublic bc)) $ const $ addPrivateBinaryCacheNetRC config bc ncl
-  let addNetRCLine :: NixConf.NixConfSource -> NixConf.NixConfSource
-      addNetRCLine = fromMaybe identity $ do
-        netrcLoc <- netrcLocMaybe :: Maybe FilePath
-        -- We only add the netrc line for local user configs for now.
-        -- On NixOS we assume it will be picked up from the default location.
-        guard (ncl == NixConf.Local)
-        pure $ setNetRC (toS netrcLoc)
-  NixConf.write $ addNetRCLine $ NixConf.add bc input output
-  filename <- NixConf.getFilename ncl
-  putStrLn $ "Configured " <> BinaryCache.uri bc <> " binary cache in " <> toS filename
-
--- | Resolve and read the nix.conf.
---
--- Returns a set of "input" confs and the "output" conf.
---
--- The output is the parsed conf file at the location specified by the NixConfLoc.
---
--- Inputs are any confs included by the output conf, plus any additional external resolutions.
--- For example, for the local Nix conf, we also return the global one.
-prepareNixConf :: NixConf.NixConfLoc -> IO ([NixConf.NixConfSource], NixConf.NixConfSource)
-prepareNixConf ncl = do
-  outputPath <- NixConf.getFilename ncl
-  -- TODO: might need locking one day
-  gnc <- NixConf.read NixConf.Global
-  gncInputs <- traverse NixConf.resolveIncludes gnc
-
-  (input, output) <-
-    case ncl of
-      NixConf.Global -> do
-        return (gncInputs, gnc)
-      NixConf.Local -> do
-        lnc <- NixConf.read NixConf.Local
-        lncInputs <- traverse NixConf.resolveIncludes lnc
-        return (gncInputs <> lncInputs, lnc)
-      NixConf.Custom _ -> do
-        lnc <- NixConf.read ncl
-        lncInputs <- traverse NixConf.resolveIncludes lnc
-        return (lncInputs, lnc)
-
-  return
-    ( fromMaybe [] input,
-      fromMaybe (NixConf.new outputPath) output
-    )
+  let managedNetRC = toS (replaceFileName (NixConf.nixConfPath nixConf) "netrc") :: Text
+      NixConf.NixConf nixConfLs = NixConf.nixConfLines nixConf
+      -- Older cachix wrote the netrc-file line straight into nix.conf.
+      hasLegacyNetRC = NixConf.NetRcFile managedNetRC `elem` nixConfLs
+      -- We only manage the netrc line for local user configs for now.
+      -- On NixOS we assume it will be picked up from the default location.
+      addNetRCLine :: NixConf.NixConfSource -> NixConf.NixConfSource
+      addNetRCLine
+        | ncl /= NixConf.Local = identity
+        | Just netrcLoc <- netrcLocMaybe = setNetRC (toS netrcLoc)
+        -- Keep a legacy netrc line working by moving it into the fragment.
+        | hasLegacyNetRC = setNetRC managedNetRC
+        | otherwise = identity
+      -- Drop the stale copy from nix.conf once the fragment carries it. Only
+      -- the exact path cachix manages is matched, so a netrc-file setting the
+      -- user authored themselves is left alone.
+      clearStaleNetRCLine :: NixConf.NixConfSource -> NixConf.NixConfSource
+      clearStaleNetRCLine
+        | ncl == NixConf.Local = clearNetRC managedNetRC
+        | otherwise = identity
+      (nixConf', fragment') = NixConf.addCache bc (NixConf.nixConfLines nixConf) (NixConf.nixConfLines fragment)
+  printMigrationNotice nixConf fragment
+  _ <- writeIfChanged fragment (addNetRCLine (fragment {NixConf.nixConfLines = fragment'}))
+  writeNixConfWithHint fragment nixConf (clearStaleNetRCLine (nixConf {NixConf.nixConfLines = nixConf'}))
+  putStrLn $ "Configured " <> BinaryCache.uri bc <> " binary cache in " <> toS (NixConf.nixConfPath fragment)
 
 removeBinaryCache :: URI.URI -> Text -> InstallationMode -> IO ()
-removeBinaryCache uri name (Install ncl) = do
-  contents <- NixConf.readWithDefault ncl
-  let (final, removed) = NixConf.remove uri name [contents] contents
-  NixConf.write final
-  filename <- NixConf.getFilename ncl
+removeBinaryCache uri name (Install ncl@(NixConf.Custom _)) = do
+  nixConf <- NixConf.readWithDefault ncl
+  let (nixConf', removed) = NixConf.removeCacheStandalone uri name (NixConf.nixConfLines nixConf)
   if removed
-    then putStrLn $ "Removed " <> host <> " binary cache in " <> toS filename
-    else putStrLn $ "No " <> host <> " binary cache found in " <> toS filename
-  where
-    host = URI.toByteString (URI.appendSubdomain name uri)
+    then do
+      _ <- writeIfChanged nixConf (nixConf {NixConf.nixConfLines = nixConf'})
+      putStrLn $ "Removed " <> host uri name <> " binary cache from " <> (toS (NixConf.nixConfPath nixConf) :: Text)
+    else putStrLn $ "No " <> host uri name <> " binary cache found in " <> (toS (NixConf.nixConfPath nixConf) :: Text)
+removeBinaryCache uri name (Install ncl) = do
+  (nixConf, fragment) <- resolveNixConfAndFragment ncl
+  let ((nixConf', fragment'), removed) =
+        NixConf.removeCache uri name (NixConf.nixConfLines nixConf) (NixConf.nixConfLines fragment)
+      unmanaged = host uri name `elem` NixConf.readLines NixConf.isSubstituter (NixConf.nixConfLines nixConf)
+  if removed
+    then do
+      printMigrationNotice nixConf fragment
+      fragmentWritten <- writeIfChanged fragment (fragment {NixConf.nixConfLines = fragment'})
+      nixConfWritten <- writeIfChanged nixConf (nixConf {NixConf.nixConfLines = nixConf'})
+      let changed =
+            [toS (NixConf.nixConfPath fragment) | fragmentWritten]
+              <> [toS (NixConf.nixConfPath nixConf) | nixConfWritten]
+      putStrLn $
+        "Removed "
+          <> host uri name
+          <> " binary cache"
+          <> (if null changed then "" else " from " <> T.intercalate " and " changed)
+    else
+      if unmanaged
+        then
+          putStrLn $
+            "Found "
+              <> host uri name
+              <> " in "
+              <> (toS (NixConf.nixConfPath nixConf) :: Text)
+              <> ", but cachix does not manage that entry. Remove it manually."
+        else
+          putStrLn $
+            "No "
+              <> host uri name
+              <> " binary cache found in "
+              <> (toS (NixConf.nixConfPath nixConf) :: Text)
+              <> " or "
+              <> toS (NixConf.nixConfPath fragment)
 removeBinaryCache _ _ _ = do
   throwIO $ RemoveCacheUnsupported "Removing binary caches is only supported for nix.conf"
 
+-- | The full substituter URI of the given cache, as it appears in nix.conf.
+host :: URI.URI -> Text -> Text
+host uri name = toS $ URI.toByteString (URI.appendSubdomain name uri)
+
+-- | Resolve the nix.conf at the given location and the cachix.conf fragment
+-- it includes, reading both from disk.
+resolveNixConfAndFragment :: NixConf.NixConfLoc -> IO (NixConf.NixConfSource, NixConf.NixConfSource)
+resolveNixConfAndFragment ncl = do
+  nixConfPath <- NixConf.getFilename ncl
+  let fragmentPath = replaceFileName nixConfPath (toS NixConf.cachixConf)
+  nixConf <- NixConf.readPathWithDefault nixConfPath
+  -- The fragment is expected to not exist yet on a first run; read it
+  -- quietly rather than printing a "no config" error for that.
+  fragment <- NixConf.readPathQuiet fragmentPath
+  return (nixConf, fragment)
+
+-- | Write the new NixConfSource only if its lines differ from the old one.
+-- Returns whether a write happened.
+writeIfChanged :: NixConf.NixConfSource -> NixConf.NixConfSource -> IO Bool
+writeIfChanged old new
+  | NixConf.nixConfLines old /= NixConf.nixConfLines new = NixConf.write new $> True
+  | otherwise = pure False
+
+-- | Tell the user when settings an older cachix wrote inline into nix.conf
+-- are about to move into the cachix.conf fragment.
+printMigrationNotice :: NixConf.NixConfSource -> NixConf.NixConfSource -> IO ()
+printMigrationNotice nixConf fragment =
+  when (NixConf.legacyCaches (NixConf.nixConfLines nixConf) /= ([], [])) $
+    putErrText $
+      "Migrating cache settings written by an older cachix from "
+        <> toS (NixConf.nixConfPath nixConf)
+        <> " to "
+        <> toS (NixConf.nixConfPath fragment)
+
+-- | Write the nix.conf, and when that fails (commonly a read-only nix.conf
+-- managed by home-manager or nix-darwin) explain how to finish the setup
+-- manually instead of dying with a bare IO error.
+writeNixConfWithHint :: NixConf.NixConfSource -> NixConf.NixConfSource -> NixConf.NixConfSource -> IO ()
+writeNixConfWithHint fragment old new = do
+  result <- try (void (writeIfChanged old new)) :: IO (Either IOException ())
+  case result of
+    Right () -> pure ()
+    Left err -> do
+      let nixConfPath = toS (NixConf.nixConfPath old) :: Text
+          fragmentPath = toS (NixConf.nixConfPath fragment) :: Text
+          errText = toS (displayException err) :: Text
+      throwIO $
+        NixConfWriteFailed
+          [iTrim|
+Could not write to ${nixConfPath}:
+
+  ${errText}
+
+The caches are configured in ${fragmentPath}, but ${nixConfPath} could not be updated to include that file.
+If your nix.conf is managed by home-manager or nix-darwin, add the following line to it and re-run this command:
+
+  !include ${NixConf.cachixConf}
+|]
+
 setNetRC :: Text -> NixConf.NixConfSource -> NixConf.NixConfSource
-setNetRC netrc conf = (fmap . fmap) (\ls -> filter noNetRc ls ++ [NixConf.NetRcFile netrc]) conf
+setNetRC netrc = (fmap . fmap) (\ls -> filter noNetRc ls ++ [NixConf.NetRcFile netrc])
   where
     noNetRc (NixConf.NetRcFile _) = False
     noNetRc _ = True
+
+-- | Drop a stale netrc-file line an older cachix wrote into nix.conf,
+-- matching the exact path cachix manages so a netrc-file setting the user
+-- authored themselves is left alone.
+clearNetRC :: Text -> NixConf.NixConfSource -> NixConf.NixConfSource
+clearNetRC netrc = (fmap . fmap) (filter keep)
+  where
+    keep (NixConf.NetRcFile path) = path /= netrc
+    keep _ = True
 
 nixosBinaryCache :: Config -> BinaryCache.BinaryCache -> UseOptions -> IO ()
 nixosBinaryCache config bc UseOptions {useNixOSFolder = baseDirectory} = do

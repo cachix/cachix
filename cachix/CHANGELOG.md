@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Changed
+
+- client: require Nix 2.4 or newer, for both `cachix use` and `cachix remove`
+- `cachix use` now writes caches to a dedicated `cachix.conf` fragment, pulled into `nix.conf` with `!include`, so cachix manages only its own file and no longer rewrites your Nix settings. Caches use `extra-substituters` / `extra-trusted-public-keys`, and inline settings written by older versions are migrated into the fragment (with a notice).
+- `cachix use --output-directory` keeps writing a self-contained `nix.conf`, with no fragment involved, so shipping that single file keeps working
+
+### Fixed
+
+- #413: `cachix use` no longer drops or overrides substituters and public keys configured elsewhere, and now leaves substituters/public keys it didn't write untouched instead of sweeping them into the fragment
+- migration only claims inline lines whose first value is the `cache.nixos.org` default, the exact shape older versions wrote, so user-authored lines that merely mention the default stay put; the default is restated in the fragment so setups overriding `substituters` at another level keep `cache.nixos.org` reachable
+- `cachix remove` also removes a leftover trusted public key when the substituter is already gone, names the file it actually changed, and points out a matching substituter it does not manage instead of claiming no cache was found
+- a stale `netrc-file` line older versions wrote into `nix.conf` is moved into the fragment on the next `cachix use`, including for public caches
+- lines with inline `#` comments and Nix 1.0 alias keys (`binary-caches`, `binary-cache-public-keys`) are preserved byte for byte instead of being reparsed and rewritten
+- `cachix use` and `cachix remove` abort when an existing config file cannot be read, instead of treating it as empty and overwriting it on the next write
+- when `nix.conf` is not writable (for example managed by home-manager or nix-darwin), `cachix use` explains how to add the `!include` line manually instead of failing with a bare IO error
+
 ## [1.11.1] - 2026-04-29
 
 ### Added

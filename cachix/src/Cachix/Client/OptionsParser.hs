@@ -244,8 +244,8 @@ commandParser =
           [ commandGroup "Cache commands:",
             hidden,
             command "generate-keypair" $ infoH generateKeypairCommand $ progDesc "Generate a signing key pair for a binary cache",
-            command "use" $ infoH useCommand $ progDesc "Configure a binary cache in nix.conf",
-            command "remove" $ infoH removeCommand $ progDesc "Remove a binary cache from nix.conf"
+            command "use" $ infoH useCommand $ progDesc "Configure a binary cache in the cachix.conf fragment included by nix.conf",
+            command "remove" $ infoH removeCommand $ progDesc "Remove a binary cache from the cachix.conf fragment included by nix.conf"
           ]
 
     pushCommands =
@@ -739,7 +739,7 @@ installationMode =
       optional . strOption $
         long "output-directory"
           <> short 'O'
-          <> help "Output directory where nix.conf and netrc will be updated."
+          <> help "Output directory where a self-contained nix.conf and netrc will be updated."
 
 versionParser :: Parser CachixCommand
 versionParser =

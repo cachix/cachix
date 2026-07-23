@@ -23,8 +23,8 @@ use env name useOptions = do
       InstallationMode.addBinaryCache (config env) binaryCache useOptions $
         InstallationMode.getInstallationMode nixEnv useOptions
 
-remove :: Env -> Text -> IO ()
-remove env name = do
+remove :: Env -> Text -> InstallationMode.UseOptions -> IO ()
+remove env name useOptions = do
   nixEnv <- InstallationMode.requireNixEnv
   InstallationMode.removeBinaryCache (Config.hostname $ config env) name $
-    InstallationMode.getInstallationMode nixEnv InstallationMode.defaultUseOptions
+    InstallationMode.getInstallationMode nixEnv useOptions

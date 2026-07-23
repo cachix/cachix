@@ -92,7 +92,7 @@ data CachixCommand
   | WatchStore PushOptions Text
   | WatchExec WatchExecMode PushOptions NarinfoQueryOptions Text Text [Text]
   | Use BinaryCacheName InstallationMode.UseOptions
-  | Remove BinaryCacheName
+  | Remove BinaryCacheName InstallationMode.UseOptions
   | DeployCommand DeployOptions.DeployCommand
   | Version
   deriving (Show)
@@ -711,7 +711,7 @@ watchStoreCommand :: Parser CachixCommand
 watchStoreCommand = WatchStore <$> pushOptionsParser <*> cacheNameParser
 
 removeCommand :: Parser CachixCommand
-removeCommand = Remove <$> cacheNameParser
+removeCommand = Remove <$> cacheNameParser <*> installationMode
 
 useCommand :: Parser CachixCommand
 useCommand = Use <$> cacheNameParser <*> installationMode

@@ -38,11 +38,19 @@ assertNixVersion = do
 
 getRawNixVersion :: IO (Either Text Text)
 getRawNixVersion = do
-  (exitcode, out, err) <- readProcessWithExitCode "nix-env" ["--version"] mempty
-  unless (err == "") $ putStrLn $ "nix-env stderr: " <> err
-  return $ case exitcode of
-    ExitFailure i -> Left $ "'nix-env --version' exited with " <> Protolude.show i
-    ExitSuccess -> Right (toS out)
+  result <- try (readProcessWithExitCode "nix-env" ["--version"] mempty) :: IO (Either IOException (ExitCode, [Char], [Char]))
+  case result of
+    Left ioerr ->
+      return $
+        Left $
+          "Couldn't run 'nix-env --version': "
+            <> toS (displayException ioerr)
+            <> "\nIs Nix installed and on the PATH? https://nixos.org/nix/"
+    Right (exitcode, out, err) -> do
+      unless (err == "") $ putStrLn $ "nix-env stderr: " <> err
+      return $ case exitcode of
+        ExitFailure i -> Left $ "'nix-env --version' exited with " <> Protolude.show i
+        ExitSuccess -> Right (toS out)
 
 parseNixVersion :: Text -> Either Text Versioning
 parseNixVersion input =

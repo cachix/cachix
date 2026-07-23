@@ -31,6 +31,16 @@ bc =
 cachixInclude :: NixConfLine
 cachixInclude = Include (OptionalInclude "cachix.conf")
 
+-- | The nix.conf path the pure addCache/removeCache tests pretend to operate on.
+nixConfPath' :: FilePath
+nixConfPath' = "/etc/nix/nix.conf"
+
+addCache' :: NixConf -> NixConf -> (NixConf, NixConf)
+addCache' = addCache bc MigrateLegacy nixConfPath'
+
+removeCache' :: NixConf -> NixConf -> ((NixConf, NixConf), Bool)
+removeCache' = removeCache "https://cachix.org" "name" MigrateLegacy nixConfPath'
+
 spec :: Spec
 spec = do
   describe "render . parse" $ do
@@ -46,6 +56,16 @@ spec = do
       property "include /etc/nix/nix.conf\n!include /etc/nix/nix.conf\n"
     it "random content" $
       property "blabla = foobar\nfoo = bar\n"
+    it "handles extra trusted users" $
+      property "extra-trusted-users = alice\n"
+    it "keeps a line with an inline comment byte for byte" $
+      property "substituters = a b # mine\n"
+    it "keeps Nix 1.0 alias keys byte for byte" $
+      property "binary-caches = a\nbinary-cache-public-keys = b\n"
+    it "keeps blank lines after assignments" $
+      property "trusted-users = root\n\n# note\n"
+    it "keeps a netrc-file path with spaces" $
+      property "netrc-file = /My Name/netrc\n"
 
   describe "addCache" $ do
     it "writes the cache to the fragment and includes it from an empty nix.conf" $
@@ -56,7 +76,7 @@ spec = do
                   ExtraTrustedPublicKeys ["pub"]
                 ]
             )
-       in addCache bc (NixConf []) (NixConf []) `shouldBe` result
+       in addCache' (NixConf []) (NixConf []) `shouldBe` result
 
     it "accumulates caches in the fragment across runs" $
       let nixConf = NixConf [cachixInclude]
@@ -72,7 +92,7 @@ spec = do
                   ExtraTrustedPublicKeys ["other-key", "pub"]
                 ]
             )
-       in addCache bc nixConf fragment `shouldBe` result
+       in addCache' nixConf fragment `shouldBe` result
 
     it "migrates inline settings written by older versions into the fragment" $
       -- The Nix default the legacy line carried is restated in the fragment:
@@ -91,7 +111,7 @@ spec = do
                   ExtraTrustedPublicKeys [defaultSigningKey, "other-key", "pub"]
                 ]
             )
-       in addCache bc nixConf (NixConf []) `shouldBe` result
+       in addCache' nixConf (NixConf []) `shouldBe` result
 
     it "leaves unrelated nix.conf settings in place" $
       -- Substituters/TrustedPublicKeys lines that don't carry the Nix default
@@ -118,7 +138,7 @@ spec = do
                   ExtraTrustedPublicKeys ["pub"]
                 ]
             )
-       in addCache bc nixConf (NixConf []) `shouldBe` result
+       in addCache' nixConf (NixConf []) `shouldBe` result
 
     it "does not migrate a substituters line missing the default cachix always wrote alongside its own" $
       -- A line starting with defaultPublicURI is recognized as cachix's
@@ -132,7 +152,7 @@ spec = do
                   ExtraTrustedPublicKeys ["pub"]
                 ]
             )
-       in addCache bc nixConf (NixConf []) `shouldBe` result
+       in addCache' nixConf (NixConf []) `shouldBe` result
 
     it "does not migrate a substituters line where the default is not the first value" $
       -- Old cachix always wrote defaultPublicURI as the FIRST value, so a
@@ -145,7 +165,7 @@ spec = do
                   ExtraTrustedPublicKeys ["pub"]
                 ]
             )
-       in addCache bc nixConf (NixConf []) `shouldBe` result
+       in addCache' nixConf (NixConf []) `shouldBe` result
 
     it "migrates a legacy line without sweeping in a separate user-authored line" $
       -- Only the marked legacy line's values move to the fragment; the user's
@@ -165,11 +185,62 @@ spec = do
                   ExtraTrustedPublicKeys [defaultSigningKey, "old-key", "pub"]
                 ]
             )
-       in addCache bc nixConf (NixConf []) `shouldBe` result
+       in addCache' nixConf (NixConf []) `shouldBe` result
 
     it "does not add a second include directive" $
       let nixConf = NixConf [cachixInclude]
-       in fst (addCache bc nixConf (NixConf [])) `shouldBe` NixConf [cachixInclude]
+       in fst (addCache' nixConf (NixConf [])) `shouldBe` NixConf [cachixInclude]
+
+    it "recognizes an absolute include of the fragment" $
+      -- An include spelled with the absolute path resolves to the same file,
+      -- so no second include is appended.
+      let nixConf = NixConf [Include (OptionalInclude "/etc/nix/cachix.conf")]
+       in fst (addCache' nixConf (NixConf [])) `shouldBe` nixConf
+
+    it "does not claim a lone marker-led substituters line" $
+      -- Old cachix always wrote BOTH the substituters and the
+      -- trusted-public-keys marker lines; a substituters line alone (a shape
+      -- users write by hand to override defaults) stays in nix.conf.
+      let nixConf = NixConf [Substituters [defaultPublicURI, "https://mirror.example"]]
+          result =
+            ( NixConf [Substituters [defaultPublicURI, "https://mirror.example"], cachixInclude],
+              NixConf
+                [ ExtraSubstituters ["https://name.cachix.org"],
+                  ExtraTrustedPublicKeys ["pub"]
+                ]
+            )
+       in addCache' nixConf (NixConf []) `shouldBe` result
+
+    it "does not sweep a commented substituters line into the fragment" $
+      let commented = Verbatim (Substituters [defaultPublicURI, "https://mine.example"]) "substituters = https://cache.nixos.org https://mine.example # mine"
+          nixConf = NixConf [commented]
+          result =
+            ( NixConf [commented, cachixInclude],
+              NixConf
+                [ ExtraSubstituters ["https://name.cachix.org"],
+                  ExtraTrustedPublicKeys ["pub"]
+                ]
+            )
+       in addCache' nixConf (NixConf []) `shouldBe` result
+
+    it "leaves legacy lines in place when migration is off" $
+      let nixConf =
+            NixConf
+              [ Substituters [defaultPublicURI, "https://old.cachix.org"],
+                TrustedPublicKeys [defaultSigningKey, "old-key"]
+              ]
+          result =
+            ( NixConf
+                [ Substituters [defaultPublicURI, "https://old.cachix.org"],
+                  TrustedPublicKeys [defaultSigningKey, "old-key"],
+                  cachixInclude
+                ],
+              NixConf
+                [ ExtraSubstituters ["https://name.cachix.org"],
+                  ExtraTrustedPublicKeys ["pub"]
+                ]
+            )
+       in addCache bc LeaveLegacy nixConfPath' nixConf (NixConf []) `shouldBe` result
 
     it "removes duplicates" $
       let fragment =
@@ -184,7 +255,7 @@ spec = do
                   ExtraTrustedPublicKeys ["pub1", "pub"]
                 ]
             )
-       in addCache bc (NixConf [cachixInclude]) fragment `shouldBe` result
+       in addCache' (NixConf [cachixInclude]) fragment `shouldBe` result
 
   describe "removeCache" $ do
     it "removes a binary cache from the fragment" $
@@ -203,7 +274,7 @@ spec = do
               ),
               True
             )
-       in removeCache "https://cachix.org" "name" nixConf fragment `shouldBe` result
+       in removeCache' nixConf fragment `shouldBe` result
 
     it "migrates and removes inline settings written by older versions" $
       -- The restated Nix default stays behind in the fragment, preserving
@@ -218,17 +289,17 @@ spec = do
               [ ExtraSubstituters [defaultPublicURI],
                 ExtraTrustedPublicKeys [defaultSigningKey]
               ]
-       in removeCache "https://cachix.org" "name" nixConf (NixConf [])
+       in removeCache' nixConf (NixConf [])
             `shouldBe` ((NixConf [cachixInclude], fragment), True)
 
     it "removes a leftover trusted public key even when the substituter is already gone" $
       let nixConf = NixConf [cachixInclude]
           fragment = NixConf [ExtraTrustedPublicKeys ["name.cachix.org-1:key"]]
-       in removeCache "https://cachix.org" "name" nixConf fragment
+       in removeCache' nixConf fragment
             `shouldBe` ((NixConf [cachixInclude], NixConf []), True)
 
     it "does not add an include when the fragment ends up empty" $
-      removeCache "https://cachix.org" "name" (NixConf []) (NixConf [ExtraTrustedPublicKeys ["name.cachix.org-1:key"]])
+      removeCache' (NixConf []) (NixConf [ExtraTrustedPublicKeys ["name.cachix.org-1:key"]])
         `shouldBe` ((NixConf [], NixConf []), True)
 
     it "omits empty extra settings after removal" $
@@ -238,7 +309,7 @@ spec = do
               [ ExtraSubstituters ["https://name.cachix.org"],
                 ExtraTrustedPublicKeys ["name.cachix.org-1:key"]
               ]
-       in removeCache "https://cachix.org" "name" nixConf fragment
+       in removeCache' nixConf fragment
             `shouldBe` ((NixConf [cachixInclude], NixConf []), True)
 
     it "leaves both configs untouched if the binary cache is missing" $
@@ -247,13 +318,29 @@ spec = do
               [ Substituters [defaultPublicURI],
                 TrustedPublicKeys [defaultSigningKey]
               ]
-       in removeCache "https://cachix.org" "name" nixConf (NixConf [])
+       in removeCache' nixConf (NixConf [])
             `shouldBe` ((nixConf, NixConf []), False)
 
     it "leaves an unrelated substituters line in nix.conf untouched" $
       let nixConf = NixConf [Substituters ["http"], TrustedPublicKeys ["pub1"]]
-       in removeCache "https://cachix.org" "name" nixConf (NixConf [])
+       in removeCache' nixConf (NixConf [])
             `shouldBe` ((nixConf, NixConf []), False)
+
+    it "does not add an include when nothing is migrated" $
+      -- A removal must not re-activate the remaining fragment caches on a
+      -- system where the include was deliberately absent.
+      let nixConf = NixConf [Other "# no include here"]
+          fragment =
+            NixConf
+              [ ExtraSubstituters ["https://other.example", "https://name.cachix.org"],
+                ExtraTrustedPublicKeys ["name.cachix.org-1:key"]
+              ]
+       in removeCache' nixConf fragment
+            `shouldBe` ( ( nixConf,
+                           NixConf [ExtraSubstituters ["https://other.example"]]
+                         ),
+                         True
+                       )
 
   describe "addCacheStandalone" $ do
     it "writes a self-contained nix.conf" $
@@ -314,13 +401,52 @@ spec = do
       parse "binary-caches-parallel-connections = 40\n"
         `shouldBe` Right (NixConf [Other "binary-caches-parallel-connections = 40"])
 
-    it "leaves a line with an inline comment untouched" $
+    it "preserves a line with an inline comment while reading its values" $
       parse "substituters = a b # mine\n"
-        `shouldBe` Right (NixConf [Other "substituters = a b # mine"])
+        `shouldBe` Right (NixConf [Verbatim (Substituters ["a", "b"]) "substituters = a b # mine"])
 
-    it "leaves Nix 1.0 alias keys untouched" $
+    it "reads trusted users from a line with an inline comment" $
+      -- Nix strips '#' to the end of the line, so alice IS trusted; the
+      -- line still renders back byte for byte.
+      let parsed = parse "trusted-users = root alice # admins\n"
+       in (NixConf.readLines NixConf.isTrustedUsers <$> parsed) `shouldBe` Right ["root", "alice"]
+
+    it "reads a value glued to the comment marker up to the '#'" $
+      parse "substituters = a b#comment\n"
+        `shouldBe` Right (NixConf [Verbatim (Substituters ["a", "b"]) "substituters = a b#comment"])
+
+    it "preserves Nix 1.0 alias keys while reading their values" $
       parse "binary-caches = a\nbinary-cache-public-keys = b\n"
-        `shouldBe` Right (NixConf [Other "binary-caches = a", Other "binary-cache-public-keys = b"])
+        `shouldBe` Right
+          ( NixConf
+              [ Verbatim (Substituters ["a"]) "binary-caches = a",
+                Verbatim (TrustedPublicKeys ["b"]) "binary-cache-public-keys = b"
+              ]
+          )
+
+    it "parses extra-trusted-users" $
+      parse "extra-trusted-users = alice\n"
+        `shouldBe` Right (NixConf [ExtraTrustedUsers ["alice"]])
+
+    it "drops phantom empty values from trailing whitespace" $
+      parse "substituters = a b \n"
+        `shouldBe` Right (NixConf [Substituters ["a", "b"]])
+
+    it "parses an empty assignment as no values" $
+      parse "substituters =\n"
+        `shouldBe` Right (NixConf [Substituters []])
+
+    it "preserves spaces in a netrc-file path" $
+      parse "netrc-file = /My Name/netrc\n"
+        `shouldBe` Right (NixConf [NetRcFile "/My Name/netrc"])
+
+    it "preserves blank lines after an assignment" $
+      parse "trusted-users = root\n\n# note\n"
+        `shouldBe` Right (NixConf [TrustedUsers ["root"], Other "", Other "# note"])
+
+    it "preserves an include with an inline comment" $
+      parse "!include corp.conf # managed by IT\n"
+        `shouldBe` Right (NixConf [Verbatim (Include (OptionalInclude "corp.conf")) "!include corp.conf # managed by IT"])
 
     it "parses substituters with multiple values" $
       parse "substituters = a b c\n"
@@ -375,8 +501,8 @@ spec = do
                 ]
         writeFile confPath $
           unlines
-            [ "include " <> toS requiredConfPath <> "\n",
-              "!include " <> toS optionalConfPath <> "\n"
+            [ "include " <> toS requiredConfPath,
+              "!include " <> toS optionalConfPath
             ]
         writeFile requiredConfPath realExample
 

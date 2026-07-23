@@ -2,10 +2,12 @@
 
 {- (Very limited) parser, renderer and modifier of nix.conf
 
-Only the settings cachix manages are interpreted. Everything else, including
-Nix 1.0 alias keys (binary-caches, binary-cache-public-keys) and lines with
-inline comments, is preserved verbatim so a rewrite never alters lines cachix
-does not own.
+Only the settings cachix manages are rewritten. Lines with inline '#' comments
+and Nix 1.0 alias keys (binary-caches, binary-cache-public-keys) are parsed
+for READING only: their values (as Nix sees them, with everything from '#' to
+the end of the line stripped) are visible to the trust and substituter checks,
+but the lines carry their raw text and render back unchanged, so a rewrite
+never alters lines cachix does not own.
 
 -}
 module Cachix.Client.NixConf
@@ -16,6 +18,7 @@ module Cachix.Client.NixConf
     NixConfSourceG (..),
     NixConfLoc (..),
     IncludeType (..),
+    MigrateLegacy (..),
     new,
     render,
     addCache,
@@ -23,6 +26,7 @@ module Cachix.Client.NixConf
     addCacheStandalone,
     removeCacheStandalone,
     legacyCaches,
+    ensureOptionalInclude,
     isSubstituter,
     cachixConf,
     read,
@@ -72,16 +76,29 @@ data NixConfLine
   = Substituters [Text]
   | ExtraSubstituters [Text]
   | TrustedUsers [Text]
+  | ExtraTrustedUsers [Text]
   | TrustedPublicKeys [Text]
   | ExtraTrustedPublicKeys [Text]
   | NetRcFile Text
   | Include IncludeType
+  | -- | A line whose meaning is known but whose raw text must be preserved:
+    -- assignments with inline '#' comments and Nix 1.0 alias keys. The parsed
+    -- meaning is visible to reads (trust detection, substituter checks), but
+    -- the line renders back byte for byte and is never rewritten or migrated.
+    Verbatim NixConfLine Text
   | Other Text
   deriving (Show, Eq)
 
 data IncludeType
   = RequiredInclude Text -- for "include"
   | OptionalInclude Text -- for "!include"
+  deriving (Show, Eq)
+
+-- | Whether legacy cache settings an older cachix wrote inline into nix.conf
+-- may be migrated into the fragment. Migration rewrites nix.conf, so it must
+-- be off when the file cannot be written (e.g. managed by home-manager or
+-- nix-darwin), or every run would fail trying to strip the same lines.
+data MigrateLegacy = MigrateLegacy | LeaveLegacy
   deriving (Show, Eq)
 
 -- | A list of conf lines
@@ -134,11 +151,13 @@ instance NixConfOps NixConf where
       go (Substituters xs) = "substituters" <> " = " <> T.unwords xs
       go (ExtraSubstituters xs) = "extra-substituters" <> " = " <> T.unwords xs
       go (TrustedUsers xs) = "trusted-users = " <> T.unwords xs
+      go (ExtraTrustedUsers xs) = "extra-trusted-users = " <> T.unwords xs
       go (TrustedPublicKeys xs) = "trusted-public-keys" <> " = " <> T.unwords xs
       go (ExtraTrustedPublicKeys xs) = "extra-trusted-public-keys" <> " = " <> T.unwords xs
       go (NetRcFile filename) = "netrc-file = " <> filename
       go (Include (RequiredInclude path)) = "include " <> path
       go (Include (OptionalInclude path)) = "!include " <> path
+      go (Verbatim _ raw) = raw
       go (Other line) = line
 
 instance NixConfOps NixConfSource where
@@ -149,12 +168,27 @@ instance NixConfOps NixConfSource where
 isSubstituter :: NixConfLine -> Maybe [Text]
 isSubstituter (Substituters xs) = Just xs
 isSubstituter (ExtraSubstituters xs) = Just xs
+isSubstituter (Verbatim line _) = isSubstituter line
 isSubstituter _ = Nothing
 
 isPublicKey :: NixConfLine -> Maybe [Text]
 isPublicKey (TrustedPublicKeys xs) = Just xs
 isPublicKey (ExtraTrustedPublicKeys xs) = Just xs
+isPublicKey (Verbatim line _) = isPublicKey line
 isPublicKey _ = Nothing
+
+isTrustedUsers :: NixConfLine -> Maybe [Text]
+isTrustedUsers (TrustedUsers xs) = Just xs
+isTrustedUsers (ExtraTrustedUsers xs) = Just xs
+isTrustedUsers (Verbatim line _) = isTrustedUsers line
+isTrustedUsers _ = Nothing
+
+-- | Restrict a predicate to lines cachix may rewrite: lines preserved
+-- verbatim (inline comments, alias keys) are never collected into the
+-- fragment or replaced by it.
+owned :: (NixConfLine -> Maybe [Text]) -> NixConfLine -> Maybe [Text]
+owned _ (Verbatim _ _) = Nothing
+owned predicate line = predicate line
 
 -- | Replace matching assignments, omitting the replacement when it has no values.
 writeNonEmptyLines :: (NixConfLine -> Maybe [Text]) -> NixConfLine -> NixConf -> NixConf
@@ -167,8 +201,8 @@ writeNonEmptyLines predicate addition =
 -- leaving any other existing settings untouched.
 writeExtraCaches :: [Text] -> [Text] -> NixConf -> NixConf
 writeExtraCaches substituters publicKeys =
-  writeNonEmptyLines isPublicKey (ExtraTrustedPublicKeys $ nub publicKeys)
-    . writeNonEmptyLines isSubstituter (ExtraSubstituters $ nub substituters)
+  writeNonEmptyLines (owned isPublicKey) (ExtraTrustedPublicKeys $ nub publicKeys)
+    . writeNonEmptyLines (owned isSubstituter) (ExtraSubstituters $ nub substituters)
 
 -- | The caches cachix manages in the fragment it owns: every substituter and
 -- public key written there. The whole fragment belongs to cachix, so every
@@ -176,8 +210,8 @@ writeExtraCaches substituters publicKeys =
 -- over from migrated legacy settings.
 fragmentCaches :: NixConf -> ([Text], [Text])
 fragmentCaches conf =
-  ( readLines isSubstituter conf,
-    readLines isPublicKey conf
+  ( readLines (owned isSubstituter) conf,
+    readLines (owned isPublicKey) conf
   )
 
 -- | Substituter values in a line an OLDER cachix wrote inline into nix.conf.
@@ -202,12 +236,15 @@ legacyPublicKeys (TrustedPublicKeys xs@(marker : _))
   | marker == defaultSigningKey = Just xs
 legacyPublicKeys _ = Nothing
 
--- | The caches an older cachix wrote inline into the nix.conf.
+-- | The caches an older cachix wrote inline into the nix.conf. Old versions
+-- always wrote BOTH marker-led lines together, so a lone marked line (a shape
+-- users also write by hand, e.g. a substituters override listing the default
+-- first) is not claimed.
 legacyCaches :: NixConf -> ([Text], [Text])
 legacyCaches conf =
-  ( readLines legacySubstituters conf,
-    readLines legacyPublicKeys conf
-  )
+  case (readLines legacySubstituters conf, readLines legacyPublicKeys conf) of
+    (substituters@(_ : _), publicKeys@(_ : _)) -> (substituters, publicKeys)
+    _ -> ([], [])
 
 -- | The name of the config fragment cachix owns. It lives next to the nix.conf
 -- it configures and is pulled in with an @!include@, so cachix only ever writes
@@ -215,36 +252,59 @@ legacyCaches conf =
 cachixConf :: Text
 cachixConf = "cachix.conf"
 
--- | Add a binary cache. Given the nix.conf and the cachix fragment it includes,
--- returns the updated @(nix.conf, fragment)@. The cache's substituter and public
--- keys are written to the fragment as extra-* settings, the nix.conf gains an
--- @!include@ of the fragment, and any cache settings older versions wrote inline
--- in the nix.conf are migrated into the fragment.
-addCache :: BinaryCache.BinaryCache -> NixConf -> NixConf -> (NixConf, NixConf)
-addCache bc nixconf fragment = (migrateNixConf nixconf, fragment')
+-- | Append the cache's substituter and public keys to the collected values
+-- and write them back as extra-* assignments.
+appendCache :: BinaryCache.BinaryCache -> ([Text], [Text]) -> NixConf -> NixConf
+appendCache bc (substituters, publicKeys) =
+  writeExtraCaches
+    (substituters <> [BinaryCache.uri bc])
+    (publicKeys <> BinaryCache.publicSigningKeys bc)
+
+-- | Add a binary cache. Given the nix.conf (at the given path) and the cachix
+-- fragment it includes, returns the updated @(nix.conf, fragment)@. The
+-- cache's substituter and public keys are written to the fragment as extra-*
+-- settings, the nix.conf gains an @!include@ of the fragment, and (when
+-- migration is on) cache settings older versions wrote inline in the nix.conf
+-- are moved into the fragment.
+addCache :: BinaryCache.BinaryCache -> MigrateLegacy -> FilePath -> NixConf -> NixConf -> (NixConf, NixConf)
+addCache bc migrate nixConfPath nixconf fragment =
+  (nixconf', appendCache bc (collectCaches migrate nixconf fragment) fragment)
   where
-    (substituters, publicKeys) = collectCaches nixconf fragment
-    fragment' =
-      writeExtraCaches
-        (substituters <> [BinaryCache.uri bc])
-        (publicKeys <> BinaryCache.publicSigningKeys bc)
-        fragment
+    nixconf' = ensureOptionalInclude nixConfPath (stripLegacy nixconf)
+    stripLegacy = case migrate of
+      MigrateLegacy -> stripCaches
+      LeaveLegacy -> identity
 
 -- | Remove a binary cache from the nix.conf and its fragment. Returns the
 -- updated configs and whether the cache was present. When it is absent both
 -- configs are returned untouched.
-removeCache :: URI.URI -> Text -> NixConf -> NixConf -> ((NixConf, NixConf), Bool)
-removeCache uri name nixconf fragment
+removeCache :: URI.URI -> Text -> MigrateLegacy -> FilePath -> NixConf -> NixConf -> ((NixConf, NixConf), Bool)
+removeCache uri name migrate nixConfPath nixconf fragment
   | removed = ((nixconf', fragment'), True)
   | otherwise = ((nixconf, fragment), False)
   where
-    ((substituters, publicKeys), removed) = filterCache uri name (collectCaches nixconf fragment)
-    fragment' = writeExtraCaches substituters publicKeys fragment
-    -- Only reference the fragment when it has content, so a removal that
-    -- empties it does not leave an include pointing at a file never written.
+    (fragment', removed) = removeFrom uri name (collectCaches migrate nixconf fragment) fragment
+    migratesLegacy = migrate == MigrateLegacy && legacyCaches nixconf /= ([], [])
+    -- A removal only bookkeeps the nix.conf: legacy lines it migrates are
+    -- stripped, and the include is ensured only when that migration moves
+    -- active inline settings into the fragment (and the fragment has content;
+    -- an emptied fragment must not gain an include pointing at a file never
+    -- written). A plain removal never adds the include, so it cannot
+    -- re-activate remaining fragment caches on a system where the include
+    -- was deliberately absent.
     nixconf'
+      | not migratesLegacy = nixconf
       | fragment' == NixConf [] = stripCaches nixconf
-      | otherwise = migrateNixConf nixconf
+      | otherwise = ensureOptionalInclude nixConfPath (stripCaches nixconf)
+
+-- | Drop the given cache from the collected values and write the remainder
+-- back as extra-* assignments, reporting whether anything matched.
+removeFrom :: URI.URI -> Text -> ([Text], [Text]) -> NixConf -> (NixConf, Bool)
+removeFrom uri name collected conf
+  | removed = (writeExtraCaches substituters publicKeys conf, True)
+  | otherwise = (conf, False)
+  where
+    ((substituters, publicKeys), removed) = filterCache uri name collected
 
 -- | Drop the given cache's substituter and public keys from the collected
 -- values, reporting whether either matched. Public keys count on their own:
@@ -254,7 +314,7 @@ filterCache :: URI.URI -> Text -> ([Text], [Text]) -> (([Text], [Text]), Bool)
 filterCache uri name (oldSubstituters, oldPublicKeys) =
   ((substituters, publicKeys), removed)
   where
-    substituters = filter (toS (URI.toByteString fulluri) /=) oldSubstituters
+    substituters = filter (URI.serialize fulluri /=) oldSubstituters
     publicKeys = filter (not . T.isPrefixOf (toS $ URI.hostBS $ URI.getHostname fulluri)) oldPublicKeys
     removed = substituters /= oldSubstituters || publicKeys /= oldPublicKeys
     fulluri = URI.appendSubdomain name uri
@@ -265,58 +325,49 @@ filterCache uri name (oldSubstituters, oldPublicKeys) =
 -- and rewritten as extra-* settings in place; no fragment or include is
 -- involved, keeping the file usable on its own.
 addCacheStandalone :: BinaryCache.BinaryCache -> NixConf -> NixConf
-addCacheStandalone bc conf =
-  writeExtraCaches
-    (substituters <> [BinaryCache.uri bc])
-    (publicKeys <> BinaryCache.publicSigningKeys bc)
-    conf
-  where
-    (substituters, publicKeys) = fragmentCaches conf
+addCacheStandalone bc conf = appendCache bc (fragmentCaches conf) conf
 
 -- | Remove a binary cache from a self-contained nix.conf.
 -- See `addCacheStandalone`.
 removeCacheStandalone :: URI.URI -> Text -> NixConf -> (NixConf, Bool)
-removeCacheStandalone uri name conf
-  | removed = (writeExtraCaches substituters publicKeys conf, True)
-  | otherwise = (conf, False)
-  where
-    ((substituters, publicKeys), removed) = filterCache uri name (fragmentCaches conf)
+removeCacheStandalone uri name conf = removeFrom uri name (fragmentCaches conf) conf
 
 -- | The caches cachix manages across the nix.conf and its fragment: legacy
--- inline settings recognized in the nix.conf, plus everything in the
--- fragment.
-collectCaches :: NixConf -> NixConf -> ([Text], [Text])
-collectCaches nixconf fragment =
-  let (s1, k1) = legacyCaches nixconf
+-- inline settings recognized in the nix.conf (when migration is on), plus
+-- everything in the fragment.
+collectCaches :: MigrateLegacy -> NixConf -> NixConf -> ([Text], [Text])
+collectCaches migrate nixconf fragment =
+  let (s1, k1) = case migrate of
+        MigrateLegacy -> legacyCaches nixconf
+        LeaveLegacy -> ([], [])
       (s2, k2) = fragmentCaches fragment
    in (s1 <> s2, k1 <> k2)
 
--- | Strip the legacy cache settings cachix wrote inline from the nix.conf and
--- ensure it includes the fragment.
-migrateNixConf :: NixConf -> NixConf
-migrateNixConf = ensureOptionalInclude cachixConf . stripCaches
-
 -- | Remove exactly the lines `legacyCaches` collects: assignments an older
--- cachix wrote inline. Everything else stays in nix.conf untouched.
+-- cachix wrote inline. When nothing is claimed (including when only one of
+-- the two marker lines is present), the nix.conf is left untouched.
 stripCaches :: NixConf -> NixConf
-stripCaches = fmap (filter (\l -> isNothing (legacySubstituters l) && isNothing (legacyPublicKeys l)))
+stripCaches conf
+  | legacyCaches conf == ([], []) = conf
+  | otherwise = fmap (filter (\l -> isNothing (legacySubstituters l) && isNothing (legacyPublicKeys l))) conf
 
--- | Ensure the config optionally includes the given path, appending the
--- directive when it is not already present. An existing include also counts
--- when spelled with a leading @./@, which resolves to the same file.
-ensureOptionalInclude :: Text -> NixConf -> NixConf
-ensureOptionalInclude path conf@(NixConf ls)
+-- | Ensure the nix.conf at the given path optionally includes the cachix
+-- fragment, appending the directive when no existing include already resolves
+-- to it. Includes are resolved relative to the nix.conf's directory, the same
+-- way `resolveIncludesWithStack` does, so relative ("cachix.conf",
+-- "./cachix.conf") and absolute spellings all count.
+ensureOptionalInclude :: FilePath -> NixConf -> NixConf
+ensureOptionalInclude nixConfPath conf@(NixConf ls)
   | any isIncludeOf ls = conf
-  | otherwise = NixConf (ls <> [Include (OptionalInclude path)])
+  | otherwise = NixConf (ls <> [Include (OptionalInclude cachixConf)])
   where
-    isIncludeOf (Include (OptionalInclude q)) = matches q
+    dir = takeDirectory nixConfPath
+    fragmentPath = normalise (dir </> toS cachixConf)
     isIncludeOf (Include (RequiredInclude q)) = matches q
+    isIncludeOf (Include (OptionalInclude q)) = matches q
+    isIncludeOf (Verbatim line _) = isIncludeOf line
     isIncludeOf _ = False
-    matches q = q == path || q == "./" <> path
-
-isTrustedUsers :: NixConfLine -> Maybe [Text]
-isTrustedUsers (TrustedUsers xs) = Just xs
-isTrustedUsers _ = Nothing
+    matches q = normalise (dir </> toS q) == fragmentPath
 
 -- | Create a new, empty NixConfSource with the given path
 new :: FilePath -> NixConfSource
@@ -334,10 +385,15 @@ resolveIncludes conf@NixConfSource {nixConfPath} =
 
 resolveIncludesWithStack :: [FilePath] -> FilePath -> NixConfSource -> IO [NixConfSource]
 resolveIncludesWithStack stack baseFile baseConf@(NixConfSource {nixConfLines = NixConf ls}) = do
-  includedConfigs <- mapM resolveInclude [f | Include f <- ls]
+  includedConfigs <- mapM resolveInclude (mapMaybe includeOf ls)
   return $ baseConf : concat includedConfigs
   where
     dir = takeDirectory baseFile
+
+    -- Includes carrying an inline comment still pull in their file.
+    includeOf (Include f) = Just f
+    includeOf (Verbatim line _) = includeOf line
+    includeOf _ = Nothing
 
     resolveInclude :: IncludeType -> IO [NixConfSource]
     resolveInclude includeType = do
@@ -402,39 +458,36 @@ read ncl = do
 readWithDefault :: NixConfLoc -> IO NixConfSource
 readWithDefault ncl = readPathWithDefault =<< getFilename ncl
 
--- | Safely read a nix.conf file from the given file path.
--- Return an empty NixConfSource (with that path) if the file does not exist,
--- printing a note. Any other failure reading an EXISTING file is fatal:
--- falling back to an empty config would let the next write silently replace
--- the file's contents.
-readPathWithDefault :: FilePath -> IO NixConfSource
-readPathWithDefault filename =
+-- | Read a nix.conf, defaulting to an empty one (with the given path) when
+-- the file does not exist; noisy controls whether that case prints a note.
+-- Any other failure reading an EXISTING file is fatal: falling back to an
+-- empty config would let the next write silently replace the file's contents.
+readPath :: Bool -> FilePath -> IO NixConfSource
+readPath noisy filename =
   read' filename >>= \case
-    Left err@(IOError _ ioerr) | isDoesNotExistError ioerr -> do
-      printNixConfError err
-      return $ new filename
-    Left err -> do
-      printNixConfError err
-      throwNixConfError err
+    Left err@(IOError _ ioerr)
+      | isDoesNotExistError ioerr -> do
+          when noisy $ printNixConfError err
+          return $ new filename
+    Left err -> throwNixConfError err
     Right conf -> return conf
+
+-- | See `readPath`.
+readPathWithDefault :: FilePath -> IO NixConfSource
+readPathWithDefault = readPath True
 
 -- | Like `readPathWithDefault`, but silent when the file simply doesn't
 -- exist. Meant for files cachix exclusively manages, such as the cachix.conf
 -- fragment, which is expected to be missing until the first `cachix use`,
 -- so printing a "no config" error for it would just be noise.
 readPathQuiet :: FilePath -> IO NixConfSource
-readPathQuiet filename =
-  read' filename >>= \case
-    Left (IOError _ ioerr) | isDoesNotExistError ioerr -> return $ new filename
-    Left err -> do
-      printNixConfError err
-      throwNixConfError err
-    Right conf -> return conf
+readPathQuiet = readPath False
 
+-- | Rethrow a read failure as a CachixException, so the top-level handler
+-- prints it exactly once.
 throwNixConfError :: NixConfError -> IO a
-throwNixConfError (IOError _ ioerr) = throwIO ioerr
-throwNixConfError (ParseError path err) =
-  throwIO $ NixConfParseError ("Failed to parse " <> toS path <> ":\n" <> err)
+throwNixConfError err@(IOError _ _) = throwIO $ NixConfReadFailed (formatNixConfError err)
+throwNixConfError err@(ParseError _ _) = throwIO $ NixConfParseError (formatNixConfError err)
 
 -- | Safely read a nix.conf file from the given file path.
 read' :: FilePath -> IO (Either NixConfError NixConfSource)
@@ -456,55 +509,94 @@ getFilename ncl = do
       Custom filepath -> return filepath
   return $ dir <> "/nix.conf"
 
+formatNixConfError :: NixConfError -> Text
+formatNixConfError (IOError path err)
+  | isDoesNotExistError err =
+      unlines
+        [ "No config at " <> toS path <> ":",
+          "",
+          toS (displayException err)
+        ]
+  | otherwise =
+      unlines
+        [ "Failed to read " <> toS path <> ":",
+          "",
+          toS (displayException err)
+        ]
+formatNixConfError (ParseError path err) =
+  unlines
+    [ "Failed to parse " <> toS path <> ":",
+      "",
+      err
+    ]
+
 printNixConfError :: NixConfError -> IO ()
-printNixConfError (IOError path err) | isDoesNotExistError err = do
-  putErrText $
-    unlines
-      [ "No config at " <> toS path <> ":",
-        "",
-        toS (displayException err)
-      ]
-printNixConfError (IOError path err) = do
-  putErrText $
-    unlines
-      [ "Failed to read " <> toS path <> ":",
-        "",
-        toS (displayException err)
-      ]
-printNixConfError (ParseError path err) = do
-  putErrText $
-    unlines
-      [ "Failed to parse " <> toS path <> ":",
-        "",
-        err
-      ]
+printNixConfError = putErrText . formatNixConfError
 
 -- nix.conf Parser
 type Parser = Mega.Parsec Void Text
 
--- NB: lines with an inline '#' comment are deliberately left unparsed so they
--- round-trip verbatim as Other: Nix strips '#' to the end of the line, so
--- treating the comment tokens as values would corrupt any rewrite.
+-- | Parse an assignment cachix may manage. A line carrying an inline '#'
+-- comment is wrapped in Verbatim: its values (up to the '#', as Nix reads
+-- them) stay visible, but the line renders back unchanged.
 parseLine :: ([Text] -> NixConfLine) -> Text -> Parser NixConfLine
-parseLine constr name = Mega.try $ do
-  _ <- optional (some (char ' '))
-  _ <- string name
+parseLine = parseAssignment False
+
+-- | Parse an assignment cachix only ever reads (Nix 1.0 alias keys): the
+-- parsed meaning is always wrapped in Verbatim, so a rewrite reproduces the
+-- user's line instead of renaming it to the canonical key.
+parseReadOnlyLine :: ([Text] -> NixConfLine) -> Text -> Parser NixConfLine
+parseReadOnlyLine = parseAssignment True
+
+parseAssignment :: Bool -> ([Text] -> NixConfLine) -> Text -> Parser NixConfLine
+parseAssignment alwaysVerbatim constr name = Mega.try $ do
+  (raw, values) <- Mega.match $ do
+    _ <- optional (some (char ' '))
+    _ <- string name
+    _ <- many (char ' ')
+    _ <- char '='
+    _ <- many (char ' ')
+    Mega.sepBy1 (many (Mega.satisfy (not . isSpace))) (some (char ' '))
   _ <- many (char ' ')
-  _ <- char '='
-  _ <- many (char ' ')
-  values <- Mega.sepBy1 (many (Mega.satisfy (not . isSpace))) (some (char ' '))
-  guard $ not (any ('#' `elem`) values)
-  _ <- many spaceChar
-  return $ constr (fmap toS values)
+  _ <- void eol <|> Mega.eof
+  let vals = fmap toS values :: [Text]
+      hasComment = any (T.isInfixOf "#") vals
+      semantic = constr (stripInlineComment vals)
+  return $
+    if alwaysVerbatim || hasComment
+      then Verbatim semantic raw
+      else semantic
+
+-- | Values as Nix sees them: everything from the first '#' to the end of the
+-- line is a comment, and empty tokens (from stray spacing) are dropped.
+stripInlineComment :: [Text] -> [Text]
+stripInlineComment = filter (not . T.null) . go
+  where
+    go [] = []
+    go (v : vs)
+      | "#" `T.isInfixOf` v = [T.takeWhile (/= '#') v]
+      | otherwise = v : go vs
 
 parseInclude :: (Text -> IncludeType) -> Text -> Parser NixConfLine
 parseInclude constr name = Mega.try $ do
-  _ <- optional (some (char ' '))
-  _ <- string name
-  _ <- some (char ' ')
-  path <- many (Mega.satisfy (not . isSpace))
-  _ <- many spaceChar
-  return $ Include (constr (toS path))
+  (raw, path) <- Mega.match $ do
+    _ <- optional (some (char ' '))
+    _ <- string name
+    _ <- some (char ' ')
+    many (Mega.satisfy (not . isSpace))
+  trailing <- many (Mega.satisfy (/= '\n'))
+  _ <- void eol <|> Mega.eof
+  let pathT = toS path :: Text
+      include = Include (constr (T.takeWhile (/= '#') pathT))
+      rest = T.strip (toS trailing)
+      rawLine = raw <> toS trailing
+  if T.null rest || "#" `T.isPrefixOf` rest
+    then
+      return $
+        if "#" `T.isInfixOf` pathT || not (T.null rest)
+          then Verbatim include rawLine
+          else include
+    else empty
 
 parseOther :: Parser NixConfLine
 parseOther = Mega.try $ Other . toS <$> Mega.someTill Mega.anySingle (void eol <|> Mega.eof)
@@ -516,12 +608,15 @@ parseAltLine =
     <|> parseLine Substituters "substituters"
     <|> parseLine ExtraTrustedPublicKeys "extra-trusted-public-keys"
     <|> parseLine TrustedPublicKeys "trusted-public-keys"
+    <|> parseLine ExtraTrustedUsers "extra-trusted-users"
     <|> parseLine TrustedUsers "trusted-users"
-    -- Nix 1.0 alias keys (binary-caches, binary-cache-public-keys) are
-    -- deliberately NOT interpreted: cachix never wrote them, and parsing them
-    -- would rename user-authored lines to the canonical keys on a rewrite.
+    -- Nix 1.0 alias keys are still honored by Nix, so they are read (the
+    -- substituter checks must see them), but never rewritten: rendering them
+    -- back as canonical keys would rename user-authored lines.
+    <|> parseReadOnlyLine Substituters "binary-caches"
+    <|> parseReadOnlyLine TrustedPublicKeys "binary-cache-public-keys"
     -- NB: assume that space in this option means space in filename
-    <|> parseLine (NetRcFile . T.concat) "netrc-file"
+    <|> parseLine (NetRcFile . T.unwords) "netrc-file"
     <|> parseInclude RequiredInclude "include"
     <|> parseInclude OptionalInclude "!include"
     <|> parseOther

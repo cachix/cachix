@@ -39,7 +39,7 @@ test caches goldenName = withSystemTempFile "hspec-netrc" $ \filepath _ -> do
   let input = "test/data/" <> toS goldenName <> ".input"
       output = "test/data/" <> toS goldenName <> ".output"
   copyFile input filepath
-  NetRc.add (Token "token123") caches filepath
+  _ <- NetRc.add (Token "token123") caches filepath
   real <- readFile filepath
   expected <- readFile output
   real `shouldBe` expected
@@ -52,3 +52,15 @@ spec =
     it "populates empty netrc file" $ test [bc1, bc2] "empty"
     it "populates netrc file with one additional entry" $ test [bc2] "add"
     it "populates netrc file with one overriden entry" $ test [bc2] "override"
+
+    it "skips the write when nothing changed" $
+      withSystemTempFile "hspec-netrc" $ \filepath _ -> do
+        copyFile "test/data/empty.input" filepath
+        NetRc.add (Token "token123") [bc1, bc2] filepath `shouldReturn` True
+        NetRc.add (Token "token123") [bc1, bc2] filepath `shouldReturn` False
+
+    it "rewrites when the auth token changed" $
+      withSystemTempFile "hspec-netrc" $ \filepath _ -> do
+        copyFile "test/data/empty.input" filepath
+        _ <- NetRc.add (Token "token123") [bc1, bc2] filepath
+        NetRc.add (Token "rotated456") [bc1, bc2] filepath `shouldReturn` True

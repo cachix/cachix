@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - `cachix use` and `cachix remove` abort with a clean error when an existing config file cannot be read, instead of treating it as empty and overwriting it on the next write
 - all config writes (`nix.conf`, the fragment, and `--output-directory` files) explain what to do when the file is not writable instead of failing with a bare IO error; the `!include` hint recognizes an existing include spelled with an absolute path
 - `cachix use` and `cachix remove` print a clean error when `nix-env` is not on the PATH instead of crashing with a raw IO exception
+- the netrc file for private caches is only rewritten (and its notice only printed) when its contents actually change, so repeated `cachix use` runs are fully idempotent; a rotated auth token still updates it
 
 ## [1.11.1] - 2026-04-29
 

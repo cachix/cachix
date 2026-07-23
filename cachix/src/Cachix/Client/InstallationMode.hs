@@ -458,8 +458,10 @@ addPrivateBinaryCacheNetRC config bc nixconf = do
   filename <- (`replaceFileName` "netrc") <$> NixConf.getFilename nixconf
   authToken <- Config.getAuthTokenRequired config
   let netrcfile = fromMaybe filename Nothing -- TODO: get netrc from nixconf
-  NetRc.add authToken [bc] netrcfile
-  putErrText $ "Configured private read access credentials in " <> toS filename
+  written <- NetRc.add authToken [bc] netrcfile
+  when written $
+    putErrText $
+      "Configured private read access credentials in " <> toS filename
   pure filename
 
 isTrustedUser :: [Text] -> IO Bool

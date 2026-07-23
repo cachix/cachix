@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- narinfo: accept an `If-None-Match` request header and return an `ETag` response header, for conditional GETs
+
 ## [0.7.0] - 2022-01-12
 
 - Support Cachix Deploy

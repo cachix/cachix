@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Changed
+
+- client: require Nix 2.4 or newer, for both `cachix use` and `cachix remove`. Pre-release builds of exactly 2.4 (nixUnstable snapshots from 2019 to 2021) count as older than 2.4 and are rejected.
+- `cachix use` now writes caches to a dedicated `cachix.conf` fragment, pulled into `nix.conf` with `!include`, so cachix manages only its own file and no longer rewrites your Nix settings. Caches use `extra-substituters` / `extra-trusted-public-keys`, and inline settings written by older versions are migrated into the fragment (with a notice listing the migrated values).
+- `cachix use --output-directory` keeps writing a self-contained `nix.conf`, with no fragment involved, so shipping that single file keeps working
+- `cachix remove` accepts the same `--mode` and `--output-directory` options as `cachix use`, so caches can be removed from a self-contained `nix.conf` as well
+
+### Fixed
+
+- #413: `cachix use` no longer drops or overrides substituters and public keys configured elsewhere, and now leaves substituters/public keys it didn't write untouched instead of sweeping them into the fragment
+- migration only claims inline lines that match the exact shape older versions wrote: both the `substituters` and `trusted-public-keys` lines present, each led by the `cache.nixos.org` default. A lone marker-led line (a shape users write by hand to override defaults) and lines that merely mention the default stay put. The default is restated in the fragment so setups overriding `substituters` at another level keep `cache.nixos.org` reachable.
+- migration only runs when `nix.conf` is writable: on a read-only `nix.conf` (for example managed by home-manager or nix-darwin) legacy lines are left in place with a notice, so `cachix use` succeeds once the `!include` line is present instead of failing on every run
+- `cachix remove` also removes a leftover trusted public key when the substituter is already gone, names the file it actually changed, and points out a matching substituter it does not manage (also modulo a trailing slash, on commented lines, and on Nix 1.0 alias lines) instead of claiming no cache was found, including when a managed entry was removed but an unmanaged copy remains
+- `cachix remove` no longer adds the `!include cachix.conf` line to a `nix.conf` that lacked it, so a removal cannot re-activate the remaining caches in the fragment
+- a stale `netrc-file` line older versions wrote into `nix.conf` is moved into the fragment on the next `cachix use`, including for public caches
+- lines with inline `#` comments and Nix 1.0 alias keys (`binary-caches`, `binary-cache-public-keys`) are preserved byte for byte instead of being reparsed and rewritten, and their values are still honored when detecting trusted users and configured substituters
+- `extra-trusted-users` is now recognized when detecting trusted users
+- values in a `netrc-file` path with spaces are no longer mangled on a rewrite, blank lines after assignments are preserved, and stray empty values from trailing whitespace are dropped
+- `cachix use` and `cachix remove` abort with a clean error when an existing config file cannot be read, instead of treating it as empty and overwriting it on the next write
+- all config writes (`nix.conf`, the fragment, and `--output-directory` files) explain what to do when the file is not writable instead of failing with a bare IO error; the `!include` hint recognizes an existing include spelled with an absolute path
+- `cachix use` and `cachix remove` print a clean error when `nix-env` is not on the PATH instead of crashing with a raw IO exception
+- the netrc file for private caches is only rewritten (and its notice only printed) when its contents actually change, so repeated `cachix use` runs are fully idempotent; a rotated auth token still updates it
+
 ## [1.11.1] - 2026-04-29
 
 ### Added

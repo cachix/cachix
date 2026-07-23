@@ -1,6 +1,7 @@
 -- TODO: we may need to revisit this when the various flavours of Nix start to diverge
 module Cachix.Client.NixVersion
   ( assertNixVersion,
+    isSupportedNixVersion,
     parseNixVersion,
     minimalVersion,
   )
@@ -15,9 +16,16 @@ import Text.Megaparsec (Parsec, anySingle, choice, eof, lookAhead, manyTill, par
 import Text.Megaparsec qualified as P
 import Text.Megaparsec.Char (digitChar)
 
-minimalVersion :: SemVer
+-- | The minimum supported Nix version. Kept as a General (two component)
+-- version so plain "2.4" output compares equal to it; the cross constructor
+-- Ord of the versions package orders SemVer shaped output like "2.4.0"
+-- correctly against it as well.
+minimalVersion :: Versioning
 minimalVersion =
-  semver "2.0.1" & fromRight (panic "Couldn't parse minimalVersion")
+  General (version "2.4" & fromRight (panic "Couldn't parse minimalVersion"))
+
+isSupportedNixVersion :: Versioning -> Bool
+isSupportedNixVersion = (>= minimalVersion)
 
 assertNixVersion :: IO (Either Text ())
 assertNixVersion = do
@@ -25,16 +33,24 @@ assertNixVersion = do
   return $ case nixVersion of
     Left err -> Left err
     Right ver
-      | ver < Ideal minimalVersion -> Left "Nix 2.0.2 or lower is not supported. Please upgrade: https://nixos.org/nix/"
+      | not (isSupportedNixVersion ver) -> Left $ "Nix " <> prettyV minimalVersion <> " or newer is required. Please upgrade: https://nixos.org/nix/"
       | otherwise -> Right ()
 
 getRawNixVersion :: IO (Either Text Text)
 getRawNixVersion = do
-  (exitcode, out, err) <- readProcessWithExitCode "nix-env" ["--version"] mempty
-  unless (err == "") $ putStrLn $ "nix-env stderr: " <> err
-  return $ case exitcode of
-    ExitFailure i -> Left $ "'nix-env --version' exited with " <> Protolude.show i
-    ExitSuccess -> Right (toS out)
+  result <- try (readProcessWithExitCode "nix-env" ["--version"] mempty) :: IO (Either IOException (ExitCode, [Char], [Char]))
+  case result of
+    Left ioerr ->
+      return $
+        Left $
+          "Couldn't run 'nix-env --version': "
+            <> toS (displayException ioerr)
+            <> "\nIs Nix installed and on the PATH? https://nixos.org/nix/"
+    Right (exitcode, out, err) -> do
+      unless (err == "") $ putStrLn $ "nix-env stderr: " <> err
+      return $ case exitcode of
+        ExitFailure i -> Left $ "'nix-env --version' exited with " <> Protolude.show i
+        ExitSuccess -> Right (toS out)
 
 parseNixVersion :: Text -> Either Text Versioning
 parseNixVersion input =

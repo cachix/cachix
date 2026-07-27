@@ -20,6 +20,7 @@ module Cachix.Daemon.PushManager
     -- * Query
     filterPushJobs,
     getFailedPushJobs,
+    failPushJob,
     failPendingJobs,
 
     -- * Store paths
@@ -65,6 +66,7 @@ import Cachix.Daemon.Types.PushManager
 import Cachix.Types.BinaryCache qualified as BinaryCache
 import Conduit qualified as C
 import Control.Concurrent.Async qualified as Async
+import Control.Concurrent.MVar qualified as MVar
 import Control.Concurrent.STM.TVar
 import Control.Monad.Catch qualified as E
 import Control.Monad.IO.Unlift (MonadUnliftIO)
@@ -93,6 +95,7 @@ newPushManagerEnv pushOptions batchOptions pmPushParams onPushEvent pmLogger = l
   pmPushJobs <- newTVarIO mempty
   pmPendingJobCount <- newTVarIO 0
   pmStorePathIndex <- newTVarIO mempty
+  pmJobLock <- MVar.newMVar ()
   pmTaskQueue <- atomically newTaskQueue
   pmTaskSemaphore <- QSem.newQSem (numJobs pushOptions)
   pmLastEventTimestamp <- newTVarIO =<< getCurrentTime
@@ -211,37 +214,42 @@ withPushJob pushId f =
     handleMissingPushJob =
       Katip.logLocM Katip.ErrorS $ Katip.ls $ "Push job " <> (show pushId :: Text) <> " not found"
 
--- | Apply an update to many push jobs atomically. After the update, a job
--- transitions to a terminal state if either the update made it processed
--- directly or it leaves 'pushQueue' empty. Returns the jobs that transitioned
--- to a terminal state in this call.
+-- | Apply an update to many push jobs atomically. Jobs that are already in a
+-- terminal state are left untouched. After the update, a job transitions to
+-- a terminal state if either the update made it processed directly or it
+-- leaves 'pushQueue' empty. Jobs that reach a terminal state are removed from
+-- the store path index so that in-flight uploads stop reporting to them.
+-- Returns the jobs that were updated; use 'PushJob.isProcessed' to pick out
+-- the ones that finished in this call.
 --
--- Mark, completion check, and pending-counter decrement happen in one STM
--- transaction so concurrent workers cannot race past the empty-queue check.
+-- Mark, completion check, index cleanup, and pending-counter decrement happen
+-- in one STM transaction so concurrent workers cannot race past the
+-- empty-queue check.
 applyPushJobUpdates ::
   (Foldable t) =>
   t Protocol.PushRequestId ->
   (UTCTime -> PushJob -> PushJob) ->
   PushManager [PushJob]
 applyPushJobUpdates pushIds update = do
-  PushManagerEnv {pmPushJobs, pmPendingJobCount} <- ask
+  PushManagerEnv {pmPushJobs, pmPendingJobCount, pmStorePathIndex} <- ask
   ts <- liftIO getCurrentTime
   liftIO $ atomically $ do
     jobs <- readTVar pmPushJobs
-    let (jobs', finished) = foldl' (step ts) (jobs, []) pushIds
+    let (jobs', updated) = foldl' (step ts) (jobs, []) pushIds
+        finished = filter PushJob.isProcessed updated
     writeTVar pmPushJobs jobs'
     modifyTVar' pmPendingJobCount (subtract (length finished))
-    pure finished
+    unless (null finished) $ do
+      let finishedIds = Set.fromList (map PushJob.pushId finished)
+      modifyTVar' pmStorePathIndex $ HashMap.map (Seq.filter (`Set.notMember` finishedIds))
+    pure updated
   where
     step ts (!jobs, acc) pushId =
       case HashMap.lookup pushId jobs of
         Just job
           | not (PushJob.isProcessed job) ->
               let job' = transitionIfDone ts (update ts job)
-                  jobs' = HashMap.insert pushId job' jobs
-               in if PushJob.isProcessed job'
-                    then (jobs', job' : acc)
-                    else (jobs', acc)
+               in (HashMap.insert pushId job' jobs, job' : acc)
         _ -> (jobs, acc)
 
     transitionIfDone ts job
@@ -252,28 +260,43 @@ applyPushJobUpdates pushIds update = do
             else PushJob.complete ts job
       | otherwise = job
 
-failPushJob :: Protocol.PushRequestId -> PushManager ()
-failPushJob pushId = void $ applyPushJobUpdates [pushId] PushJob.fail
+failPushJob :: Protocol.PushRequestId -> Text -> PushManager ()
+failPushJob pushId reason = void $ failPushJobs [pushId] reason
 
--- | Mark every non-terminal job as failed and emit failure events for any
--- paths still in their queues. Failed jobs stay in 'pmPushJobs' so a later
--- 'getFailedPushJobs' call sees them and the daemon exits with the right
--- code; the natural path removes jobs via 'pushFinished'.
+-- | Mark every non-terminal job as failed and emit failure events for their
+-- remaining paths.
 failPendingJobs :: Text -> PushManager [PushJob]
 failPendingJobs reason = do
   pmPushJobs <- asks pmPushJobs
   allIds <- HashMap.keys <$> liftIO (readTVarIO pmPushJobs)
-  failed <- applyPushJobUpdates allIds PushJob.fail
+  failPushJobs allIds reason
+
+-- | Mark the given jobs as failed, emitting a 'PushStorePathFailed' event for
+-- each path that will no longer be pushed, followed by 'PushFinished' so that
+-- subscribers stop waiting. The jobs are dropped from the store path index at
+-- the same time, so uploads that are still in flight do not emit any further
+-- events for them. Failed jobs stay in 'pmPushJobs' so a later
+-- 'getFailedPushJobs' call sees them and the daemon exits with the right
+-- code; the natural path removes jobs via 'pushFinished'.
+failPushJobs :: (Foldable t) => t Protocol.PushRequestId -> Text -> PushManager [PushJob]
+failPushJobs pushIds reason = withJobLock $ do
+  failedJobs <- applyPushJobUpdates pushIds PushJob.fail
 
   ts <- liftIO getCurrentTime
   sendPushEvent <- asks pmOnPushEvent
-  for_ failed $ \job -> do
+  for_ failedJobs $ \job -> do
     let pid = PushJob.pushId job
-    for_ (PushJob.pushQueue job) $ \path ->
+    for_ (unpushedPaths job) $ \path ->
       sendStorePathEventAt ts [pid] (PushStorePathFailed path reason)
     liftIO $ sendPushEvent pid (PushEvent ts pid PushFinished)
 
-  pure failed
+  pure failedJobs
+  where
+    -- A job that fails before closure resolution has an empty queue; fall
+    -- back to the requested paths so subscribers still see the failure.
+    unpushedPaths job
+      | isNothing (PushJob.startedAt job) = Set.fromList $ Protocol.storePaths (pushRequest job)
+      | otherwise = PushJob.pushQueue job
 
 pendingJobCount :: PushManager Int
 pendingJobCount = do
@@ -316,20 +339,27 @@ queuedStorePathCount = do
     countQueuedPaths acc job = acc + fromIntegral (Set.size $ pushQueue job)
 
 resolvePushJob :: Protocol.PushRequestId -> PushJob.ResolvedClosure FilePath -> PushManager ()
-resolvePushJob pushId closure = do
+resolvePushJob pushId closure = withJobLock $ do
   Katip.logLocM Katip.DebugS $ Katip.ls $ showClosureStats closure
 
-  finishedJobs <- applyPushJobUpdates [pushId] (PushJob.populateQueue closure)
+  updatedJobs <- applyPushJobUpdates [pushId] (PushJob.populateQueue closure)
 
-  withPushJob pushId $ \pushJob -> do
+  -- A job that already reached a terminal state (e.g. failed during shutdown)
+  -- must not start pushing, or it would emit events after 'PushFinished'.
+  when (null updatedJobs) $
+    Katip.logLocM Katip.DebugS $
+      Katip.ls $
+        "Push job " <> (show pushId :: Text) <> " is no longer active, ignoring resolved closure"
+
+  for_ updatedJobs $ \pushJob -> do
     pushStarted pushJob
     let skippedPaths = Set.difference (PushJob.rcAllPaths closure) (PushJob.rcMissingPaths closure)
     ts <- liftIO getCurrentTime
     forM_ skippedPaths $ \path ->
       sendStorePathEventAt ts [pushId] (PushStorePathSkipped path)
     queueStorePaths pushId $ Set.toList (PushJob.rcMissingPaths closure)
-
-  for_ finishedJobs pushFinished
+    when (PushJob.isProcessed pushJob) $
+      pushFinished pushJob
   where
     showClosureStats :: PushJob.ResolvedClosure FilePath -> Text
     showClosureStats PushJob.ResolvedClosure {..} =
@@ -362,7 +392,7 @@ runQueryMissingPathsTask pushParams pushId =
   where
     failJob :: SomeException -> PushManager ()
     failJob err = do
-      failPushJob pushId
+      failPushJob pushId $ "Failed to resolve closure: " <> toS (displayException err)
 
       Katip.katipAddContext (Katip.sl "error" (displayException err)) $
         Katip.logLocM Katip.ErrorS $
@@ -385,7 +415,7 @@ runQueryMissingPathsTask pushParams pushId =
         -- Emit PushStorePathInvalid events for invalid paths
         ts <- liftIO getCurrentTime
         forM_ errors $ \(path, err) ->
-          sendStorePathEventAt ts [pushId] (PushStorePathInvalid path (formatStorePathError err))
+          sendStorePathEventForActiveJobsAt ts [pushId] (PushStorePathInvalid path (formatStorePathError err))
 
         paths <- computeClosure store validPaths
 
@@ -399,7 +429,7 @@ runHandleMissingPathsResponseTask pushParams pushId batchResponse =
   where
     failJob :: SomeException -> PushManager ()
     failJob err = do
-      failPushJob pushId
+      failPushJob pushId $ "Failed to query missing paths: " <> toS (displayException err)
 
       Katip.katipAddContext (Katip.sl "error" (displayException err)) $
         Katip.logLocM Katip.ErrorS $
@@ -567,33 +597,51 @@ sendStorePathEventAt timestamp pushIds msg = do
     sendPushEvent pushId (PushEvent timestamp pushId msg)
 
 pushStorePathAttempt :: FilePath -> Int64 -> RetryStatus -> PushManager ()
-pushStorePathAttempt storePath size retryStatus = do
+pushStorePathAttempt storePath size retryStatus = withJobLock $ do
   let pushRetryStatus = newPushRetryStatus retryStatus
   pushIds <- lookupStorePathIndex storePath
   sendStorePathEvent pushIds (PushStorePathAttempt storePath size pushRetryStatus)
 
 pushStorePathProgress :: FilePath -> Int64 -> Int64 -> PushManager ()
-pushStorePathProgress storePath currentBytes newBytes = do
+pushStorePathProgress storePath currentBytes newBytes = withJobLock $ do
   pushIds <- lookupStorePathIndex storePath
   sendStorePathEvent pushIds (PushStorePathProgress storePath currentBytes newBytes)
 
 pushStorePathDone :: FilePath -> PushManager ()
-pushStorePathDone storePath = do
-  pushIds <- lookupStorePathIndex storePath
-  finishedJobs <- applyPushJobUpdates pushIds (\_ -> PushJob.markStorePathPushed storePath)
-  sendStorePathEvent pushIds (PushStorePathDone storePath)
-  for_ finishedJobs pushFinished
-  removeStorePath storePath
+pushStorePathDone storePath =
+  finishStorePath storePath PushJob.markStorePathPushed (PushStorePathDone storePath)
 
 pushStorePathFailed :: FilePath -> Text -> PushManager ()
-pushStorePathFailed storePath errMsg = do
+pushStorePathFailed storePath errMsg =
+  finishStorePath storePath PushJob.markStorePathFailed (PushStorePathFailed storePath errMsg)
+
+-- | Record the outcome of a store path push on every job that is still
+-- waiting for it, then emit the event to those jobs only. Jobs that already
+-- reached a terminal state (e.g. failed during shutdown) receive nothing, so
+-- 'PushFinished' stays the last event a subscriber sees.
+finishStorePath :: FilePath -> (FilePath -> PushJob -> PushJob) -> PushEventMessage -> PushManager ()
+finishStorePath storePath markStorePath msg = withJobLock $ do
   pushIds <- lookupStorePathIndex storePath
-  finishedJobs <- applyPushJobUpdates pushIds (\_ -> PushJob.markStorePathFailed storePath)
-  sendStorePathEvent pushIds (PushStorePathFailed storePath errMsg)
-  for_ finishedJobs pushFinished
+  updatedJobs <- applyPushJobUpdates pushIds (\_ -> markStorePath storePath)
+  sendStorePathEvent (map PushJob.pushId updatedJobs) msg
+  for_ (filter PushJob.isProcessed updatedJobs) pushFinished
   removeStorePath storePath
 
 -- Helpers
+
+-- | Run a job operation without interleaving its state changes and events with
+-- another job operation. STM keeps the internal state consistent; this lock
+-- also keeps the externally visible event stream consistent with that state.
+withJobLock :: PushManager a -> PushManager a
+withJobLock action = do
+  env@PushManagerEnv {pmJobLock} <- ask
+  liftIO $ MVar.withMVar pmJobLock $ \_ -> runPushManager env action
+
+sendStorePathEventForActiveJobsAt :: (Foldable f) => UTCTime -> f Protocol.PushRequestId -> PushEventMessage -> PushManager ()
+sendStorePathEventForActiveJobsAt timestamp pushIds msg = withJobLock $ do
+  pushJobs <- asks pmPushJobs >>= liftIO . readTVarIO
+  let isActive pushId = maybe False (not . PushJob.isProcessed) $ HashMap.lookup pushId pushJobs
+  sendStorePathEventAt timestamp (filter isActive $ toList pushIds) msg
 
 storeToFilePath :: (MonadIO m) => Store -> StorePath -> m FilePath
 storeToFilePath store storePath = do

@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Fixed
 
 - deploy: preserve trusted public keys for existing substituters when downloading store paths
+- daemon: notify waiting clients when push jobs fail and prevent events after completion
 
 ## [1.12.0] - 2026-08-10
 

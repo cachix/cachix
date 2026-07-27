@@ -78,6 +78,9 @@ data PushManagerEnv = PushManagerEnv
     pmProgressEmitIntervalNs :: Word64,
     -- | The number of pending (uncompleted) jobs.
     pmPendingJobCount :: TVar Int,
+    -- | Serializes job transitions with their externally visible events and
+    -- store path index updates.
+    pmJobLock :: MVar (),
     -- | Manager for batching narinfo queries
     pmNarinfoQueryManager :: NarinfoQueryManager Protocol.PushRequestId,
     -- | Latch to coordinate graceful shutdown of the push pipeline

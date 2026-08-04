@@ -42,7 +42,7 @@
       ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
 
-      # Keep in sync with stack.yaml
+      # Keep in sync with the Stackage snapshot in cabal.project
       ghcVersion = "910";
 
       # Try to use the same Nix version as cnix-store, if available.

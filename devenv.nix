@@ -33,7 +33,6 @@
 
     # Haskell
     pkgs.cabal-install
-    pkgs.stack
     pkgs.haskell.compiler."ghc${ghcVersion}"
     (pkgs.haskell-language-server.override { supportedGhcVersions = [ ghcVersion ]; })
   ];

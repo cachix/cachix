@@ -1,7 +1,7 @@
-cradle: 
-  stack:
+cradle:
+  cabal:
     - path: "./cachix"
-      component: "cachix:lib"
+      component: "cachix:lib:cachix"
     - path: "./cachix/cachix"
       component: "cachix:exe:cachix"
     - path: "./cachix/cachix-deployment"
@@ -9,6 +9,6 @@ cradle:
     - path: "./cachix/test"
       component: "cachix:test:cachix-test"
     - path: "./cachix-api"
-      component: "cachix-api:lib"
+      component: "cachix-api:lib:cachix-api"
     - path: "./cachix-api/test"
       component: "cachix-api:test:cachix-api-test"

@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
+
+## Unreleased
+
+### Changed
+
+- dev: removed support for building with stack. Use cabal or Nix instead.
+
 ## [1.11.1] - 2026-04-29
 
 ### Added
@@ -251,7 +258,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ### Added
 
-- `cachix pin` - See https://docs.cachix.org/pins
+- `cachix pin` - See <https://docs.cachix.org/pins>
 
 ### Fixed
 
@@ -364,7 +371,7 @@ you have a lot of small files, there should be some significant performance impr
 
 - Cachix Deploy: auto rollback if the agent can't connect to the backend service anymore
 
-- Cachix Deploy: allow specifying `rollbackScript`: https://docs.cachix.org/deploy/reference
+- Cachix Deploy: allow specifying `rollbackScript`: <https://docs.cachix.org/deploy/reference>
 
 - Cachix Deploy: report `system` and closure size from the agent
 
@@ -384,7 +391,6 @@ you have a lot of small files, there should be some significant performance impr
 
 - Cachix Deploy: properly fix disconnection issues
 - Cachix Deploy: deployments are now a separate process so cachix agent can be upgraded at any time
-
 
 ## [0.7.1] - 2022-06-27
 
@@ -483,12 +489,11 @@ you have a lot of small files, there should be some significant performance impr
 
 - A number of error messaging improvements:
 
-  * Don't suggest creating a cache when generating keypair as it's the wrong order
+  - Don't suggest creating a cache when generating keypair as it's the wrong order
 
-  * #290: Explain what is going on when there's no signing key
+  - #290: Explain what is going on when there's no signing key
 
-  * #262: improve instructions when on NixOS and the user is untrusted
-
+  - #262: improve instructions when on NixOS and the user is untrusted
 
 ## [0.3.7] - 2020-03-12
 
@@ -515,7 +520,6 @@ you have a lot of small files, there should be some significant performance impr
   its deleted by GC or nix-store --delete.
 
 - Print correct path when passing --nixos-folder and encountering an error
-
 
 ## [0.3.6] - 2020-02-22
 
@@ -628,11 +632,11 @@ you have a lot of small files, there should be some significant performance impr
 
 - #132 error handling for readProcess invocations @domenkozar
 - #130 only warn about not supporting groups if user is not trusted @domenkozar
-- #128 Generate https://cache.nixos.org when run as root on NixOS @yegortimoschenko
+- #128 Generate <https://cache.nixos.org> when run as root on NixOS @yegortimoschenko
 - #121 bail out if narSize is 0 @domenkozar
 - #123 support passing --config @domenkozar
 - #123 no more spurious warning messages when using "cachix use" @domenkozar
-- #105 pass https://cache.nixos.org explicitly @domenkozar
+- #105 pass <https://cache.nixos.org> explicitly @domenkozar
 
 ## [0.1.1] - 2018-08-03
 
@@ -666,7 +670,6 @@ you have a lot of small files, there should be some significant performance impr
 
 - Initial release @domenkozar
 
-[Unreleased]: https://github.com/cachix/cachix/compare/v0.3.8...HEAD
 [0.3.8]: https://github.com/cachix/cachix/compare/v0.3.7...v0.3.8
 [0.3.7]: https://github.com/cachix/cachix/compare/v0.3.6...v0.3.7
 [0.3.6]: https://github.com/cachix/cachix/compare/v0.3.5...v0.3.6

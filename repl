@@ -5,5 +5,4 @@
 # A Haskell repl for hacking on the cachix library
 
 # -fobject-code: required by inline-c
-# -lnixstore: not passed by stack repl for unknown reason
-stack repl --ghc-options='-fobject-code -lnixstore' cachix:lib
+cabal repl lib:cachix --repl-options=-fobject-code

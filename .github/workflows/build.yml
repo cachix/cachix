@@ -13,7 +13,6 @@ jobs:
           - [self-hosted, linux, X64]
           - [self-hosted, linux, ARM64]
           - [self-hosted, macos, ARM64]
-          - macos-15-intel # x86_64
           - macos-latest # macOS 26
 
     runs-on: ${{ matrix.os }}

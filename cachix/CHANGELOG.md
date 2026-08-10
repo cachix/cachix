@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Changed
 
 - dev: removed support for building with stack. Use cabal or Nix instead.
+- removed support for Intel macOS
 
 ### Fixed
 

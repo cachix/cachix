@@ -294,6 +294,7 @@ test-suite cachix-test
     NixConfSpec
     NixVersionSpec
     RetrySpec
+    SecretSpecSpec
     Spec
     TerminalSpec
     URISpec
@@ -320,6 +321,7 @@ test-suite cachix-test
     , servant-client-core
     , stm
     , temporary
+    , text
     , time
     , unliftio
     , uuid

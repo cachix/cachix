@@ -6,6 +6,7 @@ module Cachix.Client.Command.Push
     withPushParams,
     withPushParams',
     handleCacheResponse,
+    getConfigSigningKey,
     getPushSecret,
     getPushSecretRequired,
   )
@@ -194,7 +195,8 @@ getPushSecret config name = do
   maybeAuthToken <- Config.getAuthTokenMaybe config
 
   maybeSigningKeyEnv <- toS <<$>> lookupEnv "CACHIX_SIGNING_KEY"
-  let maybeSigningKeyConfig = Config.secretKey <$> head (getBinaryCache config)
+  -- Empty keys are metadata for caches whose signing key is in secretspec.
+  let maybeSigningKeyConfig = getConfigSigningKey config name
 
   maybeSigningKey <-
     case maybeSigningKeyEnv <|> maybeSigningKeyConfig of
@@ -208,11 +210,6 @@ getPushSecret config name = do
       Just authToken -> return $ Right $ PushToken authToken
       Nothing -> return $ Left msg
   where
-    -- we reverse list of caches to prioritize keys added as last
-    getBinaryCache c =
-      reverse $
-        filter (\bc -> Config.name bc == name) (Config.binaryCaches c)
-
     msg :: Text
     msg =
       [iTrim|
@@ -229,6 +226,18 @@ and if missing also looked up from ~/.config/cachix/cachix.dhall
       | SecretSpec.supported =
           "\n\nWith secretspec (https://secretspec.dev) they can also be declared in your project's secretspec.toml, or stored once for all projects: cachix authtoken and cachix generate-keypair store credentials via secretspec by default when it is configured."
       | otherwise = ""
+
+getConfigSigningKey :: Config.Config -> Text -> Maybe Text
+getConfigSigningKey config name =
+  Config.secretKey
+    <$> last
+      ( filter
+          (not . T.null . Config.secretKey)
+          ( -- Prioritize keys added last for compatibility with existing config
+            -- files that contain duplicate cache entries.
+            filter (\bc -> Config.name bc == name) (Config.binaryCaches config)
+          )
+      )
 
 -- | Like 'getPushSecret', but throws a fatal error if the secret is not found.
 getPushSecretRequired ::

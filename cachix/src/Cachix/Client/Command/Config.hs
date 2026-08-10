@@ -27,53 +27,26 @@ import Protolude hiding (toS)
 import Protolude.Conv
 import Servant.API (NoContent (..))
 import Servant.Auth.Client
-import System.IO (hFlush, hIsTerminalDevice)
 
 -- | Pick the secret destination: honor an explicit flag, otherwise use
--- secretspec when it is usable on this machine. When the secretspec CLI is
--- installed but unconfigured, interactive runs offer to set it up on the
--- spot; everything else falls back to the configuration file with a tip.
-resolveSecretStore :: Bool -> SecretStore -> IO Bool
-resolveSecretStore _ StoreSecretSpec = return True
-resolveSecretStore _ StoreConfigFile = return False
-resolveSecretStore allowPrompt StoreAuto = do
+-- secretspec when it is configured on this machine. An unconfigured install
+-- falls back to the Cachix configuration file with setup instructions.
+resolveSecretStore :: SecretStore -> IO Bool
+resolveSecretStore StoreSecretSpec = return True
+resolveSecretStore StoreConfigFile = return False
+resolveSecretStore StoreAuto = do
   configured <- SecretSpec.isConfigured
   if configured
     then return True
-    else offerSecretSpecSetup allowPrompt
-
-offerSecretSpecSetup :: Bool -> IO Bool
-offerSecretSpecSetup allowPrompt
-  | not SecretSpec.supported = return False
-  | otherwise = do
-      cliPresent <- SecretSpec.cliAvailable
-      interactive <- hIsTerminalDevice stdin
-      if cliPresent && interactive && allowPrompt
-        then do
-          wantsSetup <- promptYesNo "secretspec is installed but not configured. Configure it now to store cachix credentials in your password manager?"
-          if wantsSetup
-            then do
-              initialized <- SecretSpec.configInit
-              if initialized
-                then SecretSpec.isConfigured
-                else return False
-            else return False
-        else do
-          putErrText "Tip: configure secretspec (https://secretspec.dev) to store cachix credentials in your password manager instead of a plaintext file."
-          return False
-
-promptYesNo :: Text -> IO Bool
-promptYesNo question = do
-  putStr (question <> " [Y/n] ")
-  hFlush stdout
-  answer <- Safe.handleIO (\_ -> return "n") T.IO.getLine
-  return $ T.toLower (T.strip answer) `elem` ["", "y", "yes"]
+    else do
+      when SecretSpec.supported $
+        putErrText "Tip: run `secretspec config global init` to configure secretspec and store Cachix credentials in your password manager instead of a plaintext file."
+      return False
 
 -- TODO: check that token actually authenticates!
 authtoken :: Env -> AuthTokenSource -> SecretStore -> IO ()
 authtoken env source store = do
-  -- reading the token from stdin rules out prompting on it
-  useSecretspec <- resolveSecretStore (source /= TokenStdin) store
+  useSecretspec <- resolveSecretStore store
   if useSecretspec
     then do
       maybeToken <- case source of
@@ -109,20 +82,37 @@ generateKeypair env name store = do
   let signingKey = exportSigningKey $ SigningKey sk
       signingKeyCreate = SigningKeyCreate.SigningKeyCreate (toS $ B64.encode pk)
       bcc = Config.BinaryCacheConfig name signingKey
-  -- we first validate if key can be added to the binary cache
+  -- Validate the public key before changing the active local credential. If
+  -- local storage subsequently fails, surface the private key below because
+  -- this registration cannot be rolled back.
   (_ :: NoContent) <-
     escalate
       =<< retryClientM (clientenv env) (API.createKey cachixClient authToken name signingKeyCreate)
-  -- decide where to store only after the key was accepted, so the setup
-  -- prompt is never spent on a request that then fails
-  useSecretspec <- resolveSecretStore True store
-  -- if key was successfully added, store it locally
+
+  useSecretspec <- resolveSecretStore store
+  let storeSigningKey =
+        if useSecretspec
+          then do
+            SecretSpec.setSigningKey name (Just signingKey)
+            storeSecretspecCacheMetadata env name
+          else do
+            -- TODO: warn if binary cache with the same key already exists
+            let cfg = config env & Config.setBinaryCaches [bcc]
+            Config.writeConfig (Config.configPath (cachixoptions env)) cfg
+  storeSigningKey `Safe.catchAny` \exception -> do
+    putErrText
+      ( [iTrim|
+The public signing key was registered, but the private key could not be stored.
+Save this signing key now; it is the only copy:
+
+${signingKey}
+  |] ::
+          Text
+      )
+    throwIO exception
+
   if useSecretspec
     then do
-      SecretSpec.setSigningKey name (Just signingKey)
-      -- A stale key for this cache in the configuration file would take
-      -- precedence over the one just stored and no longer match the cache.
-      clearConfigSigningKey env name
       putStrLn
         ( [iTrim|
 Secret signing key has been stored via secretspec under the "cachix" project
@@ -144,9 +134,6 @@ IMPORTANT: Make sure to make a backup for the signing key, as you have the only 
             Text
         )
     else do
-      -- TODO: warn if binary cache with the same key already exists
-      let cfg = config env & Config.setBinaryCaches [bcc]
-      Config.writeConfig (Config.configPath (cachixoptions env)) cfg
       putStrLn
         ( [iTrim|
 Secret signing key has been saved in the file above. To populate
@@ -168,11 +155,20 @@ IMPORTANT: Make sure to make a backup for the signing key above, as you have the
             Text
         )
 
-clearConfigSigningKey :: Env -> Text -> IO ()
-clearConfigSigningKey env cacheName = do
+storeSecretspecCacheMetadata :: Env -> Text -> IO ()
+storeSecretspecCacheMetadata env cacheName = do
   let configPath = Config.configPath (cachixoptions env)
   cfg <- Config.getConfig configPath
-  let remaining = filter (\bc -> Config.name bc /= cacheName) (Config.binaryCaches cfg)
-  when (length remaining /= length (Config.binaryCaches cfg)) $ do
+  let matching = filter (\bc -> Config.name bc == cacheName) (Config.binaryCaches cfg)
+      caches = secretspecCacheMetadata cacheName (Config.binaryCaches cfg)
+  unless (all (T.null . Config.secretKey) matching) $
     putStrLn ("Moving the signing key for " <> cacheName <> " out of " <> toS configPath <> ", which would take precedence over secretspec." :: Text)
-    Config.writeConfig configPath $ cfg {Config.binaryCaches = remaining}
+  Config.writeConfig configPath $ cfg {Config.binaryCaches = caches}
+
+-- Retain the cache name for commands such as doctor, while ensuring the legacy
+-- config file cannot shadow the key stored by secretspec. Existing duplicates
+-- are collapsed at the same time.
+secretspecCacheMetadata :: Text -> [Config.BinaryCacheConfig] -> [Config.BinaryCacheConfig]
+secretspecCacheMetadata cacheName caches =
+  filter (\bc -> Config.name bc /= cacheName) caches
+    <> [Config.BinaryCacheConfig cacheName ""]

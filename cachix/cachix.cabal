@@ -273,6 +273,7 @@ test-suite cachix-test
     NetRcSpec
     NixConfSpec
     NixVersionSpec
+    SecretSpecSpec
     Spec
     URISpec
 
@@ -297,6 +298,7 @@ test-suite cachix-test
     , servant-client-core
     , stm
     , temporary
+    , text
     , time
     , unliftio
     , versions

@@ -5,6 +5,7 @@ import Cachix.Client.Config qualified as Config
 import Cachix.Client.Env (Env (..))
 import Cachix.Client.OptionsParser (DaemonOptions (..), DoctorOptions (..))
 import Cachix.Client.Retry (retryClientM)
+import Cachix.Client.SecretSpec qualified as SecretSpec
 import Cachix.Client.Servant (cachixClient, isErr)
 import Cachix.Daemon.Listen (getSocketPath)
 import Cachix.Daemon.Protocol qualified as Protocol
@@ -216,8 +217,13 @@ checkCache env cacheName configuredCaches = do
   maybeToken <- Config.getAuthTokenMaybe (config env)
   let token = fromMaybe (Token "") maybeToken
 
-  -- Check if we have a signing key for this cache
-  let hasSigningKey = any (\c -> Config.name c == cacheName && not (T.null (Config.secretKey c))) configuredCaches
+  -- Empty config entries retain cache metadata for secretspec-backed keys.
+  -- Resolve the actual key when it is not present in the legacy config file.
+  let hasConfigSigningKey = any (\c -> Config.name c == cacheName && not (T.null (Config.secretKey c))) configuredCaches
+  hasSigningKey <-
+    if hasConfigSigningKey
+      then return True
+      else isJust <$> SecretSpec.getSigningKey cacheName
 
   -- Try to get cache info (validates auth and connectivity)
   cacheRes <- retryClientM (clientenv env) $ API.getCache cachixClient token cacheName

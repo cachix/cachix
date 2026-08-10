@@ -19,9 +19,7 @@
 -- resolution finds nothing, 'isConfigured' is False, and storing fails.
 module Cachix.Client.SecretSpec
   ( supported,
-    cliAvailable,
     isConfigured,
-    configInit,
     getAuthToken,
     getSigningKey,
     setAuthToken,
@@ -37,11 +35,13 @@ import Data.Char qualified as Char
 import Data.Map.Strict qualified as Map
 import Data.String.Here
 import Data.Text qualified as T
+import Data.Text.IO qualified as T.IO
 import Protolude.Conv
 import SecretSpec qualified
 import System.Directory (XdgDirectory (..), doesFileExist, findExecutable, getXdgDirectory)
 import System.Environment (lookupEnv)
 import System.FilePath.Posix ((</>))
+import System.IO (hClose)
 import System.IO.Temp qualified as Temp
 import System.Process qualified as Process
 #endif
@@ -49,17 +49,10 @@ import System.Process qualified as Process
 -- | Whether this build of cachix was compiled with secretspec support.
 supported :: Bool
 
--- | Whether the secretspec CLI is on PATH.
-cliAvailable :: IO Bool
-
 -- | Whether secretspec can be used as a credential store on this machine: the
 -- build supports it, the secretspec CLI is on PATH, and a default provider is
 -- configured (SECRETSPEC_PROVIDER or the user configuration file).
 isConfigured :: IO Bool
-
--- | Run @secretspec config init@ interactively (inheriting the terminal) to
--- let the user pick a default provider. Returns whether it succeeded.
-configInit :: IO Bool
 
 -- | Resolve CACHIX_AUTH_TOKEN, first from the project's secretspec.toml, then
 -- from the embedded "cachix" namespace. Any resolution failure (no manifest,
@@ -82,8 +75,6 @@ setSigningKey :: Text -> Maybe Text -> IO ()
 #ifdef USE_SECRETSPEC
 supported = True
 
-cliAvailable = isJust <$> findExecutable "secretspec"
-
 isConfigured = do
   maybeExecutable <- findExecutable "secretspec"
   case maybeExecutable of
@@ -91,16 +82,10 @@ isConfigured = do
     Just _ -> do
       maybeProvider <- lookupEnv "SECRETSPEC_PROVIDER"
       case maybeProvider of
-        Just _ -> return True
-        Nothing -> doesFileExist =<< getXdgDirectory XdgConfig ("secretspec" </> "config.toml")
-
-configInit = do
-  maybeExecutable <- findExecutable "secretspec"
-  case maybeExecutable of
-    Nothing -> return False
-    Just executable -> do
-      exitCode <- Process.rawSystem executable ["config", "init"]
-      return $ exitCode == ExitSuccess
+        Just provider | not (T.null (T.strip (toS provider))) -> return True
+        -- `config global init` creates this file. Avoid starting the CLI merely
+        -- to inspect it; `set` will report an invalid or incomplete config.
+        _ -> doesFileExist =<< getXdgDirectory XdgConfig ("secretspec" </> "config.toml")
 
 getAuthToken = getSecret AuthTokenSecret
 
@@ -147,18 +132,33 @@ setSecret secret maybeValue = do
         -- the CLI itself and should not be overridden.
         maybeReason <- lookupEnv "SECRETSPEC_REASON"
         let reasonArgs = maybe ["--reason", "cachix credential store"] (const []) maybeReason
-        -- Omitting the value makes the CLI prompt for it with hidden input.
-        let valueArgs = maybeToList (toS <$> maybeValue)
-        -- rawSystem inherits stdio, so the CLI's prompts and confirmations
-        -- reach the user, and unlike callProcess a failure does not echo the
-        -- argument vector holding the secret value.
+        -- Omitting the value makes the CLI prompt for it with hidden input, or
+        -- read it from stdin when a pipe is connected.
         -- The profile is pinned for the same reason resolution pins it: the
         -- embedded manifest only declares [profiles.default].
-        exitCode <- Process.rawSystem executable (["--file", manifestPath, "set", toS (secretName secret)] <> valueArgs <> ["--profile", "default"] <> reasonArgs)
+        let args = ["--file", manifestPath, "set", toS (secretName secret), "--profile", "default"] <> reasonArgs
+        exitCode <- case maybeValue of
+          Nothing -> Process.rawSystem executable args
+          Just value -> runWithInput executable args value
         case exitCode of
           ExitSuccess -> return ()
           ExitFailure code ->
             throwIO $ SecretSpecError $ "secretspec set " <> secretName secret <> " failed with exit code " <> show code
+
+-- Keep supplied credentials out of argv, where they would be visible through
+-- process listings and telemetry. stdout and stderr remain inherited so
+-- provider prompts and confirmations still reach the user.
+runWithInput :: FilePath -> [FilePath] -> Text -> IO ExitCode
+runWithInput executable args value =
+  Process.withCreateProcess
+    (Process.proc executable args) {Process.std_in = Process.CreatePipe}
+    $ \maybeInput _ _ processHandle -> do
+      input <- case maybeInput of
+        Just stdinHandle -> return stdinHandle
+        Nothing -> throwIO $ SecretSpecError "Could not open stdin for the secretspec process."
+      T.IO.hPutStr input value
+      hClose input
+      Process.waitForProcess processHandle
 
 -- | Run one resolution and extract the named secret, mapping every failure to
 -- Nothing.
@@ -222,11 +222,7 @@ CACHIX_SIGNING_KEY = { description = "Cachix binary cache signing key", required
 #else
 supported = False
 
-cliAvailable = return False
-
 isConfigured = return False
-
-configInit = return False
 
 getAuthToken = return Nothing
 

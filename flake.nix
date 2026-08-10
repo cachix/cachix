@@ -66,6 +66,11 @@
               (haskellPackages.callCabal2nix "cachix" ./cachix {
                 inherit cachix-api;
                 hnix-store-core = haskellPackages.hnix-store-core_0_8_0_0 or haskellPackages.hnix-store-core;
+                hnix-store-nar = haskellPackages.callHackageDirect {
+                  pkg = "hnix-store-nar";
+                  ver = "0.1.2.0";
+                  sha256 = "sha256-0l2YghkU4H/A8ujcpIpF7Qxx9rr455NIyp2edDc2crk=";
+                } { };
                 nix = getNix args;
               })
               # Apply a fix for a bug in GHC 9.10.3 that fails to load libraries using weak references on macOS 26.

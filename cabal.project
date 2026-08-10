@@ -11,7 +11,7 @@ constraints:
   lzma-conduit ==1.2.3,
   microlens-pro ==0.2.0.4,
   hnix-store-core ==0.8.0.0,
-  hnix-store-nar ==0.1.1.0,
+  hnix-store-nar ==0.1.2.0,
   nix-derivation ==1.1.3,
   hercules-ci-cnix-store ==0.4.1.0,
   cabal-pkg-config-version-hook ==0.1.1.0

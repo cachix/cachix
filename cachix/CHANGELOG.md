@@ -5,11 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [1.12.0] - 2026-08-10
+
+### Added
+
+- narinfo: support conditional requests with `If-None-Match` and `ETag` headers
 
 ### Changed
 
 - dev: removed support for building with stack. Use cabal or Nix instead.
+
+### Fixed
+
+- preserve non-UTF-8 filename and symlink target bytes when streaming NARs
 
 ## [1.11.1] - 2026-04-29
 

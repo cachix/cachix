@@ -208,7 +208,7 @@ withCacheArgs host agentInfo agentToken m =
           officialCache = "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
           substituters = ["--option", "extra-substituters", URI.serialize cacheURI]
           noNegativeCaching = ["--option", "narinfo-cache-negative-ttl", "0"]
-          sigs = ["--option", "trusted-public-keys", officialCache <> " " <> toS hostname <> "-1:" <> toS (WSS.publicKey cache)]
+          sigs = ["--option", "extra-trusted-public-keys", officialCache <> " " <> toS hostname <> "-1:" <> toS (WSS.publicKey cache)]
        in substituters ++ sigs ++ noNegativeCaching
 
 runShell :: Log.LogStream -> FilePath -> [String] -> IO ()

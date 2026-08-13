@@ -81,7 +81,7 @@ Diagnostic commands:
 Install Cachix from master:
 
 ```bash
-nix-env -if https://github.com/cachix/cachix/tarball/master --substituters 'https://cache.nixos.org https://cachix.cachix.org' --trusted-public-keys 'cachix.cachix.org-1:eWNHQldwUO7G2VkjpnjDbWwy4KQ/HNxht7H4SSoMckM= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY='
+nix-env -if https://github.com/cachix/cachix/tarball/master --extra-substituters 'https://cachix.cachix.org' --extra-trusted-public-keys 'cachix.cachix.org-1:eWNHQldwUO7G2VkjpnjDbWwy4KQ/HNxht7H4SSoMckM='
 ```
 
 Or with Nix 2.4+:

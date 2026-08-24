@@ -81,6 +81,7 @@ library
     Cachix.Client.Retry
     Cachix.Client.Secrets
     Cachix.Client.Servant
+    Cachix.Client.Terminal
     Cachix.Client.URI
     Cachix.Client.Version
     Cachix.Client.WatchStore
@@ -262,6 +263,7 @@ test-suite cachix-test
     NixConfSpec
     NixVersionSpec
     Spec
+    TerminalSpec
     URISpec
 
   build-depends:

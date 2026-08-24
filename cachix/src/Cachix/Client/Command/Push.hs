@@ -22,6 +22,7 @@ import Cachix.Client.Push as Push
 import Cachix.Client.Retry (retryClientM)
 import Cachix.Client.Secrets
 import Cachix.Client.Servant
+import Cachix.Client.Terminal (useInteractiveProgress)
 import Cachix.Types.BinaryCache (BinaryCacheName)
 import Cachix.Types.BinaryCache qualified as BinaryCache
 import Control.Exception.Safe (throwM)
@@ -41,7 +42,6 @@ import Servant.Client.Streaming
 import Servant.Conduit ()
 import System.Console.AsciiProgress
 import System.Console.Pretty
-import System.Environment (lookupEnv)
 import System.IO (hIsTerminalDevice)
 
 push :: Env -> PushOptions -> BinaryCacheName -> [Text] -> IO ()
@@ -96,10 +96,9 @@ pushStrategy store authToken opts name compressionMethod storePath =
       let hSize = toS $ humanSize $ fromIntegral size
       path <- liftIO $ decodeUtf8With lenientDecode <$> storePathToPath store storePath
 
-      isTerminal <- liftIO $ hIsTerminalDevice stderr
-      isCI <- liftIO $ (== Just "true") <$> lookupEnv "CI"
+      interactiveProgress <- liftIO $ useInteractiveProgress stderr
       onTick <-
-        if isTerminal && not isCI
+        if interactiveProgress
           then do
             let bar = color Blue "[:bar] " <> toS (retryText retryStatus) <> toS path <> " (:percent of " <> hSize <> ")"
                 barLength = T.length $ T.replace ":percent" "  0%" (T.replace "[:bar]" "" (toS bar))

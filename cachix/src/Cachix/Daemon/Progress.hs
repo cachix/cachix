@@ -12,6 +12,7 @@ module Cachix.Daemon.Progress
 where
 
 import Cachix.Client.HumanSize (humanSize)
+import Cachix.Client.Terminal (useInteractiveProgress)
 import Cachix.Daemon.Types (PushRetryStatus (..))
 import Cachix.Daemon.Types.PushEvent (PushEvent (..), PushEventMessage (..))
 import Control.Concurrent.Async qualified as Async
@@ -24,8 +25,6 @@ import Protolude
 import System.Console.AsciiProgress qualified as Ascii
 import System.Console.AsciiProgress.Internal qualified as Ascii.Internal
 import System.Console.Pretty
-import System.Environment (lookupEnv)
-import System.IO (hIsTerminalDevice)
 
 data UploadProgress
   = ProgressBar
@@ -50,9 +49,8 @@ newProgressState = newIORef HashMap.empty
 new :: Handle -> String -> Int64 -> PushRetryStatus -> IO UploadProgress
 new hdl path size retryStatus = do
   lastBytesRef <- newIORef 0
-  isCI <- liftIO $ (== Just "true") <$> lookupEnv "CI"
-  isTerminal <- liftIO $ hIsTerminalDevice hdl
-  if isTerminal && not isCI
+  interactiveProgress <- useInteractiveProgress hdl
+  if interactiveProgress
     then do
       progressBar <- newProgressBar path size retryStatus
       return $ ProgressBar {..}

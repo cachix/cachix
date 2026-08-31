@@ -7,6 +7,7 @@ import Cachix.API qualified as API
 import Cachix.API.Error
 import Cachix.Client.Config qualified as Config
 import Cachix.Client.Env (Env (..))
+import Cachix.Client.Exception (CachixException (AccessDeniedBinaryCache))
 import Cachix.Client.Retry (retryClientM)
 import Cachix.Client.Secrets
   ( SigningKey (SigningKey),
@@ -19,6 +20,7 @@ import Data.ByteString.Base64 qualified as B64
 import Data.String.Here
 import Data.Text qualified as T
 import Data.Text.IO qualified as T.IO
+import Network.HTTP.Types.Status (status403)
 import Protolude hiding (toS)
 import Protolude.Conv
 import Servant.API (NoContent (..))
@@ -40,9 +42,12 @@ generateKeypair env name = do
       signingKeyCreate = SigningKeyCreate.SigningKeyCreate (toS $ B64.encode pk)
       bcc = Config.BinaryCacheConfig name signingKey
   -- we first validate if key can be added to the binary cache
+  createKeyResult <- retryClientM (clientenv env) (API.createKey cachixClient authToken name signingKeyCreate)
   (_ :: NoContent) <-
-    escalate
-      =<< retryClientM (clientenv env) (API.createKey cachixClient authToken name signingKeyCreate)
+    case createKeyResult of
+      Left err
+        | isErr err status403 -> throwIO $ generateKeypairAccessDenied name
+      _ -> escalate createKeyResult
   -- if key was successfully added, write it to the config
   -- TODO: warn if binary cache with the same key already exists
   let cfg = config env & Config.setBinaryCaches [bcc]
@@ -67,3 +72,12 @@ IMPORTANT: Make sure to make a backup for the signing key above, as you have the
   |] ::
         Text
     )
+
+generateKeypairAccessDenied :: Text -> CachixException
+generateKeypairAccessDenied name =
+  AccessDeniedBinaryCache
+    [iTrim|
+Cannot create a signing key for binary cache ${name}.
+
+This operation requires a personal auth token belonging to a Cachix account that administers the cache. Per-cache read/write tokens can push and pull, but they can't manage signing keys.
+    |]

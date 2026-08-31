@@ -7,8 +7,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.12.1] - 2026-08-31
+
 ### Fixed
 
+- auth: explain that generating signing keys requires a personal administrator token
+- deploy: time out stalled secure connection setup
 - deploy: preserve trusted public keys for existing substituters when downloading store paths
 - daemon: notify waiting clients when push jobs fail and prevent events after completion
 

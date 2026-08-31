@@ -5,6 +5,8 @@ import Cachix.Deploy.Agent (Agent (..), mkAgent, waitForAgent)
 import Cachix.Deploy.Lock (withTryLock, withTryLockAndPid)
 import Cachix.Deploy.Log qualified as Log
 import Cachix.Deploy.OptionsParser qualified as CLI
+import Cachix.Deploy.Websocket qualified as WebSocket
+import Control.Concurrent.MVar qualified as MVar
 import Control.Retry qualified as Retry
 import Protolude
 import System.IO.Temp (withSystemTempDirectory)
@@ -33,6 +35,19 @@ spec =
             void $ withTryLockAndPid (lockFile agent) (pidFile agent) $ do
               mpid <- waitForAgent retryPolicy agent
               mpid `shouldSatisfy` isJust
+
+    describe "WebSocket connection timeout" $ do
+      it "interrupts stalled connection establishment" $ do
+        let stalledConnection = do
+              void (MVar.newEmptyMVar >>= MVar.takeMVar :: IO ())
+              pure ((), pure ())
+        WebSocket.withConnectionTimeout (10 * 1000) stalledConnection pure
+          `shouldThrow` (== WebSocket.WebSocketConnectionTimeout)
+
+      it "closes an established connection after the client exits" $ do
+        closed <- MVar.newEmptyMVar
+        WebSocket.withConnectionTimeout (10 * 1000) (pure ((), MVar.putMVar closed ())) pure
+        MVar.tryTakeMVar closed `shouldReturn` Just ()
 
 withTestAgent :: FilePath -> (Agent -> IO ()) -> IO ()
 withTestAgent tempDir action = do

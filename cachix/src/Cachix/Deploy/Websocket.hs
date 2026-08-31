@@ -66,6 +66,11 @@ data Options = Options
   }
   deriving (Show)
 
+data WebSocketConnectionTimeout = WebSocketConnectionTimeout
+  deriving (Eq, Show)
+
+instance Exception WebSocketConnectionTimeout
+
 -- | A more ergonomic version of the Websocket 'Message' data type
 data Message msg
   = ControlMessage WS.ControlMessage
@@ -174,10 +179,25 @@ runConnection websocket@WebSocket {connection, options, tx, rx, withLog, lastPon
 runClientWith :: Options -> WS.Connection.ConnectionOptions -> WS.ClientApp a -> IO a
 runClientWith Options {host, port, path, headers, useSSL} connectionOptions app =
   if useSSL
-    then Wuss.runSecureClientWith hostS (fromIntegral (URI.portNumber port)) (toS path) connectionOptions headers app
+    then
+      withConnectionTimeout
+        timeoutMicroseconds
+        (Wuss.newSecureClientConnectionWith hostS (fromIntegral (URI.portNumber port)) (toS path) connectionOptions headers)
+        app
     else WS.runClientWith hostS (URI.portNumber port) (toS path) connectionOptions headers app
   where
     hostS = toS (URI.hostBS host)
+    timeoutMicroseconds = WS.Connection.connectionTimeout connectionOptions * 1000 * 1000
+
+-- | Bound connection establishment without applying the timeout to the
+-- long-running client application. The acquisition action returns its cleanup
+-- action so that a successfully established connection is always closed.
+withConnectionTimeout :: Int -> IO (a, IO ()) -> (a -> IO b) -> IO b
+withConnectionTimeout timeoutMicroseconds acquire app = do
+  connection <- Timeout.timeout timeoutMicroseconds acquire
+  case connection of
+    Nothing -> throwIO WebSocketConnectionTimeout
+    Just (resource, close) -> Safe.bracket (pure resource) (const close) app
 
 -- Handle JSON messages
 

@@ -3,6 +3,7 @@
 
 module Cachix.Deploy.Agent where
 
+import Cachix.API.WebSocketSubprotocol qualified as DeploymentDetails (DeploymentDetails (..))
 import Cachix.API.WebSocketSubprotocol qualified as WSS
 import Cachix.Client.Config qualified as Config
 import Cachix.Client.URI (URI)
@@ -22,7 +23,10 @@ import Control.Exception.Safe qualified as Safe
 import Control.Retry qualified as Retry
 import Data.Aeson qualified as Aeson
 import Data.IORef
+import Data.Set qualified as Set
 import Data.String (String)
+import Data.UUID (UUID)
+import Data.UUID qualified as UUID
 import Katip qualified as K
 import Paths_cachix (getBinDir)
 import Protolude hiding (onException, toS, (<.>))
@@ -47,6 +51,7 @@ data Agent = Agent
     host :: URI,
     websocket :: ServiceWebSocket,
     agentState :: IORef (Maybe WSS.AgentInformation),
+    seenDeployments :: IORef (Set.Set UUID),
     logOptions :: Log.Options,
     withLog :: Log.WithLog,
     lockFile :: FilePath,
@@ -57,6 +62,7 @@ data Agent = Agent
 mkAgent :: Log.WithLog -> Log.Options -> Maybe FilePath -> Config.CachixOptions -> CLI.AgentOptions -> Text -> IO Agent
 mkAgent withLog logOptions mlockDirectory cachixOptions agentOptions agentToken = do
   agentState <- newIORef Nothing
+  seenDeployments <- newIORef Set.empty
   pid <- Posix.getProcessID
   lockDirectory <- maybe Lock.getLockDirectory return mlockDirectory
 
@@ -93,6 +99,7 @@ mkAgent withLog logOptions mlockDirectory cachixOptions agentOptions agentToken 
         profileName = profileName,
         bootstrap = CLI.bootstrap agentOptions,
         agentState = agentState,
+        seenDeployments = seenDeployments,
         pid = pid,
         pidFile = lockDirectory </> lockFilename <.> Lock.pidExtension,
         lockFile = lockDirectory </> lockFilename <.> Lock.lockExtension,
@@ -225,7 +232,16 @@ registerAgent Agent {agentState, withLog} agentInformation = do
   atomicWriteIORef agentState (Just agentInformation)
 
 launchDeployment :: Agent -> WSS.DeploymentDetails -> IO ()
-launchDeployment agent@Agent {..} deploymentDetails = do
+launchDeployment = launchDeploymentWith runDeployment
+  where
+    runDeployment deployment = do
+      binDir <- toS <$> getBinDir
+      StdinProcess.readProcess (binDir <> "/.cachix-deployment") [] $
+        toS $
+          Aeson.encode deployment
+
+launchDeploymentWith :: (Deployment.Deployment -> IO ExitCode) -> Agent -> WSS.DeploymentDetails -> IO ()
+launchDeploymentWith runDeployment agent@Agent {..} deploymentDetails = do
   agentRegistered <- readIORef agentState
 
   case agentRegistered of
@@ -233,23 +249,42 @@ launchDeployment agent@Agent {..} deploymentDetails = do
     -- we should re-register here as a precaution.
     Nothing -> pure ()
     Just agentInformation -> do
-      binDir <- toS <$> getBinDir
-      exitCode <-
-        StdinProcess.readProcess (binDir <> "/.cachix-deployment") [] $
-          toS . Aeson.encode $
-            Deployment.Deployment
-              { Deployment.agentName = name,
-                Deployment.agentToken = token,
-                Deployment.profileName = profileName,
-                Deployment.host = host,
-                Deployment.deploymentDetails = deploymentDetails,
-                Deployment.agentInformation = agentInformation,
-                Deployment.logOptions = logOptions
-              }
+      let deploymentID = DeploymentDetails.id deploymentDetails
+      isNewDeployment <-
+        atomicModifyIORef' seenDeployments $ \deploymentIDs ->
+          if Set.member deploymentID deploymentIDs
+            then (deploymentIDs, False)
+            else (Set.insert deploymentID deploymentIDs, True)
 
-      when
-        (bootstrap && exitCode == ExitSuccess)
-        (verifyBootstrapSuccess agent)
+      if isNewDeployment
+        then do
+          exitCode <-
+            runDeployment $
+              Deployment.Deployment
+                { Deployment.agentName = name,
+                  Deployment.agentToken = token,
+                  Deployment.profileName = profileName,
+                  Deployment.host = host,
+                  Deployment.deploymentDetails = deploymentDetails,
+                  Deployment.agentInformation = agentInformation,
+                  Deployment.logOptions = logOptions
+                }
+
+          -- A process failure can happen before the deployment reports a status.
+          -- Let a subsequent backend delivery retry it.
+          when (exitCode /= ExitSuccess) $
+            atomicModifyIORef' seenDeployments $ \deploymentIDs ->
+              (Set.delete deploymentID deploymentIDs, ())
+
+          when
+            (bootstrap && exitCode == ExitSuccess)
+            (verifyBootstrapSuccess agent)
+        else
+          withLog . K.logLocM K.InfoS . K.ls $
+            unwords
+              [ "Ignoring duplicate deployment",
+                UUID.toText deploymentID <> "."
+              ]
 
 verifyBootstrapSuccess :: Agent -> IO ()
 verifyBootstrapSuccess agent@(Agent {name, withLog}) = do

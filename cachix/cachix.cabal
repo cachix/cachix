@@ -287,6 +287,7 @@ test-suite cachix-test
     , temporary
     , time
     , unliftio
+    , uuid
     , versions
 
   build-tool-depends: hspec-discover:hspec-discover

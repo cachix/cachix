@@ -12,7 +12,7 @@ import Cachix.API.WebSocketSubprotocol qualified as WSS
 import Cachix.Client.URI qualified as URI
 import Cachix.Deploy.Activate qualified as Activate
 import Cachix.Deploy.Agent qualified as Agent
-import Cachix.Deploy.Deployment (Deployment (..))
+import Cachix.Deploy.Deployment (Deployment (..), lockContentionExitCode)
 import Cachix.Deploy.Lock qualified as Lock
 import Cachix.Deploy.Log qualified as Log
 import Cachix.Deploy.Websocket qualified as WebSocket
@@ -78,8 +78,8 @@ main = do
 
   lockFilePath <- Lock.newLockFilePath (lockFilenameFrom agentName)
 
-  Log.withLog logOptions $ \withLog ->
-    void . Lock.withTryLock lockFilePath $ do
+  deploymentResult <- Log.withLog logOptions $ \withLog ->
+    Lock.withTryLock lockFilePath $ do
       -- Open a connection to logging stream
       (logQueue, loggingThread) <- runLogStream withLog logWebsocketOptions
 
@@ -93,6 +93,12 @@ main = do
           atomically $ TMQueue.closeTMQueue logQueue
           shutdownService
           Async.wait loggingThread
+
+  -- A lock holder is still deploying, so no deployment status was reported.
+  -- Return a non-success exit code so the agent keeps this delivery retryable
+  -- while the backend reschedules it.
+  when (isNothing deploymentResult) $
+    exitWith lockContentionExitCode
 
 -- | Run the deployment commands
 deploy ::

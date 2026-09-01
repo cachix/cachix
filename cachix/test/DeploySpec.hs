@@ -4,6 +4,7 @@ import Cachix.API.WebSocketSubprotocol qualified as DeploymentDetails (Deploymen
 import Cachix.API.WebSocketSubprotocol qualified as WSS
 import Cachix.Client.Config qualified as Config
 import Cachix.Deploy.Agent (Agent (..), launchDeploymentWith, mkAgent, registerAgent, waitForAgent)
+import Cachix.Deploy.Deployment (lockContentionExitCode)
 import Cachix.Deploy.Lock (withTryLock, withTryLockAndPid)
 import Cachix.Deploy.Log qualified as Log
 import Cachix.Deploy.OptionsParser qualified as CLI
@@ -94,11 +95,11 @@ spec =
 
             readIORef launches `shouldReturn` 2
 
-      it "retries a deployment after the child process fails" $
+      it "retries a deployment after the child process skips on lock contention" $
         withSystemTempDirectory "cachix-deploy-test" $ \tempDir ->
           withTestAgent tempDir $ \agent -> do
             registerTestAgent agent
-            results <- newIORef [ExitFailure 1, ExitSuccess]
+            results <- newIORef [lockContentionExitCode, ExitSuccess]
             let runDeployment _ = atomicModifyIORef' results $ \case
                   result : remaining -> (remaining, result)
                   [] -> ([], ExitSuccess)

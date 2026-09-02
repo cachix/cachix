@@ -238,7 +238,7 @@ uploadStorePath pushParams storePath retrystatus = do
     Right (uploadResult, uploadNarDetails) -> do
       nic <- newNarInfoCreate pushParams storePath pathInfo uploadNarDetails
       completeNarUpload pushParams uploadResult nic
-      pushBuildTraces pushParams pathInfo
+      pushBuildTraces pushParams storePath pathInfo
       onDone strategy
 
 -- | Push an entire closure
@@ -257,6 +257,11 @@ pushClosure ::
   m [r]
 pushClosure traversal pushParams inputStorePaths = do
   (allPaths, missingPaths) <- getMissingPathsForClosure pushParams inputStorePaths
+  let missingPathsSet = Set.fromList missingPaths
+      existingPaths = filter (`Set.notMember` missingPathsSet) allPaths
+  -- Older clients may have uploaded these paths without their build traces.
+  -- Revisit their local metadata without uploading the NAR again.
+  void $ traversal (pushBuildTracesForStorePath pushParams) existingPaths
   paths <- pushOnClosureAttempt pushParams allPaths missingPaths
   flip traversal paths $ \storePath ->
     retryAll $ uploadStorePath pushParams storePath
@@ -288,14 +293,26 @@ completeNarUpload pushParams Push.S3.UploadMultipartResult {..} nic = do
 -- C API: for each output of the deriver and each output of each
 -- (statically-known) input derivation, query the local store for a
 -- realisation and push the collected list in one batch.
+pushBuildTracesForStorePath ::
+  (MonadUnliftIO m) =>
+  PushParams n r ->
+  StorePath ->
+  m ()
+pushBuildTracesForStorePath pushParams storePath =
+  unless (omitDeriver (pushParamsStrategy pushParams storePath)) $ do
+    pathInfo <- newPathInfoFromStorePath (pushParamsStore pushParams) storePath
+    pushBuildTraces pushParams storePath pathInfo
+
 pushBuildTraces ::
   (MonadUnliftIO m) =>
   PushParams n r ->
+  StorePath ->
   PathInfo ->
   m ()
-pushBuildTraces pushParams pathInfo =
-  case (piCa pathInfo, piDeriver pathInfo) of
-    (Just _, Just deriver) | deriver /= unknownDeriver -> liftIO $ do
+pushBuildTraces pushParams storePath pathInfo =
+  case (omitDeriver (pushParamsStrategy pushParams storePath), piCa pathInfo, piDeriver pathInfo) of
+    (True, _, _) -> pure ()
+    (False, Just _, Just deriver) | deriver /= unknownDeriver -> liftIO $ do
       let store = pushParamsStore pushParams
           cacheName = pushParamsName pushParams
           authToken = getCacheAuthToken (pushParamsSecret pushParams)

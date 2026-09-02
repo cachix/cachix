@@ -26,6 +26,7 @@ import Nix.C.Unsafe.Store qualified as Store
 import Protolude
 import System.Console.Pretty (Color (..), Style (..), color, style)
 import System.Directory (canonicalizePath)
+import System.FilePath qualified as FilePath
 import System.OsPath qualified as OsPath
 
 -- | Error when resolving a store path
@@ -40,7 +41,7 @@ data StorePathError
 
 -- | Resolve a file path to a validated store path.
 --
--- Follows symlinks and validates the resulting store path.
+-- Follows symlinks, finds the containing top-level store object, and validates it.
 resolveStorePath :: Store -> FilePath -> IO (Either StorePathError StorePath)
 resolveStorePath store fp = do
   resolveResult <- tryResolve
@@ -50,7 +51,18 @@ resolveStorePath store fp = do
   where
     tryResolve = do
       resolved <- canonicalizePath fp
-      osPath <- OsPath.encodeFS resolved
+      storeDir <- OsPath.decodeFS =<< Store.storeDir store
+      -- parseStorePath' only accepts a direct child of the store directory,
+      -- while callers may pass a file or directory within a store object.
+      let relativePath = FilePath.makeRelative storeDir resolved
+          storePath = case FilePath.splitDirectories relativePath of
+            component : _
+              | FilePath.isRelative relativePath,
+                component /= ".",
+                component /= ".." ->
+                  storeDir FilePath.</> component
+            _ -> resolved
+      osPath <- OsPath.encodeFS storePath
       (Right <$> Store.parseStorePath' store osPath)
         `catchNixError` (pure . Left)
 

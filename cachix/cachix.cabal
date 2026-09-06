@@ -262,6 +262,7 @@ test-suite cachix-test
     NetRcSpec
     NixConfSpec
     NixVersionSpec
+    RetrySpec
     Spec
     TerminalSpec
     URISpec
@@ -280,6 +281,7 @@ test-suite cachix-test
     , hercules-ci-cnix-store
     , here
     , hspec
+    , http-types
     , katip
     , protolude
     , retry

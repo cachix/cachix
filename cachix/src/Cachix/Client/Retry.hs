@@ -5,6 +5,7 @@ module Cachix.Client.Retry
     -- * HTTP retry
     retryHttp,
     retryClientM,
+    shouldRetryHttpStatusCode,
 
     -- * Policies
     endlessConstantRetryPolicy,
@@ -145,9 +146,10 @@ shouldRetryHttpException (HTTP.HttpExceptionRequest _ reason) =
     HTTP.HttpZlibException _ -> True
     _ -> False
 
--- | Whether an HTTP status code is worth retrying. 429 and any 5xx.
+-- | Whether an HTTP status code is worth retrying. 408, 429 and any 5xx.
 shouldRetryHttpStatusCode :: HTTP.Status -> Bool
 shouldRetryHttpStatusCode code
+  | code == HTTP.requestTimeout408 = True
   | code == HTTP.tooManyRequests429 = True
   | HTTP.statusIsServerError code = True
   | otherwise = False

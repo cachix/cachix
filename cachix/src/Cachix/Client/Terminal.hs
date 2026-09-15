@@ -8,6 +8,7 @@ import Data.Char qualified as Char
 import Protolude
 import System.Environment (lookupEnv)
 import System.IO (hIsTerminalDevice)
+import Prelude (String)
 
 isCI :: Maybe String -> Bool
 isCI = maybe False $ \value -> fmap Char.toLower value `elem` ["true", "1"]

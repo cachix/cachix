@@ -42,6 +42,7 @@ import Servant.Client.Streaming
 import Servant.Conduit ()
 import System.Console.AsciiProgress
 import System.Console.Pretty
+import System.Environment (lookupEnv)
 import System.IO (hIsTerminalDevice)
 
 push :: Env -> PushOptions -> BinaryCacheName -> [Text] -> IO ()

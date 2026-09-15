@@ -2,7 +2,6 @@ module TerminalSpec (spec) where
 
 import Cachix.Client.Terminal (isCI, useInteractiveProgress)
 import Protolude
-import System.IO (IOMode (WriteMode), withFile)
 import Test.Hspec
 
 spec :: Spec
@@ -16,5 +15,5 @@ spec = do
 
   describe "useInteractiveProgress" $ do
     it "rejects non-terminal handles" $ do
-      withFile "/dev/null" WriteMode $ \handle ->
-        useInteractiveProgress handle `shouldReturn` False
+      withFile "/dev/null" WriteMode $ \hdl ->
+        useInteractiveProgress hdl `shouldReturn` False

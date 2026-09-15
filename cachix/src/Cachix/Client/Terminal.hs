@@ -14,7 +14,7 @@ isCI :: Maybe String -> Bool
 isCI = maybe False $ \value -> fmap Char.toLower value `elem` ["true", "1"]
 
 useInteractiveProgress :: Handle -> IO Bool
-useInteractiveProgress handle = do
-  isTerminal <- hIsTerminalDevice handle
+useInteractiveProgress hdl = do
+  isTerminal <- hIsTerminalDevice hdl
   runningInCI <- isCI <$> lookupEnv "CI"
   return $ isTerminal && not runningInCI

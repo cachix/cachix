@@ -30,6 +30,7 @@ module Cachix.Client.NixConf
     parse,
     readLines,
     writeLines,
+    isSubstituter,
     isTrustedUsers,
     defaultPublicURI,
     defaultSigningKey,

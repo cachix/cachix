@@ -6,6 +6,7 @@ module Cachix.Client.Command
     Doctor.daemonDoctor,
     Doctor.doctor,
     Import.import',
+    List.list,
     Pin.pin,
     Push.push,
     Watch.watchExec,
@@ -19,6 +20,7 @@ import Cachix.Client.Command.Cache qualified as Cache
 import Cachix.Client.Command.Config qualified as Config
 import Cachix.Client.Command.Doctor qualified as Doctor
 import Cachix.Client.Command.Import qualified as Import
+import Cachix.Client.Command.List qualified as List
 import Cachix.Client.Command.Pin qualified as Pin
 import Cachix.Client.Command.Push qualified as Push
 import Cachix.Client.Command.Watch qualified as Watch

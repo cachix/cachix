@@ -62,6 +62,7 @@ library
     Cachix.Client.Command.Config
     Cachix.Client.Command.Doctor
     Cachix.Client.Command.Import
+    Cachix.Client.Command.List
     Cachix.Client.Command.Pin
     Cachix.Client.Command.Push
     Cachix.Client.Command.Watch
@@ -251,6 +252,7 @@ test-suite cachix-test
   hs-source-dirs:     test
   other-modules:
     CommandConfigSpec
+    CommandListSpec
     Daemon.NarinfoQuerySpec
     Daemon.PostBuildHookSpec
     Daemon.ProtocolSpec

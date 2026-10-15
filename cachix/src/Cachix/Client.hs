@@ -51,6 +51,7 @@ main = displayConsoleRegions $ do
     Push (PushPaths opts name cliPaths) -> Command.push env opts name cliPaths
     Push (PushWatchStore _ _) ->
       throwIO $ DeprecatedCommand "DEPRECATED: cachix watch-store has replaced cachix push --watch-store."
+    List listOptions -> Command.list env listOptions
     Remove name -> Command.remove env name
     Use name useOptions -> Command.use env name useOptions
     Version -> putText cachixVersion

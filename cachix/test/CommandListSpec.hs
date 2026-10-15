@@ -29,6 +29,21 @@ spec =
     it "returns Nothing for an unparseable URI" $
       cachixCacheName defaultHost "not a url" `shouldBe` Nothing
 
+    it "matches case-insensitively on the substituter host" $
+      cachixCacheName defaultHost "https://FOO.Cachix.Org" `shouldBe` Just "foo"
+
+    it "matches case-insensitively on the Cachix host" $
+      cachixCacheName "https://Cachix.Org" "https://foo.cachix.org" `shouldBe` Just "foo"
+
+    it "returns Nothing for a URI with no authority (urn:…) instead of throwing" $
+      cachixCacheName defaultHost "urn:isbn:0451450523" `shouldBe` Nothing
+
+    it "returns Nothing for a mailto: URI instead of throwing" $
+      cachixCacheName defaultHost "mailto:ops@example.com" `shouldBe` Nothing
+
+    it "ignores an explicit default port on the substituter URI" $
+      cachixCacheName defaultHost "https://foo.cachix.org:443" `shouldBe` Just "foo"
+
 defaultHost :: URI
 defaultHost = "https://cachix.org"
 

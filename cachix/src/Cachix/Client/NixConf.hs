@@ -31,6 +31,7 @@ module Cachix.Client.NixConf
     readLines,
     writeLines,
     isSubstituter,
+    isAnySubstituter,
     isTrustedUsers,
     defaultPublicURI,
     defaultSigningKey,
@@ -170,6 +171,42 @@ instance NixConfOps NixConfSource where
 isSubstituter :: NixConfLine -> Maybe [Text]
 isSubstituter (Substituters xs) = Just xs
 isSubstituter _ = Nothing
+
+-- | Like 'isSubstituter', but also matches @extra-substituters@,
+-- @trusted-substituters@ and @extra-trusted-substituters@ directives
+-- (which the parser keeps as 'Other' lines so that writers don't lose
+-- the directive name).
+--
+-- Intended for read-only use (e.g. listing). Do not drive @cachix use@ /
+-- @cachix remove@ with this: it would collapse all variants into a single
+-- @substituters@ line.
+isAnySubstituter :: NixConfLine -> Maybe [Text]
+isAnySubstituter (Substituters xs) = Just xs
+isAnySubstituter (Other raw) = parseExtraSubstitutersLine raw
+isAnySubstituter _ = Nothing
+
+parseExtraSubstitutersLine :: Text -> Maybe [Text]
+parseExtraSubstitutersLine raw = do
+  let stripped = T.stripStart raw
+  key <- find (`matchesDirective` stripped) extraSubstituterKeys
+  let afterKey = T.stripStart (T.drop (T.length key) stripped)
+  rest <- T.stripPrefix "=" afterKey
+  pure (T.words rest)
+  where
+    -- longest first so "extra-trusted-substituters" wins over any shorter alias.
+    extraSubstituterKeys :: [Text]
+    extraSubstituterKeys =
+      [ "extra-trusted-substituters",
+        "extra-substituters",
+        "trusted-substituters"
+      ]
+
+    matchesDirective :: Text -> Text -> Bool
+    matchesDirective k s = case T.stripPrefix k s of
+      Nothing -> False
+      Just rest -> case T.uncons rest of
+        Just (c, _) -> c == ' ' || c == '\t' || c == '='
+        Nothing -> False
 
 isPublicKey :: NixConfLine -> Maybe [Text]
 isPublicKey (TrustedPublicKeys xs) = Just xs

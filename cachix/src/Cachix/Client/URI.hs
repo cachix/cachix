@@ -7,6 +7,7 @@ module Cachix.Client.URI
     fromURIRef,
     getScheme,
     getHostname,
+    getHostnameMay,
     appendSubdomain,
     getPortFor,
     getPath,
@@ -16,6 +17,7 @@ module Cachix.Client.URI
     serialize,
     toByteString,
     getBaseUrl,
+    canonicalForm,
     defaultCachixURI,
     defaultCachixBaseUrl,
     UBS.Host (..),
@@ -32,6 +34,7 @@ import Data.Either.Validation (Validation (Failure, Success))
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromJust)
 import Data.String
+import Data.Text qualified as T
 import Dhall qualified
 import Dhall.Core qualified
 import Protolude hiding (toS)
@@ -62,6 +65,32 @@ getScheme = UBS.uriScheme . getUri
 
 getHostname :: URI -> UBS.Host
 getHostname = UBS.authorityHost . fromJust . UBS.uriAuthority . getUri
+
+-- | Like 'getHostname', but returns 'Nothing' if the URI has no authority
+-- (e.g. @urn:…@, @mailto:…@, scheme-only forms) instead of throwing.
+getHostnameMay :: URI -> Maybe UBS.Host
+getHostnameMay = fmap UBS.authorityHost . UBS.uriAuthority . getUri
+
+-- | A canonical textual form of the URI suitable for deduplication:
+-- scheme + host lowercased, default ports dropped, trailing slash on path removed.
+-- Returns 'Nothing' for URIs without an authority.
+canonicalForm :: URI -> Maybe Text
+canonicalForm (URI u) = do
+  authority <- UBS.uriAuthority u
+  let scheme = T.toLower (toS (UBS.schemeBS (UBS.uriScheme u)))
+      host = T.toLower (toS (UBS.hostBS (UBS.authorityHost authority)))
+      portPart = case UBS.authorityPort authority of
+        Just (UBS.Port p)
+          | isDefaultPort scheme p -> ""
+          | otherwise -> ":" <> show p
+        Nothing -> ""
+      rawPath = toS (UBS.uriPath u)
+      path = T.dropWhileEnd (== '/') rawPath
+  pure (scheme <> "://" <> host <> portPart <> path)
+  where
+    isDefaultPort "http" 80 = True
+    isDefaultPort "https" 443 = True
+    isDefaultPort _ _ = False
 
 -- TODO: lenses?
 appendSubdomain :: Text -> URI -> URI

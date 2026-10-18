@@ -172,34 +172,27 @@ isSubstituter :: NixConfLine -> Maybe [Text]
 isSubstituter (Substituters xs) = Just xs
 isSubstituter _ = Nothing
 
--- | Like 'isSubstituter', but also matches @extra-substituters@,
--- @trusted-substituters@ and @extra-trusted-substituters@ directives
--- (which the parser keeps as 'Other' lines so that writers don't lose
--- the directive name).
---
--- Intended for read-only use (e.g. listing). Do not drive @cachix use@ /
--- @cachix remove@ with this: it would collapse all variants into a single
--- @substituters@ line.
+-- | Read active substituters, including @extra-substituters@. Trusted
+-- substituters only grant permission to enable a cache and are not active.
+-- Strip comments only when reading, preserving the parsed lines for writers.
 isAnySubstituter :: NixConfLine -> Maybe [Text]
-isAnySubstituter (Substituters xs) = Just xs
-isAnySubstituter (Other raw) = parseExtraSubstitutersLine raw
+isAnySubstituter (Substituters xs) = Just (substituterValues (T.unwords xs))
+isAnySubstituter (Other raw) = parseSubstitutersLine raw
 isAnySubstituter _ = Nothing
 
-parseExtraSubstitutersLine :: Text -> Maybe [Text]
-parseExtraSubstitutersLine raw = do
+substituterValues :: Text -> [Text]
+substituterValues = T.words . T.takeWhile (/= '#')
+
+parseSubstitutersLine :: Text -> Maybe [Text]
+parseSubstitutersLine raw = do
   let stripped = T.stripStart raw
-  key <- find (`matchesDirective` stripped) extraSubstituterKeys
+  key <- find (`matchesDirective` stripped) substituterKeys
   let afterKey = T.stripStart (T.drop (T.length key) stripped)
   rest <- T.stripPrefix "=" afterKey
-  pure (T.words rest)
+  pure (substituterValues rest)
   where
-    -- longest first so "extra-trusted-substituters" wins over any shorter alias.
-    extraSubstituterKeys :: [Text]
-    extraSubstituterKeys =
-      [ "extra-trusted-substituters",
-        "extra-substituters",
-        "trusted-substituters"
-      ]
+    substituterKeys :: [Text]
+    substituterKeys = ["extra-substituters", "substituters", "binary-caches"]
 
     matchesDirective :: Text -> Text -> Bool
     matchesDirective k s = case T.stripPrefix k s of

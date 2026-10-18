@@ -1,4 +1,4 @@
-module Cachix.Client.Command.List (list, cachixCacheName) where
+module Cachix.Client.Command.List (list, cachixCacheName, Entry (..), configuredEntries) where
 
 import Cachix.Client.Env (Env, effectiveHost)
 import Cachix.Client.Exception (CachixException)
@@ -26,18 +26,20 @@ list env ListOptions {listAll} = do
   let cachixHost = effectiveHost env
   globalSources <- readSources NixConf.Global
   localSources <- readSources NixConf.Local
-  let allSources = dedupBy NixConf.nixConfPath (globalSources <> localSources)
-      entries = dedupBy entryKey (concatMap (toEntries cachixHost) allSources)
-      filtered =
-        if listAll
-          then entries
-          else filter (isJust . entryCacheName) entries
+  let filtered = configuredEntries cachixHost ListOptions {listAll} (globalSources <> localSources)
   if null filtered
     then
       if listAll
         then putStrLn ("No substituters configured in nix.conf." :: Text)
         else putStrLn ("No Cachix caches configured. Try `cachix use <name>` first." :: Text)
     else printEntries filtered
+
+-- | Select and deduplicate entries before rendering, retaining their source.
+configuredEntries :: URI -> ListOptions -> [NixConf.NixConfSource] -> [Entry]
+configuredEntries cachixHost ListOptions {listAll} sources =
+  let allSources = dedupBy NixConf.nixConfPath sources
+      entries = dedupBy entryKey (concatMap (toEntries cachixHost) allSources)
+   in if listAll then entries else filter (isJust . entryCacheName) entries
 
 readSources :: NixConf.NixConfLoc -> IO [NixConf.NixConfSource]
 readSources loc =
@@ -73,13 +75,13 @@ dedupBy key = go Set.empty
       | otherwise = x : go (Set.insert (key x) seen) xs
 
 -- | Canonical form used only for deduplication (lowercased scheme + host,
--- default ports dropped, trailing slash on path stripped). The original
+-- default ports dropped). The original
 -- substituter text is preserved for display.
 canonicalKey :: Text -> Text
 canonicalKey raw =
   case URI.parseURI (toS raw) of
     Right parsed | Just k <- URI.canonicalForm parsed -> k
-    _ -> T.toLower (T.dropWhileEnd (== '/') raw)
+    _ -> raw
 
 cachixCacheName :: URI -> Text -> Maybe Text
 cachixCacheName cachixHost rawUri = do

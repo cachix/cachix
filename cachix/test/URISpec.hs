@@ -38,6 +38,23 @@ parseURI' = fromRight' . URI.parseURI
 spec :: Spec
 spec =
   describe "URI" $ do
+    describe "canonicalForm" $ do
+      it "normalizes scheme, hostname and default port" $
+        URI.canonicalForm "HTTPS://FOO.Cachix.Org:443" `shouldBe` Just "https://foo.cachix.org"
+
+      it "preserves credentials, path, query parameters and fragment" $
+        URI.canonicalForm "https://user:pass@FOO.cachix.org:443/cache/?priority=10#fragment"
+          `shouldBe` Just "https://user:pass@foo.cachix.org/cache/?priority=10#fragment"
+
+      it "preserves non-default ports" $
+        URI.canonicalForm "https://foo.cachix.org:8443" `shouldBe` Just "https://foo.cachix.org:8443"
+
+      it "preserves the trailing slash on a nonempty path" $
+        URI.canonicalForm "https://foo.cachix.org/cache/" `shouldNotBe` URI.canonicalForm "https://foo.cachix.org/cache"
+
+      it "returns Nothing without an authority" $
+        URI.canonicalForm "urn:isbn:0451450523" `shouldBe` Nothing
+
     it "parses a URI" $
       URI.parseURI secureUri `shouldSatisfy` isRight
 

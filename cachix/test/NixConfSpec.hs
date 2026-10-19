@@ -41,6 +41,27 @@ spec = do
     it "random content" $
       property "blabla = foobar\nfoo = bar\n"
 
+  describe "reading active substituters" $ do
+    it "preserves inline comments when rendering" $ do
+      let contents = "extra-substituters = https://live.cachix.org # https://disabled.cachix.org\n"
+      property contents
+      (NixConf.readLines NixConf.isAnySubstituter <$> parse contents)
+        `shouldBe` Right ["https://live.cachix.org"]
+
+    it "strips comments from regular substituters without changing rendering" $ do
+      let contents = "substituters = https://live.cachix.org # https://disabled.cachix.org\n"
+      property contents
+      (NixConf.readLines NixConf.isAnySubstituter <$> parse contents)
+        `shouldBe` Right ["https://live.cachix.org"]
+
+    it "excludes trusted-only caches" $
+      (NixConf.readLines NixConf.isAnySubstituter <$> parse "trusted-substituters = https://allowed.cachix.org\nextra-trusted-substituters = https://also-allowed.cachix.org\n")
+        `shouldBe` Right []
+
+    it "handles tabs and adjacent comment markers" $
+      (NixConf.readLines NixConf.isAnySubstituter <$> parse "extra-substituters\t=\thttps://live.cachix.org#comment\n")
+        `shouldBe` Right ["https://live.cachix.org"]
+
   describe "add" $ do
     it "merges binary caches from both files" $
       let globalConf =

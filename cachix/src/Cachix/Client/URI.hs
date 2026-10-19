@@ -34,7 +34,6 @@ import Data.Either.Validation (Validation (Failure, Success))
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromJust)
 import Data.String
-import Data.Text qualified as T
 import Dhall qualified
 import Dhall.Core qualified
 import Protolude hiding (toS)
@@ -71,26 +70,19 @@ getHostname = UBS.authorityHost . fromJust . UBS.uriAuthority . getUri
 getHostnameMay :: URI -> Maybe UBS.Host
 getHostnameMay = fmap UBS.authorityHost . UBS.uriAuthority . getUri
 
--- | A canonical textual form of the URI suitable for deduplication:
--- scheme + host lowercased, default ports dropped, trailing slash on path removed.
+-- | Normalize scheme, hostname and default ports for deduplication,
+-- preserving paths, credentials, query parameters and fragments.
 -- Returns 'Nothing' for URIs without an authority.
 canonicalForm :: URI -> Maybe Text
 canonicalForm (URI u) = do
   authority <- UBS.uriAuthority u
-  let scheme = T.toLower (toS (UBS.schemeBS (UBS.uriScheme u)))
-      host = T.toLower (toS (UBS.hostBS (UBS.authorityHost authority)))
-      portPart = case UBS.authorityPort authority of
-        Just (UBS.Port p)
-          | isDefaultPort scheme p -> ""
-          | otherwise -> ":" <> show p
-        Nothing -> ""
-      rawPath = toS (UBS.uriPath u)
-      path = T.dropWhileEnd (== '/') rawPath
-  pure (scheme <> "://" <> host <> portPart <> path)
-  where
-    isDefaultPort "http" 80 = True
-    isDefaultPort "https" 443 = True
-    isDefaultPort _ _ = False
+  let scheme = UBS.Scheme (Char8.map toLower (UBS.schemeBS (UBS.uriScheme u)))
+      host = UBS.Host (Char8.map toLower (UBS.hostBS (UBS.authorityHost authority)))
+      port = case UBS.authorityPort authority of
+        Just p | Just p == getPortFor scheme -> Nothing
+        p -> p
+      normalizedAuthority = authority {UBS.authorityHost = host, UBS.authorityPort = port}
+  pure $ toS $ UBS.serializeURIRef' $ u {UBS.uriScheme = scheme, UBS.uriAuthority = Just normalizedAuthority}
 
 -- TODO: lenses?
 appendSubdomain :: Text -> URI -> URI

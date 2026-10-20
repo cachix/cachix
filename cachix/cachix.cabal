@@ -26,6 +26,14 @@ source-repository head
   location: https://github.com/cachix/cachix
   subdir:   cachix
 
+flag ram
+  description:
+    Use ram instead of memory for Data.ByteArray, matching crypton >= 1.1.
+    The solver picks this automatically.
+
+  default:     True
+  manual:      False
+
 common defaults
   build-depends:      base >=4.7 && <5
   default-extensions:
@@ -145,7 +153,6 @@ library
     , conduit-extra
     , conduit-zstd
     , containers
-    , crypton
     , deepseq
     , dhall                   >=1.28.0
     , directory
@@ -171,7 +178,6 @@ library
     , lukko
     , lzma-conduit
     , megaparsec              >=7.0.0
-    , memory
     , microlens
     , netrc
     , network
@@ -208,6 +214,16 @@ library
     , versions
     , websockets
     , wuss
+
+  if flag(ram)
+    build-depends:
+      , crypton  >=1.1
+      , ram
+
+  else
+    build-depends:
+      , crypton  <1.1
+      , memory
 
   -- These versions are pinned in hercules-ci-cnix-store
   pkgconfig-depends: nix-store

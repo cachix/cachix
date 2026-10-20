@@ -8,7 +8,7 @@ import Cachix.Client.URI qualified as URI
 import Data.Text qualified as T
 import Protolude hiding (toS)
 import Servant.Auth.Client (Token (..))
-import System.Directory (Permissions (executable), createDirectoryIfMissing, getPermissions, setPermissions)
+import System.Directory (Permissions (executable), createDirectoryIfMissing, doesFileExist, getPermissions, setPermissions)
 import System.Environment (lookupEnv, setEnv, unsetEnv)
 import System.FilePath (takeDirectory, (</>))
 import System.IO.Temp (withSystemTempDirectory)
@@ -34,6 +34,20 @@ spec = do
               URI.defaultCachixURI
               [Config.BinaryCacheConfig "example" ""]
       getConfigSigningKey cfg "example" `shouldBe` Nothing
+
+  describe "configured signing keys" $ do
+    it "prefers the newest nonempty key for the requested cache" $ do
+      let cfg =
+            Config.Config
+              (Token "auth-token")
+              URI.defaultCachixURI
+              [ Config.BinaryCacheConfig "example" "old-key",
+                Config.BinaryCacheConfig "example" "new-key",
+                Config.BinaryCacheConfig "example" "",
+                Config.BinaryCacheConfig "other" "other-key"
+              ]
+      getConfigSigningKey cfg "example" `shouldBe` Just "new-key"
+      getConfigSigningKey cfg "missing" `shouldBe` Nothing
 
   when SecretSpec.supported $
     describe "secretspec integration" $ do
@@ -61,7 +75,8 @@ withFakeSecretspec action =
   withSystemTempDirectory "cachix-fake-secretspec" $ \dir -> do
     oldPath <- lookupEnv "PATH"
     let binaryPath = dir </> "secretspec"
-        configPath = dir </> "secretspec" </> "config.toml"
+        configHome = dir </> "config"
+        configPath = configHome </> "secretspec" </> "config.toml"
         argsPath = dir </> "args"
         stdinPath = dir </> "stdin"
         path = dir <> maybe "" (":" <>) oldPath
@@ -69,7 +84,7 @@ withFakeSecretspec action =
     permissions <- getPermissions binaryPath
     setPermissions binaryPath permissions {executable = True}
     withSetting "PATH" (Just path) $
-      withSetting "XDG_CONFIG_HOME" (Just dir) $
+      withSetting "XDG_CONFIG_HOME" (Just configHome) $
         withSetting "SECRETSPEC_PROVIDER" Nothing $
           withSetting "FAKE_ARGS_FILE" (Just argsPath) $
             withSetting "FAKE_STDIN_FILE" (Just stdinPath) $

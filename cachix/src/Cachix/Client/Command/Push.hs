@@ -229,15 +229,13 @@ and if missing also looked up from ~/.config/cachix/cachix.dhall
 
 getConfigSigningKey :: Config.Config -> Text -> Maybe Text
 getConfigSigningKey config name =
-  Config.secretKey
-    <$> last
-      ( filter
-          (not . T.null . Config.secretKey)
-          ( -- Prioritize keys added last for compatibility with existing config
-            -- files that contain duplicate cache entries.
-            filter (\bc -> Config.name bc == name) (Config.binaryCaches config)
-          )
-      )
+  -- Prioritize keys added last for compatibility with existing config
+  -- files that contain duplicate cache entries.
+  foldl' selectKey Nothing (Config.binaryCaches config)
+  where
+    selectKey current bc
+      | Config.name bc == name && not (T.null (Config.secretKey bc)) = Just (Config.secretKey bc)
+      | otherwise = current
 
 -- | Like 'getPushSecret', but throws a fatal error if the secret is not found.
 getPushSecretRequired ::

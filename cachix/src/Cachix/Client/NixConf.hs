@@ -30,6 +30,8 @@ module Cachix.Client.NixConf
     parse,
     readLines,
     writeLines,
+    isSubstituter,
+    isAnySubstituter,
     isTrustedUsers,
     defaultPublicURI,
     defaultSigningKey,
@@ -169,6 +171,35 @@ instance NixConfOps NixConfSource where
 isSubstituter :: NixConfLine -> Maybe [Text]
 isSubstituter (Substituters xs) = Just xs
 isSubstituter _ = Nothing
+
+-- | Read active substituters, including @extra-substituters@. Trusted
+-- substituters only grant permission to enable a cache and are not active.
+-- Strip comments only when reading, preserving the parsed lines for writers.
+isAnySubstituter :: NixConfLine -> Maybe [Text]
+isAnySubstituter (Substituters xs) = Just (substituterValues (T.unwords xs))
+isAnySubstituter (Other raw) = parseSubstitutersLine raw
+isAnySubstituter _ = Nothing
+
+substituterValues :: Text -> [Text]
+substituterValues = T.words . T.takeWhile (/= '#')
+
+parseSubstitutersLine :: Text -> Maybe [Text]
+parseSubstitutersLine raw = do
+  let stripped = T.stripStart raw
+  key <- find (`matchesDirective` stripped) substituterKeys
+  let afterKey = T.stripStart (T.drop (T.length key) stripped)
+  rest <- T.stripPrefix "=" afterKey
+  pure (substituterValues rest)
+  where
+    substituterKeys :: [Text]
+    substituterKeys = ["extra-substituters", "substituters", "binary-caches"]
+
+    matchesDirective :: Text -> Text -> Bool
+    matchesDirective k s = case T.stripPrefix k s of
+      Nothing -> False
+      Just rest -> case T.uncons rest of
+        Just (c, _) -> c == ' ' || c == '\t' || c == '='
+        Nothing -> False
 
 isPublicKey :: NixConfLine -> Maybe [Text]
 isPublicKey (TrustedPublicKeys xs) = Just xs

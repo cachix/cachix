@@ -26,6 +26,9 @@ module Cachix.Client.OptionsParser
     -- * Doctor options
     DoctorOptions (..),
 
+    -- * List options
+    ListOptions (..),
+
     -- * Global options
     Flags (..),
 
@@ -92,6 +95,7 @@ data CachixCommand
   | WatchStore PushOptions Text
   | WatchExec WatchExecMode PushOptions NarinfoQueryOptions Text Text [Text]
   | Use BinaryCacheName InstallationMode.UseOptions
+  | List ListOptions
   | Remove BinaryCacheName
   | DeployCommand DeployOptions.DeployCommand
   | Version
@@ -203,6 +207,11 @@ data DoctorOptions = DoctorOptions
   }
   deriving (Show)
 
+data ListOptions = ListOptions
+  { listAll :: Bool
+  }
+  deriving (Show)
+
 -- | CLI parser entry point
 getOpts :: IO (Flags, CachixCommand)
 getOpts = do
@@ -245,6 +254,7 @@ commandParser =
             hidden,
             command "generate-keypair" $ infoH generateKeypairCommand $ progDesc "Generate a signing key pair for a binary cache",
             command "use" $ infoH useCommand $ progDesc "Configure a binary cache in nix.conf",
+            command "list" $ infoH listCommand $ progDesc "List Cachix caches configured in nix.conf",
             command "remove" $ infoH removeCommand $ progDesc "Remove a binary cache from nix.conf"
           ]
 
@@ -712,6 +722,17 @@ watchStoreCommand = WatchStore <$> pushOptionsParser <*> cacheNameParser
 
 removeCommand :: Parser CachixCommand
 removeCommand = Remove <$> cacheNameParser
+
+listCommand :: Parser CachixCommand
+listCommand = List <$> listOptionsParser
+
+listOptionsParser :: Parser ListOptions
+listOptionsParser =
+  ListOptions
+    <$> switch
+      ( long "all"
+          <> help "Also show non-Cachix substituters"
+      )
 
 useCommand :: Parser CachixCommand
 useCommand = Use <$> cacheNameParser <*> installationMode

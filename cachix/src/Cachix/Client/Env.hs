@@ -1,6 +1,7 @@
 module Cachix.Client.Env
   ( Env (..),
     mkEnv,
+    effectiveHost,
     createClientEnv,
     customManagerSettings,
     Config.defaultCachixOptions,
@@ -10,7 +11,7 @@ where
 import Cachix.Client.Config (Config)
 import Cachix.Client.Config qualified as Config
 import Cachix.Client.OptionsParser qualified as Options
-import Cachix.Client.URI (getBaseUrl)
+import Cachix.Client.URI (URI, getBaseUrl)
 import Cachix.Client.Version (cachixVersion)
 import Network.HTTP.Client
   ( ManagerSettings,
@@ -49,6 +50,12 @@ mkEnv flags = do
         clientenv = clientEnv,
         config = cfg
       }
+
+-- | The Cachix host this process is actually talking to: the value from
+-- @--host@ when supplied, otherwise @hostname@ from cachix.dhall. Use this
+-- instead of @Config.hostname (config env)@ in commands, which ignores @--host@.
+effectiveHost :: Env -> URI
+effectiveHost = Config.host . cachixoptions
 
 customManagerSettings :: ManagerSettings
 customManagerSettings =

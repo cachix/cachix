@@ -7,6 +7,7 @@ module Cachix.Client.URI
     fromURIRef,
     getScheme,
     getHostname,
+    getHostnameMay,
     appendSubdomain,
     getPortFor,
     getPath,
@@ -16,6 +17,7 @@ module Cachix.Client.URI
     serialize,
     toByteString,
     getBaseUrl,
+    canonicalForm,
     defaultCachixURI,
     defaultCachixBaseUrl,
     UBS.Host (..),
@@ -62,6 +64,25 @@ getScheme = UBS.uriScheme . getUri
 
 getHostname :: URI -> UBS.Host
 getHostname = UBS.authorityHost . fromJust . UBS.uriAuthority . getUri
+
+-- | Like 'getHostname', but returns 'Nothing' if the URI has no authority
+-- (e.g. @urn:…@, @mailto:…@, scheme-only forms) instead of throwing.
+getHostnameMay :: URI -> Maybe UBS.Host
+getHostnameMay = fmap UBS.authorityHost . UBS.uriAuthority . getUri
+
+-- | Normalize scheme, hostname and default ports for deduplication,
+-- preserving paths, credentials, query parameters and fragments.
+-- Returns 'Nothing' for URIs without an authority.
+canonicalForm :: URI -> Maybe Text
+canonicalForm (URI u) = do
+  authority <- UBS.uriAuthority u
+  let scheme = UBS.Scheme (Char8.map toLower (UBS.schemeBS (UBS.uriScheme u)))
+      host = UBS.Host (Char8.map toLower (UBS.hostBS (UBS.authorityHost authority)))
+      port = case UBS.authorityPort authority of
+        Just p | Just p == getPortFor scheme -> Nothing
+        p -> p
+      normalizedAuthority = authority {UBS.authorityHost = host, UBS.authorityPort = port}
+  pure $ toS $ UBS.serializeURIRef' $ u {UBS.uriScheme = scheme, UBS.uriAuthority = Just normalizedAuthority}
 
 -- TODO: lenses?
 appendSubdomain :: Text -> URI -> URI

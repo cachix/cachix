@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- `cachix list`: list Cachix caches configured in nix.conf (`--all` also shows non-Cachix substituters)
+
 ## [1.12.1] - 2026-08-31
 
 ### Fixed

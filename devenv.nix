@@ -13,7 +13,7 @@
   packages = [
     pkgs.pkg-config
 
-    # secretspec Haskell SDK native archive, for `cabal build -f secretspec`
+    # secretspec Haskell SDK native library, for `cabal build -f secretspec`
     secretspecFfi
 
     # Dependencies

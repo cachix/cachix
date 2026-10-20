@@ -41,7 +41,7 @@ resolveSecretStore StoreAuto = do
     then return True
     else do
       when SecretSpec.supported $
-        putErrText "Tip: run `secretspec config global init` to configure secretspec and store Cachix credentials in your password manager instead of a plaintext file."
+        putErrText "Tip: run `secretspec config init` to configure secretspec and store Cachix credentials in your password manager instead of a plaintext file."
       return False
 
 -- TODO: check that token actually authenticates!

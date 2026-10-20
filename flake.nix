@@ -90,8 +90,8 @@
           hlib = pkgs.haskell.lib;
           cachix-api = haskellPackages.callCabal2nix "cachix-api" ./cachix-api { };
 
-          # Resolve CACHIX_AUTH_TOKEN via secretspec (https://secretspec.dev).
-          # Linux-only for now: on darwin the Rust archive needs Security
+          # Resolve Cachix credentials via secretspec (https://secretspec.dev).
+          # Linux-only for now: on darwin the Rust library needs Security
           # framework link flags that are not wired up yet.
           withSecretspec = pkgs.stdenv.hostPlatform.isLinux;
 
@@ -167,7 +167,7 @@
       checks = forAllSystems (system: {
         pre-commit-check = git-hooks.lib.${system}.run {
           src = ./.;
-          inherit ((import ./git-hooks.nix).pre-commit) hooks;
+          hooks = (import ./git-hooks.nix).git-hooks.hooks;
         };
       });
 

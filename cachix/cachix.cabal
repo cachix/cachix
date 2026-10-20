@@ -36,8 +36,8 @@ flag ram
 
 flag secretspec
   description:
-    Resolve CACHIX_AUTH_TOKEN via secretspec (https://secretspec.dev).
-    Requires the libsecretspec_ffi.a native library at link time.
+    Resolve Cachix credentials via secretspec (https://secretspec.dev).
+    Requires the libsecretspec_ffi native library at link time.
 
   default:     False
   manual:      True

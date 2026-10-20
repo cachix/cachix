@@ -70,6 +70,30 @@ spec = do
           args `shouldSatisfy` not . T.isInfixOf secret
           pipedValue `shouldBe` secret
 
+      it "resolves the auth token from a real dotenv provider" $
+        withSystemTempDirectory "cachix-secretspec-dotenv" $ \dir -> do
+          let providerPath = dir </> "secrets.env"
+              provider = "dotenv://" <> providerPath
+              secret = "private-value-from-dotenv"
+          writeFile providerPath ("CACHIX_AUTH_TOKEN=" <> secret <> "\n")
+          withSetting "XDG_STATE_HOME" (Just (dir </> "state")) $
+            withSetting "SECRETSPEC_PROVIDER" (Just provider) $
+              SecretSpec.getAuthToken `shouldReturn` Just secret
+
+      it "uses a fallback reason when SECRETSPEC_REASON is blank" $
+        withFakeSecretspec $ \_ argsPath _ ->
+          withSetting "SECRETSPEC_REASON" (Just "   ") $ do
+            SecretSpec.setAuthToken (Just "private-value")
+            args <- readFile argsPath
+            args `shouldSatisfy` T.isInfixOf "cachix credential store"
+
+      it "preserves a non-empty SECRETSPEC_REASON" $
+        withFakeSecretspec $ \_ argsPath _ ->
+          withSetting "SECRETSPEC_REASON" (Just "operator supplied reason") $ do
+            SecretSpec.setAuthToken (Just "private-value")
+            args <- readFile argsPath
+            args `shouldSatisfy` not . T.isInfixOf "cachix credential store"
+
 withFakeSecretspec :: (FilePath -> FilePath -> FilePath -> IO a) -> IO a
 withFakeSecretspec action =
   withSystemTempDirectory "cachix-fake-secretspec" $ \dir -> do

@@ -83,7 +83,7 @@ isConfigured = do
       maybeProvider <- lookupEnv "SECRETSPEC_PROVIDER"
       case maybeProvider of
         Just provider | not (T.null (T.strip (toS provider))) -> return True
-        -- `config global init` creates this file. Avoid starting the CLI merely
+        -- `config init` creates this file. Avoid starting the CLI merely
         -- to inspect it; `set` will report an invalid or incomplete config.
         _ -> doesFileExist =<< getXdgDirectory XdgConfig ("secretspec" </> "config.toml")
 
@@ -129,9 +129,12 @@ setSecret secret maybeValue = do
       withEmbeddedManifest secret $ \manifestPath -> do
         -- Access reasons are required by the default require_reason policy in
         -- agent environments; a SECRETSPEC_REASON the user exported is read by
-        -- the CLI itself and should not be overridden.
+        -- the CLI itself and should not be overridden. Blank values do not
+        -- satisfy secretspec's policy, so keep the Cachix fallback for those.
         maybeReason <- lookupEnv "SECRETSPEC_REASON"
-        let reasonArgs = maybe ["--reason", "cachix credential store"] (const []) maybeReason
+        let reasonArgs = case maybeReason of
+              Just reason | not (T.null (T.strip (toS reason))) -> []
+              _ -> ["--reason", "cachix credential store"]
         -- Omitting the value makes the CLI prompt for it with hidden input, or
         -- read it from stdin when a pipe is connected.
         -- The profile is pinned for the same reason resolution pins it: the

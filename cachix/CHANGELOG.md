@@ -7,9 +7,22 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.13.0] - 2026-10-21
+
 ### Added
 
 - `cachix list`: list Cachix caches configured in nix.conf (`--all` also shows non-Cachix substituters)
+
+### Changed
+
+- deps: support crypton >= 1.1 with ram while retaining support for older crypton versions with memory
+
+### Fixed
+
+- client: retry HTTP 408 request timeouts
+- client: detect interactive terminals correctly and disable interactive progress when `CI=true` or `CI=1`
+- deploy: ignore duplicate deployment commands
+- deploy: retry deployments skipped because another deployment holds the lock
 
 ## [1.12.1] - 2026-08-31
 

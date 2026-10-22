@@ -6,6 +6,7 @@ module Cachix.Client.Command.Push
     withPushParams,
     withPushParams',
     handleCacheResponse,
+    getConfigSigningKey,
     getPushSecret,
     getPushSecretRequired,
   )
@@ -20,6 +21,7 @@ import Cachix.Client.HumanSize (humanSize)
 import Cachix.Client.OptionsParser as Options (PushOptions (..))
 import Cachix.Client.Push as Push
 import Cachix.Client.Retry (retryClientM)
+import Cachix.Client.SecretSpec qualified as SecretSpec
 import Cachix.Client.Secrets
 import Cachix.Client.Servant
 import Cachix.Client.Terminal (useInteractiveProgress)
@@ -193,20 +195,21 @@ getPushSecret config name = do
   maybeAuthToken <- Config.getAuthTokenMaybe config
 
   maybeSigningKeyEnv <- toS <<$>> lookupEnv "CACHIX_SIGNING_KEY"
-  let maybeSigningKeyConfig = Config.secretKey <$> head (getBinaryCache config)
+  -- Empty keys are metadata for caches whose signing key is in secretspec.
+  let maybeSigningKeyConfig = getConfigSigningKey config name
 
-  case maybeSigningKeyEnv <|> maybeSigningKeyConfig of
+  maybeSigningKey <-
+    case maybeSigningKeyEnv <|> maybeSigningKeyConfig of
+      Just signingKey -> return $ Just signingKey
+      Nothing -> SecretSpec.getSigningKey name
+
+  case maybeSigningKey of
     Just signingKey ->
       return $ PushSigningKey (fromMaybe (Token "") maybeAuthToken) <$> parseSigningKeyLenient signingKey
     Nothing -> case maybeAuthToken of
       Just authToken -> return $ Right $ PushToken authToken
       Nothing -> return $ Left msg
   where
-    -- we reverse list of caches to prioritize keys added as last
-    getBinaryCache c =
-      reverse $
-        filter (\bc -> Config.name bc == name) (Config.binaryCaches c)
-
     msg :: Text
     msg =
       [iTrim|
@@ -214,9 +217,25 @@ Neither auth token nor signing key are present.
 
 They are looked up via $CACHIX_AUTH_TOKEN and $CACHIX_SIGNING_KEY,
 and if missing also looked up from ~/.config/cachix/cachix.dhall
-
-Read https://mycache.cachix.org for instructions how to push to your binary cache.
     |]
+        <> secretspecHint
+        <> "\n\nRead https://mycache.cachix.org for instructions how to push to your binary cache."
+
+    secretspecHint :: Text
+    secretspecHint
+      | SecretSpec.supported =
+          "\n\nWith secretspec (https://secretspec.dev) they can also be declared in your project's secretspec.toml, or stored once for all projects: cachix authtoken and cachix generate-keypair store credentials via secretspec by default when it is configured."
+      | otherwise = ""
+
+getConfigSigningKey :: Config.Config -> Text -> Maybe Text
+getConfigSigningKey config name =
+  -- Prioritize keys added last for compatibility with existing config
+  -- files that contain duplicate cache entries.
+  foldl' selectKey Nothing (Config.binaryCaches config)
+  where
+    selectKey current bc
+      | Config.name bc == name && not (T.null (Config.secretKey bc)) = Just (Config.secretKey bc)
+      | otherwise = current
 
 -- | Like 'getPushSecret', but throws a fatal error if the secret is not found.
 getPushSecretRequired ::

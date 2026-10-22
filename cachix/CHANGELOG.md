@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ### Added
 
+- client: resolve `CACHIX_AUTH_TOKEN` and `CACHIX_SIGNING_KEY` via [secretspec](https://secretspec.dev). Each secret is looked up in this order: environment variable, configuration file, the project's `secretspec.toml`, and finally a manifest embedded in cachix with project name `cachix`, so a secret stored once under that namespace (for example the keyring entry `secretspec/cachix/default/CACHIX_AUTH_TOKEN`) works from any directory. Enabled with the `secretspec` cabal flag, which is off by default since it links the `secretspec-ffi` native library. The flake enables it on Linux.
+- client: `cachix authtoken` and `cachix generate-keypair` store credentials via secretspec by default when it is set up (the `secretspec` CLI on PATH and a default provider configured), under the `cachix` project namespace, and move any credential out of the configuration file that would shadow it. An unconfigured installation falls back to the Cachix configuration file with a setup tip. The `cachix` namespace always uses the `default` profile, so stored credentials are found regardless of `SECRETSPEC_PROFILE` or the configured default profile. Signing keys get a per cache slot (`CACHIX_SIGNING_KEY_<cache>`) through a secret reference. `--secretspec` forces secretspec, `--no-secretspec` keeps the configuration file, and a bare `cachix authtoken` prompts for the token with hidden input via secretspec when secretspec is configured.
 - `cachix list`: list Cachix caches configured in nix.conf (`--all` also shows non-Cachix substituters)
 
 ### Changed

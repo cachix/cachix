@@ -34,6 +34,14 @@ flag ram
   default:     True
   manual:      False
 
+flag secretspec
+  description:
+    Resolve Cachix credentials via secretspec (https://secretspec.dev).
+    Requires the libsecretspec_ffi native library at link time.
+
+  default:     False
+  manual:      True
+
 common defaults
   build-depends:      base >=4.7 && <5
   default-extensions:
@@ -89,6 +97,7 @@ library
     Cachix.Client.PushQueue
     Cachix.Client.Retry
     Cachix.Client.Secrets
+    Cachix.Client.SecretSpec
     Cachix.Client.Servant
     Cachix.Client.Terminal
     Cachix.Client.URI
@@ -225,6 +234,10 @@ library
       , crypton  <1.1
       , memory
 
+  if flag(secretspec)
+    build-depends: secretspec >=0.16 && <0.17
+    cpp-options:   -DUSE_SECRETSPEC
+
   -- These versions are pinned in hercules-ci-cnix-store
   pkgconfig-depends: nix-store
 
@@ -281,6 +294,7 @@ test-suite cachix-test
     NixConfSpec
     NixVersionSpec
     RetrySpec
+    SecretSpecSpec
     Spec
     TerminalSpec
     URISpec
@@ -307,6 +321,7 @@ test-suite cachix-test
     , servant-client-core
     , stm
     , temporary
+    , text
     , time
     , unliftio
     , uuid

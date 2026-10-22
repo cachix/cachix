@@ -37,6 +37,7 @@ Config commands:
 Cache commands:
   generate-keypair         Generate a signing key pair for a binary cache
   use                      Configure a binary cache in nix.conf
+  list                     List Cachix caches configured in nix.conf
   remove                   Remove a binary cache from nix.conf
 
 Push commands:

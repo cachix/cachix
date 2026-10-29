@@ -72,6 +72,7 @@ library
     Cachix.API.Deploy.V2
     Cachix.API.Error
     Cachix.API.Signing
+    Cachix.API.WebSocket.Client
     Cachix.API.WebSocketSubprotocol
     Cachix.Types.BinaryCache
     Cachix.Types.ByteStringStreaming
@@ -115,7 +116,7 @@ library
     , time
     , unordered-containers
     , uuid
-    , websockets
+    , websockets            >=0.13
 
   if flag(ram)
     build-depends:
@@ -134,6 +135,7 @@ test-suite cachix-api-test
   other-modules:
     DeploySpec
     Spec
+    WebSocketClientSpec
 
   hs-source-dirs:     test
   build-depends:
@@ -142,5 +144,6 @@ test-suite cachix-api-test
     , cachix-api
     , hspec
     , protolude
+    , websockets
 
   build-tool-depends: hspec-discover:hspec-discover

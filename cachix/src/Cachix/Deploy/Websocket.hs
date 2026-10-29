@@ -3,6 +3,7 @@
 -- | A high-level, multiple reader, single writer interface for Websocket clients.
 module Cachix.Deploy.Websocket where
 
+import Cachix.API.WebSocket.Client qualified as WebSocketClient
 import Cachix.Client.Retry qualified as Retry
 import Cachix.Client.URI qualified as URI
 import Cachix.Client.Version (versionNumber)
@@ -178,13 +179,14 @@ runConnection websocket@WebSocket {connection, options, tx, rx, withLog, lastPon
 
 runClientWith :: Options -> WS.Connection.ConnectionOptions -> WS.ClientApp a -> IO a
 runClientWith Options {host, port, path, headers, useSSL} connectionOptions app =
-  if useSSL
-    then
-      withConnectionTimeout
-        timeoutMicroseconds
-        (Wuss.newSecureClientConnectionWith hostS (fromIntegral (URI.portNumber port)) (toS path) connectionOptions headers)
-        app
-    else WS.runClientWith hostS (URI.portNumber port) (toS path) connectionOptions headers app
+  WebSocketClient.withHandshakeErrors $
+    if useSSL
+      then
+        withConnectionTimeout
+          timeoutMicroseconds
+          (Wuss.newSecureClientConnectionWith hostS (fromIntegral (URI.portNumber port)) (toS path) connectionOptions headers)
+          app
+      else WS.runClientWith hostS (URI.portNumber port) (toS path) connectionOptions headers app
   where
     hostS = toS (URI.hostBS host)
     timeoutMicroseconds = WS.Connection.connectionTimeout connectionOptions * 1000 * 1000

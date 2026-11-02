@@ -63,14 +63,12 @@ main = displayConsoleRegions $ do
 -- | Install client-wide signal handlers.
 installSignalHandlers :: IO ()
 installSignalHandlers = do
-  -- CNix installs its own signal handlers during initialization. Override
-  -- SIGTERM afterwards so commands and daemon startup can also be interrupted
-  -- while waiting on Haskell network I/O. Running daemons and push workers
-  -- replace this handler with their own shutdown handling.
+  -- CNix drops its Haskell interrupt callback. Interrupt both Nix and the
+  -- command thread so signals terminate work in either runtime.
   mainThreadId <- myThreadId
-  _ <-
+  for_ [Signal.sigINT, Signal.sigTERM, Signal.sigHUP] $ \signal ->
     Signal.installHandler
-      Signal.sigTERM
+      signal
       ( Signal.Catch $ do
           CNix.Util.triggerInterrupt
           -- Use an asynchronous exception so HTTP clients do not wrap it as

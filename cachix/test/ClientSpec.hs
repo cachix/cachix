@@ -4,21 +4,23 @@ import Protolude
 import StalledServer (withStalledServer)
 import System.Environment (getEnvironment)
 import System.IO.Temp (withSystemTempDirectory)
-import System.Posix.Signals (sigKILL, sigTERM, signalProcess)
+import System.Posix.Signals (Signal, sigHUP, sigINT, sigKILL, sigTERM, signalProcess)
 import System.Process qualified as Process
 import System.Timeout (timeout)
 import Test.Hspec
 
 spec :: Spec
-spec = describe "SIGTERM during stalled requests" $
-  forM_ ["http", "https"] $ \scheme -> do
-    it (toS $ "stops cachix use over " <> scheme) $
-      terminatesOnSignal scheme ["use", "somecache"]
-    it (toS $ "stops daemon startup over " <> scheme) $
-      terminatesOnSignal scheme ["daemon", "run", "somecache"]
+spec = describe "signals during stalled requests" $
+  forM_ [("SIGINT", sigINT), ("SIGTERM", sigTERM), ("SIGHUP", sigHUP)] $ \(name, signal) ->
+    describe name $
+      forM_ ["http", "https"] $ \scheme -> do
+        it (toS $ "stops cachix use over " <> scheme) $
+          terminatesOnSignal signal scheme ["use", "somecache"]
+        it (toS $ "stops daemon startup over " <> scheme) $
+          terminatesOnSignal signal scheme ["daemon", "run", "somecache"]
 
-terminatesOnSignal :: Text -> [Text] -> IO ()
-terminatesOnSignal scheme command =
+terminatesOnSignal :: Signal -> Text -> [Text] -> IO ()
+terminatesOnSignal signal scheme command =
   withSystemTempDirectory "cachix-signal-test" $ \dir -> withFile (dir <> "/client.log") WriteMode $ \output ->
     withStalledServer $ \port connected -> do
       environment <- getEnvironment
@@ -41,7 +43,7 @@ terminatesOnSignal scheme command =
         -- rather than racing its startup and signal-handler installation.
         timeout (10 * 1_000_000) connected `shouldReturn` Just ()
         pid <- Process.getPid processHandle >>= maybe (panic "Missing client PID") pure
-        signalProcess sigTERM pid
+        signalProcess signal pid
         result <- timeout (5 * 1_000_000) (Process.waitForProcess processHandle)
         result `shouldSatisfy` maybe False (/= ExitSuccess)
   where

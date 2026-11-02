@@ -1,4 +1,4 @@
-module StalledServer (withStalledServer) where
+module StalledServer (withStalledServer, withServer) where
 
 import Network.Socket qualified as Socket
 import Protolude
@@ -6,7 +6,10 @@ import Protolude
 -- Accept a connection and keep it open without sending any data. The action
 -- receives the port and an action that waits until the client has connected.
 withStalledServer :: (Int -> IO () -> IO a) -> IO a
-withStalledServer action =
+withStalledServer = withServer $ \_ -> forever $ threadDelay 1_000_000
+
+withServer :: (Socket.Socket -> IO ()) -> (Int -> IO () -> IO a) -> IO a
+withServer respond action =
   bracket (Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol) Socket.close $ \server -> do
     Socket.bind server (Socket.SockAddrInet 0 (Socket.tupleToHostAddress (127, 0, 0, 1)))
     Socket.listen server 1
@@ -16,8 +19,8 @@ withStalledServer action =
       _ -> panic "Expected an IPv4 listener"
     connected <- newEmptyMVar
     withAsync
-      ( bracket (fst <$> Socket.accept server) Socket.close $ \_ -> do
-          putMVar connected ()
-          forever $ threadDelay 1_000_000
+      ( forever $ bracket (fst <$> Socket.accept server) Socket.close $ \connection -> do
+          void $ tryPutMVar connected ()
+          respond connection
       )
       (\_ -> action port (takeMVar connected))

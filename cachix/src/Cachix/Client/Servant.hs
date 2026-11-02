@@ -7,6 +7,7 @@ module Cachix.Client.Servant
     cachixClient,
     deployClientV1,
     deployClientV2,
+    withResponseTimeout,
   )
 where
 
@@ -14,6 +15,7 @@ import Cachix.API qualified as API
 import Cachix.API.Deploy.V1 qualified as API.Deploy.V1
 import Cachix.API.Deploy.V2 qualified as API.Deploy.V2
 import Cachix.Types.ContentTypes ()
+import Network.HTTP.Client qualified as HTTP
 import Network.HTTP.Types (Status)
 import Protolude
 import Servant.API.Generic
@@ -21,6 +23,15 @@ import Servant.Auth.Client ()
 import Servant.Client qualified
 import Servant.Client.Streaming
 import Servant.Conduit ()
+
+-- | Override the timeout only for requests made by this client action.
+withResponseTimeout :: HTTP.ResponseTimeout -> ClientM a -> ClientM a
+withResponseTimeout responseTimeout = local $ \env ->
+  env
+    { makeClientRequest = \url request -> do
+        httpRequest <- makeClientRequest env url request
+        pure httpRequest {HTTP.responseTimeout = responseTimeout}
+    }
 
 isErr :: ClientError -> Status -> Bool
 isErr (Servant.Client.FailureResponse _ resp) status

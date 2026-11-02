@@ -267,6 +267,7 @@ test-suite cachix-test
   main-is:            Main.hs
   hs-source-dirs:     test
   other-modules:
+    ClientSpec
     CommandConfigSpec
     CommandListSpec
     Daemon.NarinfoQuerySpec
@@ -276,12 +277,14 @@ test-suite cachix-test
     Daemon.TaskQueueSpec
     Daemon.TTLCacheSpec
     DeploySpec
+    EnvSpec
     InstallationModeSpec
     NetRcSpec
     NixConfSpec
     NixVersionSpec
     RetrySpec
     Spec
+    StalledServer
     TerminalSpec
     URISpec
 
@@ -299,8 +302,12 @@ test-suite cachix-test
     , hercules-ci-cnix-store
     , here
     , hspec
+    , http-client
+    , http-client-tls
     , http-types
     , katip
+    , network
+    , process
     , protolude
     , retry
     , servant-auth-client
@@ -308,8 +315,11 @@ test-suite cachix-test
     , stm
     , temporary
     , time
+    , unix
     , unliftio
     , uuid
     , versions
 
-  build-tool-depends: hspec-discover:hspec-discover
+  build-tool-depends:
+    , cachix:cachix
+    , hspec-discover:hspec-discover

@@ -43,8 +43,8 @@ import Text.ParserCombinators.ReadPrec qualified as ReadPrec (lift)
 
 -- Policies
 
--- | Per-HTTP-request policy. Wall-time bounded so the user-visible delay is
--- predictable regardless of how many attempts fit. Jittered exponential
+-- | Per-HTTP-request policy. Bounds cumulative backoff delays, excluding time
+-- spent executing requests. Jittered exponential
 -- backoff to avoid thundering-herd on shared origins (CDN incidents).
 httpRetryPolicy :: (MonadIO m) => RetryPolicyM m
 httpRetryPolicy =

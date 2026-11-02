@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Fixed
+
+- client: time out stalled connections and responses, including TLS handshakes
+- client: handle SIGTERM during commands and daemon startup
+
 ## [1.13.0] - 2026-10-21
 
 ### Added

@@ -21,6 +21,7 @@ import Cachix.Deploy.ActivateCommand as ActivateCommand
 import Cachix.Deploy.Agent qualified as AgentCommand
 import Cachix.Deploy.OptionsParser qualified as DeployOptions
 import Hercules.CNix qualified as CNix
+import Hercules.CNix.Util qualified as CNix.Util
 import Protolude
 import System.Console.AsciiProgress (displayConsoleRegions)
 import System.Posix.Signals qualified as Signal
@@ -62,6 +63,22 @@ main = displayConsoleRegions $ do
 -- | Install client-wide signal handlers.
 installSignalHandlers :: IO ()
 installSignalHandlers = do
+  -- CNix installs its own signal handlers during initialization. Override
+  -- SIGTERM afterwards so commands and daemon startup can also be interrupted
+  -- while waiting on Haskell network I/O. Running daemons and push workers
+  -- replace this handler with their own shutdown handling.
+  mainThreadId <- myThreadId
+  _ <-
+    Signal.installHandler
+      Signal.sigTERM
+      ( Signal.Catch $ do
+          CNix.Util.triggerInterrupt
+          -- Use an asynchronous exception so HTTP clients do not wrap it as
+          -- a connection failure and retry the interrupted request.
+          throwTo mainThreadId UserInterrupt
+      )
+      Nothing
+
   -- Ignore sigPIPE.
   -- The default handler terminates the process.
   -- WARN: may be reset to SIG_DFL when initializing the Nix library.

@@ -76,6 +76,11 @@
               # https://github.com/NixOS/nixpkgs/pull/469906
               (
                 old: {
+                  # Setup's test runner does not add internal build tools to PATH.
+                  preCheck = ''
+                    export PATH="$PWD/dist/build/cachix:$PATH"
+                  ''
+                  + (old.preCheck or "");
                   preBuild = ''
                     DYLD_INSERT_LIBRARIES="''${DYLD_INSERT_LIBRARIES:+$DYLD_INSERT_LIBRARIES:}$(pkg-config --variable=libdir nix-store)/libnixstore.dylib:$(pkg-config --variable=libdir nix-util)/libnixutil.dylib"
                     export DYLD_INSERT_LIBRARIES

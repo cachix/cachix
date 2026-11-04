@@ -77,6 +77,7 @@ import Hercules.CNix (StorePath)
 import Hercules.CNix.Std.Set qualified as Std.Set
 import Hercules.CNix.Store (Store)
 import Hercules.CNix.Store qualified as Store
+import Network.HTTP.Client (responseTimeoutNone)
 import Network.HTTP.Types (status401, status404)
 import Nix.NarInfo qualified as NarInfo
 import Protolude hiding (toS)
@@ -274,7 +275,8 @@ completeNarUpload pushParams Push.S3.UploadMultipartResult {..} nic = do
               Multipart.narInfoCreate = nic
             }
 
-  liftIO $ void $ retryHttp $ withClientM completeMultipartUploadRequest clientEnv escalate
+  -- Assembling a large multipart upload can take several minutes.
+  liftIO $ void $ retryHttp $ withClientM (withResponseTimeout responseTimeoutNone completeMultipartUploadRequest) clientEnv escalate
 
 data UploadNarDetails = UploadNarDetails
   { undNarSize :: Integer,

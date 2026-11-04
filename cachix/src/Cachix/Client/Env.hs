@@ -17,7 +17,7 @@ import Network.HTTP.Client
   ( ManagerSettings,
     managerModifyRequest,
     managerResponseTimeout,
-    responseTimeoutNone,
+    responseTimeoutMicro,
   )
 import Network.HTTP.Client.TLS (newTlsManagerWith, tlsManagerSettings)
 import Network.HTTP.Simple (setRequestHeader)
@@ -60,7 +60,8 @@ effectiveHost = Config.host . cachixoptions
 customManagerSettings :: ManagerSettings
 customManagerSettings =
   tlsManagerSettings
-    { managerResponseTimeout = responseTimeoutNone,
+    { -- This also bounds connection acquisition, including the TLS handshake.
+      managerResponseTimeout = responseTimeoutMicro (30 * 1_000_000),
       -- managerModifyRequest :: Request -> IO Request
       managerModifyRequest = return . setRequestHeader "User-Agent" [toS cachixVersion]
     }

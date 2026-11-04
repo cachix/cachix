@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Fixed
+
+- client: time out stalled connections and responses, including TLS handshakes
+- client: handle SIGINT, SIGTERM and SIGHUP during commands and daemon startup
+- push: preserve unlimited time for multipart upload completion with finite default HTTP timeouts
+
 ## [1.13.0] - 2026-10-21
 
 ### Added

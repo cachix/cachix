@@ -105,6 +105,7 @@ library
     , http-media
     , jose
     , nix-narinfo
+    , openapi3
     , protolude
     , resourcet
     , safe-exceptions

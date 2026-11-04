@@ -9,11 +9,14 @@ module Cachix.Types.NarInfo
 where
 
 import Data.Aeson (FromJSON, ToJSON)
-import Data.Swagger (ToSchema)
+import qualified Data.OpenApi as OpenApi
+import qualified Data.Swagger as Swagger
 import Nix.NarInfo (NarInfo (..))
 import Protolude
 
-deriving instance ToSchema CachixNarInfo
+deriving instance Swagger.ToSchema CachixNarInfo
+
+deriving instance OpenApi.ToSchema CachixNarInfo
 
 deriving instance ToJSON CachixNarInfo
 

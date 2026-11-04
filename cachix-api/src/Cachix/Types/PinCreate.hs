@@ -1,15 +1,16 @@
 module Cachix.Types.PinCreate where
 
 import Data.Aeson (FromJSON, ToJSON)
-import Data.Swagger (ToSchema (..), defaultSchemaOptions, genericDeclareNamedSchemaUnrestricted)
+import qualified Data.OpenApi as OpenApi
+import qualified Data.Swagger as Swagger
 import Protolude
 
 data Keep = Days Int | Revisions Int | Forever
-  deriving (Show, Eq, Generic, ToJSON, FromJSON)
+  deriving (Show, Eq, Generic, ToJSON, FromJSON, OpenApi.ToSchema)
 
 -- to support Keep with data constructor with arguments
-instance ToSchema Keep where
-  declareNamedSchema = genericDeclareNamedSchemaUnrestricted defaultSchemaOptions
+instance Swagger.ToSchema Keep where
+  declareNamedSchema = Swagger.genericDeclareNamedSchemaUnrestricted Swagger.defaultSchemaOptions
 
 data PinCreate = PinCreate
   { name :: Text,
@@ -17,4 +18,4 @@ data PinCreate = PinCreate
     artifacts :: [Text],
     keep :: Maybe Keep
   }
-  deriving (Show, Eq, Generic, ToJSON, FromJSON, ToSchema)
+  deriving (Show, Eq, Generic, ToJSON, FromJSON, Swagger.ToSchema, OpenApi.ToSchema)

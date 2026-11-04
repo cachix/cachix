@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+- Add OpenAPI 3.0 schemas for API payloads, streaming responses, and URL parameters.
+
 ## [0.7.0] - 2022-01-12
 
 - Support Cachix Deploy

@@ -1,15 +1,22 @@
 module Cachix.Types.ByteStringStreaming where
 
 import qualified Data.ByteString.Lazy as LBS
-import Data.Swagger (NamedSchema (..), ToSchema (..), binarySchema)
+import qualified Data.OpenApi as OpenApi
+import qualified Data.Swagger as Swagger
 import Protolude
 
 newtype ByteStringStreaming = ByteStringStreaming ByteString
 
-instance ToSchema ByteStringStreaming where
-  declareNamedSchema _ = pure $ NamedSchema (Just "ByteString") binarySchema
+instance Swagger.ToSchema ByteStringStreaming where
+  declareNamedSchema _ = pure $ Swagger.NamedSchema (Just "ByteString") Swagger.binarySchema
 
 newtype LazyByteStringStreaming = LazyByteStringStreaming LBS.ByteString
 
-instance ToSchema LazyByteStringStreaming where
-  declareNamedSchema _ = pure $ NamedSchema (Just "lazyByteString") binarySchema
+instance Swagger.ToSchema LazyByteStringStreaming where
+  declareNamedSchema _ = pure $ Swagger.NamedSchema (Just "lazyByteString") Swagger.binarySchema
+
+instance OpenApi.ToSchema ByteStringStreaming where
+  declareNamedSchema _ = pure $ OpenApi.NamedSchema (Just "ByteString") OpenApi.binarySchema
+
+instance OpenApi.ToSchema LazyByteStringStreaming where
+  declareNamedSchema _ = pure $ OpenApi.NamedSchema (Just "lazyByteString") OpenApi.binarySchema

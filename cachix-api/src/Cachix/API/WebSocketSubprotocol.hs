@@ -6,6 +6,7 @@ import qualified Control.Concurrent.Async as Async
 import qualified Control.Concurrent.STM.TMQueue as TMQueue
 import qualified Control.Exception.Safe as Safe
 import qualified Data.Aeson as Aeson
+import qualified Data.OpenApi as OpenApi
 import Data.Time (UTCTime)
 import Data.UUID (UUID)
 import qualified Network.WebSockets as WS
@@ -100,4 +101,4 @@ data Log = Log
   { line :: Text,
     time :: UTCTime
   }
-  deriving (Generic, Show, Aeson.ToJSON, Aeson.FromJSON)
+  deriving (Generic, Show, Aeson.ToJSON, Aeson.FromJSON, OpenApi.ToSchema)

@@ -2,7 +2,8 @@ module Cachix.Types.BinaryCache where
 
 import Cachix.Types.Permission (Permission)
 import Data.Aeson (FromJSON, ToJSON)
-import Data.Swagger (ToParamSchema (..), ToSchema)
+import qualified Data.OpenApi as OpenApi
+import qualified Data.Swagger as Swagger
 import Protolude
 import Servant.API
 import Text.Read
@@ -18,10 +19,10 @@ data BinaryCache = BinaryCache
     permission :: Permission,
     preferredCompressionMethod :: CompressionMethod
   }
-  deriving (Show, Generic, FromJSON, ToJSON, ToSchema, NFData)
+  deriving (Show, Generic, FromJSON, ToJSON, Swagger.ToSchema, OpenApi.ToSchema, NFData)
 
 data CompressionMethod = XZ | ZSTD
-  deriving (Show, Eq, Generic, FromJSON, ToJSON, ToSchema, NFData)
+  deriving (Show, Eq, Generic, FromJSON, ToJSON, Swagger.ToSchema, OpenApi.ToSchema, NFData)
 
 instance Read CompressionMethod where
   readsPrec _ value =
@@ -40,5 +41,8 @@ instance ToHttpApiData CompressionMethod where
   toUrlPiece XZ = "xz"
   toUrlPiece ZSTD = "zst"
 
-instance ToParamSchema CompressionMethod where
-  toParamSchema _ = toParamSchema (Proxy :: Proxy Text)
+instance Swagger.ToParamSchema CompressionMethod where
+  toParamSchema _ = Swagger.toParamSchema (Proxy :: Proxy Text)
+
+instance OpenApi.ToParamSchema CompressionMethod where
+  toParamSchema _ = OpenApi.toParamSchema (Proxy :: Proxy Text)

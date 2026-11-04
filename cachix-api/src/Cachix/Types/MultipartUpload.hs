@@ -2,7 +2,8 @@ module Cachix.Types.MultipartUpload where
 
 import Cachix.Types.NarInfoCreate (NarInfoCreate)
 import Data.Aeson (FromJSON, ToJSON)
-import Data.Swagger (ToSchema)
+import qualified Data.OpenApi as OpenApi
+import qualified Data.Swagger as Swagger
 import Data.UUID (UUID)
 import Protolude
 
@@ -11,18 +12,18 @@ data CreateMultipartUploadResponse = CreateMultipartUploadResponse
     uploadId :: Text
   }
   deriving stock (Generic, Eq, Show)
-  deriving anyclass (ToJSON, FromJSON, ToSchema, NFData)
+  deriving anyclass (ToJSON, FromJSON, Swagger.ToSchema, OpenApi.ToSchema, NFData)
 
 -- | Any hashes or headers required to create the presigned URL.
 data SigningData = SigningData
   { contentMD5 :: Text
   }
   deriving stock (Generic, Eq, Show)
-  deriving anyclass (ToJSON, FromJSON, ToSchema, NFData)
+  deriving anyclass (ToJSON, FromJSON, Swagger.ToSchema, OpenApi.ToSchema, NFData)
 
 newtype UploadPartResponse = UploadPartResponse {uploadUrl :: Text}
   deriving stock (Generic, Show)
-  deriving anyclass (ToJSON, FromJSON, ToSchema, NFData)
+  deriving anyclass (ToJSON, FromJSON, Swagger.ToSchema, OpenApi.ToSchema, NFData)
 
 data CompletedPart = CompletedPart
   { partNumber :: Int,
@@ -30,7 +31,7 @@ data CompletedPart = CompletedPart
     eTag :: Text
   }
   deriving stock (Generic, Eq, Show)
-  deriving anyclass (ToJSON, FromJSON, ToSchema, NFData)
+  deriving anyclass (ToJSON, FromJSON, Swagger.ToSchema, OpenApi.ToSchema, NFData)
 
 instance Ord CompletedPart where
   p1 `compare` p2 = partNumber p1 `compare` partNumber p2
@@ -44,4 +45,4 @@ data CompletedMultipartUpload = CompletedMultipartUpload
     narInfoCreate :: NarInfoCreate
   }
   deriving stock (Generic, Show)
-  deriving anyclass (ToJSON, FromJSON, ToSchema)
+  deriving anyclass (ToJSON, FromJSON, Swagger.ToSchema, OpenApi.ToSchema)

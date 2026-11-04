@@ -3,7 +3,8 @@ module Cachix.Types.NarFileName
   )
 where
 
-import Data.Swagger (ToParamSchema (..))
+import qualified Data.OpenApi as OpenApi
+import qualified Data.Swagger as Swagger
 import qualified Data.Text as T
 import Protolude
 import Servant.API
@@ -25,5 +26,8 @@ instance FromHttpApiData NarFileName where
 instance ToHttpApiData NarFileName where
   toUrlPiece narfilename = contentHash narfilename <> ".nar." <> extension narfilename
 
-instance ToParamSchema NarFileName where
-  toParamSchema _ = toParamSchema (Proxy :: Proxy Text)
+instance Swagger.ToParamSchema NarFileName where
+  toParamSchema _ = Swagger.toParamSchema (Proxy :: Proxy Text)
+
+instance OpenApi.ToParamSchema NarFileName where
+  toParamSchema _ = OpenApi.toParamSchema (Proxy :: Proxy Text)

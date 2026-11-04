@@ -9,7 +9,8 @@ import Data.Aeson
   ( FromJSON,
     ToJSON,
   )
-import Data.Swagger
+import qualified Data.OpenApi as OpenApi
+import qualified Data.Swagger as Swagger
 import Protolude
 
 -- TODO: get rid of c prefix
@@ -28,7 +29,7 @@ data NarInfoCreate = NarInfoCreate
     cDeriver :: Text,
     cSig :: Maybe Text
   }
-  deriving (Generic, Show, FromJSON, ToJSON, ToSchema)
+  deriving (Generic, Show, FromJSON, ToJSON, Swagger.ToSchema, OpenApi.ToSchema)
 
 data NarInfoInvalid
   = NarSizeIsZero

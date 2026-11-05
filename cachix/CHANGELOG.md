@@ -7,11 +7,18 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.14.0] - 2026-11-05
+
+### Added
+
+- api: Add OpenAPI 3.0 schemas for API payloads, streaming responses, and URL parameters.
+
 ### Fixed
 
 - client: time out stalled connections and responses, including TLS handshakes
 - client: handle SIGINT, SIGTERM and SIGHUP during commands and daemon startup
 - push: preserve unlimited time for multipart upload completion with finite default HTTP timeouts
+- deploy: report HTTP WebSocket handshake rejections
 
 ## [1.13.0] - 2026-10-21
 

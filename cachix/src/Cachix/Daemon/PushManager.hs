@@ -381,7 +381,9 @@ handleTask task = do
   case task of
     QueryMissingPaths pushId ->
       runQueryMissingPathsTask pushParams pushId
-    HandleMissingPathsResponse pushId batchResponse ->
+    HandleMissingPathsResponse pushId (Left reason) ->
+      failPushJob pushId reason
+    HandleMissingPathsResponse pushId (Right batchResponse) ->
       runHandleMissingPathsResponseTask pushParams pushId batchResponse
     PushPath filePath ->
       runPushPathTask pushParams filePath

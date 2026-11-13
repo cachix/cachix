@@ -32,8 +32,10 @@ import Data.Set qualified as Set
 import Data.Time (NominalDiffTime, UTCTime, addUTCTime, diffUTCTime, getCurrentTime)
 import Hercules.CNix.Store (StorePath, getStorePathHash)
 import Katip qualified
-import Protolude
+import Protolude hiding (toS)
+import Protolude.Conv (toS)
 import UnliftIO.Async qualified as Async
+import UnliftIO.Exception qualified as Exception
 
 -- | Type alias for the positive narinfo cache.
 -- Keys are store path hashes.
@@ -107,7 +109,7 @@ data NarinfoQueryManager requestId = NarinfoQueryManager
     -- | Handle to the processor thread
     nqmProcessorThread :: !(MVar (Async ())),
     -- | Callback to handle query responses
-    nqmCallback :: !(requestId -> NarinfoResponse -> IO ()),
+    nqmCallback :: !(requestId -> Either Text NarinfoResponse -> IO ()),
     -- | Cache for path existence information
     nqmCache :: !(TVar NarinfoCache),
     -- | Cached current time for TTL calculations (updated periodically)
@@ -117,7 +119,7 @@ data NarinfoQueryManager requestId = NarinfoQueryManager
   }
 
 -- | Create a new narinfo query manager
-new :: (MonadIO m) => NarinfoQueryOptions -> (requestId -> NarinfoResponse -> IO ()) -> m (NarinfoQueryManager requestId)
+new :: (MonadIO m) => NarinfoQueryOptions -> (requestId -> Either Text NarinfoResponse -> IO ()) -> m (NarinfoQueryManager requestId)
 new nqmConfig nqmCallback = liftIO $ do
   nqmState <- newTVarIO initialState
   nqmProcessorThread <- newEmptyMVar
@@ -358,7 +360,31 @@ processReadyBatch ::
   ([StorePath] -> m ([StorePath], [StorePath])) ->
   ReadyBatch requestId ->
   m ()
-processReadyBatch manager@NarinfoQueryManager {nqmCallback} processBatch ReadyBatch {rbRequests, rbAllPaths, rbBatchStartTime} = do
+processReadyBatch manager@NarinfoQueryManager {nqmCallback} processBatch readyBatch@ReadyBatch {rbRequests} = do
+  -- Catch batch failures, not cancellation or exceptions from response callbacks.
+  result <- Exception.tryAny $ queryMissingPaths manager processBatch readyBatch
+  case result of
+    Left err -> do
+      let reason = "Failed to query missing paths: " <> toS (displayException err)
+      Katip.katipAddContext (Katip.sl "error" (displayException err)) $
+        Katip.logFM Katip.ErrorS "Failed to query missing paths"
+      liftIO $ for_ rbRequests $ \NarinfoRequest {qrRequestId} ->
+        nqmCallback qrRequestId (Left reason)
+    Right missingPathsSet ->
+      liftIO $ forM_ rbRequests $ \NarinfoRequest {qrRequestId, qrStorePaths} -> do
+        let qrStorePathsSet = Set.fromList qrStorePaths
+            missingPathsForRequest = qrStorePathsSet `Set.intersection` missingPathsSet
+            response = NarinfoResponse qrStorePathsSet missingPathsForRequest
+        nqmCallback qrRequestId (Right response)
+
+-- | Query missing paths and update the positive cache.
+queryMissingPaths ::
+  (Katip.KatipContext m) =>
+  NarinfoQueryManager requestId ->
+  ([StorePath] -> m ([StorePath], [StorePath])) ->
+  ReadyBatch requestId ->
+  m (Set StorePath)
+queryMissingPaths manager processBatch ReadyBatch {rbRequests, rbAllPaths, rbBatchStartTime} = do
   -- Process the batch if we have paths to query
   (allPathsInClosure, missingPaths) <-
     if null rbAllPaths
@@ -408,12 +434,4 @@ processReadyBatch manager@NarinfoQueryManager {nqmCallback} processBatch ReadyBa
       & Katip.katipAddContext (Katip.sl "count" (Set.size existingPathsSet))
     updateCache manager existingPathsSet
 
-  -- Respond to each request using the manager's callback
-  liftIO $ forM_ rbRequests $ \NarinfoRequest {qrRequestId, qrStorePaths} -> do
-    -- Find the missing paths for this requests from the batch
-    let qrStorePathsSet = Set.fromList qrStorePaths
-        missingPathsForRequest = qrStorePathsSet `Set.intersection` missingPathsSet
-        response = NarinfoResponse qrStorePathsSet missingPathsForRequest
-
-    -- Call the manager's callback with request ID and response
-    nqmCallback qrRequestId response
+  return missingPathsSet

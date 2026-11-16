@@ -71,6 +71,7 @@ library
     Cachix.API.Deploy.V1
     Cachix.API.Deploy.V2
     Cachix.API.Error
+    Cachix.API.Pins
     Cachix.API.Signing
     Cachix.API.WebSocket.Client
     Cachix.API.WebSocketSubprotocol
@@ -89,7 +90,9 @@ library
     Cachix.Types.NarInfoHash
     Cachix.Types.NixCacheInfo
     Cachix.Types.Permission
+    Cachix.Types.Pin
     Cachix.Types.PinCreate
+    Cachix.Types.PinRevision
     Cachix.Types.Servant
     Cachix.Types.Session
     Cachix.Types.SigningKeyCreate

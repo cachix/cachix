@@ -48,7 +48,8 @@ main = displayConsoleRegions $ do
     Doctor doctorOptions -> Command.doctor env doctorOptions
     GenerateKeypair name -> Command.generateKeypair env name
     Import pushOptions name uri -> Command.import' env pushOptions name uri
-    Pin pingArgs -> Command.pin env pingArgs
+    Pin pinArgs -> Command.pin env pinArgs
+    PinGet pinArgs -> Command.getPin env pinArgs
     Push (PushPaths opts name cliPaths) -> Command.push env opts name cliPaths
     Push (PushWatchStore _ _) ->
       throwIO $ DeprecatedCommand "DEPRECATED: cachix watch-store has replaced cachix push --watch-store."

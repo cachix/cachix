@@ -18,6 +18,7 @@ data CachixException
   | NarHashMismatch Text
   | DeprecatedCommand Text
   | ArtifactNotFound Text
+  | PinNotFound Text
   | AccessDeniedBinaryCache Text
   | BinaryCacheNotFound Text
   | ImportUnsupportedHash Text
@@ -34,6 +35,7 @@ instance Exception CachixException where
   displayException (NoInput s) = toS s
   displayException (NoConfig s) = toS s
   displayException (ArtifactNotFound s) = toS s
+  displayException (PinNotFound s) = toS s
   displayException (NoSigningKey s) = toS s
   displayException (NetRcParseError s) = toS s
   displayException (IncludeNotFound s) = toS s

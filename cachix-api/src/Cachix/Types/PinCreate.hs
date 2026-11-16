@@ -6,7 +6,7 @@ import qualified Data.Swagger as Swagger
 import Protolude
 
 data Keep = Days Int | Revisions Int | Forever
-  deriving (Show, Eq, Generic, ToJSON, FromJSON, OpenApi.ToSchema)
+  deriving (Show, Eq, Generic, NFData, ToJSON, FromJSON, OpenApi.ToSchema)
 
 -- to support Keep with data constructor with arguments
 instance Swagger.ToSchema Keep where

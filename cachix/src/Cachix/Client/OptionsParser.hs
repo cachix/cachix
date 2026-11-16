@@ -22,6 +22,7 @@ module Cachix.Client.OptionsParser
 
     -- * Pin options
     PinOptions (..),
+    PinGetOptions (..),
 
     -- * Doctor options
     DoctorOptions (..),
@@ -92,6 +93,7 @@ data CachixCommand
   | Push PushArguments
   | Import PushOptions Text URI
   | Pin PinOptions
+  | PinGet PinGetOptions
   | WatchStore PushOptions Text
   | WatchExec WatchExecMode PushOptions NarinfoQueryOptions Text Text [Text]
   | Use BinaryCacheName InstallationMode.UseOptions
@@ -112,6 +114,13 @@ data PinOptions = PinOptions
     pinStorePath :: Text,
     pinArtifacts :: [Text],
     pinKeep :: Maybe Keep
+  }
+  deriving (Show)
+
+data PinGetOptions = PinGetOptions
+  { pinGetCacheName :: BinaryCacheName,
+    pinGetName :: Text,
+    pinGetJson :: Bool
   }
   deriving (Show)
 
@@ -273,7 +282,8 @@ commandParser =
         fold
           [ commandGroup "Store path commands:",
             hidden,
-            command "pin" $ infoH pinCommand $ progDesc "Pin a store path to prevent it from being garbage collected"
+            command "pin" (infoH pinCommand $ progDesc "Pin a store path to prevent it from being garbage collected"),
+            command "pins" (infoH pinsCommand $ progDesc "Manage pins")
           ]
 
     daemonCommands =
@@ -481,6 +491,18 @@ importCommand =
 
 pinCommand :: Parser CachixCommand
 pinCommand = Pin <$> pinOptionsParser
+
+pinsCommand :: Parser CachixCommand
+pinsCommand =
+  subparser $
+    command "get" (infoH (PinGet <$> pinGetOptionsParser) $ progDesc "Get pin metadata and its latest revision")
+
+pinGetOptionsParser :: Parser PinGetOptions
+pinGetOptionsParser =
+  PinGetOptions
+    <$> cacheNameParser
+    <*> strArgument (metavar "PIN-NAME")
+    <*> switch (long "json" <> help "Output pin metadata as JSON")
 
 pinOptionsParser :: Parser PinOptions
 pinOptionsParser =

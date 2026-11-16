@@ -5,6 +5,7 @@
 module Cachix.Client.Servant
   ( isErr,
     cachixClient,
+    listPins,
     deployClientV1,
     deployClientV2,
     withResponseTimeout,
@@ -14,12 +15,14 @@ where
 import Cachix.API qualified as API
 import Cachix.API.Deploy.V1 qualified as API.Deploy.V1
 import Cachix.API.Deploy.V2 qualified as API.Deploy.V2
+import Cachix.API.Pins qualified as API.Pins
 import Cachix.Types.ContentTypes ()
+import Cachix.Types.Pin qualified as Pin
 import Network.HTTP.Client qualified as HTTP
 import Network.HTTP.Types (Status)
 import Protolude
 import Servant.API.Generic
-import Servant.Auth.Client ()
+import Servant.Auth.Client (Token)
 import Servant.Client qualified
 import Servant.Client.Streaming
 import Servant.Conduit ()
@@ -40,6 +43,9 @@ isErr _ _ = False
 
 cachixClient :: API.BinaryCacheAPI (AsClientT ClientM)
 cachixClient = fromServant $ client (Proxy @API.API)
+
+listPins :: Token -> Text -> ClientM [Pin.Pin]
+listPins = client (Proxy @API.Pins.API)
 
 deployClientV1 :: API.Deploy.V1.DeployAPI (AsClientT ClientM)
 deployClientV1 = fromServant $ client (Proxy @API.Deploy.V1.API)

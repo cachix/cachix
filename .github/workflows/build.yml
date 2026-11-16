@@ -27,6 +27,12 @@ jobs:
         name: cachix
         skipPush: true
 
+    - name: Evaluate packages without import from derivation
+      run: |
+        nix eval --json .#packages \
+          --apply 'builtins.mapAttrs (_: p: { cachix = p.cachix.drvPath; release = p.release.drvPath; })' \
+          --option allow-import-from-derivation false
+
     - name: Build dev Cachix
       id: cachix
       run: |

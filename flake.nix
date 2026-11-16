@@ -59,17 +59,18 @@
         }@args:
         let
           hlib = pkgs.haskell.lib;
-          cachix-api = haskellPackages.callCabal2nix "cachix-api" ./cachix-api { };
+          cachix-api = haskellPackages.callPackage ./cachix-api { };
           cachix =
             hlib.overrideCabal
-              (haskellPackages.callCabal2nix "cachix" ./cachix {
+              (haskellPackages.callPackage ./cachix {
                 inherit cachix-api;
                 hnix-store-core = haskellPackages.hnix-store-core_0_8_0_0 or haskellPackages.hnix-store-core;
-                hnix-store-nar = haskellPackages.callHackageDirect {
-                  pkg = "hnix-store-nar";
-                  ver = "0.1.2.0";
-                  sha256 = "sha256-0l2YghkU4H/A8ujcpIpF7Qxx9rr455NIyp2edDc2crk=";
-                } { };
+                hnix-store-nar = haskellPackages.callPackage ./nix/hnix-store-nar.nix {
+                  src = pkgs.fetchzip {
+                    url = "https://hackage.haskell.org/package/hnix-store-nar-0.1.2.0/hnix-store-nar-0.1.2.0.tar.gz";
+                    hash = "sha256-0l2YghkU4H/A8ujcpIpF7Qxx9rr455NIyp2edDc2crk=";
+                  };
+                };
                 nix = getNix args;
               })
               # Apply a fix for a bug in GHC 9.10.3 that fails to load libraries using weak references on macOS 26.
@@ -122,12 +123,14 @@
         }
       );
 
-      checks = forAllSystems (system: {
-        pre-commit-check = git-hooks.lib.${system}.run {
-          src = ./.;
-          inherit ((import ./git-hooks.nix).pre-commit) hooks;
-        };
-      });
+      checks =
+        nixpkgs.lib.genAttrs (builtins.filter (system: builtins.hasAttr system git-hooks.lib) systems)
+          (system: {
+            pre-commit-check = git-hooks.lib.${system}.run {
+              src = ./.;
+              inherit ((import ./git-hooks.nix).git-hooks) hooks;
+            };
+          });
 
       devShells = forAllSystems (
         system:

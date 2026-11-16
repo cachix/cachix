@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.15.0] - 2026-11-16
+
 ### Added
 
 - `cachix pins get CACHE PIN [--json]`: show pin metadata and its latest revision.
@@ -14,6 +16,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Fixed
 
 - daemon: report failed narinfo queries to waiting clients and continue processing later batches
+- nix: evaluate package outputs without import from derivation
 
 ## [1.14.0] - 2026-11-05
 

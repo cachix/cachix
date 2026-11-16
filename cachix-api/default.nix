@@ -6,7 +6,7 @@
 }:
 mkDerivation {
   pname = "cachix-api";
-  version = "1.14.0";
+  version = "1.15.0";
   src = ./.;
   libraryHaskellDepends = [
     aeson async base bytestring conduit crypton deriving-aeson

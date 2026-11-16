@@ -8,6 +8,7 @@ module Cachix.Client.Command
     Import.import',
     List.list,
     Pin.pin,
+    Pin.getPin,
     Push.push,
     Watch.watchExec,
     Watch.watchExecDaemon,

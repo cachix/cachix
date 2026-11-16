@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- `cachix pins get CACHE PIN [--json]`: show pin metadata and its latest revision.
+
 ## [1.14.0] - 2026-11-05
 
 ### Added

@@ -52,6 +52,7 @@ Push commands:
 Store path commands:
   pin                      Pin a store path to prevent it from being garbage
                            collected
+  pins                     Manage pins
 
 Daemon commands:
   daemon                   Run a daemon that listens to push requests over a

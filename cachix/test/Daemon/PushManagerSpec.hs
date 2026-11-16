@@ -151,6 +151,24 @@ spec = do
             }
 
     describe "failing jobs" $ do
+      it "notifies subscribers when a batched narinfo query fails" $ do
+        events <- newTVarIO []
+        withPushManagerOnEvent (recordEvents events) $ \pm -> do
+          runPushManager pm $ do
+            let request = Protocol.PushRequest {Protocol.storePaths = ["foo"], Protocol.subscribeToUpdates = True}
+            Just pushId <- addPushJobFromRequest request
+            handleTask $ HandleMissingPathsResponse pushId (Left "Failed to query missing paths")
+            withPushJob pushId $ \pushJob ->
+              liftIO $ PushJob.status pushJob `shouldBe` Failed
+            count <- pendingJobCount
+            liftIO $ count `shouldBe` 0
+
+          messages <- map eventMessage . reverse <$> readTVarIO events
+          messages
+            `shouldBe` [ PushStorePathFailed "foo" "Failed to query missing paths",
+                         PushFinished
+                       ]
+
       it "notifies subscribers when a job fails before closure resolution" $ do
         events <- newTVarIO []
         withPushManagerOnEvent (recordEvents events) $ \pm -> do

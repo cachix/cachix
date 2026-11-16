@@ -38,7 +38,7 @@ import Protolude
 -- Tasks are prioritized by their Ord instance
 data Task
   = QueryMissingPaths Protocol.PushRequestId
-  | HandleMissingPathsResponse Protocol.PushRequestId NarinfoQuery.NarinfoResponse
+  | HandleMissingPathsResponse Protocol.PushRequestId (Either Text NarinfoQuery.NarinfoResponse)
   | PushPath FilePath
   deriving stock (Eq)
 

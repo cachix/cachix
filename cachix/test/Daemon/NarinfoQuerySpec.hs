@@ -11,7 +11,9 @@ import Data.Time (UTCTime, getCurrentTime)
 import Hercules.CNix qualified as CNix
 import Hercules.CNix.Store (Store, StorePath, withStoreFromURI)
 import Katip qualified
-import Protolude
+import Protolude hiding (toS)
+import Protolude.Conv (toS)
+import System.IO.Error (userError)
 import Test.Hspec
 import UnliftIO.Async qualified as Async
 import UnliftIO.Timeout (timeout)
@@ -32,7 +34,7 @@ data BatchCall = BatchCall
 -- Test data structure to track callback calls
 data CallbackCall requestId = CallbackCall
   { ccRequestId :: requestId,
-    ccResponse :: NarinfoResponse,
+    ccResponse :: Either Text NarinfoResponse,
     ccTimestamp :: UTCTime
   }
   deriving (Show, Eq)
@@ -63,7 +65,7 @@ createMockBatchProcessor callsVar responsesVar inputPaths = do
 createMockCallback ::
   TVar [CallbackCall requestId] ->
   requestId ->
-  NarinfoResponse ->
+  Either Text NarinfoResponse ->
   IO ()
 createMockCallback callsVar requestId response = do
   now <- getCurrentTime
@@ -135,6 +137,84 @@ spec :: Spec
 spec = do
   -- Initialize the CNix library
   runIO CNix.init
+
+  describe "Query failures" $ do
+    it "responds to every request in a failed batch and processes later requests" $ withStoreFromURI "dummy://" $ \store -> do
+      path1 <- mockStorePath store 1
+      path2 <- mockStorePath store 2
+      calls <- newTVarIO (0 :: Int)
+      callbacks <- newTVarIO []
+      let config = defaultNarinfoQueryOptions {nqoMaxWaitTime = 0}
+          processBatch paths = do
+            call <- atomically $ do
+              modifyTVar' calls (+ 1)
+              readTVar calls
+            if call == 1
+              then throwIO $ userError "query failed"
+              else pure (paths, [])
+      manager <- NarinfoQuery.new config (createMockCallback callbacks)
+      -- Queue both requests before starting so they belong to the same batch.
+      NarinfoQuery.submitRequest manager (1 :: Int) [path1]
+      NarinfoQuery.submitRequest manager (2 :: Int) [path2]
+      startQueryProcessorAsync manager processBatch
+      flip finally (NarinfoQuery.stop manager) $ do
+        waitForCallbacks callbacks 2
+        failed <- reverse <$> readTVarIO callbacks
+        map ccRequestId failed `shouldBe` [1, 2]
+        for_ failed $ \callback ->
+          case ccResponse callback of
+            Left reason -> (toS reason :: [Char]) `shouldContain` "query failed"
+            Right _ -> expectationFailure "Expected a failed query"
+        NarinfoQuery.lookupCache manager path1 `shouldReturn` False
+        NarinfoQuery.lookupCache manager path2 `shouldReturn` False
+        NarinfoQuery.submitRequest manager (3 :: Int) [path1]
+        waitForCallbacks callbacks 3
+        readTVarIO calls `shouldReturn` 2
+        responses <- readTVarIO callbacks
+        map ccResponse (take 1 responses)
+          `shouldBe` [Right (NarinfoQuery.NarinfoResponse (Set.singleton path1) Set.empty)]
+        -- A cache-only request must still finish after the failed batch.
+        NarinfoQuery.submitRequest manager (4 :: Int) [path1]
+        waitForCallbacks callbacks 4
+        readTVarIO calls `shouldReturn` 2
+        completed <- reverse <$> readTVarIO callbacks
+        map ccRequestId completed `shouldBe` [1, 2, 3, 4]
+
+    it "processes requests queued while a failing query is in flight" $ withStoreFromURI "dummy://" $ \store -> do
+      path1 <- mockStorePath store 1
+      path2 <- mockStorePath store 2
+      started <- newEmptyTMVarIO
+      release <- newEmptyTMVarIO
+      calls <- newTVarIO (0 :: Int)
+      callbacks <- newTVarIO []
+      let config = defaultNarinfoQueryOptions {nqoMaxWaitTime = 0}
+          processBatch paths = do
+            call <- atomically $ do
+              modifyTVar' calls (+ 1)
+              readTVar calls
+            when (call == 1) $ do
+              atomically $ putTMVar started ()
+              atomically $ takeTMVar release
+              throwIO $ userError "query failed"
+            pure (paths, [])
+      manager <- NarinfoQuery.new config (createMockCallback callbacks)
+      startQueryProcessorAsync manager processBatch
+      let cleanup = do
+            atomically $ void $ tryPutTMVar release ()
+            NarinfoQuery.stop manager
+      flip finally cleanup $ do
+        NarinfoQuery.submitRequest manager (1 :: Int) [path1]
+        waitForSTM 5_000_000 (not <$> isEmptyTMVar started)
+        NarinfoQuery.submitRequest manager (2 :: Int) [path2]
+        atomically $ putTMVar release ()
+        waitForCallbacks callbacks 2
+        completed <- reverse <$> readTVarIO callbacks
+        map ccRequestId completed `shouldBe` [1, 2]
+        case map ccResponse completed of
+          [Left reason, Right response] -> do
+            (toS reason :: [Char]) `shouldContain` "query failed"
+            response `shouldBe` NarinfoQuery.NarinfoResponse (Set.singleton path2) Set.empty
+          _ -> expectationFailure "Expected a failed query followed by a successful query"
 
   describe "Batching" $ do
     it "triggers batch when size threshold is reached" $ withStoreFromURI "dummy://" $ \store -> do
@@ -239,8 +319,8 @@ spec = do
         -- Second response should contain both paths (path1 from cache + path2 from batch)
         callbacks <- readTVarIO tcCallbackCalls
         let secondResponse = case head callbacks of
-              Just (CallbackCall _ response _) -> response
-              Nothing -> panic "Expected callback call"
+              Just (CallbackCall _ (Right response) _) -> response
+              _ -> panic "Expected successful callback"
         NarinfoQuery.nrAllPaths secondResponse `shouldBe` Set.fromList [path1, path2]
 
     it "distributes correct paths to each request" $ withStoreFromURI "dummy://" $ \store -> do
@@ -271,8 +351,8 @@ spec = do
 
         -- Find responses by request ID
         let findResponse rid = find (\(CallbackCall r _ _) -> r == rid) callbacks
-        Just (CallbackCall _ response1 _) <- return $ findResponse 1
-        Just (CallbackCall _ response2 _) <- return $ findResponse 2
+        Just (CallbackCall _ (Right response1) _) <- return $ findResponse 1
+        Just (CallbackCall _ (Right response2) _) <- return $ findResponse 2
 
         -- Request 1 should get: existing=[1,3], missing=[2]
         NarinfoQuery.nrAllPaths response1 `shouldBe` Set.fromList [path1, path2, path3]

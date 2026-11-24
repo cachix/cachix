@@ -194,7 +194,7 @@ withCacheArgs host agentInfo agentToken m =
                   BinaryCache.permission = Read,
                   BinaryCache.preferredCompressionMethod = BinaryCache.XZ
                 }
-        NetRc.add (Token (toS agentToken)) [bc] filepath
+        _ <- NetRc.add (Token (toS agentToken)) [bc] filepath
         return $ cachesArgs cache <> ["--option", "netrc-file", filepath]
       Nothing ->
         return []

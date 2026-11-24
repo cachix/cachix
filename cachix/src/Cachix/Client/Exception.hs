@@ -24,6 +24,9 @@ data CachixException
   | ImportUnsupportedHash Text
   | RemoveCacheUnsupported Text
   | InvalidStorePath Text
+  | NixConfParseError Text
+  | NixConfReadFailed Text
+  | NixConfWriteFailed Text
   deriving (Show, Typeable)
 
 instance Exception CachixException where
@@ -48,3 +51,6 @@ instance Exception CachixException where
   displayException (ImportUnsupportedHash s) = toS s
   displayException (RemoveCacheUnsupported s) = toS s
   displayException (InvalidStorePath s) = toS s
+  displayException (NixConfParseError s) = toS s
+  displayException (NixConfReadFailed s) = toS s
+  displayException (NixConfWriteFailed s) = toS s

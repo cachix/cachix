@@ -20,19 +20,29 @@ import System.FilePath (takeDirectory)
 -- | Add a list of binary caches to netrc under `filename`.
 --   Makes sure there are no duplicate entries (using domain as a key).
 --   If file under filename doesn't exist it's created.
+--   The write is skipped when the rendered contents already match the
+--   file byte for byte, so repeated runs leave the credentials file
+--   untouched while a changed auth token still rewrites it.
+--   Returns whether a write happened.
 add ::
   Token ->
   [BinaryCache.BinaryCache] ->
   FilePath ->
-  IO ()
+  IO Bool
 add cachixAuthToken binarycaches filename = do
   doesExist <- doesFileExist filename
-  netrc <-
+  existing <-
     if doesExist
-      then BS.readFile filename >>= parse
-      else return $ NetRc [] []
-  createDirectoryIfMissing True (takeDirectory filename)
-  BS.writeFile filename $ netRcToByteString $ uniqueAppend netrc
+      then Just <$> BS.readFile filename
+      else return Nothing
+  netrc <- maybe (return $ NetRc [] []) parse existing
+  let rendered = netRcToByteString $ uniqueAppend netrc
+  if Just rendered == existing
+    then return False
+    else do
+      createDirectoryIfMissing True (takeDirectory filename)
+      BS.writeFile filename rendered
+      return True
   where
     parse :: ByteString -> IO NetRc
     parse contents = escalateAs (NetRcParseError . show) $ parseNetRc filename contents

@@ -505,10 +505,7 @@ readPath noisy filename =
 readPathWithDefault :: FilePath -> IO NixConfSource
 readPathWithDefault = readPath True
 
--- | Like `readPathWithDefault`, but silent when the file simply doesn't
--- exist. Meant for files cachix exclusively manages, such as the cachix.conf
--- fragment, which is expected to be missing until the first `cachix use`,
--- so printing a "no config" error for it would just be noise.
+-- | Like `readPathWithDefault`, but silent when the file doesn't exist yet.
 readPathQuiet :: FilePath -> IO NixConfSource
 readPathQuiet = readPath False
 

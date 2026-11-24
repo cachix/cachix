@@ -155,7 +155,7 @@ addBinaryCache config bc useOptions WriteNixOS =
 -- artifact meant to be shipped elsewhere, so its nix.conf stays
 -- self-contained instead of splitting the caches into a fragment.
 addBinaryCache config bc _ (Install ncl@(NixConf.Custom _)) = do
-  nixConf <- NixConf.readWithDefault ncl
+  nixConf <- NixConf.readPathQuiet =<< NixConf.getFilename ncl
   unless (BinaryCache.isPublic bc) $ void $ addPrivateBinaryCacheNetRC config bc ncl
   _ <- writeWithHint outputDirHint nixConf (nixConf {NixConf.nixConfLines = NixConf.addCacheStandalone bc (NixConf.nixConfLines nixConf)})
   putStrLn $ "Configured " <> BinaryCache.uri bc <> " binary cache in " <> toS (NixConf.nixConfPath nixConf)
@@ -202,7 +202,7 @@ If your nix.conf is managed by home-manager or nix-darwin, add the following lin
 
 removeBinaryCache :: URI.URI -> Text -> InstallationMode -> IO ()
 removeBinaryCache uri name (Install ncl@(NixConf.Custom _)) = do
-  nixConf <- NixConf.readWithDefault ncl
+  nixConf <- NixConf.readPathQuiet =<< NixConf.getFilename ncl
   let (nixConf', removed) = NixConf.removeCacheStandalone uri name (NixConf.nixConfLines nixConf)
   if removed
     then do
@@ -274,7 +274,7 @@ resolveNixConfAndFragment :: NixConf.NixConfLoc -> IO (NixConf.NixConfSource, Ni
 resolveNixConfAndFragment ncl = do
   nixConfPath <- NixConf.getFilename ncl
   let fragmentPath = replaceFileName nixConfPath (toS NixConf.cachixConf)
-  nixConf <- NixConf.readPathWithDefault nixConfPath
+  nixConf <- NixConf.readPathQuiet nixConfPath
   -- The fragment is expected to not exist yet on a first run; read it
   -- quietly rather than printing a "no config" error for that.
   fragment <- NixConf.readPathQuiet fragmentPath

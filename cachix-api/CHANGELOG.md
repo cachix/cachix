@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+- Add the optional `cCa` content address field to `NarInfoCreate`.
+
 ## [1.15.0] - 2026-11-16
 
 - Add pin metadata types and a client definition for the existing pin listing endpoint.
@@ -29,7 +31,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 - Rewrite, cachix-api now serves as the base for cachix package but doesn't contain the full HTTP API anymore.
   This is mainly to improve development feedback loop of the backend.
-  See https://app.cachix.org/api/v1/ for the full HTTP API spec.
+  See <https://app.cachix.org/api/v1/> for the full HTTP API spec.
 
 ## [0.4.0] - 2020-01-10
 
@@ -48,7 +50,6 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 - #192 Add Secrets.SigningKey abstraction @robert
 - #180 Support servant 0.16 @domenkozar
-
 
 ## [0.2.0] - 2019-03-04
 
@@ -89,4 +90,5 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ## [0.1.0.0] - 2018-07-01
 
 ### Added
+
 - Initial release @domenkozar

@@ -27,7 +27,8 @@ data NarInfoCreate = NarInfoCreate
     cFileSize :: Integer,
     cReferences :: [Text],
     cDeriver :: Text,
-    cSig :: Maybe Text
+    cSig :: Maybe Text,
+    cCa :: Maybe Text
   }
   deriving (Generic, Show, FromJSON, ToJSON, Swagger.ToSchema, OpenApi.ToSchema)
 

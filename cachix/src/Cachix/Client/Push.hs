@@ -492,7 +492,8 @@ Got:      ${piNarHash pathInfo}
             Api.cFileHash = undFileHash,
             Api.cReferences = references,
             Api.cDeriver = deriver,
-            Api.cSig = sig
+            Api.cSig = sig,
+            Api.cCa = Nothing
           }
 
   escalate $ Api.isNarInfoCreateValid nic
